@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 
@@ -139,7 +139,7 @@ The first beta is a minimal browser (windows, tabs, omnibox and the security bas
 
 ### 3. Live update proof: `0.1.0-beta.2`
 
-The second beta is designed to prove a real update on installed systems. Once `0.1.0-beta.2` is released, the release workflow will prove that an installed `0.1.0-beta.1` updates itself to it through the live feed (NSIS on Windows, AppImage on Linux) and that its deb and rpm packages upgrade through the live APT and DNF repositories. Every later release will be proven the same way from the newest earlier release of its channel, and the first stable release from the newest beta. macOS joins once the macOS updater test exists (see [testing](architecture/testing.md#special-cases)).
+The second beta proved a real update on installed systems. On 2026-10-31, the release workflow of `0.1.0-beta.2` installed `0.1.0-beta.1` from its release assets: on Windows (NSIS) and Linux (AppImage) it found `0.1.0-beta.2` in the live feed, downloaded it and installed it when it quit, and its deb and rpm packages upgraded through the live APT and DNF repositories. Every later release is proven the same way from the newest earlier release of its channel, and the first stable release from the newest beta. macOS joins once the macOS updater test exists (see [testing](architecture/testing.md#special-cases)).
 
 ### 4. Features as further betas
 
