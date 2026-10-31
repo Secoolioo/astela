@@ -23,3 +23,9 @@ virtualStoreDirMaxLength: 60
 
 patchedDependencies:
   app-builder-lib@26.18.0: patches/app-builder-lib@26.18.0.patch
+
+# pnpm installs only versions published at least a day ago. An Electron security patch has
+# to ship sooner (see the response times in docs/maintainers/WORKFLOW.md), so its exact
+# version is exempt; the next Electron update replaces the entry.
+minimumReleaseAgeExclude:
+  - electron@45.2.1

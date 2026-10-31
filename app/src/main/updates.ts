@@ -112,6 +112,7 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
     isOnline: () => net.isOnline(),
     hooks,
   });
+  // The updater tests read this line, also from published releases; keep it stable.
   logger.info('Update service', {
     installType,
     state: service.state.kind,

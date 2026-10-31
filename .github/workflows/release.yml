@@ -1,7 +1,8 @@
 # Releases the version on main when it has no published release yet: runs the complete CI on
 # the commit, builds signed macOS packages, signs the rest, publishes the release with the
-# owner token and deploys the website, update feed and package repositories. Without a new
-# version, only the website is deployed. See docs/adr/0016-release-pipeline-without-bot-commits.md.
+# owner token, deploys the website, update feed and package repositories, and proves that the
+# previous release updates itself to the new one through them. Without a new version, only
+# the website is deployed. See docs/adr/0016-release-pipeline-without-bot-commits.md.
 name: Release
 
 on:
@@ -26,6 +27,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
       release: ${{ steps.plan.outputs.release }}
+      previous: ${{ steps.plan.outputs.previous }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -311,3 +313,65 @@ jobs:
       contents: read
       pages: write
       id-token: write
+
+  # The previous release of the channel, installed from its release assets without policies,
+  # must update itself to the new one through the live feed and repositories that the pages
+  # job has just deployed and verified. The first release has no previous one.
+  live-update:
+    name: live-update (${{ matrix.name }})
+    needs: [plan, pages]
+    if: needs.plan.outputs.release == 'true' && needs.plan.outputs.previous != ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              name: linux-x64,
+              os: ubuntu-24.04,
+              packages: 'linux-x86_64.AppImage linux-amd64.deb linux-x86_64.rpm',
+            }
+          - { name: windows-x64, os: windows-2025, packages: 'windows-x64-setup.exe' }
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Download the previous release and check it against its SHA256SUMS
+        id: download
+        env:
+          PACKAGES: ${{ matrix.packages }}
+        run: |
+          # shellcheck disable=SC2086 # the package names are a list on purpose
+          node tools/release/download.ts --version "$PREVIOUS" --out "$RUNNER_TEMP/previous" $PACKAGES
+      - name: Prepare Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libfuse2t64
+          # The AppImage sandbox needs user namespaces; the packages job tests the AppArmor fix.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Update the previous release through the live feed
+        run: |
+          set -- --live --old "$RUNNER_TEMP/previous" --old-version "$PREVIOUS" --new-version "$VERSION"
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a node app/tests/updater/run.ts "$@"
+          else
+            node app/tests/updater/run.ts "$@"
+          fi
+      # Runs even when the AppImage update failed, so one run reports every package format.
+      - name: Upgrade the previous deb and rpm through the live repositories
+        if: runner.os == 'Linux' && !cancelled() && steps.download.outcome == 'success'
+        run: app/tests/linux-repos/live.sh --upgrade "$VERSION" "$PREVIOUS" "$RUNNER_TEMP/previous"

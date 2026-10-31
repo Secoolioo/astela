@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, is the first release. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 
@@ -59,7 +59,7 @@ The module column names the feature module that is designed to own the feature. 
 | Core          | Session restore: lazy, with crash recovery, and exact after an update.                                                                                                                                                                                                                    | `session`                                                           |
 | Core          | Site permissions: prompt in the overlay, a per-site list to review and revoke decisions. Enforcement (default deny) lives in the kernel and cannot be switched off.                                                                                                                       | `permissions` (UI only)                                             |
 | Security      | HTTPS-First: upgrade to HTTPS, an interstitial to continue over HTTP, exceptions per host; DNS over HTTPS setting.                                                                                                                                                                        | `https-first`                                                       |
-| Team          | Workspaces: name, icon, color and theme; quick switching through a switcher, shortcuts (`Ctrl/Cmd+Alt+1` to `9`) and a command; optional isolated session.                                                                                                                                | `workspaces`                                                        |
+| Team          | Workspaces: name, icon, color and theme; quick switching through a switcher, shortcuts for the first nine workspaces (not with Ctrl+Alt or Option, which type characters on many layouts) and a command; optional isolated session.                                                       | `workspaces`                                                        |
 | Team          | Layout presets: "Classic", "Vertical left", "Vertical right", "Bottom" and "Compact"; chosen on first start (non-modal, on the new tab page) and in settings; freely adjustable afterwards.                                                                                               | `layout`                                                            |
 | Team          | Themes: light, dark and system; accent colors; theme files; a theme editor with live preview; import and export.                                                                                                                                                                          | `themes`, `theme-editor`                                            |
 | Team          | Customization: UI density, fonts (UI and web defaults), a freely arrangeable toolbar, a customizable new tab page, search engines with keywords, custom keyboard shortcuts, schema-based settings that are searchable and exportable.                                                     | `toolbar`, `newtab`, `search-engines`, `keybindings`, `settings-ui` |
@@ -139,7 +139,7 @@ The first beta is a minimal browser (windows, tabs, omnibox and the security bas
 
 ### 3. Live update proof: `0.1.0-beta.2`
 
-The second beta is designed to prove a real update on installed systems: NSIS on Windows, AppImage on Linux, macOS (depending on the code signing status), and upgrades through the APT and DNF repositories. The updater job will additionally prove an update from an installed `0.1.0-beta.1` through the live feed.
+The second beta is designed to prove a real update on installed systems. Once `0.1.0-beta.2` is released, the release workflow will prove that an installed `0.1.0-beta.1` updates itself to it through the live feed (NSIS on Windows, AppImage on Linux) and that its deb and rpm packages upgrade through the live APT and DNF repositories. Every later release will be proven the same way from the newest earlier release of its channel, and the first stable release from the newest beta. macOS joins once the macOS updater test exists (see [testing](architecture/testing.md#special-cases)).
 
 ### 4. Features as further betas
 

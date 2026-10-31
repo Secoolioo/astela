@@ -189,6 +189,8 @@ export class UpdateService implements Disposable {
     }, delayMs);
   }
 
+  // The updater tests recognize the outcome of a check by the log messages below, also in
+  // published releases that the live update proof installs; keep them stable.
   private async run(): Promise<UpdateState> {
     this.set({ kind: 'checking' });
     try {

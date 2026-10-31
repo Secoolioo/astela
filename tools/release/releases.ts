@@ -3,6 +3,7 @@
  * Pages workflows use it to decide what to build and what the website, the update feed and
  * the package repositories list.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -79,6 +80,64 @@ export function compareVersions(a: string, b: string): number {
     if (diff !== 0) return diff;
   }
   return 0;
+}
+
+/**
+ * The release from which the live update proof updates to a new version: the newest earlier
+ * release of the same channel, whose installations receive the new version from the live
+ * feed and repositories. Installations of a beta follow the beta channel, which also receives
+ * stable releases, so a stable release without an earlier stable one is reached from the
+ * newest earlier beta.
+ * @param releases - The published releases, in any order.
+ * @param version - The new version.
+ * @returns The earlier version, or `undefined` when no installation updates to the new one
+ *   with its normal configuration, as for the first release.
+ */
+export function previousRelease(
+  releases: readonly Pick<PublishedRelease, 'version' | 'channel'>[],
+  version: string,
+): string | undefined {
+  const channel = channelOf(version);
+  const earlier = releases
+    .filter((r) => compareVersions(r.version, version) < 0)
+    .toSorted((a, b) => compareVersions(a.version, b.version));
+  const sameChannel = earlier.findLast((r) => r.channel === channel);
+  return (sameChannel ?? (channel === 'stable' ? earlier.at(-1) : undefined))?.version;
+}
+
+/**
+ * Reads a `SHA256SUMS` file as `sha256sum` writes it, in text or binary mode.
+ * @param text - The file content.
+ * @returns The hexadecimal SHA-256 of each listed file, by file name.
+ */
+export function parseChecksums(text: string): Map<string, string> {
+  return new Map(
+    text
+      .split('\n')
+      .map((line) => /^([0-9a-f]{64}) [ *](.+)$/.exec(line.trim()))
+      .filter((match) => match !== null)
+      .map((match) => [match[2] ?? '', match[1] ?? '']),
+  );
+}
+
+/**
+ * Checks a downloaded file against the checksums of its release.
+ * @param checksums - The checksums from {@link parseChecksums}.
+ * @param name - The asset name.
+ * @param bytes - The downloaded file.
+ * @throws {Error} When the checksums do not list the file or its SHA-256 differs.
+ */
+export function verifyChecksum(
+  checksums: ReadonlyMap<string, string>,
+  name: string,
+  bytes: Uint8Array,
+): void {
+  const expected = checksums.get(name);
+  if (expected === undefined) throw new Error(`SHA256SUMS does not list ${name}`);
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== expected) {
+    throw new Error(`${name} has the SHA-256 ${actual}, but SHA256SUMS names ${expected}`);
+  }
 }
 
 /**
