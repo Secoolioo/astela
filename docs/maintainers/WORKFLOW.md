@@ -57,7 +57,7 @@ pnpm verify    # every check CI runs in the verify job
 | `labels.yml`                                  | label sync from `.github/labels.yml`                                                                                                                                                                       | active |
 | `codeql.yml`, `scorecard.yml`                 | code scanning and OpenSSF Scorecard                                                                                                                                                                        | active |
 | `repo-setup.yml`                              | applies repository settings and creates the signing keys with `tools/owner/setup.sh` (owner only)                                                                                                          | active |
-| `release.yml`                                 | on every push to `main`: releases a new version (tests, packages, signatures, SBOM, attestations, release), then calls `pages.yml`                                                                         | active |
+| `release.yml`                                 | on every push to `main`: releases a new version (tests, packages, signatures, SBOM, attestations, release), calls `pages.yml` and proves the update from the previous release live                         | active |
 | `pages.yml`                                   | website, update feed and package repositories from the published releases, link check, deployment and live verification; also weekly, which renews the feed signature                                      | active |
 
 ## Releases
@@ -70,7 +70,8 @@ pnpm verify    # every check CI runs in the verify job
    - It publishes the release, which creates the tag.
    - It deploys the website, documentation, update feeds and package repositories.
    - It verifies the live result.
-4. A failed run is resumed with `workflow_dispatch`; a draft left behind is completed. Published releases and their tags are immutable. If a published release is wrong, ship the next patch version instead.
+   - It installs the previous release of the channel on Windows and Linux and proves that it updates itself to the new one through the live feed, and that its deb and rpm packages upgrade through the live repositories. The first release has no previous one and skips this step.
+4. A run that failed before the release was published is resumed with `workflow_dispatch`; a draft left behind is completed. Once the release is published, a new run counts the version as released and skips the live update proof, so a failure in `pages` or `live-update` is resumed by re-running the failed jobs of the same run, which keeps its plan and runs the proof after the deployment. Published releases and their tags are immutable. If a published release is wrong, ship the next patch version instead. When only the live update proof fails, the release is already public: re-run the failed jobs once the cause is understood, and fix a broken update path in the next patch version.
 
 The release workflow refuses to run until the public keys are committed in `app/build/keys/` (`update-current.pub.pem`, `update-next.pub.pem`, `linux-repo.pub.asc`), the `release` environment holds `UPDATE_SIGNING_KEY`, `LINUX_REPO_GPG_KEY` and `OWNER_TOKEN`, and the repository name matches `brand.json`. `tools/owner/setup.sh` creates all of them. The fingerprints of the keys belong in `SECURITY.md` from the first release on.
 
@@ -84,7 +85,7 @@ Every update delivered to users meets all of these:
 - [ ] Everything is merged into `main`.
 - [ ] A GitHub release exists with all packages for all supported platforms and architectures, release notes, `SHA256SUMS` with signature, SBOM and attestations.
 - [ ] The website and documentation are live and current (version, changelog, screenshots, API reference), and the README screenshots show the released version.
-- [ ] The update feeds and package repositories are live and signed, and live verification passed, so installed browsers receive the update.
+- [ ] The update feeds and package repositories are live and signed, live verification passed, and the previous release updated itself to the new one through them, so installed browsers receive the update.
 - [ ] A short release summary is shared with the team: version, changes, links, and any action needed from a maintainer.
 
 ## Checks per minor release

@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path';
 import {
   download,
   listPublishedReleases,
+  parseChecksums,
   readBrand,
   type PublishedRelease,
   type ReleaseAsset,
@@ -40,16 +41,10 @@ for (const release of releases) {
   if (manifest === undefined) throw new Error(`v${release.version} has no update-manifest.json`);
   writeFileSync(join(out, 'manifests', `${release.version}.json`), await download(manifest));
   const sums = asset(release, 'SHA256SUMS');
-  const sha256 = new Map(
+  const sha256 =
     sums === undefined
-      ? []
-      : (await download(sums))
-          .toString('utf8')
-          .split('\n')
-          .map((line) => /^([0-9a-f]{64}) [ *](.+)$/.exec(line.trim()))
-          .filter((m) => m !== null)
-          .map((m) => [m[2] ?? '', m[1] ?? '']),
-  );
+      ? new Map<string, string>()
+      : parseChecksums((await download(sums)).toString('utf8'));
   summary.push({
     ...release,
     assets: release.assets.map((a) => Object.assign({ sha256: sha256.get(a.name) }, a)),
