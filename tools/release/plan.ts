@@ -1,7 +1,9 @@
 /**
  * Decides what the release workflow does for the commit on `main`: when no published
  * release exists for the version in app/package.json, the version is released; otherwise
- * only the website is deployed. Prints `key=value` lines for `$GITHUB_OUTPUT`.
+ * only the website is deployed. Prints `key=value` lines for `$GITHUB_OUTPUT`; `previous`
+ * names the published release from which the live update proof updates to the version, and
+ * is empty when there is none, as for the first release.
  *
  * A release needs the public update keys and the repository key in `app/build/keys/`,
  * because every package embeds them; without them the installed browser could never
@@ -12,7 +14,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { channelOf, listPublishedReleases, readBrand } from './releases.ts';
+import { channelOf, listPublishedReleases, previousRelease, readBrand } from './releases.ts';
 
 const root = resolve(import.meta.dirname, '../..');
 const repository = process.env['GITHUB_REPOSITORY'] ?? readBrand().repository;
@@ -20,7 +22,8 @@ const { version } = JSON.parse(readFileSync(resolve(root, 'app/package.json'), '
   version: string;
 };
 
-const published = (await listPublishedReleases(repository)).some((r) => r.version === version);
+const releases = await listPublishedReleases(repository);
+const published = releases.some((r) => r.version === version);
 // 0.0.0 is the version before the first release preparation.
 const release = !published && version !== '0.0.0';
 
@@ -44,3 +47,4 @@ console.log(`version=${version}`);
 console.log(`tag=v${version}`);
 console.log(`prerelease=${channelOf(version) === 'beta'}`);
 console.log(`release=${release}`);
+console.log(`previous=${previousRelease(releases, version) ?? ''}`);

@@ -7,9 +7,17 @@
  * With a broken build 3, which fails to start on purpose, build 2 installs it, build 3
  * fails twice, and the boot guard must bring build 2 back at the third start.
  *
+ * With `--live`, it proves the update from a published release to the next one instead. The
+ * earlier release is installed without any policy, so it checks the live feed named in
+ * brand.json, as it does for users. Once that feed lists the new release, the earlier one
+ * must find it at its first check, download it and install it when it quits; afterwards,
+ * the new release must start.
+ *
  * Usage: node app/tests/updater/run.ts --old <packages 1> --new <packages 2>
  *   --old-version <v1> --new-version <v2> --key <private.pem>
  *   [--broken <packages 3> --broken-version <v3>]
+ * Live: node app/tests/updater/run.ts --live --old <packages of the earlier release>
+ *   --old-version <earlier version> --new-version <new version>
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
@@ -30,6 +38,7 @@ const root = resolve(import.meta.dirname, '../../..');
 const brand = JSON.parse(readFileSync(join(root, 'brand.json'), 'utf8')) as {
   productName: string;
   slug: string;
+  website: string;
 };
 const args = process.argv.slice(2);
 const optional = (name: string): string | undefined =>
@@ -46,14 +55,21 @@ interface Build {
   readonly version: string;
 }
 
+/** The self-test report fields that the test checks. */
+interface Report {
+  readonly ok: boolean;
+  readonly version: string;
+}
+
+/** The builds that the local feed publishes, and its private key. */
+interface LocalFeed {
+  readonly builds: readonly Build[];
+  readonly key: string;
+}
+
+const live = args.includes('--live');
 const oldBuild: Build = { dir: resolve(option('old')), version: option('old-version') };
-const newBuild: Build = { dir: resolve(option('new')), version: option('new-version') };
-const brokenDir = optional('broken');
-const brokenBuild: Build | undefined =
-  brokenDir === undefined
-    ? undefined
-    : { dir: resolve(brokenDir), version: option('broken-version') };
-const key = resolve(option('key'));
+const newVersion = option('new-version');
 const port = 8123;
 const feedUrl = `http://127.0.0.1:${port}/`;
 const windows = process.platform === 'win32';
@@ -89,9 +105,9 @@ async function waitFor(
 }
 
 /** Publishes all builds and a signed feed that lists the given ones, in a site folder. */
-function buildSite(site: string, listed: readonly Build[], tamper: boolean): void {
+function buildSite(site: string, feed: LocalFeed, listed: readonly Build[], tamper: boolean): void {
   rmSync(site, { recursive: true, force: true });
-  for (const build of [oldBuild, newBuild, ...(brokenBuild === undefined ? [] : [brokenBuild])]) {
+  for (const build of feed.builds) {
     const target = join(site, 'download', `v${build.version}`);
     mkdirSync(target, { recursive: true });
     for (const name of readdirSync(build.dir)) {
@@ -111,7 +127,7 @@ function buildSite(site: string, listed: readonly Build[], tamper: boolean): voi
       '--channel',
       'beta',
       '--key',
-      key,
+      feed.key,
       '--out',
       site,
       '--download-base',
@@ -173,18 +189,28 @@ interface Running {
 function start(program: string, profile: string, keepRunning: boolean, report: string): Running {
   const childArgs = [`--user-data-dir=${profile}`, `--smoke-test=${report}`];
   if (keepRunning) childArgs.push('--smoke-test-keep-running');
+  // Chromium refuses to start as root with its sandbox; only local containers run as root.
+  if (!windows && process.getuid?.() === 0) childArgs.push('--no-sandbox');
   console.log(`$ ${program} ${childArgs.join(' ')}`);
   const child = spawn(program, childArgs, { stdio: 'inherit' });
   return { child, profile };
 }
 
-function logLines(profile: string): { message: string; fields?: Record<string, unknown> }[] {
+/** A record of the browser's JSON Lines log. */
+interface LogLine {
+  readonly level: string;
+  readonly message: string;
+  readonly fields?: Record<string, unknown>;
+  readonly error?: { readonly message: string };
+}
+
+function logLines(profile: string): LogLine[] {
   const file = join(profile, 'logs', 'main.log');
   if (!existsSync(file)) return [];
   return readFileSync(file, 'utf8')
     .split('\n')
     .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as { message: string; fields?: Record<string, unknown> });
+    .map((line) => JSON.parse(line) as LogLine);
 }
 
 /** The browser's main process: the started program itself, or the child of the AppImage runtime. */
@@ -241,15 +267,57 @@ function installerRunning(): boolean {
   return /-setup\.exe|"installer-/i.test(list);
 }
 
-/** Starts a build until it has downloaded an update, quits it and waits for the install. */
-async function updateOnQuit(program: string, profile: string): Promise<void> {
-  const running = start(program, profile, true, join(profile, '..', `${basename(profile)}.json`));
-  await waitFor(
-    'the downloaded update',
-    300,
-    () => logLines(running.profile).some((l) => l.message.startsWith('Update ready')),
-    running.child,
-  );
+/**
+ * Whether the browser has downloaded an update. Its check runs once per start, so a check
+ * that failed or found nothing, or a disabled updater, ends the wait at once. The live test
+ * reads these messages from published releases, so they must not change between releases.
+ */
+function updateReady(profile: string): boolean {
+  for (const line of logLines(profile)) {
+    if (line.message.startsWith('Update ready')) return true;
+    if (
+      line.message === 'Update failed' ||
+      line.message === 'No update available' ||
+      (line.message === 'Update service' && line.fields?.['state'] === 'disabled')
+    ) {
+      throw new Error(`${line.message} ${JSON.stringify(line.fields ?? {})}`);
+    }
+  }
+  return false;
+}
+
+/**
+ * Starts a build until it has downloaded an update, quits it and waits for the install.
+ * @param from - The version that must be running before the update.
+ * @param seconds - How long the check and the download may take.
+ */
+async function updateOnQuit(
+  program: string,
+  profile: string,
+  from: string,
+  seconds = 300,
+): Promise<void> {
+  const reportPath = join(profile, '..', `${basename(profile)}.json`);
+  const running = start(program, profile, true, reportPath);
+  try {
+    await waitFor(
+      'the downloaded update',
+      seconds,
+      () => updateReady(running.profile),
+      running.child,
+    );
+    expectVersion(readReport(reportPath), from);
+  } finally {
+    // Printed after a failure too: download problems show up as warnings or errors, and a
+    // stalled download as "Downloading update" without "Update ready".
+    for (const line of logLines(profile)) {
+      if (/update/i.test(line.message) || line.level === 'warn' || line.level === 'error') {
+        const error = line.error === undefined ? {} : { error: line.error.message };
+        const details = { ...line.fields, ...error };
+        console.log(`  ${line.level} ${line.message} ${JSON.stringify(details)}`);
+      }
+    }
+  }
   await quit(running);
   if (windows) {
     await sleep(5000);
@@ -257,33 +325,45 @@ async function updateOnQuit(program: string, profile: string): Promise<void> {
   }
 }
 
+/** The self-test report at a path, if the build wrote one. */
+function readReport(path: string): Report | undefined {
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Report) : undefined;
+}
+
 /** Runs the self-test of the installed build and returns its exit code and report. */
 async function selfTest(
   program: string,
   profile: string,
-): Promise<{ code: number | null; report?: { ok: boolean; version: string } }> {
+): Promise<{ code: number | null; report?: Report }> {
   const reportPath = join(profile, '..', `${basename(profile)}.json`);
   const running = start(program, profile, false, reportPath);
   const code = await new Promise<number | null>((done) => running.child.once('exit', done));
-  if (!existsSync(reportPath)) return { code };
-  const report = JSON.parse(readFileSync(reportPath, 'utf8')) as { ok: boolean; version: string };
+  const report = readReport(reportPath);
+  if (report === undefined) return { code };
   console.log(JSON.stringify(report));
   return { code, report };
 }
 
-function expectVersion(
-  report: { ok: boolean; version: string } | undefined,
-  version: string,
-): void {
+function expectVersion(report: Report | undefined, version: string): void {
   if (report?.ok !== true || report.version !== version) {
     throw new Error(`Expected a working ${version}, found ${report?.version ?? 'nothing'}`);
   }
 }
 
-async function main(): Promise<void> {
-  const work = mkdtempSync(join(tmpdir(), 'updater-'));
+/** Updates through a local feed, then rolls back from a broken build. */
+async function localTest(work: string): Promise<void> {
+  const newBuild: Build = { dir: resolve(option('new')), version: newVersion };
+  const brokenDir = optional('broken');
+  const brokenBuild: Build | undefined =
+    brokenDir === undefined
+      ? undefined
+      : { dir: resolve(brokenDir), version: option('broken-version') };
+  const feed: LocalFeed = {
+    builds: [oldBuild, newBuild, ...(brokenBuild === undefined ? [] : [brokenBuild])],
+    key: resolve(option('key')),
+  };
   const site = join(work, 'site');
-  buildSite(site, [newBuild], true);
+  buildSite(site, feed, [newBuild], true);
   const server = spawn(
     process.execPath,
     [join(root, 'tools/feed/feed.ts'), 'serve', site, String(port)],
@@ -307,16 +387,16 @@ async function main(): Promise<void> {
     await quit(first);
 
     console.log('Build 1 must download build 2 from a valid feed and install it on quit.');
-    buildSite(site, [newBuild], false);
-    await updateOnQuit(program, join(work, 'profile-2'));
+    buildSite(site, feed, [newBuild], false);
+    await updateOnQuit(program, join(work, 'profile-2'), oldBuild.version);
     console.log('Build 2 must start.');
     expectVersion((await selfTest(program, join(work, 'profile-3'))).report, newBuild.version);
     console.log(`Update passed: ${oldBuild.version} → ${newBuild.version}`);
 
     if (brokenBuild === undefined) return;
     console.log('Build 2 must install the broken build 3.');
-    buildSite(site, [newBuild, brokenBuild], false);
-    await updateOnQuit(program, join(work, 'profile-4'));
+    buildSite(site, feed, [newBuild, brokenBuild], false);
+    await updateOnQuit(program, join(work, 'profile-4'), newBuild.version);
     for (const attempt of [5, 6]) {
       const { code, report } = await selfTest(program, join(work, `profile-${attempt}`));
       if (code === 0 || report !== undefined) throw new Error('Build 3 started although broken');
@@ -331,16 +411,52 @@ async function main(): Promise<void> {
       // The restored AppImage starts again with the same arguments and writes the report.
       const reportPath = join(work, 'profile-7.json');
       await waitFor('the restored build', 120, () => existsSync(reportPath));
-      expectVersion(
-        JSON.parse(readFileSync(reportPath, 'utf8')) as { ok: boolean; version: string },
-        newBuild.version,
-      );
+      expectVersion(readReport(reportPath), newBuild.version);
     }
     if (rollbackStart.code !== 0) throw new Error('The rollback start did not exit cleanly');
     console.log(`Rollback passed: ${brokenBuild.version} → ${newBuild.version}`);
   } finally {
     server.kill();
   }
+}
+
+/** Whether the live index lists a version, fetched the way the browser fetches it. */
+async function liveIndexLists(index: string, version: string): Promise<boolean> {
+  try {
+    const response = await fetch(index, { cache: 'no-store' });
+    if (!response.ok) return false;
+    const { releases } = (await response.json()) as { releases?: { version: string }[] };
+    return releases?.some((release) => release.version === version) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Updates the installed earlier release to the new one through the live feed. */
+async function liveTest(work: string): Promise<void> {
+  // The browser reads the index without a query that bypasses caches, so a copy cached
+  // before the deployment could hide the new release from its only check.
+  const index = new URL('updates/v1/index.json', brand.website).href;
+  const deadline = Date.now() + 600_000;
+  while (!(await liveIndexLists(index, newVersion))) {
+    if (Date.now() > deadline) throw new Error(`${index} does not list ${newVersion}`);
+    console.log(`Waiting until ${index} lists ${newVersion}`);
+    await sleep(30_000);
+  }
+  const program = await install();
+  console.log(
+    `${oldBuild.version} must find ${newVersion} in the live feed and install it on quit.`,
+  );
+  // The first check runs 30 to 60 s after the start; the packages come from GitHub Releases.
+  await updateOnQuit(program, join(work, 'profile-1'), oldBuild.version, 600);
+  console.log(`${newVersion} must start.`);
+  expectVersion((await selfTest(program, join(work, 'profile-2'))).report, newVersion);
+  console.log(`Live update passed: ${oldBuild.version} → ${newVersion}`);
+}
+
+async function main(): Promise<void> {
+  const work = mkdtempSync(join(tmpdir(), 'updater-'));
+  await (live ? liveTest(work) : localTest(work));
 }
 
 main().catch((error: unknown) => {
