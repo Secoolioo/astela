@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, is the first release. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 

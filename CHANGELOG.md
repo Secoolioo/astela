@@ -2,6 +2,23 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
+## [0.1.0-beta.2] - 2026-11-01
+
+The second beta adds context menus and the keyboard shortcuts that are usual on each system. Installed copies of 0.1.0-beta.1 receive it as an update: through the update feed for the Windows installer, the AppImage and macOS, and with the system updates for deb and rpm packages.
+
+### Features
+
+- Context menus for links, images, selected text, text fields and the page itself, shown as native menus of the operating system in English or German. Links and images open in a new tab in the background, link and image addresses and images can be copied, and selected text can be searched with the search engine of the address bar. Text fields, including the address bar, have Undo, Redo, Cut, Copy, Paste and Select all.
+
+### Fixes
+
+- Keyboard shortcuts follow the conventions of each system. On macOS, Command+[ and Command+] go back and forward, and Command+Left Arrow and Command+Right Arrow move the cursor in text as everywhere on macOS. New shortcuts include Ctrl+Page Up and Ctrl+Page Down to switch tabs and F6 or Alt+D for the address bar on Windows and Linux, and Command+Option+Left Arrow and Command+Option+Right Arrow to switch tabs on macOS. The back and forward buttons of a mouse go back and forward over the page and over the toolbar.
+- The website shows the screenshots of the current release again; the light screenshot of 0.1.0-beta.1 was blank.
+
+### Security
+
+- Electron 45.2.1 instead of 45.0.0, with Chromium 156.0.8078.75 (was 156.0.8078.48) and Node.js 24.22.1 (was 24.22.0). They bring the security fixes released since the first beta.
+
 ## [0.1.0-beta.1] - 2026-10-29
 
 The first beta: a minimal browser that already runs through the complete package, update, release and website chain. It is meant for testing, not for daily use yet.
