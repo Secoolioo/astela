@@ -131,7 +131,7 @@ The [maintainer workflow](../maintainers/WORKFLOW.md) describes the environments
 - Astela follows the latest stable Electron major. Electron publishes a new major every 8 weeks, supports the latest three majors and ships patch releases two to three times a week per supported line (as of October 2026).
 - The weekly `freshness.yml` workflow will turn red when an Electron security release or a known vulnerability in a dependency is pending. It raises an alarm without opening automated pull requests; maintainers then update.
 - A weekly CI job will build against the next Electron beta to surface breaking changes early.
-- pnpm's `minimumReleaseAge` setting (default 1 day, as of October 2026) would delay urgent Electron patches; the security update procedure in the [maintainer workflow](../maintainers/WORKFLOW.md) will document an override.
+- pnpm's `minimumReleaseAge` setting (default 1 day, as of October 2026) would delay urgent Electron patches; an Electron security patch is exempted by its exact version, as the [maintainer workflow](../maintainers/WORKFLOW.md) describes.
 - Fully automatic Windows signing within the 24-hour target requires Azure Artifact Signing or an OV certificate (see [updates](updates.md)).
 
 ## Documented limits

@@ -58,7 +58,7 @@ Negative:
 - Nine TypeScript projects and the dependency-cruiser configuration need maintenance when layers change; such changes need an ADR ([ADR 0001](0001-record-architecture-decisions.md)).
 - Project references, dependency-cruiser and lint rules overlap on purpose; a rule change has to be made in all of them.
 - Oxlint has fewer plugins than the ESLint ecosystem, so some niche rules are unavailable.
-- pnpm's `minimumReleaseAge` delays new versions by one day by default, which also delays urgent Electron patches; the security update process in [WORKFLOW.md](../maintainers/WORKFLOW.md) will document the override.
+- pnpm's `minimumReleaseAge` delays new versions by one day by default, which also delays urgent Electron patches; an Electron security patch is exempted by its exact version, as [WORKFLOW.md](../maintainers/WORKFLOW.md) describes.
 
 ## Alternatives considered
 

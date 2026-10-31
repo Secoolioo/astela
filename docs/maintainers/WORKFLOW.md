@@ -39,6 +39,7 @@ pnpm verify    # every check CI runs in the verify job
 - Dependencies are updated by maintainers in regular `chore(deps): …` pull requests (at least monthly) and immediately for security fixes. Dependabot alerts are enabled; automated update pull requests are not used.
 - Versions are pinned exactly. GitHub Actions are pinned by commit SHA with the tag as a comment.
 - Packages that may run install scripts are listed under `allowBuilds` in `pnpm-workspace.yaml`. Everything else is blocked.
+- pnpm installs only versions published at least one day earlier. An Electron security patch must not wait that long: the pull request that adopts it adds the exact version, such as `electron@45.2.1`, to `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`, and the next Electron update replaces that entry.
 - A new dependency needs a reason in the pull request. Anything larger than 20 KB gzipped in the browser UI, or with native code, needs an architecture decision record.
 
 ## Versions
