@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { tabStripPositions } from '../layout.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 const TabId = v.pipe(v.string(), v.regex(/^t[0-9a-z]{1,12}$/));
@@ -21,6 +22,7 @@ export type TabView = v.InferOutput<typeof TabView>;
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
   activeTabId: v.nullable(TabId),
+  tabStrip: v.picklist(tabStripPositions),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

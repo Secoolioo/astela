@@ -45,5 +45,10 @@
   "settings.searchUrlHint": "Eine https-Adresse mit %s an der Stelle der Suchbegriffe.",
   "settings.searchUrlInvalid": "Gib eine https-Adresse ein, die %s enthält.",
   "settings.managed": "Von deiner Organisation verwaltet",
-  "shell.menu": "Menü"
+  "shell.menu": "Menü",
+  "settings.tabPosition": "Tabs",
+  "settings.tabPosition.top": "Oben",
+  "settings.tabPosition.bottom": "Unten",
+  "settings.tabPosition.left": "Links",
+  "settings.tabPosition.right": "Rechts"
 }

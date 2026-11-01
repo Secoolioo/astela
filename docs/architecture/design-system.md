@@ -146,4 +146,6 @@ The first tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light
 
 The three density levels and the accent color are settings; the accent presets are blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 
-Not implemented yet: `palette.json`, the banner and the social preview image, font settings, the tab bar positions, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
+The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area.
+
+Not implemented yet: `palette.json`, the banner and the social preview image, font settings, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
