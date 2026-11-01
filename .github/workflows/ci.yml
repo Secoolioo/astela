@@ -116,7 +116,8 @@ jobs:
     name: smoke (${{ matrix.name }})
     needs: package
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The tests take a few minutes; a runner that stops responding should not hold the run.
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -135,11 +136,19 @@ jobs:
               packages: linux-arm64,
               formats: 'appimage:*-arm64.AppImage deb:*-arm64.deb',
             }
+          # NSIS and MSI run on separate runners: each starts from a clean system, and a
+          # problem in one does not hide the result of the other.
           - {
               name: windows-x64,
               os: windows-2025,
               packages: windows-x64,
-              formats: 'nsis:*-x64-setup.exe msi:*-x64.msi',
+              formats: 'nsis:*-x64-setup.exe',
+            }
+          - {
+              name: windows-x64-msi,
+              os: windows-2025,
+              packages: windows-x64,
+              formats: 'msi:*-x64.msi',
             }
           - {
               name: windows-arm64,
@@ -179,11 +188,14 @@ jobs:
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
       - name: Install, start and remove each package
         # The tests write to a file, so no process they leave behind can hold this step's
-        # output open. A watchdog ends a hang after 15 minutes and prints the log and the
-        # running processes; GitHub keeps no log of a job that reaches its own timeout.
-        timeout-minutes: 20
+        # output open. A watchdog ends a hang after 10 minutes. On Windows, the step then lists
+        # every process started meanwhile and stops what the tests left behind
+        # (tools/package/leftovers.ps1). GitHub keeps no log of a job that reaches its own
+        # timeout, so the step must end before it.
+        timeout-minutes: 16
         run: |
           log="$RUNNER_TEMP/smoke.log"
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           (
             for entry in $FORMATS; do
               format="${entry%%:*}"
@@ -194,18 +206,27 @@ jobs:
             done
           ) >"$log" 2>&1 &
           tests=$!
-          for _ in $(seq 1 900); do
+          for _ in $(seq 1 600); do
             kill -0 "$tests" 2>/dev/null || break
             sleep 1
           done
+          hung=false
           if kill -0 "$tests" 2>/dev/null; then
-            cat "$log"
-            echo "::error::The smoke tests did not finish within 15 minutes"
-            if [ "$RUNNER_OS" = Windows ]; then tasklist //v; else ps -ef; fi
-            exit 1
+            hung=true
+            echo "::error::The smoke tests did not finish within 10 minutes"
+          fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            SINCE="$since" /usr/bin/timeout 300 pwsh -NoProfile -File tools/package/leftovers.ps1 ||
+              echo "The process list failed with $?"
+          elif [ "$hung" = true ]; then
+            ps -ef
           fi
           status=0
-          wait "$tests" || status=$?
+          if [ "$hung" = true ]; then
+            status=1
+          else
+            wait "$tests" || status=$?
+          fi
           cat "$log"
           exit "$status"
       - name: Install and start the rpm on Fedora

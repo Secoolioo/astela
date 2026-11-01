@@ -1,7 +1,7 @@
 # Squash-merges an owner pull request once its required checks have passed.
 # It runs after every `CI` and `PR title` run, merges with the owner token
 # through the REST API and needs no auto-merge setting on the pull request.
-# A CI run whose failed jobs never got a runner is run once more first.
+# A CI run whose failed jobs never got a runner, or lost it, is run once more first.
 # Like auto-pr.yml it always runs in the version stored on main; it never
 # checks out or executes branch code.
 name: Merge pull request
@@ -20,10 +20,13 @@ concurrency:
 jobs:
   rerun:
     name: rerun
-    # A job that GitHub never started on a runner tested nothing. The failed
-    # jobs run once more and the second result counts, whatever it is.
+    # A job that GitHub never started on a runner tested nothing. Neither did
+    # one whose runner stopped responding until GitHub cancelled the job at its
+    # time limit: a test that hangs is ended by the step's own limit and fails.
+    # The failed jobs run once more and the second result counts, whatever it is.
     if: >-
-      github.event.workflow_run.conclusion == 'failure' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'cancelled') &&
       github.event.workflow_run.name == 'CI' &&
       github.event.workflow_run.run_attempt == 1 &&
       github.event.workflow_run.event == 'pull_request' &&
@@ -33,10 +36,11 @@ jobs:
     timeout-minutes: 120
     permissions:
       actions: write
+      checks: read
     outputs:
       conclusion: ${{ steps.rerun.outputs.conclusion }}
     steps:
-      - name: Re-run jobs that never started and wait for the result
+      - name: Re-run jobs without a working runner and wait for the result
         id: rerun
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,13 +52,27 @@ jobs:
           failed=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" \
             --jq '.jobs[] | select(.name != "ci-gate")
               | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
-              | "\(.steps | length)\t\(.name)"')
-          if [[ -z "$failed" ]] || cut -f1 <<<"$failed" | grep -qv '^0$'; then
-            echo "A job failed after it started; the failure stands."
+              | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\(.name)"')
+          if [[ -z "$failed" ]]; then
+            echo "No job failed; nothing to run again."
             exit 0
           fi
-          echo "Jobs that never got a runner:"
-          cut -f2 <<<"$failed"
+          while IFS=$'\t' read -r id conclusion steps unfinished name; do
+            if [[ "$steps" == 0 ]]; then
+              echo "Never got a runner: $name"
+              continue
+            fi
+            # Cancelled at the time limit with a step still running, and no other
+            # error than that limit: the watchdogs and step limits never reported.
+            notes=$(gh api "repos/$REPOSITORY/check-runs/$id/annotations" \
+              --jq '[.[] | select(.annotation_level == "failure") | .message] | join(" | ")')
+            if [[ "$conclusion" == cancelled && "$unfinished" -gt 0 && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
+              echo "Lost its runner: $name"
+              continue
+            fi
+            echo "A job failed after it started: $name; the failure stands."
+            exit 0
+          done <<<"$failed"
           gh api -X POST "repos/$REPOSITORY/actions/runs/$RUN_ID/rerun-failed-jobs" >/dev/null
           state=""
           until [[ "$state" == "2 completed" ]]; do
