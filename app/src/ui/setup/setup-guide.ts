@@ -6,7 +6,7 @@ import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import { SettingsClient, paintSwatches, type PageBridge } from '../ui-kit/settings-client.ts';
 
 /** The steps of the guide, in order. */
-const steps = ['welcome', 'look', 'layout', 'search', 'import', 'done'] as const;
+const steps = ['welcome', 'look', 'layout', 'search', 'import', 'browser', 'done'] as const;
 type Step = (typeof steps)[number];
 
 const colorModes = ['system', 'light', 'dark'] as const;
@@ -72,6 +72,37 @@ export class SetupGuide extends LitElement {
       }
       .progress span.done {
         background: var(--accent);
+      }
+      .options {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
+      .options > * + * {
+        border-top: 1px solid var(--border-1);
+      }
+      .option {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        min-height: 48px;
+        padding: var(--space-2) var(--space-3);
+      }
+      .option .text {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .option .note {
+        color: var(--text-2);
+      }
+      .option input {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: var(--accent);
       }
       .step {
         flex: 1;
@@ -283,6 +314,7 @@ export class SetupGuide extends LitElement {
       layout: () => this.renderLayout(),
       search: () => this.renderSearch(),
       import: () => this.renderImport(),
+      browser: () => this.renderBrowser(),
       done: () => this.renderDone(),
     };
     return views[this.step]();
@@ -452,6 +484,35 @@ export class SetupGuide extends LitElement {
     return html`<h1>${this.t('setup.import.title')}</h1>
       <p>${this.t('setup.import.body')}</p>
       <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>`;
+  }
+
+  private renderBrowser(): TemplateResult {
+    const blocker = this.client?.get('contentBlocker.enabled');
+    return html`<h1>${this.t('setup.browser.title')}</h1>
+      <p>${this.t('setup.browser.body')}</p>
+      <div class="options">
+        <label class="option">
+          <span class="text">
+            <span>${this.t('settings.contentBlocker')}</span>
+            <span class="note">
+              ${blocker?.locked === true ? this.t('settings.managed') : this.t('settings.contentBlockerNote')}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            .checked=${blocker?.value === true}
+            ?disabled=${blocker?.locked !== false}
+            @change=${(event: Event) => {
+              const input = event.target;
+              if (input instanceof HTMLInputElement) {
+                void this.client?.set('contentBlocker.enabled', input.checked);
+              }
+            }}
+          />
+        </label>
+        <default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>
+      </div>`;
   }
 
   private renderFooter(index: number): TemplateResult {

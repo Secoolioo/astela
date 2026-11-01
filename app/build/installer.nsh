@@ -54,3 +54,35 @@
       ${endIf}
   ${endIf}
 !macroend
+
+; Registers the browser with Windows as a web browser, so that Settings › Default apps lists
+; it and the user can choose it for web links. Links arrive after `--`, so a link can never
+; pass for a command line switch.
+!macro customInstall
+  StrCpy $0 "Software\Clients\StartMenuInternet\${PRODUCT_NAME}"
+  WriteRegStr SHCTX "$0" "" "${PRODUCT_NAME}"
+  WriteRegStr SHCTX "$0\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHCTX "$0\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
+  WriteRegStr SHCTX "$0\Capabilities" "ApplicationName" "${PRODUCT_NAME}"
+  WriteRegStr SHCTX "$0\Capabilities" "ApplicationDescription" "${PRODUCT_NAME}"
+  WriteRegStr SHCTX "$0\Capabilities" "ApplicationIcon" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHCTX "$0\Capabilities\URLAssociations" "http" "${PRODUCT_NAME}URL"
+  WriteRegStr SHCTX "$0\Capabilities\URLAssociations" "https" "${PRODUCT_NAME}URL"
+  WriteRegStr SHCTX "Software\RegisteredApplications" "${PRODUCT_NAME}" "$0\Capabilities"
+  WriteRegStr SHCTX "Software\Classes\${PRODUCT_NAME}URL" "" "${PRODUCT_NAME} URL"
+  WriteRegStr SHCTX "Software\Classes\${PRODUCT_NAME}URL" "URL Protocol" ""
+  WriteRegStr SHCTX "Software\Classes\${PRODUCT_NAME}URL\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHCTX "Software\Classes\${PRODUCT_NAME}URL\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" -- "%1"'
+  ; Tells Windows that the registered applications changed.
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
+; Removes the registration, but not when an update replaces the installed version.
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    DeleteRegKey SHCTX "Software\Clients\StartMenuInternet\${PRODUCT_NAME}"
+    DeleteRegValue SHCTX "Software\RegisteredApplications" "${PRODUCT_NAME}"
+    DeleteRegKey SHCTX "Software\Classes\${PRODUCT_NAME}URL"
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  ${endIf}
+!macroend

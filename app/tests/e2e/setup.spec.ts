@@ -34,6 +34,11 @@ test('guides a new profile through its look, tabs and search engine', async () =
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: 'Bring your bookmarks along' })).toBeVisible();
     await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Blocker and default browser' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: /^Block ads and trackers/ })).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Make default' })).toBeVisible();
+    await page.getByRole('switch', { name: /^Block ads and trackers/ }).uncheck();
+    await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: 'You are all set' })).toBeVisible();
     await clickAway(page, 'Start browsing');
     const newTab = await waitForPage(browser, (url) => url.startsWith('app://newtab'));
