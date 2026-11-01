@@ -29,7 +29,10 @@ export default defineConfig({
     },
     build: {
       outDir: 'out/main',
-      lib: { entry: 'src/main/index.ts', formats: ['es'] },
+      lib: {
+        entry: { index: 'src/main/index.ts', 'data-service': 'src/main/data-service.ts' },
+        formats: ['es'],
+      },
       rollupOptions: { output: { comments } },
     },
   },
@@ -64,6 +67,7 @@ export default defineConfig({
           newtab: resolve(import.meta.dirname, 'src/ui/newtab/index.html'),
           settings: resolve(import.meta.dirname, 'src/ui/settings/index.html'),
           setup: resolve(import.meta.dirname, 'src/ui/setup/index.html'),
+          history: resolve(import.meta.dirname, 'src/ui/history/index.html'),
         },
         output: { comments },
       },

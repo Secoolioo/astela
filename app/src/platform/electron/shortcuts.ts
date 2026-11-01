@@ -11,7 +11,8 @@ export type WindowCommand =
   | 'page.back'
   | 'page.forward'
   | 'omnibox.focus'
-  | 'settings.open';
+  | 'settings.open'
+  | 'history.open';
 
 // The tables write a key press as `Modifiers+Key`: the modifiers in the order Ctrl, Alt,
 // Shift, Cmd (the meta key: Command on macOS, Windows or Super elsewhere), then the key as
@@ -40,6 +41,7 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Cmd+]', 'page.forward'],
   ['Cmd+L', 'omnibox.focus'],
   ['Cmd+,', 'settings.open'],
+  ['Cmd+Y', 'history.open'],
 ]);
 
 /**
@@ -69,6 +71,7 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+L', 'omnibox.focus'],
   ['Alt+D', 'omnibox.focus'],
   ['F6', 'omnibox.focus'],
+  ['Ctrl+H', 'history.open'],
 ]);
 
 /**

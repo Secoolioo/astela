@@ -70,6 +70,8 @@ export interface BrowserWindowOptions {
   readonly tabStripPosition: () => TabStripPosition;
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
   readonly blocking: (url: string) => 'on' | 'off' | 'none';
+  /** Called when a tab shows a web page, and again when its title changes. */
+  readonly onVisit?: (url: string, title: string, titleOnly: boolean) => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -383,6 +385,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       case 'settings.open':
         this.openPage('settings');
         break;
+      case 'history.open':
+        this.openPage('history');
+        break;
     }
   }
 
@@ -473,6 +478,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       });
     }
     const sync = (): void => this.sync(id, contents);
+    if (page === undefined) {
+      contents.on('did-navigate', (_event, address) => {
+        if (/^https?:/i.test(address)) this.options.onVisit?.(address, contents.getTitle(), false);
+      });
+      contents.on('page-title-updated', (_event, title) => {
+        const address = contents.getURL();
+        if (/^https?:/i.test(address)) this.options.onVisit?.(address, title, true);
+      });
+    }
     // The count of blocked requests belongs to one page.
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {

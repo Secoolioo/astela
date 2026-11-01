@@ -18,5 +18,6 @@
   "menu.settings": "&Einstellungen",
   "menu.blockedCount": "Auf dieser Seite blockiert: {count}",
   "menu.blockOnSite": "Werbung auf {site} &blockieren",
-  "menu.blockerSettings": "&Einstellungen des Blockers"
+  "menu.blockerSettings": "&Einstellungen des Blockers",
+  "menu.history": "&Verlauf"
 }

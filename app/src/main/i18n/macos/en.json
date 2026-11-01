@@ -18,5 +18,6 @@
   "menu.settings": "Settings…",
   "menu.blockedCount": "Blocked on This Page: {count}",
   "menu.blockOnSite": "Block Ads on {site}",
-  "menu.blockerSettings": "Content Blocker Settings…"
+  "menu.blockerSettings": "Content Blocker Settings…",
+  "menu.history": "History"
 }

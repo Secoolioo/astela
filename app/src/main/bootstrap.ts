@@ -64,6 +64,8 @@ import {
 import { connectSetupGuide } from './setup-guide.ts';
 import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
+import { connectHistoryPage } from './history-page.ts';
+import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
 import { checkBoot } from './boot.ts';
@@ -83,6 +85,8 @@ export interface BundleLayout {
   readonly blockerDir: string;
   /** Path of the content blocker's preload for the frames of web pages. */
   readonly framePreload: string;
+  /** Path of the data service's entry. */
+  readonly dataService: string;
   /** Dev server URL of the shell, only during development. */
   readonly devShellUrl: string | undefined;
 }
@@ -177,6 +181,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
   hardenSession(internal);
+  const data = new DataServiceClient(
+    layout.dataService,
+    join(userData, 'profile.db'),
+    logger.child('data'),
+  );
   // Every request of web content passes the request pipeline; the content blocker is its
   // first step. Its engine loads with the first web page.
   const pipeline = new RequestPipeline();
@@ -262,6 +271,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     appearanceArgument: () => appearance.argument,
     tabStripPosition: () => settings.get(TabStripPositionSetting),
     blocking,
+    // The history records every web page a tab shows; the data service starts with it.
+    onVisit: (url, title, titleOnly) => {
+      const call = titleOnly
+        ? data.call('setTitle', url, title)
+        : data.call('addVisit', url, title);
+      call.catch((error: unknown) => logger.warn('History not saved', { error: String(error) }));
+    },
     gate,
     router,
     logger,
@@ -276,6 +292,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerShellHandlers(router, windows, searchTemplate);
   registerNewTabHandlers(router, windows, searchTemplate);
   connectSettingsPage(router, settings, coreSettings, internal);
+  connectHistoryPage(router, data, windows);
   connectSetupGuide(router, windows);
   const shellSettings = new Set([
     TabStripPositionSetting.key,
@@ -400,6 +417,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     });
     void lifecycle.shutdown('quit').then(() => {
       windows.dispose();
+      data.dispose();
       updates?.installOnExit();
       updates?.dispose();
       logger.info('Shutdown complete');
