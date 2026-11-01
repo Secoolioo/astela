@@ -1,11 +1,12 @@
 import type * as v from 'valibot';
 
 /**
- * What a view is allowed to call. Each view type gets only the capabilities it needs:
- * the shell gets `shell`, the overlay `overlay`, and internal pages `page:<name>`, such as
- * `page:settings`.
+ * What a view is allowed to call or receive. Each view type gets only the capabilities it
+ * needs: the shell gets `shell`, the overlay `overlay`, and internal pages `page:<name>`,
+ * such as `page:settings`. Every view of the browser's own UI gets `appearance`, the
+ * events that restyle it.
  */
-export type Capability = 'shell' | 'overlay' | `page:${string}`;
+export type Capability = 'shell' | 'overlay' | 'appearance' | `page:${string}`;
 
 /** A request-response channel between a renderer and the browser process. */
 export interface RequestContract<Req, Res> {

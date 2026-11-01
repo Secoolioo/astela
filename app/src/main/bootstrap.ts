@@ -22,7 +22,7 @@ import {
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
-import { engineForSearchUrl } from '../domain/search/search-engines.ts';
+import { engineForSearchUrl } from '../shared/search-engines.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
@@ -45,6 +45,7 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import { SearchUrlTemplate, coreSettings } from './core-settings.ts';
+import { AppearanceController } from './appearance.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
@@ -122,11 +123,26 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     return;
   }
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate(macMenu()) : null);
+  // User settings load while Electron starts; the first window waits for them, because its
+  // colors and sizes come from them.
+  const store = new JsonFileSettingsStore(
+    join(userData, 'settings.json'),
+    join(userData, 'settings.rejected.json'),
+    clock,
+  );
+  const settings = new SettingsService(coreSettings, policies, store, logger);
+  const settingsLoaded = settings
+    .load()
+    .catch((error: unknown) => logger.error('Settings could not be loaded; defaults apply', error))
+    .then(() => {
+      marks['settings'] = Math.round(performance.now());
+    });
 
   await app.whenReady();
   marks['ready'] = Math.round(performance.now());
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
+  await settingsLoaded;
   const lifecycle = new Lifecycle(logger, clock, {});
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
@@ -167,19 +183,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     }
     return;
   }
-  const store = new JsonFileSettingsStore(
-    join(userData, 'settings.json'),
-    join(userData, 'settings.rejected.json'),
-    clock,
-  );
-  const settings = new SettingsService(coreSettings, policies, store, logger);
-  // The first window does not need user settings to appear, so they load alongside it.
-  const settingsLoaded = settings
-    .load()
-    .catch((error: unknown) => logger.error('Settings could not be loaded; defaults apply', error))
-    .then(() => {
-      marks['settings'] = Math.round(performance.now());
-    });
   const searchTemplate = async (): Promise<string> => {
     await settingsLoaded;
     return settings.get(SearchUrlTemplate);
@@ -197,6 +200,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The context menu failed', error));
   };
 
+  const appearance = new AppearanceController(settings, router, internal, () =>
+    windows.repaintBackgrounds(),
+  );
   const windows = new WindowManager({
     shellUrl: layout.devShellUrl ?? 'app://shell/',
     shellOrigin:
@@ -206,7 +212,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     internalPartition,
     webPartition,
     newTabUrl,
-    backgroundColor: windowBackground(),
+    backgroundColor: windowBackground,
+    appearanceArgument: () => appearance.argument,
     gate,
     router,
     logger,

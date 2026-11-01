@@ -1,7 +1,7 @@
 import { chromium, type Browser as CdpBrowser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -161,9 +161,20 @@ function waitForLine(child: ChildProcess, pattern: RegExp): Promise<RegExpExecAr
  * the self-test report announces. `E2E_APP` points to a packaged test build; without it,
  * the development build in `out/` is started with the local Electron.
  * @param extraArgs - Further command line switches, such as a device scale factor.
+ * @param options - User settings to store in the profile before the browser starts.
  */
-export async function launch(extraArgs: readonly string[] = []): Promise<Browser> {
+export async function launch(
+  extraArgs: readonly string[] = [],
+  options: { readonly settings?: Readonly<Record<string, unknown>> } = {},
+): Promise<Browser> {
   const profile = mkdtempSync(join(tmpdir(), 'e2e-profile-'));
+  if (options.settings !== undefined) {
+    mkdirSync(join(profile, 'data'), { recursive: true });
+    writeFileSync(
+      join(profile, 'data', 'settings.json'),
+      JSON.stringify({ $schemaVersion: 1, user: options.settings }),
+    );
+  }
   const report = join(profile, 'ready.json');
   const args = [
     '--inspect=0',

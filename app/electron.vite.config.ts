@@ -36,6 +36,8 @@ export default defineConfig({
   preload: {
     define,
     build: {
+      // Sandboxed preloads cannot load other files, so each one bundles what it imports.
+      isolatedEntries: true,
       outDir: 'out/preload',
       rollupOptions: {
         input: { shell: 'src/preload/shell.ts', page: 'src/preload/page.ts' },

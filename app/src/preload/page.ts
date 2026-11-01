@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { applyAppearance } from './appearance.ts';
 
 const scopeArgument = process.argv.find((arg) => arg.startsWith('--bridge-scope='));
 const scope = scopeArgument?.slice('--bridge-scope='.length) ?? '';
+applyAppearance();
 
 /**
  * Bridge for internal pages. Each page may only call the channels of its own scope, such as
