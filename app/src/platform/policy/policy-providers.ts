@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
@@ -13,13 +13,18 @@ import type { PolicyCache } from '../../domain/policy/policy-service.ts';
 import { parsePlist } from './plist.ts';
 import { parseRegistryExport, registryPolicies } from './registry-export.ts';
 
-/** Synchronous system access used by the policy providers; replaced by fakes in tests. */
+/** The outcome of a program that a policy provider ran. */
+export interface RunResult {
+  readonly status: number | null;
+  readonly stdout: string;
+}
+
+/** System access used by the policy providers; replaced by fakes in tests. */
 export interface PolicyIo {
   /** Runs a program and waits for it. */
-  run(
-    command: string,
-    args: readonly string[],
-  ): { readonly status: number | null; readonly stdout: string };
+  run(command: string, args: readonly string[]): RunResult;
+  /** Runs a program without blocking. Never rejects. */
+  runAsync(command: string, args: readonly string[]): Promise<RunResult>;
   /** Reads a file, or returns `undefined` if it does not exist. */
   readFile(path: string): Uint8Array | undefined;
   /** Lists a directory, or returns `undefined` if it does not exist. */
@@ -35,6 +40,19 @@ export const nodePolicyIo: PolicyIo = {
   run(command, args) {
     const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true, timeout: 5000 });
     return { status: result.status, stdout: result.stdout ?? '' };
+  },
+  runAsync(command, args) {
+    return new Promise((done) => {
+      execFile(
+        command,
+        [...args],
+        { encoding: 'utf8', windowsHide: true, timeout: 5000 },
+        (error, stdout) => {
+          const code = typeof error?.code === 'number' ? error.code : null;
+          done({ status: error === null ? 0 : code, stdout });
+        },
+      );
+    });
   },
   readFile(path) {
     try {
@@ -82,31 +100,62 @@ export class WindowsRegistryPolicyProvider implements PolicyProvider {
   }
 
   load(): PolicyReadResult {
-    const values: RawPolicyValue[] = [];
-    const errors: PolicyReadError[] = [];
-    for (const [hive, scope] of hives) {
-      const file = this.io.tempFile(`policies-${hive}.reg`);
-      try {
-        // Exit code 1 means that the key does not exist, which is the normal case.
-        const { status } = this.io.run('reg', ['export', `${hive}\\${this.root}`, file, '/y']);
-        if (status !== 0) {
-          continue;
+    return combine(
+      hives.map(([hive, scope]) => {
+        const file = this.io.tempFile(`policies-${hive}.reg`);
+        try {
+          return this.read(hive, scope, file, this.io.run('reg', this.exportArgs(hive, file)));
+        } finally {
+          this.io.remove(file);
         }
-        const bytes = this.io.readFile(file);
-        if (bytes === undefined) {
-          errors.push({ source: hive, message: 'The registry export was not written' });
-          continue;
-        }
-        const text = new TextDecoder('utf-16le').decode(bytes);
-        const result = registryPolicies(parseRegistryExport(text), this.root, scope);
-        values.push(...result.values);
-        errors.push(...result.errors);
-      } finally {
-        this.io.remove(file);
-      }
-    }
-    return { values, errors };
+      }),
+    );
   }
+
+  /** Exports both hives at the same time instead of one after the other. */
+  async loadAsync(): Promise<PolicyReadResult> {
+    return combine(
+      await Promise.all(
+        hives.map(async ([hive, scope]) => {
+          const file = this.io.tempFile(`policies-${hive}.reg`);
+          try {
+            const run = await this.io.runAsync('reg', this.exportArgs(hive, file));
+            return this.read(hive, scope, file, run);
+          } finally {
+            this.io.remove(file);
+          }
+        }),
+      ),
+    );
+  }
+
+  private exportArgs(hive: string, file: string): string[] {
+    return ['export', `${hive}\\${this.root}`, file, '/y'];
+  }
+
+  private read(hive: string, scope: PolicyScope, file: string, run: RunResult): PolicyReadResult {
+    // Exit code 1 means that the key does not exist, which is the normal case.
+    if (run.status !== 0) {
+      return { values: [], errors: [] };
+    }
+    const bytes = this.io.readFile(file);
+    if (bytes === undefined) {
+      return {
+        values: [],
+        errors: [{ source: hive, message: 'The registry export was not written' }],
+      };
+    }
+    const text = new TextDecoder('utf-16le').decode(bytes);
+    return registryPolicies(parseRegistryExport(text), this.root, scope);
+  }
+}
+
+/** Joins the results of several reads in order. */
+function combine(results: readonly PolicyReadResult[]): PolicyReadResult {
+  return {
+    values: results.flatMap((result) => result.values),
+    errors: results.flatMap((result) => result.errors),
+  };
 }
 
 /**
@@ -131,43 +180,70 @@ export class MacManagedPreferencesPolicyProvider implements PolicyProvider {
   }
 
   load(): PolicyReadResult {
-    const values: RawPolicyValue[] = [];
-    const errors: PolicyReadError[] = [];
-    const files: readonly [string, PolicyScope][] = [
+    return combine(
+      this.files().map(([path, scope]) =>
+        this.read(path, scope, this.io.run('plutil', plutilArgs(path))),
+      ),
+    );
+  }
+
+  /** Converts both files at the same time. */
+  async loadAsync(): Promise<PolicyReadResult> {
+    return combine(
+      await Promise.all(
+        this.files().map(async ([path, scope]) =>
+          this.read(path, scope, await this.io.runAsync('plutil', plutilArgs(path))),
+        ),
+      ),
+    );
+  }
+
+  /** The profiles that exist, so that missing ones cost no process start. */
+  private files(): [string, PolicyScope][] {
+    const files: [string, PolicyScope][] = [
       [`/Library/Managed Preferences/${this.bundleId}.plist`, 'machine'],
       [`/Library/Managed Preferences/${this.userName}/${this.bundleId}.plist`, 'user'],
     ];
-    for (const [path, scope] of files) {
-      if (this.io.readFile(path) === undefined) {
-        continue;
-      }
-      // XML instead of JSON, because <date> and <data> values cannot be converted to JSON.
-      const { status, stdout } = this.io.run('plutil', ['-convert', 'xml1', '-o', '-', path]);
-      if (status !== 0) {
-        errors.push({ source: path, message: 'plutil could not read the file' });
-        continue;
-      }
-      try {
-        const root = parsePlist(stdout);
-        if (
-          typeof root !== 'object' ||
-          root === null ||
-          Array.isArray(root) ||
-          root instanceof Date ||
-          root instanceof Uint8Array
-        ) {
-          errors.push({ source: path, message: 'The property list is not a dictionary' });
-          continue;
-        }
-        for (const [name, value] of Object.entries(root)) {
-          values.push({ name, value, level: 'mandatory', scope, source: path });
-        }
-      } catch (error) {
-        errors.push({ source: path, message: String(error) });
-      }
-    }
-    return { values, errors };
+    return files.filter(([path]) => this.io.readFile(path) !== undefined);
   }
+
+  private read(path: string, scope: PolicyScope, run: RunResult): PolicyReadResult {
+    if (run.status !== 0) {
+      return { values: [], errors: [{ source: path, message: 'plutil could not read the file' }] };
+    }
+    try {
+      const root = parsePlist(run.stdout);
+      if (
+        typeof root !== 'object' ||
+        root === null ||
+        Array.isArray(root) ||
+        root instanceof Date ||
+        root instanceof Uint8Array
+      ) {
+        return {
+          values: [],
+          errors: [{ source: path, message: 'The property list is not a dictionary' }],
+        };
+      }
+      return {
+        values: Object.entries(root).map(([name, value]) => ({
+          name,
+          value,
+          level: 'mandatory',
+          scope,
+          source: path,
+        })),
+        errors: [],
+      };
+    } catch (error) {
+      return { values: [], errors: [{ source: path, message: String(error) }] };
+    }
+  }
+}
+
+/** XML instead of JSON, because `<date>` and `<data>` values cannot be converted to JSON. */
+function plutilArgs(path: string): string[] {
+  return ['-convert', 'xml1', '-o', '-', path];
 }
 
 /**

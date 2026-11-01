@@ -64,3 +64,4 @@ Each rejected option as a bullet point with a short reason.
 | [0022](0022-test-strategy.md)                            | Test strategy                                     |
 | [0023](0023-internationalization.md)                     | Internationalization                              |
 | [0024](0024-icons-and-typography.md)                     | Icons and typography                              |
+| [0025](0025-read-policies-while-electron-starts.md)      | Read policies while Electron starts               |

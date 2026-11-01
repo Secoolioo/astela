@@ -65,9 +65,10 @@ const webPartition = 'persist:default';
 const blankUrl = 'about:blank';
 
 /**
- * Starts the browser. The order matters for start-up time and safety: schemes and
- * policies before `ready`, sessions hardened before any view exists, the window as early
- * as possible, everything else after the first paint.
+ * Starts the browser. The order matters for start-up time and safety: schemes and the
+ * last known policies before `ready`, fresh policies before the window, sessions hardened
+ * before any view exists, the window as early as possible, everything else after the
+ * first paint.
  * @param layout - Where the bundled files are.
  */
 export async function bootstrap(layout: BundleLayout): Promise<void> {
@@ -96,15 +97,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     safeMode,
   });
 
-  // Policies are read synchronously before ready, because some become Chromium switches.
+  // Until the sources have been read, policies apply as the last start left them, so the
+  // read runs while Electron starts. Only a start without that state waits for the read.
   const policies = new PolicyService(
     [...settingPolicies(coreSettings), ...updatePolicies],
     createPolicyProviders(brand, process.platform),
     logger,
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
   );
-  policies.refresh();
-  marks['policies'] = Math.round(performance.now());
+  const freshPolicies = policies.applyCached()
+    ? policies.refreshAsync()
+    : Promise.resolve(policies.refresh());
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -120,6 +123,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
 
   await app.whenReady();
   marks['ready'] = Math.round(performance.now());
+  await freshPolicies;
+  marks['policies'] = Math.round(performance.now());
   const lifecycle = new Lifecycle(logger, clock, {});
   const protocolHandler = new AppProtocol(layout.rendererDir, new Set(['shell', 'sandbox-help']));
   const internal = session.fromPartition(internalPartition);
@@ -238,7 +243,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The update service failed to start', error));
   });
 
-  const refreshPolicies = (): void => void policies.refresh();
+  const refreshPolicies = (): void => void policies.refreshAsync();
   app.on('browser-window-focus', refreshPolicies);
   const timer = setInterval(refreshPolicies, 15 * 60 * 1000);
   timer.unref();

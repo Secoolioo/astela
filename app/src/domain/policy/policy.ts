@@ -46,15 +46,16 @@ export interface PolicyReadResult {
 }
 
 /**
- * Reads policies from one platform source. `load` is synchronous on purpose: policies
- * are read before the browser is ready, because some of them become command line
- * switches that Chromium only reads at startup.
+ * Reads policies from one platform source. A provider whose source is slow to read, such
+ * as the Windows registry, also reads asynchronously, so the browser can start meanwhile.
  */
 export interface PolicyProvider {
   /** Name for diagnostics, such as `windows-registry`. */
   readonly name: string;
   /** Reads all policy values. Must not throw; problems are returned as errors. */
   load(): PolicyReadResult;
+  /** Reads like {@link load} without blocking the caller. Must not reject. */
+  loadAsync?(): Promise<PolicyReadResult>;
 }
 
 /** Token for the list of {@link PolicyProvider}s of the current platform. */

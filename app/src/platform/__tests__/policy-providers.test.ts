@@ -138,6 +138,12 @@ class FakeIo implements PolicyIo {
     }
     return output ?? { status: 1, stdout: '' };
   }
+  runAsync(
+    command: string,
+    args: readonly string[],
+  ): Promise<{ status: number | null; stdout: string }> {
+    return Promise.resolve(this.run(command, args));
+  }
   readFile(path: string): Uint8Array | undefined {
     return this.files.get(path);
   }
@@ -188,6 +194,25 @@ describe('WindowsRegistryPolicyProvider', () => {
       { source: 'HKLM', message: 'The registry export was not written' },
     ]);
   });
+
+  it('reads asynchronously with the same result', async () => {
+    const io = new FakeIo();
+    io.outputs[`reg export HKLM\\${root}`] = {
+      status: 0,
+      stdout: '',
+      writes: encodeUtf16(registryExport),
+    };
+    io.outputs[`reg export HKCU\\${root}`] = { status: 0, stdout: '' };
+    const provider = new WindowsRegistryPolicyProvider(io, root);
+    const result = await provider.loadAsync();
+    expect(io.commands).toHaveLength(2);
+    expect(result).toEqual(provider.load());
+    expect(result.errors.at(-1)).toEqual({
+      source: 'HKCU',
+      message: 'The registry export was not written',
+    });
+    expect(io.files.size).toBe(0);
+  });
 });
 
 describe('MacManagedPreferencesPolicyProvider', () => {
@@ -230,6 +255,23 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     expect(errors.map((e) => e.message)).toEqual([
       'plutil could not read the file',
       'PlistError: Missing <plist> element',
+    ]);
+  });
+
+  it('reads asynchronously with the same result and skips missing profiles', async () => {
+    const io = new FakeIo();
+    const machine = '/Library/Managed Preferences/b.plist';
+    io.files.set(machine, new Uint8Array([1]));
+    io.outputs[`plutil -convert xml1 -o - ${machine}`] = {
+      status: 0,
+      stdout: '<plist><dict><key>UpdatePolicy</key><integer>2</integer></dict></plist>',
+    };
+    const provider = new MacManagedPreferencesPolicyProvider(io, 'b', 'u');
+    const result = await provider.loadAsync();
+    expect(io.commands).toEqual([`plutil -convert xml1 -o - ${machine}`]);
+    expect(result).toEqual(provider.load());
+    expect(result.values.map((v) => [v.name, v.value, v.scope])).toEqual([
+      ['UpdatePolicy', 2, 'machine'],
     ]);
   });
 });
@@ -290,5 +332,19 @@ describe('Node adapters', () => {
       stdout: 'hi',
     });
     nodePolicyIo.remove(join(dir, 'missing'));
+  });
+
+  it('runs programs without blocking', async () => {
+    expect(
+      await nodePolicyIo.runAsync(process.execPath, ['-e', 'process.stdout.write("hi")']),
+    ).toEqual({
+      status: 0,
+      stdout: 'hi',
+    });
+    expect(await nodePolicyIo.runAsync(process.execPath, ['-e', 'process.exit(3)'])).toEqual({
+      status: 3,
+      stdout: '',
+    });
+    expect((await nodePolicyIo.runAsync(join(tmpdir(), 'no-such-program'), [])).status).toBeNull();
   });
 });

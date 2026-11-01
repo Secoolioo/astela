@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0025](0025-read-policies-while-electron-starts.md) supersedes the timing: policies are read while Electron starts.
 
 ## Date
 

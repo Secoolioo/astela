@@ -76,7 +76,7 @@ The M1 acceptance criteria and the settings, policy and theme design add these t
 - Full-text history search answers in less than 50 ms with 100,000 entries.
 - Address bar suggestions from history, bookmarks and open tabs appear in less than 30 ms.
 - A change in the theme editor is visible in less than 100 ms; switching a workspace theme is a token swap within one frame.
-- Reading policies before `app.whenReady()` takes no more than 60 ms (see [settings, policies and themes](settings-policy-theme.md)).
+- Reading policies does not block the start: the last known policies apply before `app.whenReady()`, and the sources are read while Electron starts (see [settings, policies and themes](settings-policy-theme.md) and [ADR 0025](../adr/0025-read-policies-while-electron-starts.md)). Read synchronously, they took 51 ms of the warm start on Windows (median, 2026-11-01).
 
 ## Measurement method
 

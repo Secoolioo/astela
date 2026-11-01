@@ -154,4 +154,40 @@ describe('PolicyService', () => {
     expect(write).toHaveBeenCalledWith([value('UpdatePolicy', 2)]);
     policies.dispose();
   });
+
+  it('applies cached values until a fresh read is done', async () => {
+    const write = vi.fn();
+    const cache: PolicyCache = { read: () => [value('UpdatePolicy', 0)], write };
+    const { policies, provider } = service(cache);
+    expect(policies.applyCached()).toBe(true);
+    expect(policies.getMandatory('UpdatePolicy')?.value).toBe(0);
+    provider.result = { values: [value('UpdatePolicy', 2)], errors: [] };
+    expect(await policies.refreshAsync()).toEqual(['UpdatePolicy']);
+    expect(policies.getMandatory('UpdatePolicy')?.value).toBe(2);
+    expect(write).toHaveBeenCalledWith([value('UpdatePolicy', 2)]);
+    expect(service().policies.applyCached()).toBe(false);
+  });
+
+  it('reads asynchronous providers together and shares a running read', async () => {
+    const sync = new FakeProvider();
+    sync.result = { values: [value('UpdatePolicy', 1)], errors: [] };
+    const reads: Array<(result: PolicyReadResult) => void> = [];
+    const slow: PolicyProvider = {
+      name: 'slow',
+      load: () => ({ values: [], errors: [] }),
+      loadAsync: () => new Promise((done) => reads.push(done)),
+    };
+    const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' });
+    const policies = new PolicyService([UpdatePolicy, Homepage], [sync, slow], logger);
+    const first = policies.refreshAsync();
+    const second = policies.refreshAsync();
+    expect(second).toBe(first);
+    expect(reads).toHaveLength(1);
+    expect(policies.getMandatory('UpdatePolicy')).toBeUndefined();
+    reads[0]?.({ values: [value('HomepageLocation', 'https://intranet.example/')], errors: [] });
+    expect(await first).toEqual(['UpdatePolicy', 'HomepageLocation']);
+    void policies.refreshAsync();
+    expect(reads).toHaveLength(2);
+    policies.dispose();
+  });
 });
