@@ -94,6 +94,8 @@ Implemented for the shell and the internal pages:
 - **Router** (`app/src/platform/electron/ipc-gate.ts`, `ipc-router.ts`): every message passes the checks above in order (registered sender, main frame, origin, capability, schema, then a token-bucket rate limit). Rejected messages are logged locally and never reach a handler.
 - **Bridges** (`app/src/preload/`): the shell bridge exposes only `invoke` and `on` for its allow-listed channels; the page bridge is scoped by a capability given on its command line.
 - **State:** the shell receives one state snapshot per change, batched within 16 ms.
+- **Settings page:** the capability `page:settings` with `settings.getAll`, `settings.set` and the event `settings.changed` (`app/src/shared/ipc/settings-contracts.ts`). The page bridge offers `on` for the events of the page's own scope; the browser process sends an event only to views that have its capability.
+- **Appearance:** every view of the browser's own UI has the capability `appearance`; its preload, not the page, receives `appearance.changed` with the style sheet of design tokens.
 - **New tab page:** the capability `page:newtab` with `newtab.getState`, which names the search engine, and `newtab.navigate`, which opens a search or an address in the page's own tab (`app/src/shared/ipc/newtab-contracts.ts`).
 
 Not implemented yet: the overlay bridge, property-based tests of every contract, and the typed client generated from the contracts.

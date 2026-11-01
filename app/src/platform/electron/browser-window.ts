@@ -14,7 +14,7 @@ import {
   type ShellState,
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import { tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
+import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import type { IpcGate } from './ipc-gate.ts';
@@ -338,6 +338,26 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
         break;
+      case 'settings.open':
+        this.openPage('settings');
+        break;
+    }
+  }
+
+  /**
+   * Shows an internal page: the tab that already shows it, or else the active tab if it
+   * shows the new tab page, or else a new tab.
+   * @param page - The page.
+   */
+  openPage(page: TabPage): void {
+    const open = this.tabs.all.find((tab) => tabPageOf(tab.url) === page);
+    const active = this.tabs.active;
+    if (open !== undefined) {
+      this.tabs.activate(open.id);
+    } else if (active !== undefined && active.url === this.options.newTabUrl) {
+      this.tabs.navigate(active.id, pageUrl(page));
+    } else {
+      this.tabs.open(pageUrl(page));
     }
   }
 

@@ -13,5 +13,7 @@
   "contextMenu.selectAll": "Alles a&uswählen",
   "contextMenu.back": "&Zurück",
   "contextMenu.forward": "&Vorwärts",
-  "contextMenu.reload": "&Neu laden"
+  "contextMenu.reload": "&Neu laden",
+  "menu.newTab": "Neuer &Tab",
+  "menu.settings": "&Einstellungen"
 }
