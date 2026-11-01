@@ -24,6 +24,7 @@ import {
   type Logger,
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
+import { linksFromArguments } from '../domain/navigation/links.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
 import { blockingFor, siteOf, toggleSite, type Blocking } from '../domain/blocker/blocking.ts';
@@ -104,6 +105,13 @@ const webPartition = 'persist:default';
  * @param layout - Where the bundled files are.
  */
 export async function bootstrap(layout: BundleLayout): Promise<void> {
+  // macOS hands over links from other apps as events, also before the first window exists.
+  const pendingLinks: string[] = [];
+  let openLinks = (links: readonly string[]): void => void pendingLinks.push(...links);
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    openLinks(linksFromArguments([url]));
+  });
   // Milliseconds since process start at each step, for the self-test report.
   const marks: Record<string, number> = { main: Math.round(performance.now()) };
   // Wall-clock time at which these milliseconds start, to add the shell page's own timing.
@@ -366,10 +374,19 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     !showSetup && settings.get(StartupSetting) === 'restore'
       ? parseSession(await savedSession)
       : undefined;
+  // Links from other apps open in tabs; a start without a session or the guide shows only them.
+  const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
   const first =
     lastSession === undefined
-      ? windows.open(showSetup ? pageUrl('setup') : undefined)
+      ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
       : windows.restore(lastSession);
+  openLinks = (links) => {
+    const target =
+      windows.all.find((w) => w.window.isFocused()) ?? windows.all[0] ?? windows.open();
+    for (const url of links) target.tabs.open(url);
+    if (links.length > 0 && !target.window.isDestroyed()) target.window.focus();
+  };
+  openLinks(startLinks);
   // The session follows every change of tabs and windows; an empty one, after the last window
   // closed, is not kept, so the next start restores that window.
   windows.onDidChange(() => {
@@ -420,7 +437,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const timer = setInterval(refreshPolicies, 15 * 60 * 1000);
   timer.unref();
 
-  app.on('second-instance', () => windows.all[0]?.window.focus() ?? windows.open());
+  // A second start, such as a link from another app, opens its links in this browser.
+  app.on('second-instance', (_event, argv) => {
+    const links = linksFromArguments(argv.slice(1));
+    if (links.length > 0) openLinks(links);
+    else if (windows.all[0] === undefined) windows.open();
+    else windows.all[0].window.focus();
+  });
   app.on('activate', () => {
     if (windows.all.length === 0) windows.open();
   });

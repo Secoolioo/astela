@@ -209,7 +209,8 @@ export async function launch(
     ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
     ...extraArgs,
   ];
-  if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
+  // Switches go first: after --, the browser takes every argument as a link.
+  if (process.platform === 'linux' && process.getuid?.() === 0) args.unshift('--no-sandbox');
   const packaged = process.env['E2E_APP'];
   const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
   const spawnOptions = {
@@ -391,4 +392,35 @@ export async function clickHistoryButton(
     await session.send('Input.dispatchMouseEvent', { type, ...point, button, clickCount: 1 });
   }
   await session.detach();
+}
+
+/**
+ * Starts the browser a second time with the profile of a running one, as another app does
+ * to open a link, and waits until that start has handed over and quit.
+ * @param browser - The running browser.
+ * @param args - Arguments of the second start, such as the link.
+ * @returns The exit code of the second start.
+ */
+export async function startAgain(
+  browser: Browser,
+  args: readonly string[],
+): Promise<number | null> {
+  const all = [`--user-data-dir=${join(browser.profile, 'data')}`, ...args];
+  if (process.platform === 'linux' && process.getuid?.() === 0) all.unshift('--no-sandbox');
+  const packaged = process.env['E2E_APP'];
+  const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
+  const child =
+    packaged === undefined
+      ? spawn(electronPath, [appDir, ...all], { stdio: 'ignore' })
+      : spawn(packaged, all, { stdio: 'ignore' });
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    new Promise<number | null>((done) => child.once('exit', (code) => done(code))),
+    new Promise<never>((_, fail) => {
+      timer = setTimeout(() => {
+        child.kill();
+        fail(new Error('The second start did not quit within 30 seconds'));
+      }, 30_000);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
