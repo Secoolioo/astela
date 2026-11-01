@@ -17,21 +17,65 @@ export class AppShell extends LitElement {
 
   /** Styles of the shell, scoped to its shadow root. */
   static override styles = css`
+    /*
+     * The shell fills the window; the page covers the content area, whose position tells the
+     * browser where the page goes. The tab strip sits above or below the toolbar and page,
+     * or as a vertical list at a side.
+     */
     :host {
-      display: block;
       position: fixed;
-      inset: 0 0 auto 0;
+      inset: 0;
+      display: grid;
+      grid-template: 'tabs' auto 'nav' auto 'content' 1fr / 1fr;
       background: var(--surface-0);
-      border-bottom: 1px solid var(--border-1);
       user-select: none;
     }
+    :host([data-tabs='bottom']) {
+      grid-template: 'nav' auto 'content' 1fr 'tabs' auto / 1fr;
+    }
+    :host([data-tabs='left']) {
+      grid-template: 'nav nav' auto 'tabs content' 1fr / var(--sidebar-width, 240px) 1fr;
+    }
+    :host([data-tabs='right']) {
+      grid-template: 'nav nav' auto 'content tabs' 1fr / 1fr var(--sidebar-width, 240px);
+    }
+    .content {
+      grid-area: content;
+    }
     [role='tablist'] {
+      grid-area: tabs;
       display: flex;
       gap: var(--space-1);
+      min-width: 0;
       height: var(--tab-height);
       padding: var(--space-1) var(--space-2) 0;
       overflow-x: auto;
       scrollbar-width: none;
+    }
+    :host([data-tabs='bottom']) [role='tablist'] {
+      padding: 0 var(--space-2) var(--space-1);
+      border-top: 1px solid var(--border-1);
+    }
+    [aria-orientation='vertical'] {
+      flex-direction: column;
+      height: auto;
+      min-height: 0;
+      padding: var(--space-2);
+      overflow: hidden auto;
+    }
+    :host([data-tabs='left']) [role='tablist'] {
+      border-right: 1px solid var(--border-1);
+    }
+    :host([data-tabs='right']) [role='tablist'] {
+      border-left: 1px solid var(--border-1);
+    }
+    [aria-orientation='vertical'] .tab {
+      flex: none;
+      height: var(--tab-height);
+      border-radius: var(--radius-1);
+    }
+    :host([data-tabs='bottom']) .tab {
+      border-radius: 0 0 var(--radius-1) var(--radius-1);
     }
     .tab {
       display: flex;
@@ -94,6 +138,8 @@ export class AppShell extends LitElement {
       height: 24px;
     }
     nav {
+      grid-area: nav;
+      border-bottom: 1px solid var(--border-1);
       display: flex;
       align-items: center;
       gap: var(--space-1);
@@ -135,10 +181,12 @@ export class AppShell extends LitElement {
   private unsubscribers: (() => void)[] = [];
   /** The active tab that the shell last handled focus for. */
   private focusedTabId: string | undefined;
+  /** The insets last sent to the browser. */
+  private reportedInsets = '';
 
   constructor() {
     super();
-    this.state = { tabs: [], activeTabId: null };
+    this.state = { tabs: [], activeTabId: null, tabStrip: 'top' };
     this.editing = undefined;
   }
 
@@ -167,7 +215,16 @@ export class AppShell extends LitElement {
     }
   }
 
+  protected override willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has('state')) {
+      this.dataset['tabs'] = this.state.tabStrip;
+    }
+  }
+
   protected override updated(changed: PropertyValues<this>): void {
+    if (changed.has('state')) {
+      this.reportInsets();
+    }
     if (changed.has('state') && this.active === undefined) {
       this.editing = undefined;
     }
@@ -184,8 +241,13 @@ export class AppShell extends LitElement {
   protected override render(): TemplateResult {
     const t = (key: Parameters<Translator['t']>[0]): string => this.i18n?.t(key) ?? key;
     const active = this.active;
+    const vertical = this.state.tabStrip === 'left' || this.state.tabStrip === 'right';
     return html`
-      <div role="tablist" aria-label=${t('shell.tabs')}>
+      <div
+        role="tablist"
+        aria-label=${t('shell.tabs')}
+        aria-orientation=${vertical ? 'vertical' : 'horizontal'}
+      >
         ${this.state.tabs.map((tab) => this.renderTab(tab, t))}
         <button
           class="icon"
@@ -256,6 +318,7 @@ export class AppShell extends LitElement {
           ${icons.menu}
         </button>
       </nav>
+      <div class="content"></div>
     `;
   }
 
@@ -355,9 +418,23 @@ export class AppShell extends LitElement {
     input?.select();
   }
 
+  /** Tells the browser where the content area is, so the page covers exactly that area. */
   private reportInsets(): void {
-    const top = Math.ceil(this.getBoundingClientRect().height);
-    void this.bridge?.invoke('shell.setInsets', { top, right: 0, bottom: 0, left: 0 });
+    const content = this.renderRoot.querySelector('.content')?.getBoundingClientRect();
+    if (content === undefined) {
+      return;
+    }
+    const insets = {
+      top: Math.round(content.top),
+      right: Math.round(window.innerWidth - content.right),
+      bottom: Math.round(window.innerHeight - content.bottom),
+      left: Math.round(content.left),
+    };
+    const key = JSON.stringify(insets);
+    if (key !== this.reportedInsets) {
+      this.reportedInsets = key;
+      void this.bridge?.invoke('shell.setInsets', insets);
+    }
   }
 }
 

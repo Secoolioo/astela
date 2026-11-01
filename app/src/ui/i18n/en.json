@@ -45,5 +45,10 @@
   "settings.searchUrlHint": "An https address with %s where the search terms go.",
   "settings.searchUrlInvalid": "Enter an https address that contains %s.",
   "settings.managed": "Managed by your organization",
-  "shell.menu": "Menu"
+  "shell.menu": "Menu",
+  "settings.tabPosition": "Tabs",
+  "settings.tabPosition.top": "Top",
+  "settings.tabPosition.bottom": "Bottom",
+  "settings.tabPosition.left": "Left",
+  "settings.tabPosition.right": "Right"
 }

@@ -43,6 +43,7 @@ const isSwatch = (value: unknown): value is AccentSwatch =>
 const choices = {
   'appearance.colorMode': ['system', 'light', 'dark'],
   'appearance.density': ['compact', 'normal', 'comfortable'],
+  'tabs.position': ['top', 'bottom', 'left', 'right'],
 } as const;
 
 /**
@@ -257,6 +258,7 @@ export class SettingsPage extends LitElement {
       <section aria-labelledby="appearance">
         ${this.renderChoice('appearance.colorMode', 'settings.colorMode')} ${this.renderAccent()}
         ${this.renderChoice('appearance.density', 'settings.density')}
+        ${this.renderChoice('tabs.position', 'settings.tabPosition')}
       </section>
       <h2 id="search">${t('settings.search')}</h2>
       <section aria-labelledby="search">${this.renderSearch()}</section>

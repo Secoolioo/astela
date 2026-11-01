@@ -45,7 +45,7 @@ import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
 import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
-import { SearchUrlTemplate, coreSettings } from './core-settings.ts';
+import { SearchUrlTemplate, TabStripPositionSetting, coreSettings } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
@@ -216,6 +216,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     newTabUrl,
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
+    tabStripPosition: () => settings.get(TabStripPositionSetting),
     gate,
     router,
     logger,
@@ -230,6 +231,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerShellHandlers(router, windows, searchTemplate);
   registerNewTabHandlers(router, windows, searchTemplate);
   connectSettingsPage(router, settings, coreSettings, internal);
+  settings.onDidChange(({ keys }) => {
+    if (keys.includes(TabStripPositionSetting.key)) windows.refreshShells();
+  });
 
   const first = windows.open();
   marks['window'] = Math.round(performance.now());

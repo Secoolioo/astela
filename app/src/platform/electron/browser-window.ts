@@ -8,6 +8,7 @@ import {
 } from 'electron';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
+import type { TabStripPosition } from '../../shared/layout.ts';
 import {
   ShellCommand,
   ShellStateChanged,
@@ -63,6 +64,8 @@ export interface BrowserWindowOptions {
   readonly backgroundColor: () => string;
   /** Command line argument that gives a view of the browser's own UI its design tokens. */
   readonly appearanceArgument: () => string;
+  /** Where the shell shows the tab strip. */
+  readonly tabStripPosition: () => TabStripPosition;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -168,7 +171,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         canGoForward,
       })),
       activeTabId: this.tabs.active?.id ?? null,
+      tabStrip: this.options.tabStripPosition(),
     };
+  }
+
+  /** Sends the shell its state again, for example after the layout settings changed. */
+  refreshShell(): void {
+    this.schedulePublish();
   }
 
   /**
@@ -589,6 +598,13 @@ export class WindowManager implements Disposable {
   /** All open windows. */
   get all(): readonly BrowserWindowController[] {
     return [...this.windows];
+  }
+
+  /** Sends every shell its state again. */
+  refreshShells(): void {
+    for (const window of this.windows) {
+      window.refreshShell();
+    }
   }
 
   /** Paints every window in the current light or dark mode. */

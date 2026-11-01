@@ -7,6 +7,7 @@ import {
   type Density,
 } from '../domain/appearance/appearance.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
+import { tabStripPositions, type TabStripPosition } from '../shared/layout.ts';
 
 /**
  * Search URL used by the address bar, with `%s` for the query. The default engine is a
@@ -51,5 +52,21 @@ export const DensitySetting = defineSetting<Density>({
   ui: { section: 'appearance', control: 'select', order: 3 },
 });
 
+/** Where the tab strip is; vertical positions show the tabs as a list at the side. */
+export const TabStripPositionSetting = defineSetting<TabStripPosition>({
+  key: 'tabs.position',
+  schema: v.picklist(tabStripPositions),
+  default: 'top',
+  scope: 'global',
+  policy: { name: 'TabStripPosition', recommended: true },
+  ui: { section: 'appearance', control: 'select', order: 4 },
+});
+
 /** Settings that exist before any feature module contributes its own. */
-export const coreSettings = [SearchUrlTemplate, ColorModeSetting, AccentSetting, DensitySetting];
+export const coreSettings = [
+  SearchUrlTemplate,
+  ColorModeSetting,
+  AccentSetting,
+  DensitySetting,
+  TabStripPositionSetting,
+];
