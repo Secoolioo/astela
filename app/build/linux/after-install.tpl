@@ -15,7 +15,7 @@ else
 fi
 
 # Check if user namespaces are supported by the kernel and working with a quick test:
-if ! { [[ -L /proc/self/ns/user ]] && unshare --user true; }; then
+if ! { [[ -L /proc/self/ns/user ]] && unshare --user true 2>/dev/null; }; then
     # Use SUID chrome-sandbox only on systems without user namespaces:
     chmod 4755 '/opt/${sanitizedProductName}/chrome-sandbox' || true
 else
@@ -63,26 +63,29 @@ fi
 # Register the signed package repository once, so the browser updates together with the
 # system: APT on Debian and Ubuntu, DNF on Fedora and RHEL. Prereleases use the beta channel,
 # which also receives stable releases. Set @ENV@_NO_REPO=1 to skip this, or @ENV@_REPO_URL to
-# use a mirror. An existing source file is never overwritten.
+# use a mirror. An existing source file is never overwritten. dpkg runs this script with
+# "configure", rpm with the number of installed versions. rpm cannot query its database
+# while it installs, so the build writes the channel into the package.
 REPO_KEY='/opt/${sanitizedProductName}/resources/linux-repo.asc'
+CHANNEL="$(cat '/opt/${sanitizedProductName}/resources/package-channel' 2>/dev/null)"
+[ "$CHANNEL" = beta ] || CHANNEL=stable
 REPO_URL="$@ENV@_REPO_URL"
 [ -n "$REPO_URL" ] || REPO_URL='@WEBSITE@'
 REPO_URL="$(printf '%s' "$REPO_URL" | sed 's:/*$::')"
 if [ "$@ENV@_NO_REPO" != 1 ] && [ -f "$REPO_KEY" ]; then
-  if dpkg-query -W '@SLUG@' >/dev/null 2>&1; then
-    VERSION="$(dpkg-query -W -f='$'"{Version}" '@SLUG@')"
-    case "$VERSION" in *~*) CHANNEL=beta ;; *) CHANNEL=stable ;; esac
-    if [ -d /etc/apt/sources.list.d ] && [ ! -e '/etc/apt/sources.list.d/@SLUG@.sources' ]; then
-      install -D -m 0644 "$REPO_KEY" '/usr/share/keyrings/@SLUG@.asc'
-      printf 'Types: deb\nURIs: %s/apt\nSuites: %s\nComponents: main\nSigned-By: /usr/share/keyrings/@SLUG@.asc\n' \
-        "$REPO_URL" "$CHANNEL" >'/etc/apt/sources.list.d/@SLUG@.sources'
-    fi
-  elif rpm -q '@SLUG@' >/dev/null 2>&1; then
-    VERSION="$(rpm -q --qf '%{VERSION}' '@SLUG@')"
-    case "$VERSION" in *~*) CHANNEL=beta ;; *) CHANNEL=stable ;; esac
-    if [ -d /etc/yum.repos.d ] && [ ! -e '/etc/yum.repos.d/@SLUG@.repo' ]; then
-      printf '[@SLUG@]\nname=@PRODUCT@\nbaseurl=%s/rpm/%s\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=file://%s\n' \
-        "$REPO_URL" "$CHANNEL" "$REPO_KEY" >'/etc/yum.repos.d/@SLUG@.repo'
-    fi
-  fi
+  case "$1" in
+    configure)
+      if [ -d /etc/apt/sources.list.d ] && [ ! -e '/etc/apt/sources.list.d/@SLUG@.sources' ]; then
+        install -D -m 0644 "$REPO_KEY" '/usr/share/keyrings/@SLUG@.asc'
+        printf 'Types: deb\nURIs: %s/apt\nSuites: %s\nComponents: main\nSigned-By: /usr/share/keyrings/@SLUG@.asc\n' \
+          "$REPO_URL" "$CHANNEL" >'/etc/apt/sources.list.d/@SLUG@.sources'
+      fi
+      ;;
+    [0-9]*)
+      if [ -d /etc/yum.repos.d ] && [ ! -e '/etc/yum.repos.d/@SLUG@.repo' ]; then
+        printf '[@SLUG@]\nname=@PRODUCT@\nbaseurl=%s/rpm/%s\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=file://%s\n' \
+          "$REPO_URL" "$CHANNEL" "$REPO_KEY" >'/etc/yum.repos.d/@SLUG@.repo'
+      fi
+      ;;
+  esac
 fi

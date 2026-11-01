@@ -14,6 +14,7 @@ dirs=("$2" "$3" "$4")
 versions=(0.0.1-beta.1 0.0.1-beta.2 0.0.1)
 channels=(beta beta stable)
 slug=$(node -p "require('$root/brand.json').slug")
+product=$(node -p "require('$root/brand.json').productName")
 env_prefix=$(printf '%s' "$slug" | tr 'a-z-' 'A-Z_')
 port=8137
 base="http://127.0.0.1:$port"
@@ -62,6 +63,7 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   publish 0 1
   inside "apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade $slug >/dev/null"
   check "$image upgrades to beta.2" "0.0.1~beta.2" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
+  check "$image keeps the command after the upgrade" "/opt/$product/$slug" "$(inside "readlink -f /usr/bin/$slug")"
   publish 1 2
   inside "apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade $slug >/dev/null"
   check "$image upgrades to the stable release" "0.0.1" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
@@ -74,17 +76,28 @@ for image in "fedora:$latest" "fedora:$((latest - 1))"; do
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
   inside() { docker exec repo-test bash -c "$1"; }
+  # rpm reports what the package's scripts print, errors included, without failing the
+  # transaction; ours must print nothing. A report follows the line that names the script
+  # and its package; dependencies may print their own. Prints the number of our reports.
+  scripts() {
+    inside "$1" 2>&1 >/dev/null | grep -A1 -E "scriptlet: $slug-[0-9]" | grep -c '^>>> Scriptlet output' || true
+  }
   publish 0
-  inside "${env_prefix}_REPO_URL=$base dnf install -y -q /packages/*.rpm >/dev/null"
+  check "$image runs the scripts of beta.1 without output" 0 \
+    "$(scripts "${env_prefix}_REPO_URL=$base dnf install -y -q /packages/*.rpm")"
   check "$image installs beta.1 from its file" "0.0.1~beta.1" "$(inside "rpm -q --qf '%{VERSION}' $slug")"
   check "$image registers the beta repository" "baseurl=$base/rpm/beta" "$(inside "grep baseurl /etc/yum.repos.d/$slug.repo")"
   publish 0 1
-  inside "dnf upgrade -y -q --refresh $slug >/dev/null"
+  check "$image runs the scripts of the upgrade to beta.2 without output" 0 \
+    "$(scripts "dnf upgrade -y -q --refresh $slug")"
   check "$image upgrades to beta.2" "0.0.1~beta.2" "$(inside "rpm -q --qf '%{VERSION}' $slug")"
+  check "$image keeps the command after the upgrade" "/opt/$product/$slug" "$(inside "readlink -f /usr/bin/$slug")"
   publish 1 2
-  inside "dnf upgrade -y -q --refresh $slug >/dev/null"
+  check "$image runs the scripts of the upgrade to the stable release without output" 0 \
+    "$(scripts "dnf upgrade -y -q --refresh $slug")"
   check "$image upgrades to the stable release" "0.0.1" "$(inside "rpm -q --qf '%{VERSION}' $slug")"
-  inside "dnf remove -y -q $slug >/dev/null"
+  check "$image keeps the command after the second upgrade" "/opt/$product/$slug" "$(inside "readlink -f /usr/bin/$slug")"
+  check "$image runs the scripts of the removal without output" 0 "$(scripts "dnf remove -y -q $slug")"
   check "$image removes the repository" "gone" "$(inside "test -e /etc/yum.repos.d/$slug.repo && echo present || echo gone")"
 done
 

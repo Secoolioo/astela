@@ -199,7 +199,7 @@ Updates must never destroy data. Every data migration takes a snapshot first, an
 ### Linux deb
 
 - Astela will publish its own APT repository on GitHub Pages with a signed `InRelease` file and two suites: `stable` and `beta`.
-- `postinst` will set up the repository source once (deb822 format with `Signed-By`). An environment variable allows opting out.
+- `postinst` sets up the repository source once (deb822 format with `Signed-By`), on the beta channel for a beta package and on the stable channel otherwise. An environment variable allows opting out, another one points the source at a mirror.
 - Beta packages are versioned `0.1.0~beta.N`, so they sort correctly **before** `0.1.0`.
 - Updates will arrive with the regular system updates. The in-app updater is turned off through `package-type`.
 - electron-updater's deb updater asks for a password and does not verify a GPG signature (as of October 2026), so it is not used.
@@ -210,7 +210,8 @@ Updates must never destroy data. Every data migration takes a snapshot first, an
 
 - Astela will publish its own DNF repository. The metadata will live on GitHub Pages; the packages will be served directly from GitHub Releases through `createrepo_c --baseurl` (`xml:base`, supported by dnf5).
 - The metadata is signed (`repomd.xml.asc`) and the packages are signed with `rpmsign`.
-- `%post` will create `/etc/yum.repos.d/astela.repo`. Betas use a separate `astela-beta.repo` with versions such as `0.1.0~beta.N`.
+- `%post` creates `/etc/yum.repos.d/astela.repo` once; a beta package (`0.1.0~beta.N`) points it at the beta channel, which also receives stable releases. The build writes the channel into the package, because rpm cannot query its database while it installs a package.
+- On an rpm upgrade, the removal script of the old package runs after the install script of the new one. It therefore removes the command link, the AppArmor profile and the repository only when the package is removed for good. Packages up to `0.1.0-beta.2` still removed them on an upgrade; a `%posttrans` script, which runs after all others, sets the command link and the profile up again. The `linux-repos` job checks that the command survives the upgrades between its test packages and that the package scripts print nothing; the live update proof checks the command after the upgrade from the previous release.
 - Fedora and RHEL will be tested; openSUSE is supported on a best-effort basis.
 
 ### Upgrade order
