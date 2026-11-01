@@ -16,5 +16,8 @@
   "sandboxHelp.fix": "Allow the sandbox for {product}",
   "sandboxHelp.fixHint": "Needs your administrator password. {product} restarts afterwards.",
   "sandboxHelp.packages": "Get the deb or rpm package instead",
-  "sandboxHelp.failed": "The sandbox could not be allowed. Please try the deb or rpm package."
+  "sandboxHelp.failed": "The sandbox could not be allowed. Please try the deb or rpm package.",
+  "newtab.title": "New tab",
+  "newtab.placeholder": "Search or enter address",
+  "newtab.placeholderEngine": "Search with {engine} or enter address"
 }

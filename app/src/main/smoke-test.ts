@@ -1,5 +1,6 @@
 import { app, type WebContents } from 'electron';
 import { readlinkSync } from 'node:fs';
+import { newTabUrl } from '../shared/internal-pages.ts';
 import { writeFileAtomicSync } from '../platform/node/atomic-file.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 
@@ -121,11 +122,47 @@ export function runSmokeTest(
         const shellReadyMs = Math.round(performance.now());
         const readyAt = Date.now();
         // Read only now, so that reading does not delay the ready time.
-        void readPageMarks(window.shellContents, options.timeOrigin).then((pageMarks) =>
-          finish(shellReadyMs, readyAt, pageMarks),
-        );
+        void Promise.all([
+          readPageMarks(window.shellContents, options.timeOrigin),
+          checkNewTabPage(window, errors),
+        ]).then(([pageMarks]) => finish(shellReadyMs, readyAt, pageMarks));
       });
   });
+}
+
+/**
+ * Checks that a first tab with the new tab page shows its search field and has the page
+ * bridge, so every package is known to contain the internal pages.
+ * @param window - The first window.
+ * @param errors - Receives what went wrong.
+ */
+async function checkNewTabPage(window: BrowserWindowController, errors: string[]): Promise<void> {
+  const contents = window.activeTabContents;
+  if (contents === undefined || window.tabs.active?.url !== newTabUrl) {
+    return;
+  }
+  try {
+    if (contents.isLoading() || contents.getURL() === '') {
+      await new Promise<void>((done, fail) => {
+        const timer = setTimeout(
+          () => fail(new Error('it did not load within 30 seconds')),
+          30_000,
+        );
+        contents.once('did-stop-loading', () => {
+          clearTimeout(timer);
+          done();
+        });
+      });
+    }
+    const rendered: unknown = await contents.executeJavaScript(
+      'document.getElementById("query") !== null && "bridge" in window',
+    );
+    if (rendered !== true) {
+      errors.push('The new tab page did not render');
+    }
+  } catch (error) {
+    errors.push(`New tab page check failed: ${String(error)}`);
+  }
 }
 
 /**

@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
@@ -132,6 +133,8 @@ export class AppShell extends LitElement {
   i18n: Translator | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private unsubscribers: (() => void)[] = [];
+  /** The active tab that the shell last handled focus for. */
+  private focusedTabId: string | undefined;
 
   constructor() {
     super();
@@ -167,6 +170,14 @@ export class AppShell extends LitElement {
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has('state') && this.active === undefined) {
       this.editing = undefined;
+    }
+    // A tab that becomes active on the new tab page waits for input in the address bar.
+    const active = this.active;
+    if (changed.has('state') && active?.id !== this.focusedTabId) {
+      this.focusedTabId = active?.id;
+      if (active?.url === newTabUrl) {
+        this.focusAddress();
+      }
     }
   }
 
@@ -334,7 +345,7 @@ function inputOf(event: Event): HTMLInputElement | undefined {
 }
 
 function displayUrl(url: string | undefined): string {
-  return url === undefined || url === 'about:blank' ? '' : url;
+  return url === undefined || url === 'about:blank' || url === newTabUrl ? '' : url;
 }
 
 /** Icons drawn after Lucide (ISC license), inlined so the shell needs no icon requests. */
