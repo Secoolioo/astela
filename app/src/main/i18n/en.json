@@ -15,5 +15,8 @@
   "contextMenu.forward": "&Forward",
   "contextMenu.reload": "&Reload",
   "menu.newTab": "New &tab",
-  "menu.settings": "&Settings"
+  "menu.settings": "&Settings",
+  "menu.blockedCount": "Blocked on this page: {count}",
+  "menu.blockOnSite": "&Block ads on {site}",
+  "menu.blockerSettings": "Content blocker &settings"
 }

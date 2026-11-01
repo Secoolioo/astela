@@ -44,8 +44,8 @@ const noRules: FrameRules = { styles: '', scripts: [], elements: false };
 export interface ContentBlockerOptions {
   /** Folder with `engine.bin`, built by `tools/blocker/build.ts`. */
   readonly dataDir: string;
-  /** Whether blocking is on, read for every request. */
-  readonly enabled: () => boolean;
+  /** Whether blocking is on for a page, by its address; read for every request. */
+  readonly enabled: (pageUrl: string) => boolean;
   /** Called for every blocked request, with the id of the tab's web contents. */
   readonly onBlocked?: (webContentsId: number) => void;
   readonly logger: Logger;
@@ -85,11 +85,16 @@ export class ContentBlocker implements RequestInterceptor {
   ): Promise<RequestDecision | undefined> {
     if (details.resourceType === 'mainFrame') {
       // A page that starts loading loads the engine, so its frames find their rules.
-      if (this.options.enabled() && /^https?:/i.test(details.url)) void this.load();
+      if (this.options.enabled(details.url) && /^https?:/i.test(details.url)) void this.load();
       return undefined;
     }
     const type = requestTypes[details.resourceType];
-    if (type === undefined || !this.options.enabled() || !/^(?:https?|wss?):/i.test(details.url)) {
+    const sourceUrl = pageUrl(details);
+    if (
+      type === undefined ||
+      !/^(?:https?|wss?):/i.test(details.url) ||
+      !this.options.enabled(sourceUrl)
+    ) {
       return undefined;
     }
     const loaded = await this.load();
@@ -98,7 +103,7 @@ export class ContentBlocker implements RequestInterceptor {
     }
     const request = loaded.Request.fromRawDetails({
       url: details.url,
-      sourceUrl: pageUrl(details),
+      sourceUrl,
       type,
     });
     const { match } = loaded.engine.match(request);
@@ -115,9 +120,10 @@ export class ContentBlocker implements RequestInterceptor {
    * The element hiding rules and scriptlets for a frame that starts. The frame waits for
    * them, so this answers at once: before the engine has loaded, there are none.
    * @param url - The frame's address.
+   * @param top - The address of the page the frame belongs to.
    */
-  frameRules(url: string): FrameRules {
-    const page = this.page(url);
+  frameRules(url: string, top: string = url): FrameRules {
+    const page = this.page(url, top);
     if (page === undefined) {
       return noRules;
     }
@@ -132,10 +138,11 @@ export class ContentBlocker implements RequestInterceptor {
   /**
    * The generic element hiding rules for the classes, ids and links of a frame.
    * @param url - The frame's address.
+   * @param top - The address of the page the frame belongs to.
    * @param elements - What the frame reported.
    */
-  elementRules(url: string, elements: FrameElements): string {
-    const page = this.page(url);
+  elementRules(url: string, top: string, elements: FrameElements): string {
+    const page = this.page(url, top);
     if (page === undefined) {
       return '';
     }
@@ -155,11 +162,12 @@ export class ContentBlocker implements RequestInterceptor {
   /** The loaded engine and the parts of an address that cosmetic rules need. */
   private page(
     url: string,
+    top: string,
   ):
     | { loaded: LoadedEngine; address: { url: string; hostname: string; domain: string } }
     | undefined {
     const loaded = this.loaded;
-    if (loaded === undefined || !this.options.enabled() || !/^https?:/i.test(url)) {
+    if (loaded === undefined || !/^https?:/i.test(url) || !this.options.enabled(top)) {
       return undefined;
     }
     const { hostname, domain } = loaded.Request.fromRawDetails({ url });

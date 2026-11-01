@@ -6,7 +6,11 @@ const TabId = v.pipe(v.string(), v.regex(/^t[0-9a-z]{1,12}$/));
 const Empty = v.strictObject({});
 const Done = v.null();
 
-/** One tab as the shell displays it. */
+/**
+ * One tab as the shell displays it. `blocked` counts the requests that the content blocker
+ * blocked on the current page; `blocking` tells whether the blocker works on the page, with
+ * `none` for pages it never touches.
+ */
 export const TabView = v.strictObject({
   id: TabId,
   title: v.string(),
@@ -14,6 +18,8 @@ export const TabView = v.strictObject({
   loading: v.boolean(),
   canGoBack: v.boolean(),
   canGoForward: v.boolean(),
+  blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  blocking: v.picklist(['on', 'off', 'none']),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;
@@ -116,6 +122,17 @@ export const OpenMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Opens the content blocker's menu for the active tab below its button. */
+export const OpenBlockerMenu = defineRequest({
+  channel: 'shell.openBlockerMenu',
+  request: v.strictObject({
+    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Sent to the shell when its state changed. */
 export const ShellStateChanged = defineEvent({
   channel: 'shell.stateChanged',
@@ -141,4 +158,5 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   TabAction,
   SetShellInsets,
   OpenMenu,
+  OpenBlockerMenu,
 ];

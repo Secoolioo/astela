@@ -66,6 +66,8 @@ export interface BrowserWindowOptions {
   readonly appearanceArgument: () => string;
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
+  /** Whether the content blocker works on a page: `none` for pages it never touches. */
+  readonly blocking: (url: string) => 'on' | 'off' | 'none';
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -162,13 +164,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** The current shell state, as sent to the shell. */
   state(): ShellState {
     return {
-      tabs: this.tabs.all.map(({ id, title, url, loading, canGoBack, canGoForward }) => ({
+      tabs: this.tabs.all.map(({ id, title, url, loading, canGoBack, canGoForward, blocked }) => ({
         id,
         title,
         url,
         loading,
         canGoBack,
         canGoForward,
+        blocked,
+        blocking: this.options.blocking(url),
       })),
       activeTabId: this.tabs.active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
@@ -178,6 +182,23 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** Sends the shell its state again, for example after the layout settings changed. */
   refreshShell(): void {
     this.schedulePublish();
+  }
+
+  /**
+   * Counts a request that the content blocker blocked, if it belongs to one of this window's
+   * tabs.
+   * @param contentsId - Id of the web contents that made the request.
+   * @returns Whether the request belonged to this window.
+   */
+  countBlocked(contentsId: number): boolean {
+    for (const [id, entry] of this.entries) {
+      if (entry.view.webContents.id === contentsId) {
+        const tab = this.tabs.all.find((candidate) => candidate.id === id);
+        this.tabs.update(id, { blocked: (tab?.blocked ?? 0) + 1 });
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -431,6 +452,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       });
     }
     const sync = (): void => this.sync(id, contents);
+    // The count of blocked requests belongs to one page.
+    contents.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
+        this.tabs.update(id, { blocked: 0 });
+      }
+    });
     contents.on('did-start-loading', sync);
     contents.on('did-stop-loading', sync);
     contents.on('did-navigate', sync);
@@ -607,6 +634,16 @@ export class WindowManager implements Disposable {
   /** All open windows. */
   get all(): readonly BrowserWindowController[] {
     return [...this.windows];
+  }
+
+  /**
+   * Counts a request that the content blocker blocked in the tab that made it.
+   * @param contentsId - Id of the web contents that made the request.
+   */
+  countBlocked(contentsId: number): void {
+    for (const window of this.windows) {
+      if (window.countBlocked(contentsId)) return;
+    }
   }
 
   /** Sends every shell its state again. */

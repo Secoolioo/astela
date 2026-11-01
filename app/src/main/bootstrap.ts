@@ -7,6 +7,7 @@ import {
   ActivateTab,
   CloseTab,
   GetShellState,
+  OpenBlockerMenu,
   OpenMenu,
   NavigateTab,
   OpenTab,
@@ -24,6 +25,7 @@ import {
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
+import { blockingFor, siteOf, toggleSite, type Blocking } from '../domain/blocker/blocking.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
@@ -49,6 +51,7 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  BlockerAllowedSitesSetting,
   ContentBlockerSetting,
   SearchUrlTemplate,
   SetupShownSetting,
@@ -171,9 +174,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Every request of web content passes the request pipeline; the content blocker is its
   // first step. Its engine loads with the first web page.
   const pipeline = new RequestPipeline();
+  const blocking = (url: string): Blocking =>
+    blockingFor(url, settings.get(ContentBlockerSetting), settings.get(BlockerAllowedSitesSetting));
   const blocker = new ContentBlocker({
     dataDir: layout.blockerDir,
-    enabled: () => settings.get(ContentBlockerSetting),
+    enabled: (page) => blocking(page) !== 'off',
+    onBlocked: (contentsId) => windows.countBlocked(contentsId),
     logger: logger.child('blocker'),
   });
   pipeline.add(blocker);
@@ -248,6 +254,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
     tabStripPosition: () => settings.get(TabStripPositionSetting),
+    blocking,
     gate,
     router,
     logger,
@@ -263,8 +270,36 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerNewTabHandlers(router, windows, searchTemplate);
   connectSettingsPage(router, settings, coreSettings, internal);
   connectSetupGuide(router, windows);
+  const shellSettings = new Set([
+    TabStripPositionSetting.key,
+    ContentBlockerSetting.key,
+    BlockerAllowedSitesSetting.key,
+  ]);
   settings.onDidChange(({ keys }) => {
-    if (keys.includes(TabStripPositionSetting.key)) windows.refreshShells();
+    if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
+  });
+  router.handle(OpenBlockerMenu, async (position, { sender }) => {
+    const window = windows.forShell(sender);
+    const tab = window?.tabs.active;
+    const site = siteOf(tab?.url ?? '');
+    if (window === undefined || tab === undefined || site === undefined) {
+      return null;
+    }
+    const { popupBlockerMenu } = await import('./browser-menu.ts');
+    popupBlockerMenu(window, position, {
+      site,
+      blocked: tab.blocked,
+      on: blocking(tab.url) === 'on',
+      available: settings.get(ContentBlockerSetting),
+      toggle: () => {
+        settings.set(
+          BlockerAllowedSitesSetting,
+          toggleSite(settings.get(BlockerAllowedSitesSetting), site),
+        );
+        window.tabs.run(tab.id, 'reload');
+      },
+    });
+    return null;
   });
 
   // The first start of a profile opens the setup guide instead of a new tab page.

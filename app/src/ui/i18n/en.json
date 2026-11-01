@@ -74,5 +74,8 @@
   "setup.finish": "Start browsing",
   "settings.privacy": "Privacy",
   "settings.contentBlocker": "Block ads and trackers",
-  "settings.contentBlockerNote": "Uses the filter lists that uBlock Origin enables by default, which also block known malware sites."
+  "settings.contentBlockerNote": "Uses the filter lists that uBlock Origin enables by default, which also block known malware sites.",
+  "shell.blocker": "Content blocker",
+  "shell.blockerOn": "Content blocker: {count} blocked",
+  "shell.blockerOff": "Content blocker: off on this site"
 }

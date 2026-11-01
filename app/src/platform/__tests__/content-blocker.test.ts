@@ -119,11 +119,15 @@ describe('ContentBlocker cosmetics', () => {
     expect(rules.elements).toBe(true);
     expect(blocker.frameRules('https://other.example/').styles).not.toContain('.banner');
     const report = { classes: ['generic-ad', 'content'], ids: [], hrefs: [] };
-    expect(blocker.elementRules('https://other.example/', report)).toContain('.generic-ad');
+    expect(
+      blocker.elementRules('https://other.example/', 'https://other.example/', report),
+    ).toContain('.generic-ad');
     expect(blocker.frameRules('app://settings/').elements).toBe(false);
     enabled = false;
     expect(blocker.frameRules('https://news.example/a').styles).toBe('');
-    expect(blocker.elementRules('https://other.example/', report)).toBe('');
+    expect(blocker.elementRules('https://other.example/', 'https://other.example/', report)).toBe(
+      '',
+    );
   });
 });
 

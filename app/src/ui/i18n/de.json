@@ -74,5 +74,8 @@
   "setup.finish": "Lossurfen",
   "settings.privacy": "Datenschutz",
   "settings.contentBlocker": "Werbung und Tracker blockieren",
-  "settings.contentBlockerNote": "Nutzt die Filterlisten, die uBlock Origin standardmäßig aktiviert, und blockiert damit auch bekannte Schadseiten."
+  "settings.contentBlockerNote": "Nutzt die Filterlisten, die uBlock Origin standardmäßig aktiviert, und blockiert damit auch bekannte Schadseiten.",
+  "shell.blocker": "Inhaltsblocker",
+  "shell.blockerOn": "Inhaltsblocker: {count} blockiert",
+  "shell.blockerOff": "Inhaltsblocker: auf dieser Website aus"
 }
