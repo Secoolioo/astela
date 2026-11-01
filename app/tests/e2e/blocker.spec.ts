@@ -72,3 +72,64 @@ test('switches the blocker off from the settings page', async () => {
     await browser.close();
   }
 });
+
+test('counts blocked requests and switches the blocker off for one site', async () => {
+  const browser = await launch();
+  try {
+    await browser.main.evaluate(({ Menu }) => {
+      const recorded: Electron.Menu[] = [];
+      Object.assign(globalThis, { recordedMenus: recorded });
+      Menu.prototype.popup = function popup(this: Electron.Menu) {
+        recorded.push(this);
+      };
+    });
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    const shield = browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' });
+    await expect(shield).toBeVisible();
+    await shield.click();
+    const items = (): Promise<string[] | undefined> =>
+      browser.main.evaluate(() =>
+        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
+          .at(-1)
+          ?.items.map((item) => (item.type === 'separator' ? '-' : item.label.replaceAll('&', ''))),
+      );
+    await expect
+      .poll(items)
+      .toEqual(
+        process.platform === 'darwin'
+          ? [
+              'Blocked on This Page: 2',
+              '-',
+              'Block Ads on 127.0.0.1',
+              '-',
+              'Content Blocker Settings…',
+            ]
+          : [
+              'Blocked on this page: 2',
+              '-',
+              'Block ads on 127.0.0.1',
+              '-',
+              'Content blocker settings',
+            ],
+      );
+    await browser.main.evaluate(() => {
+      const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(
+        -1,
+      );
+      menu?.items[2]?.click();
+    });
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded),
+      )
+      .toBe(true);
+  } finally {
+    await browser.close();
+  }
+});

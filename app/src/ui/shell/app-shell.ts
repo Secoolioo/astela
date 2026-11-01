@@ -137,6 +137,26 @@ export class AppShell extends LitElement {
       width: 24px;
       height: 24px;
     }
+    .blocker {
+      position: relative;
+      width: auto;
+      min-width: 28px;
+      gap: 2px;
+      grid-auto-flow: column;
+      padding: 0 var(--space-1);
+    }
+    .blocker[data-state='on'] svg {
+      color: var(--accent);
+    }
+    .blocker[data-state='off'] svg {
+      color: var(--text-2);
+    }
+    .count {
+      font-size: 11px;
+      line-height: 16px;
+      color: var(--text-2);
+      font-variant-numeric: tabular-nums;
+    }
     nav {
       grid-area: nav;
       border-bottom: 1px solid var(--border-1);
@@ -308,6 +328,27 @@ export class AppShell extends LitElement {
           @keydown=${this.onAddressKey}
           @blur=${() => (this.editing = undefined)}
         />
+        ${
+          active === undefined || active.blocking === 'none'
+            ? nothing
+            : html`<button
+                class="icon blocker"
+                data-state=${active.blocking}
+                title=${this.blockerLabel(active)}
+                aria-label=${this.blockerLabel(active)}
+                aria-haspopup="menu"
+                @click=${this.openBlockerMenu}
+              >
+                ${active.blocking === 'on' ? icons.shield : icons.shieldOff}
+                ${
+                  active.blocking === 'on' && active.blocked > 0
+                    ? html`<span class="count" aria-hidden="true"
+                        >${active.blocked > 99 ? '99+' : active.blocked}</span
+                      >`
+                    : nothing
+                }
+              </button>`
+        }
         <button
           class="icon"
           title=${t('shell.menu')}
@@ -355,6 +396,26 @@ export class AppShell extends LitElement {
   private get active(): TabView | undefined {
     return this.state.tabs.find((tab) => tab.id === this.state.activeTabId);
   }
+
+  private blockerLabel(tab: TabView): string {
+    const params = { count: String(tab.blocked) };
+    return (
+      this.i18n?.t(tab.blocking === 'on' ? 'shell.blockerOn' : 'shell.blockerOff', params) ??
+      'shell.blocker'
+    );
+  }
+
+  /** Opens the content blocker's menu below its button. */
+  private readonly openBlockerMenu = (event: MouseEvent): void => {
+    const button = event.currentTarget;
+    if (button instanceof HTMLElement) {
+      const rect = button.getBoundingClientRect();
+      void this.bridge?.invoke('shell.openBlockerMenu', {
+        x: Math.round(rect.left),
+        y: Math.round(rect.bottom),
+      });
+    }
+  };
 
   /** Opens the browser menu below the button. */
   private readonly openMenu = (event: MouseEvent): void => {
@@ -459,6 +520,18 @@ const icons = {
     <path d="M21 3v5h-5" />
   </svg>`,
   stop: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
+  shield: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"
+    />
+  </svg>`,
+  shieldOff: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m2 2 20 20" />
+    <path d="M5 5a1 1 0 0 0-1 1v7c0 5 3.5 7.5 7.7 9a1 1 0 0 0 .7 0 13 13 0 0 0 4.9-3.2" />
+    <path
+      d="M9.3 3.5c.7-.4 1.3-.8 1.9-1.2a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1v7a8 8 0 0 1-.3 2.3"
+    />
+  </svg>`,
   menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="5" r="1" />
     <circle cx="12" cy="12" r="1" />

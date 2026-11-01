@@ -13,6 +13,8 @@ export interface Tab {
   readonly loading: boolean;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
+  /** Requests that the content blocker blocked on the current page. */
+  readonly blocked: number;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -49,7 +51,7 @@ export interface OpenTabOptions {
 export const TabServiceToken: Token<TabService> = token<TabService>('TabService');
 
 /** Fields that {@link TabService.update} compares. */
-const tabFields = ['url', 'title', 'loading', 'canGoBack', 'canGoForward'] as const;
+const tabFields = ['url', 'title', 'loading', 'canGoBack', 'canGoForward', 'blocked'] as const;
 
 /** How many closed tabs can be reopened. */
 const closedTabLimit = 25;
@@ -100,7 +102,15 @@ export class TabService implements Disposable {
    */
   open(url: string = this.blankUrl, options: OpenTabOptions = {}): TabId {
     const id = `t${(this.nextId++).toString(36)}`;
-    const tab: Tab = { id, url, title: '', loading: true, canGoBack: false, canGoForward: false };
+    const tab: Tab = {
+      id,
+      url,
+      title: '',
+      loading: true,
+      canGoBack: false,
+      canGoForward: false,
+      blocked: 0,
+    };
     const activate = options.activate ?? true;
     this.tabs.splice(this.insertionIndex(activate), 0, tab);
     this.views.create(id, url);

@@ -72,6 +72,17 @@ export const ContentBlockerSetting = defineSetting<boolean>({
   ui: { section: 'privacy', control: 'toggle', order: 1 },
 });
 
+/** Sites, by host name, on which the content blocker is off. */
+export const BlockerAllowedSitesSetting = defineSetting<string[]>({
+  key: 'contentBlocker.allowedSites',
+  schema: v.pipe(
+    v.array(v.pipe(v.string(), v.regex(/^[a-z0-9.:[\]-]{1,253}$/i, 'Must be a host name'))),
+    v.maxLength(10_000),
+  ),
+  default: [],
+  scope: 'global',
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -88,5 +99,6 @@ export const coreSettings = [
   DensitySetting,
   TabStripPositionSetting,
   ContentBlockerSetting,
+  BlockerAllowedSitesSetting,
   SetupShownSetting,
 ];

@@ -26,19 +26,21 @@ export function connectBlockerFrames(
   preload: string,
 ): (session: Session) => void {
   ipcMain.on('blocker.frame', (event) => {
-    const url = isWebSession(event.sender.session) ? (event.senderFrame?.url ?? '') : '';
+    const frame = isWebSession(event.sender.session) ? event.senderFrame : null;
+    const url = frame?.url ?? '';
+    const top = topUrl(frame);
     // The first page after the start can come before the engine has loaded. Its frame waits
     // for the engine, at most a second, so that its rules apply before its own scripts run.
     const loading = url === '' ? undefined : blocker.loading();
     if (loading === undefined) {
-      event.returnValue = blocker.frameRules(url);
+      event.returnValue = blocker.frameRules(url, top);
       return;
     }
     let timer: NodeJS.Timeout | undefined;
     void Promise.race([loading, new Promise((done) => (timer = setTimeout(done, 1000)))]).then(
       () => {
         clearTimeout(timer);
-        event.returnValue = blocker.frameRules(url);
+        event.returnValue = blocker.frameRules(url, top);
       },
     );
   });
@@ -47,9 +49,22 @@ export function connectBlockerFrames(
     if (!elements.success || !isWebSession(event.sender.session)) {
       return '';
     }
-    return blocker.elementRules(event.senderFrame?.url ?? '', elements.output);
+    return blocker.elementRules(
+      event.senderFrame?.url ?? '',
+      topUrl(event.senderFrame),
+      elements.output,
+    );
   });
   return (session) => {
     session.registerPreloadScript({ type: 'frame', id: 'content-blocker', filePath: preload });
   };
+}
+
+/** The address of the page that a frame belongs to; a frame that is gone has none. */
+function topUrl(frame: Electron.WebFrameMain | null | undefined): string {
+  try {
+    return frame?.top?.url ?? '';
+  } catch {
+    return '';
+  }
 }

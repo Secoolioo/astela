@@ -57,3 +57,18 @@ describe('search engines', () => {
     expect(engineForSearchUrl('https://search.example/?q=%s')).toBeUndefined();
   });
 });
+
+describe('content blocker sites', () => {
+  it('names http and https sites by host and tells where blocking works', async () => {
+    const { blockingFor, siteOf, toggleSite } = await import('../blocker/blocking.ts');
+    expect(siteOf('https://News.Example:8443/a?b')).toBe('news.example');
+    expect(siteOf('app://settings/')).toBeUndefined();
+    expect(siteOf('not a url')).toBeUndefined();
+    expect(blockingFor('https://news.example/', true, [])).toBe('on');
+    expect(blockingFor('https://news.example/', true, ['news.example'])).toBe('off');
+    expect(blockingFor('https://news.example/', false, [])).toBe('off');
+    expect(blockingFor('app://newtab/', true, [])).toBe('none');
+    expect(toggleSite(['b.example'], 'a.example')).toEqual(['a.example', 'b.example']);
+    expect(toggleSite(['a.example', 'b.example'], 'a.example')).toEqual(['b.example']);
+  });
+});

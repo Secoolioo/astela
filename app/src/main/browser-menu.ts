@@ -31,6 +31,49 @@ export function popupBrowserMenu(
   menu.popup({ window: window.window, x: position.x, y: position.y });
 }
 
+/** What the content blocker's menu shows for the active tab. */
+export interface BlockerMenuState {
+  /** The page's site, by host name. */
+  readonly site: string;
+  /** Requests blocked on the page. */
+  readonly blocked: number;
+  /** Whether blocking works on the page. */
+  readonly on: boolean;
+  /** Whether the blocker is on at all; when it is off, sites cannot be switched. */
+  readonly available: boolean;
+  /** Turns blocking on the site on or off and reloads the page. */
+  readonly toggle: () => void;
+}
+
+/**
+ * Shows the content blocker's menu for the active tab: how much it blocked on the page, the
+ * switch for the page's site, and the way to its settings.
+ * @param window - The window whose blocker button was clicked.
+ * @param position - Where the menu opens, in the window's coordinates.
+ * @param state - The page's numbers and the switch.
+ */
+export function popupBlockerMenu(
+  window: BrowserWindowController,
+  position: { readonly x: number; readonly y: number },
+  state: BlockerMenuState,
+): void {
+  const i18n = translatorFor(app.getLocale(), process.platform);
+  const menu = Menu.buildFromTemplate([
+    { label: i18n.t('menu.blockedCount', { count: String(state.blocked) }), enabled: false },
+    { type: 'separator' },
+    {
+      label: i18n.t('menu.blockOnSite', { site: state.site }),
+      type: 'checkbox',
+      checked: state.on,
+      enabled: state.available,
+      click: state.toggle,
+    },
+    { type: 'separator' },
+    { label: i18n.t('menu.blockerSettings'), click: () => window.execute('settings.open') },
+  ]);
+  menu.popup({ window: window.window, x: position.x, y: position.y });
+}
+
 /**
  * The menu bar of macOS, with the browser's settings in the application menu.
  * @param openSettings - Opens the settings page in the frontmost window.
