@@ -23,6 +23,8 @@ export class Bookmarks {
   private urls = new Set<string>();
   private rows: readonly BookmarkEntry[] = [];
   private loaded: Promise<void> | undefined;
+  /** Whether the bookmarks loaded at least once, so the cache tells which pages have one. */
+  private ready = false;
   private readonly data: DataServiceClient;
   private readonly router: IpcRouter;
   private readonly internal: Session;
@@ -57,7 +59,7 @@ export class Bookmarks {
    */
   has(url: string): boolean {
     if (!/^https?:/i.test(url)) return false;
-    this.loaded ??= this.refresh();
+    this.loaded ??= this.load();
     return this.urls.has(url);
   }
 
@@ -66,7 +68,7 @@ export class Bookmarks {
    * when they arrive.
    */
   barItems(): { id: number; title: string; url: string | null }[] {
-    this.loaded ??= this.refresh();
+    this.loaded ??= this.load();
     return this.contents(bookmarkRoots.bar).map(({ id, title, url }) => ({ id, title, url }));
   }
 
@@ -87,10 +89,19 @@ export class Bookmarks {
    */
   toggle(url: string, title: string): void {
     void (async () => {
-      await (this.loaded ??= this.refresh());
+      await (this.loaded ??= this.load());
+      if (url.length > 8192) return;
+      // Without the bookmarks, the star cannot tell adding from removing: it loads them
+      // again, and if that fails too, nothing changes.
+      if (!this.ready) await this.refresh();
       await (this.urls.has(url)
         ? this.data.call('removeBookmarkUrl', url)
-        : this.data.call('addBookmark', bookmarkRoots.bar, title.trim() || url, url));
+        : this.data.call(
+            'addBookmark',
+            bookmarkRoots.bar,
+            (title.trim() || url).slice(0, 1024),
+            url,
+          ));
       await this.changed();
     })().catch((error: unknown) =>
       this.logger.warn('The bookmark was not saved', { error: String(error) }),
@@ -105,9 +116,18 @@ export class Bookmarks {
     }
   }
 
+  /** Loads the bookmarks once; after a failure, they load again with a question 30 s later. */
+  private load(): Promise<void> {
+    return this.refresh().catch((error: unknown) => {
+      this.logger.warn('The bookmarks did not load', { error: String(error) });
+      setTimeout(() => (this.loaded = undefined), 30_000).unref();
+    });
+  }
+
   private async refresh(): Promise<void> {
     this.rows = await this.data.call('bookmarkList');
     this.urls = new Set(this.rows.flatMap((row) => (row.url === null ? [] : [row.url])));
+    this.ready = true;
     this.onChange();
   }
 }

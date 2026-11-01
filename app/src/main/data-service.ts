@@ -1,4 +1,6 @@
+import { mkdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { ProfileDatabase } from '../platform/data/profile-db.ts';
 import { answer, type DataRequest } from '../platform/data/data-protocol.ts';
 import { BrowserImporter } from '../platform/import/browser-import.ts';
@@ -9,13 +11,20 @@ import { BrowserImporter } from '../platform/import/browser-import.ts';
  */
 const path = process.argv.at(-1) ?? ':memory:';
 const db = new ProfileDatabase(path);
+// Copies of other browsers' databases live next to the profile while an import reads them;
+// whatever an import that was cut short left there goes at the next start.
+const temp = path === ':memory:' ? tmpdir() : join(dirname(path), 'import-temp');
+if (temp !== tmpdir()) {
+  rmSync(temp, { recursive: true, force: true });
+  mkdirSync(temp, { recursive: true });
+}
 const importer = new BrowserImporter(db, {
   platform: process.platform,
   home: homedir(),
   appData: process.env['APPDATA'],
   localAppData: process.env['LOCALAPPDATA'],
   configHome: process.env['XDG_CONFIG_HOME'],
-  temp: tmpdir(),
+  temp,
 });
 const port = process.parentPort;
 port.on('message', ({ data }: { data: DataRequest }) => {

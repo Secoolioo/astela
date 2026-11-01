@@ -64,8 +64,11 @@ export interface ImportEnvironment {
 
 /** Where the profile database receives imported data. */
 export interface ImportTarget {
-  /** Adds bookmarks in a folder of the other bookmarks; returns how many there were. */
-  importBookmarks(folderTitle: string, tree: readonly ImportedBookmark[]): number;
+  /**
+   * Adds bookmarks in a folder of the other bookmarks, in place of the folder of an earlier
+   * import from the same source; returns how many there were.
+   */
+  importBookmarks(folderTitle: string, tree: readonly ImportedBookmark[], source: string): number;
   /** Adds pages to the history; returns how many were new. */
   importHistory(visits: readonly ImportedVisit[]): number;
 }
@@ -83,6 +86,16 @@ const historyLimit = 100_000;
 const tabLimit = 500;
 
 const webAddress = /^https?:\/\/\S+$/i;
+
+/** The longest title and address the browser keeps, as its other data does. */
+const titleLimit = 1024;
+const urlLimit = 8192;
+
+/** A bookmark to import, or `undefined` for an address that is not a web address or too long. */
+function bookmarkOf(title: string, url: string): ImportedBookmark | undefined {
+  if (!webAddress.test(url) || url.length > urlLimit) return undefined;
+  return { title: (title || url).slice(0, titleLimit), url };
+}
 
 /**
  * Finds the profiles of other browsers on this computer and imports their bookmarks,
@@ -144,7 +157,7 @@ export class BrowserImporter {
               : this.withCopy(profile.path, 'places.sqlite', (db) =>
                   readFirefoxBookmarks(db, labels),
                 );
-            return this.target.importBookmarks(labels.folder, tree);
+            return this.target.importBookmarks(labels.folder, tree, profile.id);
           },
           0,
         )
@@ -359,12 +372,12 @@ function chromiumNode(node: unknown): ImportedBookmark | undefined {
   const url = field(node, 'url');
   const children = field(node, 'children');
   const name = typeof title === 'string' ? title : '';
-  if (field(node, 'type') === 'url' && typeof url === 'string' && webAddress.test(url)) {
-    return { title: name || url, url };
+  if (field(node, 'type') === 'url' && typeof url === 'string') {
+    return bookmarkOf(name, url);
   }
   if (Array.isArray(children)) {
     return {
-      title: name,
+      title: name.slice(0, titleLimit),
       children: children.flatMap((child: unknown) => {
         const converted = chromiumNode(child);
         return converted === undefined ? [] : [converted];
@@ -403,10 +416,10 @@ function readFirefoxHistory(db: DatabaseSync): ImportedVisit[] {
 function visits(query: StatementSync): ImportedVisit[] {
   return query
     .all(historyLimit)
-    .filter((row) => String(row['url']).length <= 8192)
+    .filter((row) => String(row['url']).length <= urlLimit)
     .map((row) => ({
       url: String(row['url']),
-      title: typeof row['title'] === 'string' ? row['title'].slice(0, 1024) : '',
+      title: typeof row['title'] === 'string' ? row['title'].slice(0, titleLimit) : '',
       visitCount: Math.max(1, Number(row['visit_count'])),
       lastVisit: Math.max(0, Number(row['visited'])),
     }));
@@ -423,18 +436,23 @@ function readFirefoxBookmarks(db: DatabaseSync, labels: ImportLabels): ImportedB
   const children = new Map<number, typeof rows>();
   for (const row of rows) {
     const parent = Number(row['parent']);
-    children.set(parent, [...(children.get(parent) ?? []), row]);
+    const list = children.get(parent);
+    if (list === undefined) children.set(parent, [row]);
+    else list.push(row);
   }
   const build = (id: number, seen: Set<number>): ImportedBookmark[] =>
     (children.get(id) ?? []).flatMap((row): ImportedBookmark[] => {
       const rowId = Number(row['id']);
       const title = typeof row['title'] === 'string' ? row['title'] : '';
       const url = row['url'];
-      if (Number(row['type']) === 1 && typeof url === 'string' && webAddress.test(url)) {
-        return [{ title: title || url, url }];
+      if (Number(row['type']) === 1 && typeof url === 'string') {
+        const bookmark = bookmarkOf(title, url);
+        return bookmark === undefined ? [] : [bookmark];
       }
       if (Number(row['type']) === 2 && !seen.has(rowId)) {
-        return [{ title, children: build(rowId, new Set([...seen, rowId])) }];
+        return [
+          { title: title.slice(0, titleLimit), children: build(rowId, new Set([...seen, rowId])) },
+        ];
       }
       return [];
     });
@@ -480,8 +498,12 @@ function readFirefoxTabs(dir: string): ImportedWindow[] {
         : undefined;
       const url = field(current, 'url');
       const title = field(current, 'title');
-      if (budget > 0 && typeof url === 'string' && webAddress.test(url) && url.length <= 8192) {
-        kept.push({ url, title: typeof title === 'string' ? title.slice(0, 1024) : '', index });
+      if (budget > 0 && typeof url === 'string' && webAddress.test(url) && url.length <= urlLimit) {
+        kept.push({
+          url,
+          title: typeof title === 'string' ? title.slice(0, titleLimit) : '',
+          index,
+        });
         budget -= 1;
       }
     });

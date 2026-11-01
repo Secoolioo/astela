@@ -39,6 +39,13 @@ if (isFrameRules(rules)) {
   }
 }
 
+/** Takes at most 1000 values out of a set; a report holds no more of each kind. */
+function take(set: Set<string>): string[] {
+  const values = [...set].slice(0, 1000);
+  for (const value of values) set.delete(value);
+  return values;
+}
+
 /** Reports the classes, ids and link targets of the page as they appear, at most once each. */
 function reportElements(): void {
   const seen = new Set<string>();
@@ -60,13 +67,14 @@ function reportElements(): void {
   const send = (): void => {
     timer = undefined;
     const report = {
-      classes: [...pending.classes].slice(0, 1000),
-      ids: [...pending.ids].slice(0, 1000),
-      hrefs: [...pending.hrefs].slice(0, 1000),
+      classes: take(pending.classes),
+      ids: take(pending.ids),
+      hrefs: take(pending.hrefs),
     };
-    pending.classes.clear();
-    pending.ids.clear();
-    pending.hrefs.clear();
+    // What did not fit in this report follows in the next one.
+    if (pending.classes.size + pending.ids.size + pending.hrefs.size > 0) {
+      timer = setTimeout(send, 50);
+    }
     if (report.classes.length + report.ids.length + report.hrefs.length > 0) {
       void ipcRenderer.invoke('blocker.elements', report).then((styles: unknown) => {
         if (typeof styles === 'string' && styles !== '') void webFrame.insertCSS(styles);

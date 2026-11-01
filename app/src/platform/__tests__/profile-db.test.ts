@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,19 +70,33 @@ describe('ProfileDatabase bookmarks', () => {
     const work = db.addBookmark(bookmarkRoots.bar, 'Work');
     db.addBookmark(work, 'Mail', 'https://mail.example/');
     db.addBookmark(bookmarkRoots.bar, 'News', 'https://news.example/');
-    const count = db.importBookmarks('Imported from Chrome', [
-      { title: 'Docs', url: 'https://docs.example/' },
-      { title: 'Empty', children: [] },
-      { title: 'Folder', children: [{ title: 'Deep', url: 'https://deep.example/' }] },
-    ]);
-    expect(count).toBe(2);
-    // Importing again replaces the folder of the first import.
-    expect(
-      db.importBookmarks('Imported from Chrome', [
+    const count = db.importBookmarks(
+      'Imported from Chrome',
+      [
         { title: 'Docs', url: 'https://docs.example/' },
         { title: 'Empty', children: [] },
         { title: 'Folder', children: [{ title: 'Deep', url: 'https://deep.example/' }] },
-      ]),
+      ],
+      'chromium:/profiles/Default',
+    );
+    expect(count).toBe(2);
+    // Another source keeps a folder of its own, even with the same title.
+    db.importBookmarks(
+      'Imported from Chrome',
+      [{ title: 'Work', url: 'https://work.example/' }],
+      'chromium:/profiles/Work',
+    );
+    // Importing again replaces the folder of the first import, whatever its title is now.
+    expect(
+      db.importBookmarks(
+        'Importiert aus Chrome',
+        [
+          { title: 'Docs', url: 'https://docs.example/' },
+          { title: 'Empty', children: [] },
+          { title: 'Folder', children: [{ title: 'Deep', url: 'https://deep.example/' }] },
+        ],
+        'chromium:/profiles/Default',
+      ),
     ).toBe(2);
     expect(db.bookmarks()).toEqual([
       {
@@ -104,6 +118,11 @@ describe('ProfileDatabase bookmarks', () => {
           {
             id: expect.any(Number),
             title: 'Imported from Chrome',
+            children: [{ id: expect.any(Number), title: 'Work', url: 'https://work.example/' }],
+          },
+          {
+            id: expect.any(Number),
+            title: 'Importiert aus Chrome',
             children: [
               { id: expect.any(Number), title: 'Docs', url: 'https://docs.example/' },
               {
@@ -165,7 +184,27 @@ describe('ProfileDatabase migrations', () => {
     expect(newer.readOnly).toBe(true);
     newer.addVisit('https://b.example/', 'B');
     expect(newer.history('').map((entry) => entry.url)).toEqual(['https://a.example/']);
+    // What the user asks for fails visibly instead of seeming to work.
+    expect(() => newer.clearHistory()).toThrow(/read-only/);
+    expect(() => newer.addBookmark(bookmarkRoots.bar, 'News', 'https://news.example/')).toThrow(
+      /read-only/,
+    );
+    expect(() => newer.importBookmarks('Imported', [], 'source')).toThrow(/read-only/);
     newer.close();
+  });
+
+  it('adds the source of imported folders to a database of the first version', () => {
+    const path = tempDb();
+    new ProfileDatabase(path).close();
+    const raw = new DatabaseSync(path);
+    raw.exec('ALTER TABLE bookmarks DROP COLUMN source; PRAGMA user_version = 1');
+    raw.close();
+    const db = new ProfileDatabase(path);
+    expect(db.importBookmarks('Imported', [{ title: 'A', url: 'https://a.example/' }], 'x')).toBe(
+      1,
+    );
+    db.close();
+    expect(existsSync(`${path}.v1.bak`)).toBe(true);
   });
 });
 

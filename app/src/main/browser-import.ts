@@ -45,7 +45,8 @@ export function connectBrowserImport(
         })),
       });
     }
-    if (result.bookmarks > 0) {
+    // An import replaces the folder of an earlier one, even when it brings no bookmarks.
+    if (withBookmarks) {
       await bookmarks.changed();
     }
     return {

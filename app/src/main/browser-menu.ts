@@ -137,14 +137,15 @@ const folderMenuLimit = 500;
  * new tab.
  * @param window - The window whose bookmarks bar was clicked.
  * @param position - Where the menu opens, in the window's coordinates.
- * @param folder - The folder.
+ * @param folder - The folder, and how many of its first entries the menu leaves out because
+ *   the bookmarks bar shows them.
  * @param contents - Lists what a folder contains.
  * @param open - Opens a bookmark.
  */
 export function popupBookmarkFolder(
   window: BrowserWindowController,
   position: { readonly x: number; readonly y: number },
-  folder: number,
+  folder: { readonly id: number; readonly from: number },
   contents: (folder: number) => readonly FolderEntry[],
   open: (url: string, newTab: boolean) => void,
 ): void {
@@ -153,7 +154,8 @@ export function popupBookmarkFolder(
   // Elsewhere, & marks the access key of a menu item; a title shows it as it is.
   const label = (title: string): string => (mac ? title : title.replaceAll('&', '&&'));
   const items = (id: number, depth: number): Electron.MenuItemConstructorOptions[] => {
-    const entries = contents(id).slice(0, folderMenuLimit);
+    const skip = depth === 0 ? folder.from : 0;
+    const entries = contents(id).slice(skip, skip + folderMenuLimit);
     if (entries.length === 0) return [{ label: i18n.t('menu.emptyFolder'), enabled: false }];
     return entries.map((entry): Electron.MenuItemConstructorOptions => {
       const url = entry.url;
@@ -170,7 +172,7 @@ export function popupBookmarkFolder(
       };
     });
   };
-  Menu.buildFromTemplate(items(folder, 0)).popup({
+  Menu.buildFromTemplate(items(folder.id, 0)).popup({
     window: window.window,
     x: position.x,
     y: position.y,

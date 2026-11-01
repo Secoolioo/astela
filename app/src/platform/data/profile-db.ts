@@ -80,6 +80,9 @@ const migrations: readonly string[] = [
    INSERT INTO bookmarks(id, parent_id, title, url, position, added_at) VALUES
      (1, NULL, 'Bookmarks bar', NULL, 0, 0),
      (2, NULL, 'Other bookmarks', NULL, 1, 0);`,
+  // The folder of an import names the browser profile it came from, so a later import of
+  // that profile replaces it whatever its title.
+  `ALTER TABLE bookmarks ADD COLUMN source TEXT;`,
 ];
 
 /** The schema version that this build writes. */
@@ -193,14 +196,14 @@ export class ProfileDatabase {
    * @param ids - The pages.
    */
   deleteHistory(ids: readonly number[]): void {
-    if (this.readOnly) return;
+    this.writable();
     const statement = this.db.prepare('DELETE FROM places WHERE id = ?');
     this.transaction(() => ids.forEach((id) => statement.run(id)));
   }
 
   /** Removes the whole history. */
   clearHistory(): void {
-    if (this.readOnly) return;
+    this.writable();
     this.db.exec("DELETE FROM places; INSERT INTO places_fts(places_fts) VALUES('rebuild');");
   }
 
@@ -211,7 +214,7 @@ export class ProfileDatabase {
    * @returns How many pages were new.
    */
   importHistory(visits: readonly ImportedVisit[]): number {
-    if (this.readOnly) return 0;
+    this.writable();
     const before = this.count('places');
     const statement = this.db.prepare(
       `INSERT INTO places(url, title, visit_count, last_visit) VALUES (?, ?, ?, ?)
@@ -271,7 +274,7 @@ export class ProfileDatabase {
    * @returns The new id.
    */
   addBookmark(parent: number, title: string, url?: string): number {
-    if (this.readOnly) return 0;
+    this.writable();
     const result = this.db
       .prepare(
         'INSERT INTO bookmarks(parent_id, title, url, position, added_at) VALUES (?, ?, ?, ?, ?)',
@@ -314,7 +317,8 @@ export class ProfileDatabase {
    * @param parent - The folder to move it to; omitted to keep it where it is.
    */
   updateBookmark(id: number, title: string, url?: string, parent?: number): void {
-    if (this.readOnly || id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
+    this.writable();
+    if (id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
     const row = this.db.prepare('SELECT parent_id, url FROM bookmarks WHERE id = ?').get(id);
     if (row === undefined) return;
     const isBookmark = typeof row['url'] === 'string';
@@ -338,7 +342,8 @@ export class ProfileDatabase {
    * @param id - The bookmark or folder.
    */
   removeBookmark(id: number): void {
-    if (this.readOnly || id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
+    this.writable();
+    if (id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
     this.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id);
   }
 
@@ -347,22 +352,20 @@ export class ProfileDatabase {
    * @param url - The address.
    */
   removeBookmarkUrl(url: string): void {
-    if (this.readOnly) return;
+    this.writable();
     this.db.prepare('DELETE FROM bookmarks WHERE url = ?').run(url);
   }
 
   /**
-   * Imports another browser's bookmarks into a new folder of the other bookmarks. A folder
-   * of the same title from an earlier import is replaced, so importing again adds nothing.
+   * Imports another browser's bookmarks into a new folder of the other bookmarks. The folder
+   * of an earlier import from the same source is replaced, so importing again adds nothing.
    * @param folderTitle - Title of the new folder, such as "Imported from Chrome".
    * @param tree - The bookmarks and folders.
+   * @param source - Identifies where the bookmarks come from, such as a browser profile.
    * @returns How many bookmarks were imported.
    */
-  importBookmarks(folderTitle: string, tree: readonly ImportedBookmark[]): number {
-    if (this.readOnly) return 0;
-    const earlier = this.db.prepare(
-      'DELETE FROM bookmarks WHERE parent_id = ? AND title = ? AND url IS NULL',
-    );
+  importBookmarks(folderTitle: string, tree: readonly ImportedBookmark[], source: string): number {
+    this.writable();
     let count = 0;
     const add = (parent: number, items: readonly ImportedBookmark[]): void => {
       for (const item of items) {
@@ -375,10 +378,23 @@ export class ProfileDatabase {
       }
     };
     this.transaction(() => {
-      earlier.run(bookmarkRoots.other, folderTitle);
-      add(this.addBookmark(bookmarkRoots.other, folderTitle), tree);
+      this.db
+        .prepare('DELETE FROM bookmarks WHERE parent_id = ? AND url IS NULL AND source = ?')
+        .run(bookmarkRoots.other, source);
+      const folder = this.addBookmark(bookmarkRoots.other, folderTitle);
+      this.db.prepare('UPDATE bookmarks SET source = ? WHERE id = ?').run(source, folder);
+      add(folder, tree);
     });
     return count;
+  }
+
+  /** Refuses a change that the user asked for when the database belongs to a newer version. */
+  private writable(): void {
+    if (this.readOnly) {
+      throw new Error(
+        'The profile database belongs to a newer version of the browser and is read-only',
+      );
+    }
   }
 
   /** Closes the database. */

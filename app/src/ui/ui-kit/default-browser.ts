@@ -14,6 +14,7 @@ export class DefaultBrowser extends LitElement {
   static override properties = {
     isDefault: { state: true },
     allowed: { state: true },
+    supported: { state: true },
     outcome: { state: true },
   };
 
@@ -55,6 +56,7 @@ export class DefaultBrowser extends LitElement {
 
   declare isDefault: boolean | undefined;
   declare allowed: boolean;
+  declare supported: boolean;
   declare outcome: Outcome | undefined;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
@@ -63,6 +65,7 @@ export class DefaultBrowser extends LitElement {
     super();
     this.isDefault = undefined;
     this.allowed = true;
+    this.supported = true;
     this.outcome = undefined;
   }
 
@@ -84,19 +87,21 @@ export class DefaultBrowser extends LitElement {
     if (this.isDefault === undefined) return nothing;
     const note = !this.allowed
       ? this.t('settings.managed')
-      : this.isDefault
-        ? this.t('defaultBrowser.is')
-        : this.outcome === 'settings'
-          ? this.t('defaultBrowser.windows')
-          : this.outcome === 'failed'
-            ? this.t('defaultBrowser.failed')
-            : this.t('defaultBrowser.not');
+      : !this.supported
+        ? this.t('defaultBrowser.unsupported')
+        : this.isDefault
+          ? this.t('defaultBrowser.is')
+          : this.outcome === 'settings'
+            ? this.t('defaultBrowser.windows')
+            : this.outcome === 'failed'
+              ? this.t('defaultBrowser.failed')
+              : this.t('defaultBrowser.not');
     return html`<span class="label">
         <span>${this.t('defaultBrowser.title')}</span>
         <span class="note" role="status">${note}</span>
       </span>
       ${
-        this.allowed && !this.isDefault
+        this.allowed && this.supported && !this.isDefault
           ? html`<button @click=${() => void this.make()}>${this.t('defaultBrowser.make')}</button>`
           : nothing
       }`;
@@ -113,6 +118,7 @@ export class DefaultBrowser extends LitElement {
         if (typeof result !== 'object' || result === null) return;
         this.isDefault = Reflect.get(result, 'isDefault') === true;
         this.allowed = Reflect.get(result, 'allowed') !== false;
+        this.supported = Reflect.get(result, 'supported') !== false;
       })
       .catch(() => undefined);
   };

@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -112,6 +121,21 @@ describe('JsonFileSettingsStore', () => {
     expect(await store.load()).toEqual({ user: {}, workspaces: {} });
     writeFileSync(join(dir, 'settings.json'), '{"user": 1, "workspaces": {"a": {"x": 1}, "b": 2}}');
     expect(await store.load()).toEqual({ user: {}, workspaces: { a: { x: 1 } } });
+  });
+
+  it('keeps a file that exists but cannot be read', async () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, 'settings.json'));
+    const store = new JsonFileSettingsStore(
+      join(dir, 'settings.json'),
+      join(dir, 'rejected.json'),
+      new ManualClock(),
+    );
+    expect(await store.load()).toEqual({ user: {}, workspaces: {} });
+    await expect(store.save({ user: { a: 1 }, workspaces: {} }, [])).rejects.toThrow(
+      /could not be read/,
+    );
+    expect(statSync(join(dir, 'settings.json')).isDirectory()).toBe(true);
   });
 
   it('reports write failures to every waiting caller', async () => {

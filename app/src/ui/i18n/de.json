@@ -74,7 +74,7 @@
   "setup.finish": "Lossurfen",
   "settings.privacy": "Datenschutz",
   "settings.contentBlocker": "Werbung und Tracker blockieren",
-  "settings.contentBlockerNote": "Nutzt die Filterlisten, die uBlock Origin standardmäßig aktiviert, und blockiert damit auch bekannte Schadseiten.",
+  "settings.contentBlockerNote": "Nutzt die Filterlisten, die uBlock Origin standardmäßig aktiviert, außer der Liste von Peter Lowe.",
   "shell.blocker": "Inhaltsblocker",
   "shell.blockerOn": "Inhaltsblocker: {count} blockiert",
   "shell.blockerOff": "Inhaltsblocker: auf dieser Website aus",
@@ -135,11 +135,13 @@
   "defaultBrowser.not": "Links aus anderen Apps öffnen sich in einem anderen Browser.",
   "defaultBrowser.make": "Als Standard festlegen",
   "defaultBrowser.windows": "Wähle {product} in den geöffneten Windows-Einstellungen.",
+  "defaultBrowser.unsupported": "Diese Art der Installation kann nicht Standardbrowser werden.",
   "defaultBrowser.failed": "Das System hat die Änderung nicht übernommen.",
   "setup.browser.title": "Blocker und Standardbrowser",
   "setup.browser.body": "{product} blockiert Werbung und Tracker von Anfang an. Als Standardbrowser öffnet es auch die Links aus anderen Apps.",
   "shell.bookmarksBar": "Lesezeichenleiste",
   "shell.bookmarksBarEmpty": "Seiten, die du mit dem Stern merkst, erscheinen hier.",
+  "shell.moreBookmarks": "Weitere Lesezeichen",
   "settings.bookmarksBar": "Lesezeichenleiste anzeigen",
   "settings.bookmarksBarNote": "Zeigt die Lesezeichen des Ordners Lesezeichenleiste unter der Symbolleiste."
 }

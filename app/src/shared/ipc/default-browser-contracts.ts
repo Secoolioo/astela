@@ -2,13 +2,18 @@ import * as v from 'valibot';
 import { defineRequest } from './contract.ts';
 
 /**
- * Tells whether the browser is the default browser, and whether a policy lets the user make
- * it the default. The settings page and the setup guide both show it.
+ * Tells whether the browser is the default browser, whether a policy lets the user make it
+ * the default, and whether this installation can become the default at all. The settings
+ * page and the setup guide both show it.
  */
 export const GetDefaultBrowser = defineRequest({
   channel: 'settings.getDefaultBrowser',
   request: v.strictObject({}),
-  response: v.strictObject({ isDefault: v.boolean(), allowed: v.boolean() }),
+  response: v.strictObject({
+    isDefault: v.boolean(),
+    allowed: v.boolean(),
+    supported: v.boolean(),
+  }),
   capability: 'page:settings',
 });
 
