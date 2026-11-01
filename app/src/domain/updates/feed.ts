@@ -1,11 +1,9 @@
 import * as v from 'valibot';
+import { UpdateChannelSchema, type UpdateChannel } from './channel.ts';
 import { compareVersions, isVersion, matchesVersionPrefix } from './version.ts';
 
-/** Update channels. The beta channel also receives stable releases. */
-export const UpdateChannelSchema = v.picklist(['stable', 'beta']);
-
-/** An update channel. */
-export type UpdateChannel = v.InferOutput<typeof UpdateChannelSchema>;
+// The channel lives in a module of its own, so the policies do not load the feed's code.
+export { UpdateChannelSchema, type UpdateChannel };
 
 const versionSchema = v.pipe(v.string(), v.check(isVersion, 'Must be a semantic version'));
 const timestamp = v.pipe(v.string(), v.isoTimestamp());

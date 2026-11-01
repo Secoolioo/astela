@@ -71,10 +71,8 @@ import { connectBrowserImport } from './browser-import.ts';
 import { ImportEnabled } from '../domain/import/import.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
-import { showSandboxHelp } from './sandbox-help.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
-import { runSandboxHelpSmokeTest, runSmokeTest } from './smoke-test.ts';
 import type { UpdateService } from '../domain/updates/update-service.ts';
 
 /** Paths of the bundled files, relative to the main bundle. */
@@ -114,6 +112,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   app.setName(brand.productName);
   app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
   const safeMode = app.commandLine.hasSwitch('safe-mode');
+  // The self-test is only for package checks; it loads at once, off the start-up path.
+  const smokeReport = app.commandLine.getSwitchValue('smoke-test');
+  const smokeTest = smokeReport === '' ? undefined : import('./smoke-test.ts');
   const clock = new SystemClock();
   const userData = app.getPath('userData');
   const recentLogs = new RingBufferLogSink(500);
@@ -226,6 +227,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const router = new IpcRouter(gate, logger);
   if (app.commandLine.hasSwitch('sandbox-help')) {
     // Started by the AppImage launcher because the sandbox cannot work: no web content.
+    const [{ showSandboxHelp }, { runSandboxHelpSmokeTest }] = await Promise.all([
+      import('./sandbox-help.ts'),
+      import('./smoke-test.ts'),
+    ]);
     const help = showSandboxHelp({
       url: 'app://sandbox-help/',
       origin: 'app://sandbox-help',
@@ -379,8 +384,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     shellLoaded = true;
     setTimeout(() => boot.guard.markHealthy(app.getVersion()), 10_000).unref();
   });
-  const smokeReport = app.commandLine.getSwitchValue('smoke-test');
-  if (smokeReport !== '') {
+  if (smokeTest !== undefined) {
+    // Loaded long before; the shell cannot finish loading while this continues.
+    const { runSmokeTest } = await smokeTest;
     runSmokeTest(first, smokeReport, {
       keepRunning: app.commandLine.hasSwitch('smoke-test-keep-running'),
       marks,
