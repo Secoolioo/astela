@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { shellChannels, shellEventChannels } from '../shared/ipc/shell-channels.ts';
+import { applyAppearance } from './appearance.ts';
 
 // The preload's own code starts here; the self-test reports it as `page.preload`.
 performance.mark('preload');
 const requests = new Set<string>(shellChannels);
 const events = new Set<string>(shellEventChannels);
+applyAppearance();
 
 /**
  * The only API the shell page gets. It can call the shell's request channels and listen

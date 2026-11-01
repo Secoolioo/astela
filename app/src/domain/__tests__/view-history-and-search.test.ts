@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { engineForSearchUrl, searchEngines } from '../search/search-engines.ts';
+import { engineForSearchUrl, searchEngines } from '../../shared/search-engines.ts';
 import { ViewHistory, type ViewSnapshot } from '../tabs/view-history.ts';
 
 const view = (...urls: string[]): ViewSnapshot => ({

@@ -59,8 +59,10 @@ export interface BrowserWindowOptions {
   readonly webPartition: string;
   /** URL of a new tab. */
   readonly newTabUrl: string;
-  /** Window background while the shell loads. */
-  readonly backgroundColor: string;
+  /** Window background while the shell loads, for the current light or dark mode. */
+  readonly backgroundColor: () => string;
+  /** Command line argument that gives a view of the browser's own UI its design tokens. */
+  readonly appearanceArgument: () => string;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -109,12 +111,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       minHeight: 320,
       // Shown at once in the theme's background color: Chromium lowers the priority of the
       // renderer of a hidden window, so the shell would load later in one.
-      backgroundColor: options.backgroundColor,
+      backgroundColor: options.backgroundColor(),
     });
     this.shell = new WebContentsView({
       webPreferences: {
         preload: options.shellPreload,
         partition: options.internalPartition,
+        additionalArguments: [options.appearanceArgument()],
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -122,12 +125,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         v8CacheOptions: 'bypassHeatCheck',
       },
     });
-    this.shell.setBackgroundColor(options.backgroundColor);
+    this.shell.setBackgroundColor(options.backgroundColor());
     this.window.contentView.addChildView(this.shell);
     this.subscriptions.add(
       options.gate.registerView(this.shell.webContents.id, {
         origin: options.shellOrigin,
-        capabilities: new Set(['shell']),
+        capabilities: new Set(['shell', 'appearance']),
       }),
     );
     this.tabs = new TabService(this, options.newTabUrl);
@@ -269,6 +272,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
+  /** Paints the window and the views of internal pages in the current light or dark mode. */
+  repaintBackground(): void {
+    if (this.window.isDestroyed()) {
+      return;
+    }
+    const color = this.options.backgroundColor();
+    this.window.setBackgroundColor(color);
+    this.shell.setBackgroundColor(color);
+    for (const entry of this.entries.values()) {
+      if (entry.page !== undefined) entry.view.setBackgroundColor(color);
+    }
+  }
+
   /** Closes the window and every tab view. */
   dispose(): void {
     // A message to a shell that is closing can block the exit of the app.
@@ -359,7 +375,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           : {
               preload: this.options.pagePreload,
               partition: this.options.internalPartition,
-              additionalArguments: [`--bridge-scope=${page}`],
+              additionalArguments: [`--bridge-scope=${page}`, this.options.appearanceArgument()],
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
@@ -370,10 +386,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const contents = view.webContents;
     let registration: Disposable | undefined;
     if (page !== undefined) {
-      view.setBackgroundColor(this.options.backgroundColor);
+      view.setBackgroundColor(this.options.backgroundColor());
       registration = this.options.gate.registerView(contents.id, {
         origin: `app://${page}`,
-        capabilities: new Set<Capability>([`page:${page}`]),
+        capabilities: new Set<Capability>([`page:${page}`, 'appearance']),
       });
     }
     const sync = (): void => this.sync(id, contents);
@@ -553,6 +569,13 @@ export class WindowManager implements Disposable {
   /** All open windows. */
   get all(): readonly BrowserWindowController[] {
     return [...this.windows];
+  }
+
+  /** Paints every window in the current light or dark mode. */
+  repaintBackgrounds(): void {
+    for (const window of this.windows) {
+      window.repaintBackground();
+    }
   }
 
   /** Closes every window. */

@@ -25,8 +25,9 @@
   --text-1: oklch(22% 0.01 260);
   --text-2: oklch(45% 0.01 260);
   --border-1: oklch(88% 0.006 260);
-  --accent: oklch(55% 0.17 255);
-  --focus-ring: oklch(55% 0.17 255);
+  /* The browser sets --accent-light and --accent-dark from the accent setting. */
+  --accent: var(--accent-light, oklch(55% 0.17 255));
+  --focus-ring: var(--accent);
   --danger: oklch(52% 0.19 25);
 }
 
@@ -39,8 +40,8 @@
     --text-1: oklch(95% 0.005 260);
     --text-2: oklch(75% 0.01 260);
     --border-1: oklch(36% 0.01 260);
-    --accent: oklch(72% 0.14 255);
-    --focus-ring: oklch(72% 0.14 255);
+    --accent: var(--accent-dark, oklch(72% 0.148 255));
+    --focus-ring: var(--accent);
     --danger: oklch(72% 0.15 25);
   }
 }
