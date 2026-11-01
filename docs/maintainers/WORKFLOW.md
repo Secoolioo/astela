@@ -17,7 +17,7 @@ Astela is maintained by a team of three. The repository owner administers settin
 
 ## Pull requests
 
-- **Owner branches:** pushing a branch with one of the prefixes above runs the `Branch push` workflow. When it passes, `Open pull request` opens the pull request from the first commit message. `Merge pull request` squash-merges it with the owner token once every required check is green. If GitHub never started a CI job on a runner, it re-runs the failed jobs once.
+- **Owner branches:** pushing a branch with one of the prefixes above runs the `Branch push` workflow. When it passes, `Open pull request` opens the pull request from the first commit message. `Merge pull request` squash-merges it with the owner token once every required check is green. If GitHub never started a CI job on a runner, or the runner stopped responding until the job's time limit, it re-runs the failed jobs once.
 - **Other maintainers** open pull requests themselves; the owner reviews them.
 - **Required checks:** `ci-gate` (all CI jobs) and `pr-title`. Review conversations must be resolved. Only green pull requests are merged.
 - **Size:** keep pull requests small, roughly 400 changed lines of hand-written code. Generated files and lockfiles do not count.
@@ -54,7 +54,7 @@ pnpm verify    # every check CI runs in the verify job
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | `ci.yml`                                      | `verify`, unit tests, end-to-end tests and performance budgets on three OS, packages for every format with smoke tests, update tests, package repository tests, commit rules, workflow security, `ci-gate` | active |
 | `pr-title.yml`                                | pull request title lint                                                                                                                                                                                    | active |
-| `branch-push.yml`, `auto-pr.yml`, `merge.yml` | owner pull requests: opened after the branch check, squash-merged once the required checks pass; CI jobs that never got a runner run once more                                                             | active |
+| `branch-push.yml`, `auto-pr.yml`, `merge.yml` | owner pull requests: opened after the branch check, squash-merged once the required checks pass; CI jobs that never got or lost a runner run once more                                                     | active |
 | `labels.yml`                                  | label sync from `.github/labels.yml`                                                                                                                                                                       | active |
 | `codeql.yml`, `scorecard.yml`                 | code scanning and OpenSSF Scorecard                                                                                                                                                                        | active |
 | `repo-setup.yml`                              | applies repository settings and creates the signing keys with `tools/owner/setup.sh` (owner only)                                                                                                          | active |
