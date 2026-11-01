@@ -6,7 +6,7 @@ The first time you start Astela with a new profile, it opens the setup guide in 
 
 1. **Welcome:** what the guide covers.
 2. **Look:** the color mode (System, Light or Dark) and the accent color.
-3. **Tabs:** where the tabs are (Top, Bottom, Left or Right) and the density.
+3. **Tabs:** where the tabs are (Top, Bottom, Left or Right), the density, and whether the bookmarks bar shows.
 4. **Search:** the search engine of the address bar and the new tab page, or a search address of your own.
 5. **Import:** bookmarks, history and open tabs from the browsers you used before; see [Import from other browsers](import.md).
 6. **Blocker and default browser:** the [content blocker](content-blocker.md), which is on from the start, and whether Astela becomes your [default browser](default-browser.md).

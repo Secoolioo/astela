@@ -371,7 +371,40 @@ export class SetupGuide extends LitElement {
             />${this.tk(`settings.density.${density}`)}
           </label>`;
         })}
-      </div>`;
+      </div>
+      <h2>${this.t('shell.bookmarksBar')}</h2>
+      ${this.renderSwitch('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote')}`;
+  }
+
+  /** A switch for a setting of the guide, with a note below its label, and more rows. */
+  private renderSwitch(
+    key: string,
+    label: MessageKey,
+    note: MessageKey,
+    more: TemplateResult | typeof nothing = nothing,
+  ): TemplateResult {
+    const setting = this.client?.get(key);
+    return html`<div class="options">
+      <label class="option">
+        <span class="text">
+          <span>${this.t(label)}</span>
+          <span class="note"
+            >${setting?.locked === true ? this.t('settings.managed') : this.t(note)}</span
+          >
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          .checked=${setting?.value === true}
+          ?disabled=${setting?.locked !== false}
+          @change=${(event: Event) => {
+            const input = event.target;
+            if (input instanceof HTMLInputElement) void this.client?.set(key, input.checked);
+          }}
+        />
+      </label>
+      ${more}
+    </div>`;
   }
 
   private renderDone(): TemplateResult {
@@ -487,32 +520,9 @@ export class SetupGuide extends LitElement {
   }
 
   private renderBrowser(): TemplateResult {
-    const blocker = this.client?.get('contentBlocker.enabled');
     return html`<h1>${this.t('setup.browser.title')}</h1>
       <p>${this.t('setup.browser.body')}</p>
-      <div class="options">
-        <label class="option">
-          <span class="text">
-            <span>${this.t('settings.contentBlocker')}</span>
-            <span class="note">
-              ${blocker?.locked === true ? this.t('settings.managed') : this.t('settings.contentBlockerNote')}
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            .checked=${blocker?.value === true}
-            ?disabled=${blocker?.locked !== false}
-            @change=${(event: Event) => {
-              const input = event.target;
-              if (input instanceof HTMLInputElement) {
-                void this.client?.set('contentBlocker.enabled', input.checked);
-              }
-            }}
-          />
-        </label>
-        <default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>
-      </div>`;
+      ${this.renderSwitch('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote', html`<default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>`)}`;
   }
 
   private renderFooter(index: number): TemplateResult {

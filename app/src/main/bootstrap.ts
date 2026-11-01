@@ -8,6 +8,7 @@ import {
   CloseTab,
   GetShellState,
   OpenBlockerMenu,
+  OpenBookmarkFolder,
   ToggleBookmark,
   OpenMenu,
   NavigateTab,
@@ -55,6 +56,7 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  BookmarksBarSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
   ContentBlockerSetting,
@@ -313,6 +315,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     isBookmarked: (url) => bookmarks.has(url),
     toggleBookmark: (url, title) => bookmarks.toggle(url, title),
+    // The bookmarks bar loads the bookmarks only while it shows.
+    bookmarksBar: () => (settings.get(BookmarksBarSetting) ? bookmarks.barItems() : null),
+    toggleBookmarksBar: () =>
+      void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
     gate,
     router,
     logger,
@@ -342,12 +348,30 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   );
   connectSetupGuide(router, windows);
   const shellSettings = new Set([
+    BookmarksBarSetting.key,
     TabStripPositionSetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
+  });
+  router.handle(OpenBookmarkFolder, async ({ id, x, y }, { sender }) => {
+    const window = windows.forShell(sender);
+    if (window === undefined) return null;
+    const { popupBookmarkFolder } = await import('./browser-menu.ts');
+    popupBookmarkFolder(
+      window,
+      { x, y },
+      id,
+      (folder) => bookmarks.contents(folder),
+      (url, newTab) => {
+        const active = window.tabs.active;
+        if (newTab || active === undefined) window.tabs.open(url);
+        else window.tabs.navigate(active.id, url);
+      },
+    );
+    return null;
   });
   router.handle(OpenBlockerMenu, async (position, { sender }) => {
     const window = windows.forShell(sender);

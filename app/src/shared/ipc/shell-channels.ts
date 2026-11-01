@@ -14,6 +14,7 @@ export const shellChannels = [
   'shell.openMenu',
   'shell.openBlockerMenu',
   'shell.toggleBookmark',
+  'shell.openBookmarkFolder',
 ] as const;
 
 /** Event channels the shell listens to. */

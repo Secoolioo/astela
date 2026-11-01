@@ -21,6 +21,7 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
  */
 export class Bookmarks {
   private urls = new Set<string>();
+  private rows: readonly BookmarkEntry[] = [];
   private loaded: Promise<void> | undefined;
   private readonly data: DataServiceClient;
   private readonly router: IpcRouter;
@@ -61,6 +62,25 @@ export class Bookmarks {
   }
 
   /**
+   * The items of the bookmarks bar. The first call loads the bookmarks; the shells update
+   * when they arrive.
+   */
+  barItems(): { id: number; title: string; url: string | null }[] {
+    this.loaded ??= this.refresh();
+    return this.contents(bookmarkRoots.bar).map(({ id, title, url }) => ({ id, title, url }));
+  }
+
+  /**
+   * The bookmarks and folders in a folder, in their order.
+   * @param folder - The folder's id.
+   */
+  contents(folder: number): BookmarkEntry[] {
+    return this.rows
+      .filter((row) => row.parentId === folder)
+      .map(({ id, parentId, title, url }) => ({ id, parentId, title, url }));
+  }
+
+  /**
    * Adds a bookmark for a page to the bookmarks bar, or removes every bookmark of the page.
    * @param url - The page's address.
    * @param title - The page's title.
@@ -86,9 +106,18 @@ export class Bookmarks {
   }
 
   private async refresh(): Promise<void> {
-    this.urls = new Set(await this.data.call('bookmarkUrls'));
+    this.rows = await this.data.call('bookmarkList');
+    this.urls = new Set(this.rows.flatMap((row) => (row.url === null ? [] : [row.url])));
     this.onChange();
   }
+}
+
+/** A bookmark or folder; folders have no address. */
+export interface BookmarkEntry {
+  readonly id: number;
+  readonly parentId: number | null;
+  readonly title: string;
+  readonly url: string | null;
 }
 
 /**
