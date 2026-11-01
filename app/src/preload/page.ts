@@ -2,13 +2,14 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { applyAppearance } from './appearance.ts';
 
 const scopeArgument = process.argv.find((arg) => arg.startsWith('--bridge-scope='));
-const scope = scopeArgument?.slice('--bridge-scope='.length) ?? '';
+const scopes = (scopeArgument?.slice('--bridge-scope='.length) ?? '').split(',').filter(Boolean);
 applyAppearance();
 
-const inScope = (channel: string): boolean => scope !== '' && channel.startsWith(`${scope}.`);
+const inScope = (channel: string): boolean =>
+  scopes.some((scope) => channel.startsWith(`${scope}.`));
 
 /**
- * Bridge for internal pages. Each page may only use the channels of its own scope, such as
+ * Bridge for internal pages. Each page may only use the channels of its own scopes, such as
  * `sandboxHelp.*`; the browser process checks the page's capability again, and sends events
  * only to pages that have the event's capability.
  */

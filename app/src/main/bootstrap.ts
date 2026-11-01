@@ -1,7 +1,7 @@
 import { app, Menu, session, type Session } from 'electron';
 import { join } from 'node:path';
 import { brand } from '../shared/brand.ts';
-import { newTabUrl, tabPages } from '../shared/internal-pages.ts';
+import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
 import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
 import {
   ActivateTab,
@@ -27,6 +27,7 @@ import { engineForSearchUrl } from '../shared/search-engines.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
+import { SetupGuideEnabled, shouldShowSetupGuide } from '../domain/setup/setup-guide.ts';
 import { AppProtocol, registerAppScheme } from '../platform/electron/app-protocol.ts';
 import {
   WindowManager,
@@ -45,7 +46,13 @@ import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
 import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
-import { SearchUrlTemplate, TabStripPositionSetting, coreSettings } from './core-settings.ts';
+import {
+  SearchUrlTemplate,
+  SetupShownSetting,
+  TabStripPositionSetting,
+  coreSettings,
+} from './core-settings.ts';
+import { connectSetupGuide } from './setup-guide.ts';
 import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
@@ -105,7 +112,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Until the sources have been read, policies apply as the last start left them, so the
   // read runs while Electron starts. Only a start without that state waits for the read.
   const policies = new PolicyService(
-    [...settingPolicies(coreSettings), ...updatePolicies],
+    [...settingPolicies(coreSettings), ...updatePolicies, SetupGuideEnabled],
     createPolicyProviders(brand, process.platform),
     logger,
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
@@ -231,11 +238,21 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerShellHandlers(router, windows, searchTemplate);
   registerNewTabHandlers(router, windows, searchTemplate);
   connectSettingsPage(router, settings, coreSettings, internal);
+  connectSetupGuide(router, windows);
   settings.onDidChange(({ keys }) => {
     if (keys.includes(TabStripPositionSetting.key)) windows.refreshShells();
   });
 
-  const first = windows.open();
+  // The first start of a profile opens the setup guide instead of a new tab page.
+  const showSetup = shouldShowSetupGuide({
+    shown: settings.get(SetupShownSetting),
+    policy: policies.mandatoryValue(SetupGuideEnabled),
+    noFirstRun: app.commandLine.hasSwitch('no-first-run'),
+  });
+  if (showSetup) {
+    settings.set(SetupShownSetting, true);
+  }
+  const first = windows.open(showSetup ? pageUrl('setup') : undefined);
   marks['window'] = Math.round(performance.now());
   lifecycle.advance('ready');
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.

@@ -161,11 +161,15 @@ function waitForLine(child: ChildProcess, pattern: RegExp): Promise<RegExpExecAr
  * the self-test report announces. `E2E_APP` points to a packaged test build; without it,
  * the development build in `out/` is started with the local Electron.
  * @param extraArgs - Further command line switches, such as a device scale factor.
- * @param options - User settings to store in the profile before the browser starts.
+ * @param options - User settings to store in the profile before the browser starts, and
+ *   whether the setup guide of a new profile may open, which it does not by default.
  */
 export async function launch(
   extraArgs: readonly string[] = [],
-  options: { readonly settings?: Readonly<Record<string, unknown>> } = {},
+  options: {
+    readonly settings?: Readonly<Record<string, unknown>>;
+    readonly firstRun?: boolean;
+  } = {},
 ): Promise<Browser> {
   const profile = mkdtempSync(join(tmpdir(), 'e2e-profile-'));
   if (options.settings !== undefined) {
@@ -183,6 +187,7 @@ export async function launch(
     '--lang=en-US',
     `--smoke-test=${report}`,
     '--smoke-test-keep-running',
+    ...(options.firstRun === true ? [] : ['--no-first-run']),
     ...extraArgs,
   ];
   if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');

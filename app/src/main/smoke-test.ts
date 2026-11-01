@@ -1,6 +1,6 @@
 import { app, type WebContents } from 'electron';
 import { readlinkSync } from 'node:fs';
-import { newTabUrl } from '../shared/internal-pages.ts';
+import { tabPageOf } from '../shared/internal-pages.ts';
 import { writeFileAtomicSync } from '../platform/node/atomic-file.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 
@@ -124,45 +124,42 @@ export function runSmokeTest(
         // Read only now, so that reading does not delay the ready time.
         void Promise.all([
           readPageMarks(window.shellContents, options.timeOrigin),
-          checkNewTabPage(window, errors),
+          checkInternalPage(window, errors),
         ]).then(([pageMarks]) => finish(shellReadyMs, readyAt, pageMarks));
       });
   });
 }
 
 /**
- * Checks that a first tab with the new tab page shows its search field and has the page
- * bridge, so every package is known to contain the internal pages.
+ * Checks that a first tab with an internal page, such as the new tab page or the setup
+ * guide, has its bridge and ran its script, so every package is known to contain the
+ * internal pages. Each page marks itself ready when its script has run.
  * @param window - The first window.
  * @param errors - Receives what went wrong.
  */
-async function checkNewTabPage(window: BrowserWindowController, errors: string[]): Promise<void> {
+async function checkInternalPage(window: BrowserWindowController, errors: string[]): Promise<void> {
   const contents = window.activeTabContents;
-  if (contents === undefined || window.tabs.active?.url !== newTabUrl) {
+  const page = tabPageOf(window.tabs.active?.url ?? '');
+  if (contents === undefined || page === undefined) {
     return;
   }
-  try {
-    if (contents.isLoading() || contents.getURL() === '') {
-      await new Promise<void>((done, fail) => {
-        const timer = setTimeout(
-          () => fail(new Error('it did not load within 30 seconds')),
-          30_000,
-        );
-        contents.once('did-stop-loading', () => {
-          clearTimeout(timer);
-          done();
-        });
-      });
+  const deadline = Date.now() + 30_000;
+  let failure = '';
+  while (Date.now() < deadline) {
+    try {
+      const ready: unknown = await contents.executeJavaScript(
+        '"bridge" in window && document.documentElement.dataset.ready === "true"',
+      );
+      if (ready === true) {
+        return;
+      }
+    } catch (error) {
+      // The page may still be loading; try again until the deadline.
+      failure = `: ${String(error)}`;
     }
-    const rendered: unknown = await contents.executeJavaScript(
-      'document.getElementById("query") !== null && "bridge" in window',
-    );
-    if (rendered !== true) {
-      errors.push('The new tab page did not render');
-    }
-  } catch (error) {
-    errors.push(`New tab page check failed: ${String(error)}`);
+    await new Promise((done) => setTimeout(done, 50));
   }
+  errors.push(`The internal page ${page} did not render${failure}`);
 }
 
 /**

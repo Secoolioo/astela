@@ -26,4 +26,6 @@ if (form instanceof HTMLFormElement && query instanceof HTMLInputElement) {
       void window.bridge.invoke('newtab.navigate', { input });
     }
   });
+  // Tells the self-test that the page's script has run.
+  document.documentElement.dataset['ready'] = 'true';
 }

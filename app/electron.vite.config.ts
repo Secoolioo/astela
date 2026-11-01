@@ -59,6 +59,7 @@ export default defineConfig({
           'sandbox-help': resolve(import.meta.dirname, 'src/ui/sandbox-help/index.html'),
           newtab: resolve(import.meta.dirname, 'src/ui/newtab/index.html'),
           settings: resolve(import.meta.dirname, 'src/ui/settings/index.html'),
+          setup: resolve(import.meta.dirname, 'src/ui/setup/index.html'),
         },
         output: { comments },
       },

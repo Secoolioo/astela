@@ -18,4 +18,8 @@ Every change applies at once, in every window, and is kept when the browser rest
 - **Search engine:** DuckDuckGo, Google, Bing, Startpage, Ecosia, Brave Search or Qwant. The address bar and the [new tab page](new-tab-page.md) search with it.
 - **Custom:** any search address that starts with `https://` and contains `%s` where the search terms go, for example `https://search.example/?q=%s`.
 
+## Setup
+
+- **Setup guide:** opens the [setup guide](setup-guide.md) again in a new tab.
+
 Settings that your organization manages are shown as such and cannot be changed.
