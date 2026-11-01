@@ -67,6 +67,8 @@ import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
 import { connectHistoryPage } from './history-page.ts';
 import { Bookmarks, connectBookmarksPage } from './bookmarks.ts';
+import { connectBrowserImport } from './browser-import.ts';
+import { ImportEnabled } from '../domain/import/import.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
@@ -132,7 +134,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Until the sources have been read, policies apply as the last start left them, so the
   // read runs while Electron starts. Only a start without that state waits for the read.
   const policies = new PolicyService(
-    [...settingPolicies(coreSettings), ...updatePolicies, SetupGuideEnabled],
+    [...settingPolicies(coreSettings), ...updatePolicies, SetupGuideEnabled, ImportEnabled],
     createPolicyProviders(brand, process.platform),
     logger,
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
@@ -306,6 +308,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   connectSettingsPage(router, settings, coreSettings, internal);
   connectHistoryPage(router, data, windows);
   connectBookmarksPage(router, data, bookmarks, windows);
+  connectBrowserImport(
+    router,
+    data,
+    bookmarks,
+    windows,
+    () => policies.mandatoryValue(ImportEnabled) !== false,
+  );
   connectSetupGuide(router, windows);
   const shellSettings = new Set([
     TabStripPositionSetting.key,

@@ -181,6 +181,8 @@ export async function launch(
     readonly firstRun?: boolean;
     /** The profile of an earlier start to use again. */
     readonly profile?: string;
+    /** Environment variables for the browser, such as another home folder. */
+    readonly env?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<Browser> {
   const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
@@ -201,15 +203,23 @@ export async function launch(
     `--smoke-test=${report}`,
     '--smoke-test-keep-running',
     ...(options.firstRun === true ? [] : ['--no-first-run']),
+    // On macOS, a test that moves the home folder leaves the browser without a login
+    // keychain, and its cookie encryption would wait for one when it quits; a mock keychain
+    // keeps every test independent of the keychain of the machine.
+    ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
     ...extraArgs,
   ];
   if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
   const packaged = process.env['E2E_APP'];
   const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
+  const spawnOptions = {
+    stdio: ['ignore', 'inherit', 'pipe'] as ['ignore', 'inherit', 'pipe'],
+    env: { ...process.env, ...options.env },
+  };
   const child =
     packaged === undefined
-      ? spawn(electronPath, [appDir, ...args], { stdio: ['ignore', 'inherit', 'pipe'] })
-      : spawn(packaged, args, { stdio: ['ignore', 'inherit', 'pipe'] });
+      ? spawn(electronPath, [appDir, ...args], spawnOptions)
+      : spawn(packaged, args, spawnOptions);
   child.stderr?.on('data', (chunk: Buffer) => process.stderr.write(chunk));
   const inspector = waitForLine(child, /Debugger listening on (ws:\/\/\S+)/);
   const devtools = waitForLine(child, /DevTools listening on (ws:\/\/\S+)/);
@@ -245,10 +255,13 @@ export async function launch(
       await Promise.race([
         exited,
         new Promise((_, fail) => {
-          timer = setTimeout(
-            () => fail(new Error('The browser did not exit within 15 seconds')),
-            15_000,
-          );
+          timer = setTimeout(() => {
+            // A browser that does not quit shows its log and is stopped, so that it does not
+            // slow down the tests after it.
+            printLog(profile);
+            child.kill('SIGKILL');
+            fail(new Error('The browser did not exit within 15 seconds'));
+          }, 15_000);
         }),
       ]).finally(() => clearTimeout(timer));
       if (closeOptions.keepProfile !== true) rmSync(profile, { recursive: true, force: true });
@@ -295,6 +308,11 @@ async function printState(main: MainProcess, shell: Page, profile: string): Prom
   } catch (error) {
     process.stdout.write(`Browser state not available: ${String(error)}\n`);
   }
+  printLog(profile);
+}
+
+/** Prints the end of the browser's log to the job log. */
+function printLog(profile: string): void {
   const log = join(profile, 'data', 'logs', 'main.log');
   if (existsSync(log)) {
     process.stdout.write(

@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { answer } from '../data/data-protocol.ts';
+import { answer, type DataRequest, type DataResponse } from '../data/data-protocol.ts';
 import { ProfileDatabase, bookmarkRoots, profileSchemaVersion } from '../data/profile-db.ts';
 
 const dirs: string[] = [];
@@ -50,8 +50,15 @@ describe('ProfileDatabase history', () => {
       { url: 'https://b.example/', title: 'B', visitCount: 2, lastVisit: 100 },
     ]);
     expect(added).toBe(1);
-    expect(db.history('').map((e) => [e.url, e.title, e.visitCount, e.lastVisit])).toEqual([
-      ['https://a.example/', 'A', 5, 9000],
+    const pages = (): unknown[] =>
+      db.history('').map((e) => [e.url, e.title, e.visitCount, e.lastVisit]);
+    expect(pages()).toEqual([
+      ['https://a.example/', 'A', 4, 9000],
+      ['https://b.example/', 'B', 2, 100],
+    ]);
+    db.importHistory([{ url: 'https://b.example/', title: 'B', visitCount: 2, lastVisit: 100 }]);
+    expect(pages()).toEqual([
+      ['https://a.example/', 'A', 4, 9000],
       ['https://b.example/', 'B', 2, 100],
     ]);
   });
@@ -69,6 +76,14 @@ describe('ProfileDatabase bookmarks', () => {
       { title: 'Folder', children: [{ title: 'Deep', url: 'https://deep.example/' }] },
     ]);
     expect(count).toBe(2);
+    // Importing again replaces the folder of the first import.
+    expect(
+      db.importBookmarks('Imported from Chrome', [
+        { title: 'Docs', url: 'https://docs.example/' },
+        { title: 'Empty', children: [] },
+        { title: 'Folder', children: [{ title: 'Deep', url: 'https://deep.example/' }] },
+      ]),
+    ).toBe(2);
     expect(db.bookmarks()).toEqual([
       {
         id: bookmarkRoots.bar,
@@ -157,14 +172,16 @@ describe('ProfileDatabase migrations', () => {
 describe('data protocol', () => {
   it('answers known methods and reports unknown ones and failures', () => {
     const db = new ProfileDatabase(':memory:', () => 1);
-    expect(answer(db, { id: 1, method: 'addVisit', params: ['https://a.example/', 'A'] })).toEqual({
-      id: 1,
-      result: undefined,
-    });
-    expect(answer(db, { id: 2, method: 'history', params: [''] }).result).toHaveLength(1);
-    expect(answer(db, { id: 3, method: 'close' as never, params: [] }).error).toMatch(/Unknown/);
-    expect(answer(db, { id: 4, method: 'addBookmark', params: [999, 'X'] }).error).toMatch(
-      /FOREIGN KEY/,
-    );
+    const importer = {
+      findBrowsers: () => [],
+      importBrowser: () => ({ bookmarks: 0, history: 0, windows: [], failed: [] }),
+    };
+    const call = (id: number, method: string, params: unknown[]): DataResponse =>
+      answer(db, importer, { id, method: method as DataRequest['method'], params });
+    expect(call(1, 'addVisit', ['https://a.example/', 'A'])).toEqual({ id: 1, result: undefined });
+    expect(call(2, 'history', ['']).result).toHaveLength(1);
+    expect(call(3, 'close', []).error).toMatch(/Unknown/);
+    expect(call(4, 'addBookmark', [999, 'X']).error).toMatch(/FOREIGN KEY/);
+    expect(call(5, 'findBrowsers', []).result).toEqual([]);
   });
 });

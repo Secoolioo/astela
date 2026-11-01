@@ -68,3 +68,4 @@ Each rejected option as a bullet point with a short reason.
 | [0026](0026-internal-pages-share-tabs-with-web-pages.md)        | Internal pages share tabs with web pages                |
 | [0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) | Content blocker with the default lists of uBlock Origin |
 | [0028](0028-content-blocker-rules-through-a-frame-preload.md)   | Content blocker rules through a frame preload           |
+| [0029](0029-import-from-other-browsers-in-the-data-service.md)  | Import from other browsers in the data service          |

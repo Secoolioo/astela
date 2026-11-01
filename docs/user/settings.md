@@ -26,6 +26,10 @@ Every change applies at once, in every window, and is kept when the browser rest
 
 - **Block ads and trackers:** turns the [content blocker](content-blocker.md) on or off. It is on by default.
 
+## Import from another browser
+
+- **Import:** bookmarks, history and open tabs from Chrome, Edge, Brave, Vivaldi, Opera, Firefox and other browsers on this computer. See [Import from other browsers](import.md).
+
 ## Setup
 
 - **Setup guide:** opens the [setup guide](setup-guide.md) again in a new tab.

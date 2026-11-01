@@ -52,6 +52,10 @@ export class SettingsPage extends LitElement {
         font-weight: 600;
         color: var(--text-2);
       }
+      .intro {
+        margin: 0 0 var(--space-3);
+        color: var(--text-2);
+      }
       section {
         border: 1px solid var(--border-1);
         border-radius: var(--radius-2);
@@ -177,6 +181,11 @@ export class SettingsPage extends LitElement {
       <section aria-labelledby="privacy">
         ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
       </section>
+      <h2 id="import">${t('import.title')}</h2>
+      <div class="plain" role="group" aria-labelledby="import">
+        <p class="intro">${t('import.note')}</p>
+        <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>
+      </div>
       <h2 id="setup">${t('settings.setup')}</h2>
       <section aria-labelledby="setup">
         <div class="row">

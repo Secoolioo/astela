@@ -6,7 +6,7 @@ import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import { SettingsClient, paintSwatches, type PageBridge } from '../ui-kit/settings-client.ts';
 
 /** The steps of the guide, in order. */
-const steps = ['welcome', 'look', 'layout', 'search', 'done'] as const;
+const steps = ['welcome', 'look', 'layout', 'search', 'import', 'done'] as const;
 type Step = (typeof steps)[number];
 
 const colorModes = ['system', 'light', 'dark'] as const;
@@ -282,6 +282,7 @@ export class SetupGuide extends LitElement {
       look: () => this.renderLook(),
       layout: () => this.renderLayout(),
       search: () => this.renderSearch(),
+      import: () => this.renderImport(),
       done: () => this.renderDone(),
     };
     return views[this.step]();
@@ -445,6 +446,12 @@ export class SetupGuide extends LitElement {
               }`
           : nothing
       }`;
+  }
+
+  private renderImport(): TemplateResult {
+    return html`<h1>${this.t('setup.import.title')}</h1>
+      <p>${this.t('setup.import.body')}</p>
+      <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>`;
   }
 
   private renderFooter(index: number): TemplateResult {
