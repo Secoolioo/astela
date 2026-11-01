@@ -81,5 +81,14 @@
   "settings.startup": "Beim Start",
   "settings.startupPage": "Öffnen",
   "settings.startupPage.restore": "Letzte Sitzung",
-  "settings.startupPage.newtab": "Neuer Tab"
+  "settings.startupPage.newtab": "Neuer Tab",
+  "history.title": "Verlauf",
+  "history.search": "Verlauf durchsuchen",
+  "history.empty": "Keine Seiten gefunden.",
+  "history.clearAll": "Verlauf löschen",
+  "history.clearConfirm": "Alle Seiten aus dem Verlauf entfernen?",
+  "history.clear": "Löschen",
+  "history.cancel": "Abbrechen",
+  "history.more": "Mehr anzeigen",
+  "history.remove": "{title} aus dem Verlauf entfernen"
 }

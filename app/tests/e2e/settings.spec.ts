@@ -89,8 +89,8 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
     )
     .toEqual(
       process.platform === 'darwin'
-        ? ['New Tab', '-', 'Settings…']
-        : ['New &tab', '-', '&Settings'],
+        ? ['New Tab', '-', 'History', '-', 'Settings…']
+        : ['New &tab', '-', '&History', '-', '&Settings'],
     );
   await browser.main.evaluate(() => {
     const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(-1);

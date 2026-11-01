@@ -81,5 +81,14 @@
   "settings.startup": "On startup",
   "settings.startupPage": "Open",
   "settings.startupPage.restore": "Last session",
-  "settings.startupPage.newtab": "New tab page"
+  "settings.startupPage.newtab": "New tab page",
+  "history.title": "History",
+  "history.search": "Search history",
+  "history.empty": "No pages found.",
+  "history.clearAll": "Clear history",
+  "history.clearConfirm": "Remove every page from the history?",
+  "history.clear": "Clear",
+  "history.cancel": "Cancel",
+  "history.more": "Show more",
+  "history.remove": "Remove {title} from the history"
 }

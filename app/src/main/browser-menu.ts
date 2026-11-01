@@ -23,6 +23,13 @@ export function popupBrowserMenu(
     },
     { type: 'separator' },
     {
+      label: i18n.t('menu.history'),
+      accelerator: mac ? 'Cmd+Y' : 'Ctrl+H',
+      registerAccelerator: false,
+      click: () => window.execute('history.open'),
+    },
+    { type: 'separator' },
+    {
       label: i18n.t('menu.settings'),
       ...(mac ? { accelerator: 'Cmd+,', registerAccelerator: false } : {}),
       click: () => window.execute('settings.open'),
