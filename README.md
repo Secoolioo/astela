@@ -2,7 +2,7 @@
 
 A desktop browser for Windows, macOS and Linux, built on Chromium through Electron and written in TypeScript. It has no telemetry, no ads, no sponsored tiles, no news feed and needs no account.
 
-> **Status:** early development. The current beta, 0.1.0-beta.2, is on the [releases page](https://github.com/Secoolioo/astela/releases); the [roadmap](docs/roadmap.md) lists every milestone.
+> **Status:** early development. The current beta, 0.1.0-beta.3, is on the [releases page](https://github.com/Secoolioo/astela/releases); the [roadmap](docs/roadmap.md) lists every milestone.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screenshot-dark.png">

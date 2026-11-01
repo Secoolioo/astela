@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`; `0.1.0-beta.3` adds the setup guide, the new tab page, settings, the content blocker, history, bookmarks, session restore and the import from other browsers. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 
@@ -163,8 +163,9 @@ The third beta brings two features forward from later milestones: the content bl
 - **Appearance:** color mode, accent color, density, and the tab strip at the top, bottom, left or right.
 - **Search engines:** Google, Bing, DuckDuckGo, Startpage, Ecosia, Brave Search, Qwant and custom engines.
 - **Data:** the data service with history, bookmarks and session restore.
-- **Import:** bookmarks, history and open tabs from Chromium-based and Firefox-based browsers, with one click.
-- **Content blocker:** on by default and switchable per site, with the filter lists that uBlock Origin enables by default and its scriptlets.
+- **Import:** bookmarks and history from Chromium-based and Firefox-based browsers, and open tabs from Firefox-based ones, with one click.
+- **Content blocker:** on by default and switchable per site, with the filter lists that uBlock Origin enables by default, except Peter Lowe's list, and its scriptlets.
+- **Bookmarks bar and default browser:** the bookmarks bar below the toolbar; links from other apps open in a new tab, and the browser can become the default browser.
 
 Saved passwords, autofill and the import of passwords follow in `0.1.0-beta.4`.
 

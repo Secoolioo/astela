@@ -1,6 +1,6 @@
 # Principles
 
-> **Status:** these principles apply to every design decision, pull request and review. Astela is in early development; nothing described here is released yet.
+> **Status:** these principles apply to every design decision, pull request and review. Astela is in early development; its betas are released for testing.
 
 Astela aims to be a browser that feels like your own tool: it starts instantly, uses little memory and adapts to the way you work. Apart from that, it leaves you alone. Eight principles turn that vision into rules that can be checked.
 
@@ -24,7 +24,7 @@ The browser does not interrupt. Modal dialogs are reserved for security decision
 
 ### 5. Private by default
 
-There is no telemetry, and no account is required. A content blocker is part of the browser (planned for M2, see the [roadmap](../roadmap.md)). Data stays on the device, and secrets are kept in the operating system's key store.
+There is no telemetry, and no account is required. A content blocker is part of the browser and on by default, from 0.1.0-beta.3 (see the [roadmap](../roadmap.md)). Data stays on the device, and secrets are kept in the operating system's key store.
 
 ### 6. Manageable
 

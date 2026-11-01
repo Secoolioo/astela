@@ -1,6 +1,6 @@
 # Update architecture
 
-> **Status:** partly implemented. Signed updates work for NSIS, AppImage and macOS, with rollback for NSIS and AppImage, and the package repositories for deb and rpm are built and tested; the release pipeline is design. See [implementation status](#implementation-status).
+> **Status:** partly implemented. Signed updates work for NSIS, AppImage and macOS, with rollback for NSIS and AppImage, and the package repositories for deb and rpm are built and tested; the release pipeline publishes every release. See [implementation status](#implementation-status).
 
 Astela is designed to update itself on every supported platform without dialogs. A signed feed decides _what_ gets installed. Depending on the package format, electron-updater, the operating system's package manager or the IT department decides _how_ it gets installed. The decision records are ADR 0014 (update architecture with a signed feed) and ADR 0015 (Linux package repositories); see the [decision record index](../adr/README.md).
 
@@ -293,4 +293,4 @@ The update path for NSIS, AppImage and macOS is implemented:
 - **Package scripts** (`app/build/linux/`): after installation, the deb or rpm package registers the repository of its channel once, with the key it ships; `ASTELA_NO_REPO=1` skips this and `ASTELA_REPO_URL` points at a mirror. Removing the package removes the repository again. Packages ship the repository key from `app/build/keys/linux-repo.pub.asc`.
 - **Repository test:** the `linux-repos` CI job installs `0.0.1-beta.1` from its file on Ubuntu 22.04 and 24.04, Debian 12 and 13 and the two latest Fedora releases, upgrades to `0.0.1-beta.2` and to `0.0.1` through the repositories, and removes the package.
 
-Not implemented yet: the rollback on macOS, restoring data snapshots (no data migrations exist yet), the update indicator, the "Restart to update" entry and the idle installation, the status on the About and diagnostics pages, the "What's new" note, the mirror tool, the macOS updater test, and code signing for Windows and with an Apple Developer ID.
+Not implemented yet: the rollback on macOS, restoring data snapshots (a rollback does not bring back the `profile.db.v<version>.bak` copy that a migration of the profile database writes), the update indicator, the "Restart to update" entry and the idle installation, the status on the About and diagnostics pages, the "What's new" note, the mirror tool, the macOS updater test, and code signing for Windows and with an Apple Developer ID.
