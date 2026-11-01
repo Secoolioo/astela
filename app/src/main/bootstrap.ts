@@ -26,6 +26,7 @@ import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
 import { blockingFor, siteOf, toggleSite, type Blocking } from '../domain/blocker/blocking.ts';
+import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
@@ -47,10 +48,12 @@ import {
 } from '../platform/electron/session-security.ts';
 import { RotatingFileLogSink } from '../platform/node/file-log-sink.ts';
 import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
+import { JsonFileSessionStore } from '../platform/node/session-store.ts';
 import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  StartupSetting,
   BlockerAllowedSitesSetting,
   ContentBlockerSetting,
   SearchUrlTemplate,
@@ -151,6 +154,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     clock,
   );
   const settings = new SettingsService(coreSettings, policies, store, logger);
+  // The session of the last start is read alongside, for the first window.
+  const sessionStore = new JsonFileSessionStore(join(userData, 'session.json'), clock);
+  const savedSession = sessionStore.read();
   const settingsLoaded = settings
     .load()
     .catch((error: unknown) => logger.error('Settings could not be loaded; defaults apply', error))
@@ -178,7 +184,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     blockingFor(url, settings.get(ContentBlockerSetting), settings.get(BlockerAllowedSitesSetting));
   const blocker = new ContentBlocker({
     dataDir: layout.blockerDir,
-    enabled: (page) => blocking(page) !== 'off',
+    // Off everywhere wins; a page whose address is not known yet is blocked as usual.
+    enabled: (page) => settings.get(ContentBlockerSetting) && blocking(page) !== 'off',
     onBlocked: (contentsId) => windows.countBlocked(contentsId),
     logger: logger.child('blocker'),
   });
@@ -311,7 +318,20 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   if (showSetup) {
     settings.set(SetupShownSetting, true);
   }
-  const first = windows.open(showSetup ? pageUrl('setup') : undefined);
+  const lastSession =
+    !showSetup && settings.get(StartupSetting) === 'restore'
+      ? parseSession(await savedSession)
+      : undefined;
+  const first =
+    lastSession === undefined
+      ? windows.open(showSetup ? pageUrl('setup') : undefined)
+      : windows.restore(lastSession);
+  // The session follows every change of tabs and windows; an empty one, after the last window
+  // closed, is not kept, so the next start restores that window.
+  windows.onDidChange(() => {
+    const snapshot = windows.snapshot();
+    if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
+  });
   marks['window'] = Math.round(performance.now());
   lifecycle.advance('ready');
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
@@ -371,6 +391,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     if (shellLoaded) boot.guard.markHealthy(app.getVersion());
     lifecycle.onWillShutdown((e) => {
       e.join(store.flush(), 'settings');
+      const snapshot = windows.snapshot();
+      if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
+      e.join(sessionStore.flush(), 'session');
       const web = session.fromPartition(webPartition);
       web.flushStorageData();
       e.join(web.cookies.flushStore(), 'cookies');

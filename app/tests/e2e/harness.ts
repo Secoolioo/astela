@@ -145,7 +145,8 @@ export interface Browser {
   readonly shell: Page;
   readonly process: ChildProcess;
   readonly profile: string;
-  close(): Promise<void>;
+  /** Quits the browser; the profile is removed unless it is kept for another start. */
+  close(options?: { readonly keepProfile?: boolean }): Promise<void>;
 }
 
 /** Waits until the process prints a line that matches, and returns the match. */
@@ -178,9 +179,12 @@ export async function launch(
   options: {
     readonly settings?: Readonly<Record<string, unknown>>;
     readonly firstRun?: boolean;
+    /** The profile of an earlier start to use again. */
+    readonly profile?: string;
   } = {},
 ): Promise<Browser> {
-  const profile = mkdtempSync(join(tmpdir(), 'e2e-profile-'));
+  const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
+  rmSync(join(profile, 'ready.json'), { force: true });
   if (options.settings !== undefined) {
     mkdirSync(join(profile, 'data'), { recursive: true });
     writeFileSync(
@@ -224,7 +228,7 @@ export async function launch(
     shell,
     process: child,
     profile,
-    async close(): Promise<void> {
+    async close(closeOptions: { readonly keepProfile?: boolean } = {}): Promise<void> {
       // The browser saves its state before it quits, so wait for the process to exit.
       const exited =
         child.exitCode === null
@@ -247,7 +251,7 @@ export async function launch(
           );
         }),
       ]).finally(() => clearTimeout(timer));
-      rmSync(profile, { recursive: true, force: true });
+      if (closeOptions.keepProfile !== true) rmSync(profile, { recursive: true, force: true });
     },
   };
 }

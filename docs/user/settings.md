@@ -13,6 +13,10 @@ Every change applies at once, in every window, and is kept when the browser rest
 - **Density:** Compact, Normal or Comfortable changes the height of the tabs and the toolbar.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
 
+## On startup
+
+- **Open:** Last session reopens the windows and tabs you had open when the browser closed; New tab page starts with a single new tab. Restored tabs load when you first open them, so a start with many tabs stays fast.
+
 ## Search
 
 - **Search engine:** DuckDuckGo, Google, Bing, Startpage, Ecosia, Brave Search or Qwant. The address bar and the [new tab page](new-tab-page.md) search with it.

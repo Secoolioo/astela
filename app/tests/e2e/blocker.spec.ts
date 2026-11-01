@@ -21,12 +21,17 @@ for (const enabled of [true, false]) {
       await address.press('Enter');
       const page = await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
       await page.waitForLoadState('load');
-      const loaded = await page.evaluate(() => ({
-        script: (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded === true,
-        image: (document.getElementById('tracker') as HTMLImageElement | null)?.naturalWidth === 1,
-        page: document.querySelector('p')?.textContent,
-      }));
-      expect(loaded).toEqual({ script: !enabled, image: !enabled, page: 'Content' });
+      // Polled, so a slow page or a load event of the previous document cannot decide.
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            script: (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded === true,
+            image:
+              (document.getElementById('tracker') as HTMLImageElement | null)?.naturalWidth === 1,
+            page: document.querySelector('p')?.textContent,
+          })),
+        )
+        .toEqual({ script: !enabled, image: !enabled, page: 'Content' });
       // Scriptlets run before the page's own scripts, and elements are hidden, in the page
       // and in its frame.
       const frame = page.frames().find((f) => f.url().endsWith('/blocker-frame.html'));

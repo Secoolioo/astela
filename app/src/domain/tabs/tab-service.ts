@@ -25,8 +25,11 @@ export type TabUpdate = Partial<Omit<Tab, 'id'>>;
  * `WebContentsView` per tab; tests use a fake.
  */
 export interface TabViewPort {
-  /** Creates the view of a tab and loads the URL. */
-  create(id: TabId, url: string): void;
+  /**
+   * Creates the view of a tab and loads the URL. A lazy tab gets its view only when it is
+   * shown, so restored tabs cost nothing until they are used.
+   */
+  create(id: TabId, url: string, lazy?: boolean): void;
   /** Shows the view of a tab and hides the previously shown one. */
   show(id: TabId): void;
   /** Destroys the view of a tab. */
@@ -45,6 +48,10 @@ export interface OpenTabOptions {
    * becomes active, so links opened one after another keep their order.
    */
   readonly activate?: boolean;
+  /** Creates the tab's view only when the tab is shown. */
+  readonly lazy?: boolean;
+  /** Title to show until the page reports its own, such as the title of a restored tab. */
+  readonly title?: string;
 }
 
 /** Token for the {@link TabService} of a window. */
@@ -102,18 +109,19 @@ export class TabService implements Disposable {
    */
   open(url: string = this.blankUrl, options: OpenTabOptions = {}): TabId {
     const id = `t${(this.nextId++).toString(36)}`;
+    const lazy = options.lazy === true;
     const tab: Tab = {
       id,
       url,
-      title: '',
-      loading: true,
+      title: options.title ?? '',
+      loading: !lazy,
       canGoBack: false,
       canGoForward: false,
       blocked: 0,
     };
     const activate = options.activate ?? true;
     this.tabs.splice(this.insertionIndex(activate), 0, tab);
-    this.views.create(id, url);
+    this.views.create(id, url, lazy);
     if (activate) {
       this.activate(id);
     } else {

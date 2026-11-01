@@ -77,5 +77,9 @@
   "settings.contentBlockerNote": "Nutzt die Filterlisten, die uBlock Origin standardmäßig aktiviert, und blockiert damit auch bekannte Schadseiten.",
   "shell.blocker": "Inhaltsblocker",
   "shell.blockerOn": "Inhaltsblocker: {count} blockiert",
-  "shell.blockerOff": "Inhaltsblocker: auf dieser Website aus"
+  "shell.blockerOff": "Inhaltsblocker: auf dieser Website aus",
+  "settings.startup": "Beim Start",
+  "settings.startupPage": "Öffnen",
+  "settings.startupPage.restore": "Letzte Sitzung",
+  "settings.startupPage.newtab": "Neuer Tab"
 }

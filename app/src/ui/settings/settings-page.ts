@@ -14,6 +14,7 @@ const choices = {
   'appearance.colorMode': ['system', 'light', 'dark'],
   'appearance.density': ['compact', 'normal', 'comfortable'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
+  'startup.page': ['restore', 'newtab'],
 } as const;
 
 /**
@@ -165,6 +166,10 @@ export class SettingsPage extends LitElement {
         ${this.renderChoice('appearance.colorMode', 'settings.colorMode')} ${this.renderAccent()}
         ${this.renderChoice('appearance.density', 'settings.density')}
         ${this.renderChoice('tabs.position', 'settings.tabPosition')}
+      </section>
+      <h2 id="startup">${t('settings.startup')}</h2>
+      <section aria-labelledby="startup">
+        ${this.renderChoice('startup.page', 'settings.startupPage')}
       </section>
       <h2 id="search">${t('settings.search')}</h2>
       <section aria-labelledby="search">${this.renderSearch()}</section>

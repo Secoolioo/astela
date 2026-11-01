@@ -18,6 +18,8 @@ import type { Logger } from '../../kernel/logging/logger.ts';
 import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
+import { keepsUrl, type SessionSnapshot } from '../../domain/session/session.ts';
+import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
@@ -100,6 +102,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly shell: WebContentsView;
   readonly tabs: TabService;
   private readonly entries = new Map<TabId, TabEntry>();
+  /** Tabs without a view yet, with the URL they will load when shown. */
+  private readonly lazyTabs = new Map<TabId, string>();
   private visible: WebContentsView | undefined;
   private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
   private readonly subscriptions = new DisposableStore();
@@ -223,7 +227,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return [...this.entries].find(([, entry]) => entry.view.webContents === contents)?.[0];
   }
 
-  create(id: TabId, url: string): void {
+  create(id: TabId, url: string, lazy = false): void {
+    if (lazy) {
+      this.lazyTabs.set(id, url);
+      return;
+    }
     const entry: TabEntry = {
       ...this.createView(id, url),
       requested: url,
@@ -234,6 +242,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   show(id: TabId): void {
+    this.materialize(id);
     const entry = this.entries.get(id);
     const view = entry?.view;
     if (view === undefined || view === this.visible) {
@@ -254,6 +263,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   destroy(id: TabId): void {
+    this.lazyTabs.delete(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -263,6 +273,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   load(id: TabId, url: string): void {
+    this.materialize(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -278,6 +289,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
+    this.materialize(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -403,6 +415,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (command !== undefined) {
       event.preventDefault();
       this.execute(command);
+    }
+  }
+
+  /** Gives a lazy tab its view and loads its page. */
+  private materialize(id: TabId): void {
+    const url = this.lazyTabs.get(id);
+    if (url !== undefined) {
+      this.lazyTabs.delete(id);
+      this.create(id, url);
     }
   }
 
@@ -599,6 +620,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 /** Keeps track of open windows and routes shell requests to the right one. */
 export class WindowManager implements Disposable {
   private readonly windows = new Set<BrowserWindowController>();
+  private readonly changeEmitter = new Emitter<void>();
+
+  /** Fires after windows opened or closed, or their tabs changed. */
+  readonly onDidChange: Event<void> = this.changeEmitter.event;
   private readonly options: BrowserWindowOptions;
 
   /** @param options - Environment for new windows. */
@@ -608,10 +633,62 @@ export class WindowManager implements Disposable {
 
   /** Opens a window with one tab. */
   open(url?: string): BrowserWindowController {
+    const controller = this.add();
+    controller.tabs.open(url);
+    return controller;
+  }
+
+  /**
+   * Opens the windows of a stored session. Only the active tab of each window loads; the
+   * others load when they are shown.
+   * @param session - The windows and their tabs.
+   * @returns The first window.
+   */
+  restore(session: SessionSnapshot): BrowserWindowController {
+    const controllers = session.windows.map((stored) => {
+      const controller = this.add();
+      const ids = stored.tabs.map((tab, index) =>
+        controller.tabs.open(tab.url, {
+          activate: false,
+          lazy: index !== stored.active,
+          title: tab.title,
+        }),
+      );
+      const active = ids[stored.active] ?? ids[0];
+      if (active !== undefined) controller.tabs.activate(active);
+      return controller;
+    });
+    return controllers[0] ?? this.open();
+  }
+
+  /** The tabs of every open window, as a session keeps them. */
+  snapshot(): SessionSnapshot {
+    return {
+      version: 1,
+      windows: [...this.windows].flatMap((controller) => {
+        const tabs = controller.tabs.all.filter((tab) => keepsUrl(tab.url));
+        const active = controller.tabs.active;
+        return tabs.length === 0
+          ? []
+          : [
+              {
+                tabs: tabs.map(({ url, title }) => ({ url, title })),
+                active: Math.max(0, active === undefined ? 0 : tabs.indexOf(active)),
+              },
+            ];
+      }),
+    };
+  }
+
+  private add(): BrowserWindowController {
     const controller = new BrowserWindowController(this.options);
     this.windows.add(controller);
-    controller.window.on('closed', () => this.windows.delete(controller));
-    controller.tabs.open(url);
+    const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
+    controller.window.on('closed', () => {
+      listener.dispose();
+      this.windows.delete(controller);
+      this.changeEmitter.fire();
+    });
     return controller;
   }
 

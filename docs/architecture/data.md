@@ -95,5 +95,6 @@ Implemented in `app/src/platform/node/`:
 - **Settings:** `settings.json` with `$schemaVersion` 1, written atomically (temporary file, flush, rename) and debounced, flushed on quit. Invalid values go to `settings.rejected.json`; a file that cannot be parsed is moved aside instead of overwritten.
 - **Logs:** JSON Lines in `logs/`, rotating at 5 MB × 3 files.
 - **Web data:** the `persist:default` partition; cookies and storage are flushed on quit.
+- **Session:** `session.json` keeps the windows with their tabs (address and title) and the active tab, written atomically one second after the last change and on quit; the previous file stays as `session.json.bak` and is read when the current one is broken. The next start restores it when the setting `startup.page` is `restore`, the default: only the active tab of each window loads, the others when they are first shown. After the last window closes, the session keeps that window. The setup guide is never restored, and navigation entries, groups and workspaces are not kept yet.
 
-Not implemented yet: the session store, the data-service process with `profile.db`, migrations with snapshots, golden-profile tests, themes on disk and the password vault.
+Not implemented yet: three rotating backups of the session, the data-service process with `profile.db`, migrations with snapshots, golden-profile tests, themes on disk and the password vault.
