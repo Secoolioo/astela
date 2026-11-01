@@ -153,6 +153,21 @@ The P0 features follow in about 20 small pull requests. Every few pull requests,
 - **Security and enterprise:** permissions UI, HTTPS-First, DNS over HTTPS; enterprise policies, proxy and authentication, MSI properties, the diagnostics page and admin guide v1. See [enterprise](architecture/enterprise.md).
 - **Completion:** full accessibility and internationalization coverage.
 
+#### `0.1.0-beta.3`
+
+The third beta brings two features forward from later milestones: the content blocker (P1) and import from other browsers (P2). It contains:
+
+- **First-run setup:** a guide on the first start of every profile, also after the update from an earlier beta. It covers look and layout, the search engine, import, the content blocker and the default browser. Every step can be skipped, and the guide can be opened again later.
+- **New tab page:** a start page with the search box of the chosen search engine.
+- **Internal pages in tabs:** the new tab page, the setup guide, settings, history and bookmarks open in tabs at `app://` addresses.
+- **Appearance:** color mode, accent color, density, and the tab strip at the top, bottom, left or right.
+- **Search engines:** Google, Bing, DuckDuckGo, Startpage, Ecosia, Brave Search, Qwant and custom engines.
+- **Data:** the data service with history, bookmarks and session restore.
+- **Import:** bookmarks, history and open tabs from Chromium-based and Firefox-based browsers, with one click.
+- **Content blocker:** on by default and switchable per site, with the filter lists that uBlock Origin enables by default and its scriptlets.
+
+Saved passwords, autofill and the import of passwords follow in `0.1.0-beta.4`.
+
 ### 5. Release `0.1.0`
 
 When every P0 feature meets its acceptance criteria, `0.1.0` is released on the stable channel. The upgrade path `0.1.0-beta.1` → `0.1.0-beta.2` → `0.1.0` must work for NSIS, AppImage, deb and rpm; deb and rpm packages encode betas as `0.1.0~beta.N` so that they sort before the final release. MSI packages are built for stable releases only, so `0.1.0` will be the first release with an MSI package.
