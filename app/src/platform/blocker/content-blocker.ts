@@ -34,9 +34,10 @@ export interface ContentBlockerOptions {
 
 /**
  * Blocks requests that the filter lists name, with the engine that `tools/blocker` built.
- * The engine loads on first use, outside the start-up path; requests wait for it, so even
- * the first page is filtered. Main-frame requests are not blocked: a page the user opens is
- * never replaced by an error page.
+ * The engine loads with the first web page, not at the start: a browser that shows only
+ * its own pages keeps neither its memory nor the work of collecting it. Requests wait for
+ * the engine, so even the first page is filtered. Main-frame requests are not blocked: a
+ * page the user opens is never replaced by an error page.
  */
 export class ContentBlocker implements RequestInterceptor {
   private engine: Promise<LoadedEngine | undefined> | undefined;
@@ -56,6 +57,11 @@ export class ContentBlocker implements RequestInterceptor {
   async beforeRequest(
     details: OnBeforeRequestListenerDetails,
   ): Promise<RequestDecision | undefined> {
+    if (details.resourceType === 'mainFrame') {
+      // A page that starts loading loads the engine, so its frames find their rules.
+      if (this.options.enabled() && /^https?:/i.test(details.url)) void this.load();
+      return undefined;
+    }
     const type = requestTypes[details.resourceType];
     if (type === undefined || !this.options.enabled() || !/^(?:https?|wss?):/i.test(details.url)) {
       return undefined;

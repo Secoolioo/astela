@@ -59,6 +59,21 @@ describe('ContentBlocker', () => {
     expect(await blocker.beforeRequest(request('data:text/plain,x', 'image'))).toBe(undefined);
   });
 
+  it('loads the engine with the first web page, not before', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    const load = vi.spyOn(blocker, 'load');
+    expect(await blocker.beforeRequest(request('app://newtab/', 'mainFrame'))).toBe(undefined);
+    expect(load).not.toHaveBeenCalled();
+    expect(await blocker.beforeRequest(request('https://news.example/', 'mainFrame'))).toBe(
+      undefined,
+    );
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it('blocks nothing when it is off or its data is missing', async () => {
     let enabled = false;
     const blocker = new ContentBlocker({

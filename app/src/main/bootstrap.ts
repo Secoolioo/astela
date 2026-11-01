@@ -166,7 +166,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   protocolHandler.serve(internal);
   hardenSession(internal);
   // Every request of web content passes the request pipeline; the content blocker is its
-  // first step. Its engine loads after the first window, or with the first web request.
+  // first step. Its engine loads with the first web page.
   const pipeline = new RequestPipeline();
   const blocker = new ContentBlocker({
     dataDir: layout.blockerDir,
@@ -298,7 +298,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Everything that is not needed for the first window loads after its shell.
   let updates: UpdateService | undefined;
   first.shellContents.once('did-finish-load', () => {
-    void blocker.load();
     void import('./updates.ts')
       .then(({ createUpdateService }) => {
         updates = createUpdateService({ policies, clock, logger, userData, boot });
