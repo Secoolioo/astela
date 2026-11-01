@@ -7,13 +7,16 @@ import {
   type WebContents,
 } from 'electron';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
+import type { Capability } from '../../shared/ipc/contract.ts';
 import {
   ShellCommand,
   ShellStateChanged,
   type ShellState,
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
+import { tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
+import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
@@ -48,12 +51,14 @@ export interface BrowserWindowOptions {
   readonly shellOrigin: string;
   /** Path of the shell's preload script. */
   readonly shellPreload: string;
+  /** Path of the preload script of internal pages in tabs. */
+  readonly pagePreload: string;
   /** Partition of the browser's own views. */
   readonly internalPartition: string;
   /** Partition of web tabs. */
   readonly webPartition: string;
-  /** URL of a new, empty tab. */
-  readonly blankUrl: string;
+  /** URL of a new tab. */
+  readonly newTabUrl: string;
   /** Window background while the shell loads. */
   readonly backgroundColor: string;
   readonly gate: IpcGate;
@@ -63,16 +68,31 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
 }
 
+/** The view that shows a tab, and what belongs to it. */
+interface TabEntry {
+  view: WebContentsView;
+  /** The internal page that the view shows, or `undefined` for web content. */
+  page: TabPage | undefined;
+  /** Removes an internal view from the IPC gate. */
+  registration: Disposable | undefined;
+  /** The URL the view was last asked to load, until it reports its own. */
+  requested: string;
+  /** Views of the tab before and after this one. */
+  readonly history: ViewHistory;
+}
+
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
  * tab. Tab views are created when a tab opens and destroyed when it closes; only the
- * active tab's view is attached to the window.
+ * active tab's view is attached to the window. Web pages and internal pages use views of
+ * different sessions: when a tab switches between them, its view is replaced and the old
+ * view's history is kept for Back and Forward.
  */
 export class BrowserWindowController implements Disposable, TabViewPort {
   readonly window: BaseWindow;
   readonly shell: WebContentsView;
   readonly tabs: TabService;
-  private readonly views = new Map<TabId, WebContentsView>();
+  private readonly entries = new Map<TabId, TabEntry>();
   private visible: WebContentsView | undefined;
   private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
   private readonly subscriptions = new DisposableStore();
@@ -110,7 +130,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         capabilities: new Set(['shell']),
       }),
     );
-    this.tabs = new TabService(this, options.blankUrl);
+    this.tabs = new TabService(this, options.newTabUrl);
     this.subscriptions.add(this.tabs.onDidChange(() => this.schedulePublish()));
     this.subscriptions.add(this.tabs);
     this.shell.webContents.on('before-input-event', (event, input) => this.intercept(event, input));
@@ -125,6 +145,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** The shell's `WebContents`. */
   get shellContents(): WebContents {
     return this.shell.webContents;
+  }
+
+  /** The `WebContents` of the active tab, if any. */
+  get activeTabContents(): WebContents | undefined {
+    const active = this.tabs.active;
+    return active === undefined ? undefined : this.entries.get(active.id)?.view.webContents;
   }
 
   /** The current shell state, as sent to the shell. */
@@ -153,45 +179,30 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /** Tells whether a `WebContents` is one of this window's tab views. */
   ownsTab(contents: WebContents): boolean {
-    return [...this.views.values()].some((view) => view.webContents === contents);
+    return this.tabIdOf(contents) !== undefined;
+  }
+
+  /**
+   * Finds the tab that a `WebContents` shows.
+   * @param contents - A tab view's `WebContents`.
+   */
+  tabIdOf(contents: WebContents): TabId | undefined {
+    return [...this.entries].find(([, entry]) => entry.view.webContents === contents)?.[0];
   }
 
   create(id: TabId, url: string): void {
-    const view = new WebContentsView({
-      webPreferences: {
-        partition: this.options.webPartition,
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        spellcheck: false,
-      },
-    });
-    const contents = view.webContents;
-    const sync = (): void => {
-      if (contents.isDestroyed()) {
-        return;
-      }
-      this.tabs.update(id, {
-        url: contents.getURL() || url,
-        title: contents.getTitle(),
-        loading: contents.isLoading(),
-        canGoBack: contents.navigationHistory.canGoBack(),
-        canGoForward: contents.navigationHistory.canGoForward(),
-      });
+    const entry: TabEntry = {
+      ...this.createView(id, url),
+      requested: url,
+      history: new ViewHistory(),
     };
-    contents.on('did-start-loading', sync);
-    contents.on('did-stop-loading', sync);
-    contents.on('did-navigate', sync);
-    contents.on('did-navigate-in-page', sync);
-    contents.on('page-title-updated', sync);
-    contents.on('before-input-event', (event, input) => this.intercept(event, input));
-    this.forwardContextMenu(view, id);
-    this.views.set(id, view);
-    this.loadInto(contents, url);
+    this.entries.set(id, entry);
+    this.loadInto(entry.view.webContents, url);
   }
 
   show(id: TabId): void {
-    const view = this.views.get(id);
+    const entry = this.entries.get(id);
+    const view = entry?.view;
     if (view === undefined || view === this.visible) {
       return;
     }
@@ -201,42 +212,61 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.visible = view;
     this.window.contentView.addChildView(view);
     this.layout();
-    if (view.webContents.getURL() !== this.options.blankUrl) {
+    // On the new tab page, typing goes to the address bar, which the shell focuses.
+    if (entry?.page === 'newtab') {
+      this.shell.webContents.focus();
+    } else {
       view.webContents.focus();
     }
   }
 
   destroy(id: TabId): void {
-    const view = this.views.get(id);
-    if (view === undefined) {
+    const entry = this.entries.get(id);
+    if (entry === undefined) {
       return;
     }
-    this.views.delete(id);
-    if (this.visible === view) {
-      // A destroyed window no longer has a content view; touching it blocks.
-      if (!this.window.isDestroyed()) {
-        this.window.contentView.removeChildView(view);
-      }
-      this.visible = undefined;
-    }
-    view.webContents.close();
+    this.entries.delete(id);
+    this.close(entry.view, entry.registration);
   }
 
   load(id: TabId, url: string): void {
-    const view = this.views.get(id);
-    if (view !== undefined) {
-      this.loadInto(view.webContents, url);
-      view.webContents.focus();
+    const entry = this.entries.get(id);
+    if (entry === undefined) {
+      return;
     }
+    if (tabPageOf(url) === entry.page) {
+      entry.requested = url;
+      this.loadInto(entry.view.webContents, url);
+    } else {
+      entry.history.leave(this.snapshot(entry));
+      this.replaceView(id, entry, url, (contents) => this.loadInto(contents, url));
+    }
+    entry.view.webContents.focus();
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
-    const contents = this.views.get(id)?.webContents;
-    const history = contents?.navigationHistory;
-    if (action === 'back' && history?.canGoBack() === true) history.goBack();
-    if (action === 'forward' && history?.canGoForward() === true) history.goForward();
-    if (action === 'reload') contents?.reload();
-    if (action === 'stop') contents?.stop();
+    const entry = this.entries.get(id);
+    if (entry === undefined) {
+      return;
+    }
+    const contents = entry.view.webContents;
+    const history = contents.navigationHistory;
+    switch (action) {
+      case 'back':
+        if (history.canGoBack()) history.goBack();
+        else this.restore(id, entry, entry.history.goBack(this.snapshot(entry)));
+        break;
+      case 'forward':
+        if (history.canGoForward()) history.goForward();
+        else this.restore(id, entry, entry.history.goForward(this.snapshot(entry)));
+        break;
+      case 'reload':
+        contents.reload();
+        break;
+      case 'stop':
+        contents.stop();
+        break;
+    }
   }
 
   /** Closes the window and every tab view. */
@@ -308,6 +338,135 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       event.preventDefault();
       this.execute(command);
     }
+  }
+
+  /**
+   * Creates the view for a URL: a web view without a preload, or for an internal page a
+   * view in the internal session whose preload only offers that page's channels.
+   */
+  private createView(id: TabId, url: string): Pick<TabEntry, 'view' | 'page' | 'registration'> {
+    const page = tabPageOf(url);
+    const view = new WebContentsView({
+      webPreferences:
+        page === undefined
+          ? {
+              partition: this.options.webPartition,
+              sandbox: true,
+              contextIsolation: true,
+              nodeIntegration: false,
+              spellcheck: false,
+            }
+          : {
+              preload: this.options.pagePreload,
+              partition: this.options.internalPartition,
+              additionalArguments: [`--bridge-scope=${page}`],
+              sandbox: true,
+              contextIsolation: true,
+              nodeIntegration: false,
+              spellcheck: false,
+              v8CacheOptions: 'bypassHeatCheck',
+            },
+    });
+    const contents = view.webContents;
+    let registration: Disposable | undefined;
+    if (page !== undefined) {
+      view.setBackgroundColor(this.options.backgroundColor);
+      registration = this.options.gate.registerView(contents.id, {
+        origin: `app://${page}`,
+        capabilities: new Set<Capability>([`page:${page}`]),
+      });
+    }
+    const sync = (): void => this.sync(id, contents);
+    contents.on('did-start-loading', sync);
+    contents.on('did-stop-loading', sync);
+    contents.on('did-navigate', sync);
+    contents.on('did-navigate-in-page', sync);
+    contents.on('page-title-updated', sync);
+    contents.on('before-input-event', (event, input) => this.intercept(event, input));
+    this.forwardContextMenu(view, id);
+    return { view, page, registration };
+  }
+
+  /** Reports the state of a tab's view, unless the view was replaced meanwhile. */
+  private sync(id: TabId, contents: WebContents): void {
+    const entry = this.entries.get(id);
+    if (entry?.view.webContents !== contents || contents.isDestroyed()) {
+      return;
+    }
+    const history = contents.navigationHistory;
+    this.tabs.update(id, {
+      url: contents.getURL() || entry.requested,
+      title: contents.getTitle(),
+      loading: contents.isLoading(),
+      canGoBack: history.canGoBack() || entry.history.canGoBack,
+      canGoForward: history.canGoForward() || entry.history.canGoForward,
+    });
+  }
+
+  /** The history of a tab's current view, for {@link ViewHistory}. */
+  private snapshot(entry: TabEntry): ViewSnapshot {
+    const history = entry.view.webContents.navigationHistory;
+    const entries = history
+      .getAllEntries()
+      .map(({ url, title, pageState }) =>
+        pageState === undefined ? { url, title } : { url, title, pageState },
+      );
+    return entries.length === 0
+      ? { entries: [{ url: entry.requested, title: '' }], index: 0 }
+      : { entries, index: history.getActiveIndex() };
+  }
+
+  /** Shows a view that the tab had before, with its history. */
+  private restore(id: TabId, entry: TabEntry, snapshot: ViewSnapshot | undefined): void {
+    const current = snapshot?.entries[snapshot.index];
+    if (snapshot === undefined || current === undefined) {
+      return;
+    }
+    this.replaceView(id, entry, current.url, (contents) => {
+      contents.navigationHistory
+        .restore({ entries: [...snapshot.entries], index: snapshot.index })
+        .catch((error: unknown) =>
+          this.options.logger.debug('History restore failed', { error: String(error) }),
+        );
+    });
+  }
+
+  /** Replaces a tab's view with a new one for a URL, in place of the old one. */
+  private replaceView(
+    id: TabId,
+    entry: TabEntry,
+    url: string,
+    start: (contents: WebContents) => void,
+  ): void {
+    const old = entry.view;
+    const oldRegistration = entry.registration;
+    const focused = old.webContents.isFocused();
+    Object.assign(entry, this.createView(id, url), { requested: url });
+    if (this.visible === old && !this.window.isDestroyed()) {
+      this.window.contentView.removeChildView(old);
+      this.window.contentView.addChildView(entry.view);
+      this.visible = entry.view;
+      this.layout();
+    }
+    this.close(old, oldRegistration);
+    start(entry.view.webContents);
+    if (focused) {
+      entry.view.webContents.focus();
+    }
+    this.sync(id, entry.view.webContents);
+  }
+
+  /** Closes a tab view that no longer shows a tab. */
+  private close(view: WebContentsView, registration: Disposable | undefined): void {
+    if (this.visible === view) {
+      // A destroyed window no longer has a content view; touching it blocks.
+      if (!this.window.isDestroyed()) {
+        this.window.contentView.removeChildView(view);
+      }
+      this.visible = undefined;
+    }
+    registration?.dispose();
+    view.webContents.close();
   }
 
   private forwardContextMenu(view: WebContentsView, tabId: TabId | undefined): void {
@@ -389,11 +548,6 @@ export class WindowManager implements Disposable {
    */
   forTab(contents: WebContents): BrowserWindowController | undefined {
     return [...this.windows].find((w) => w.ownsTab(contents));
-  }
-
-  /** Tells whether a `WebContents` is a shell of any window. */
-  isShell(contents: WebContents): boolean {
-    return this.forShell(contents) !== undefined;
   }
 
   /** All open windows. */

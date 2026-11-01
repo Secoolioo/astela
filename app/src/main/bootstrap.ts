@@ -1,6 +1,8 @@
 import { app, Menu, session, type Session } from 'electron';
 import { join } from 'node:path';
 import { brand } from '../shared/brand.ts';
+import { newTabUrl, tabPages } from '../shared/internal-pages.ts';
+import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
 import {
   ActivateTab,
   CloseTab,
@@ -20,6 +22,7 @@ import {
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
+import { engineForSearchUrl } from '../domain/search/search-engines.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
@@ -62,7 +65,6 @@ export interface BundleLayout {
 
 const internalPartition = 'internal';
 const webPartition = 'persist:default';
-const blankUrl = 'about:blank';
 
 /**
  * Starts the browser. The order matters for start-up time and safety: schemes and the
@@ -126,7 +128,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
   const lifecycle = new Lifecycle(logger, clock, {});
-  const protocolHandler = new AppProtocol(layout.rendererDir, new Set(['shell', 'sandbox-help']));
+  const protocolHandler = new AppProtocol(
+    layout.rendererDir,
+    new Set(['shell', 'sandbox-help', ...tabPages]),
+  );
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
   hardenSession(internal);
@@ -197,9 +202,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     shellOrigin:
       layout.devShellUrl === undefined ? 'app://shell' : new URL(layout.devShellUrl).origin,
     shellPreload: layout.shellPreload,
+    pagePreload: layout.pagePreload,
     internalPartition,
     webPartition,
-    blankUrl,
+    newTabUrl,
     backgroundColor: windowBackground(),
     gate,
     router,
@@ -207,11 +213,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     onContextMenu,
   });
   guardWebContents(app, {
-    isInternal: (contents) => windows.isShell(contents),
+    // Every view of the internal session is the browser's own: the shell and internal pages.
+    isInternal: (contents) => contents.session === internal,
     openInTab: openFromPage,
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate);
+  registerNewTabHandlers(router, windows, searchTemplate);
 
   const first = windows.open();
   marks['window'] = Math.round(performance.now());
@@ -318,6 +326,25 @@ function registerShellHandlers(
     ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
   );
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
+}
+
+function registerNewTabHandlers(
+  router: IpcRouter,
+  windows: WindowManager,
+  searchTemplate: () => Promise<string>,
+): void {
+  router.handle(GetNewTabState, async () => ({
+    engine: engineForSearchUrl(await searchTemplate())?.name ?? null,
+  }));
+  router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
+    const window = windows.forTab(sender);
+    const tabId = window?.tabIdOf(sender);
+    const url = resolveOmniboxInput(input, await searchTemplate())?.url;
+    if (window !== undefined && tabId !== undefined && url !== undefined) {
+      window.tabs.navigate(tabId, url);
+    }
+    return null;
+  });
 }
 
 function macMenu(): Electron.MenuItemConstructorOptions[] {

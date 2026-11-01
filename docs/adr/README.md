@@ -65,3 +65,4 @@ Each rejected option as a bullet point with a short reason.
 | [0023](0023-internationalization.md)                     | Internationalization                              |
 | [0024](0024-icons-and-typography.md)                     | Icons and typography                              |
 | [0025](0025-read-policies-while-electron-starts.md)      | Read policies while Electron starts               |
+| [0026](0026-internal-pages-share-tabs-with-web-pages.md) | Internal pages share tabs with web pages          |

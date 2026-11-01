@@ -73,7 +73,7 @@ test('opens, closes and reopens tabs with keyboard shortcuts', async () => {
   await pressNative(browser, 'W', ['primary']);
   await expect
     .poll(async () => (await shellState(browser.shell)).tabs.map((t) => t.url))
-    .toEqual(['about:blank']);
+    .toEqual(['app://newtab/']);
   await pressNative(browser, 'T', ['primary', 'shift']);
   await expect
     .poll(async () => (await shellState(browser.shell)).tabs.map((t) => t.url))
