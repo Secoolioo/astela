@@ -151,6 +151,10 @@ export class AppShell extends LitElement {
     .blocker[data-state='off'] svg {
       color: var(--text-2);
     }
+    .bookmark[aria-pressed='true'] svg {
+      color: var(--accent);
+      fill: currentColor;
+    }
     .count {
       font-size: 11px;
       line-height: 16px;
@@ -328,6 +332,19 @@ export class AppShell extends LitElement {
           @keydown=${this.onAddressKey}
           @blur=${() => (this.editing = undefined)}
         />
+        ${
+          active === undefined || !/^https?:/i.test(active.url)
+            ? nothing
+            : html`<button
+                class="icon bookmark"
+                title=${t('shell.bookmark')}
+                aria-label=${t('shell.bookmark')}
+                aria-pressed=${active.bookmarked ? 'true' : 'false'}
+                @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
+              >
+                ${icons.star}
+              </button>`
+        }
         ${
           active === undefined || active.blocking === 'none'
             ? nothing
@@ -530,6 +547,11 @@ const icons = {
     <path d="M5 5a1 1 0 0 0-1 1v7c0 5 3.5 7.5 7.7 9a1 1 0 0 0 .7 0 13 13 0 0 0 4.9-3.2" />
     <path
       d="M9.3 3.5c.7-.4 1.3-.8 1.9-1.2a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1v7a8 8 0 0 1-.3 2.3"
+    />
+  </svg>`,
+  star: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M11.5 2.3a.5.5 0 0 1 1 0l2.3 4.7a2.1 2.1 0 0 0 1.6 1.2l5.2.7a.5.5 0 0 1 .3.9l-3.8 3.7a2.1 2.1 0 0 0-.6 1.9l.9 5.1a.5.5 0 0 1-.8.6l-4.6-2.4a2.1 2.1 0 0 0-2 0L6.4 21a.5.5 0 0 1-.8-.6l.9-5.1a2.1 2.1 0 0 0-.6-1.9L2.2 9.8a.5.5 0 0 1 .3-.9l5.1-.7a2.1 2.1 0 0 0 1.6-1.2z"
     />
   </svg>`,
   menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">

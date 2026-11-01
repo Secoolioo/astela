@@ -72,6 +72,10 @@ export interface BrowserWindowOptions {
   readonly blocking: (url: string) => 'on' | 'off' | 'none';
   /** Called when a tab shows a web page, and again when its title changes. */
   readonly onVisit?: (url: string, title: string, titleOnly: boolean) => void;
+  /** Whether a page has a bookmark, for the star in the address bar. */
+  readonly isBookmarked?: (url: string) => boolean;
+  /** Adds a bookmark for a page, or removes its bookmarks. */
+  readonly toggleBookmark?: (url: string, title: string) => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -179,6 +183,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         canGoForward,
         blocked,
         blocking: this.options.blocking(url),
+        bookmarked: this.options.isBookmarked?.(url) ?? false,
       })),
       activeTabId: this.tabs.active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
@@ -387,6 +392,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'history.open':
         this.openPage('history');
+        break;
+      case 'bookmarks.open':
+        this.openPage('bookmarks');
+        break;
+      case 'bookmark.toggle':
+        // Only web pages get bookmarks; the browser's own pages have their own commands.
+        if (active !== undefined && /^https?:/i.test(active.url)) {
+          this.options.toggleBookmark?.(active.url, active.title);
+        }
         break;
     }
   }

@@ -13,6 +13,7 @@ export const shellChannels = [
   'shell.setInsets',
   'shell.openMenu',
   'shell.openBlockerMenu',
+  'shell.toggleBookmark',
 ] as const;
 
 /** Event channels the shell listens to. */

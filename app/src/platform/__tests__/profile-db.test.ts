@@ -105,6 +105,36 @@ describe('ProfileDatabase bookmarks', () => {
     db.removeBookmark(bookmarkRoots.bar);
     expect(db.bookmarks()[0]?.children?.map((node) => node.title)).toEqual(['News']);
   });
+
+  it('lists, renames, moves and removes bookmarks', () => {
+    const db = new ProfileDatabase(':memory:', () => 1);
+    const work = db.addBookmark(bookmarkRoots.bar, 'Work');
+    const inner = db.addBookmark(work, 'Inner');
+    const mail = db.addBookmark(bookmarkRoots.bar, 'Mail', 'https://mail.example/');
+    db.addBookmark(bookmarkRoots.other, 'Mail again', 'https://mail.example/');
+    expect(db.bookmarkUrls()).toEqual(['https://mail.example/']);
+    db.updateBookmark(mail, 'Post', 'https://post.example/', work);
+    db.updateBookmark(work, 'Office', 'https://ignored.example/');
+    expect(() => db.updateBookmark(work, 'Office', undefined, inner)).toThrow(/Cannot move/);
+    expect(() => db.updateBookmark(work, 'Office', undefined, mail)).toThrow(/Cannot move/);
+    db.updateBookmark(bookmarkRoots.bar, 'Renamed');
+    db.updateBookmark(999, 'Missing');
+    expect(db.bookmarkList()).toEqual([
+      { id: bookmarkRoots.bar, parentId: null, title: 'Bookmarks bar', url: null },
+      { id: bookmarkRoots.other, parentId: null, title: 'Other bookmarks', url: null },
+      { id: work, parentId: bookmarkRoots.bar, title: 'Office', url: null },
+      {
+        id: expect.any(Number),
+        parentId: bookmarkRoots.other,
+        title: 'Mail again',
+        url: 'https://mail.example/',
+      },
+      { id: inner, parentId: work, title: 'Inner', url: null },
+      { id: mail, parentId: work, title: 'Post', url: 'https://post.example/' },
+    ]);
+    db.removeBookmarkUrl('https://mail.example/');
+    expect(db.bookmarkUrls()).toEqual(['https://post.example/']);
+  });
 });
 
 describe('ProfileDatabase migrations', () => {

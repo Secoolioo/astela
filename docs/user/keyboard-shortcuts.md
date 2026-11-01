@@ -18,6 +18,8 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 | Reload                     | `F5` or `Ctrl+R`                                |
 | Go to the address bar      | `Ctrl+L`, `Alt+D` or `F6`                       |
 | Open the history           | `Ctrl+H`                                        |
+| Bookmark the page          | `Ctrl+D`                                        |
+| Open the bookmarks         | `Ctrl+Shift+O`                                  |
 
 `Ctrl+Shift+R`, `Shift+F5` and `Ctrl+F5` reload the page as well. A reload that bypasses the cache is not available yet.
 
@@ -38,6 +40,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Go to the address bar      | `Command+L`                                                           |
 | Open the settings          | `Command+,`                                                           |
 | Open the history           | `Command+Y`                                                           |
+| Bookmark the page          | `Command+D`                                                           |
+| Open the bookmarks         | `Command+Shift+O`                                                     |
 
 `Command+Shift+R` reloads the page as well.
 

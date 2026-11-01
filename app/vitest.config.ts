@@ -29,6 +29,7 @@ export default defineConfig({
         'src/ui/settings/**',
         'src/ui/setup/**',
         'src/ui/history/**',
+        'src/ui/bookmarks/**',
         'src/main/data-service.ts',
         'src/platform/electron/data-service-client.ts',
         'src/platform/electron/app-protocol.ts',

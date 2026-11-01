@@ -11,6 +11,7 @@ import type {
   SetShellInsets,
   ShellState,
   TabAction,
+  ToggleBookmark,
 } from '../../shared/ipc/shell-contracts.ts';
 
 interface Requests {
@@ -24,6 +25,7 @@ interface Requests {
   'shell.setInsets': typeof SetShellInsets;
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerMenu': typeof OpenBlockerMenu;
+  'shell.toggleBookmark': typeof ToggleBookmark;
 }
 
 interface Events {

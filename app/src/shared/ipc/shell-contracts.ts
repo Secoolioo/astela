@@ -9,7 +9,7 @@ const Done = v.null();
 /**
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
- * `none` for pages it never touches.
+ * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -20,6 +20,7 @@ export const TabView = v.strictObject({
   canGoForward: v.boolean(),
   blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
   blocking: v.picklist(['on', 'off', 'none']),
+  bookmarked: v.boolean(),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;
@@ -133,6 +134,14 @@ export const OpenBlockerMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Adds a bookmark for the page of the active tab, or removes its bookmarks. */
+export const ToggleBookmark = defineRequest({
+  channel: 'shell.toggleBookmark',
+  request: Empty,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Sent to the shell when its state changed. */
 export const ShellStateChanged = defineEvent({
   channel: 'shell.stateChanged',
@@ -159,4 +168,5 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   SetShellInsets,
   OpenMenu,
   OpenBlockerMenu,
+  ToggleBookmark,
 ];

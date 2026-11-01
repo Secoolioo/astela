@@ -8,6 +8,7 @@ import {
   CloseTab,
   GetShellState,
   OpenBlockerMenu,
+  ToggleBookmark,
   OpenMenu,
   NavigateTab,
   OpenTab,
@@ -65,6 +66,7 @@ import { connectSetupGuide } from './setup-guide.ts';
 import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
 import { connectHistoryPage } from './history-page.ts';
+import { Bookmarks, connectBookmarksPage } from './bookmarks.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
@@ -255,6 +257,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The context menu failed', error));
   };
 
+  // The star in the address bar shows whether a page has a bookmark.
+  const bookmarks = new Bookmarks(
+    data,
+    router,
+    internal,
+    () => windows.refreshShells(),
+    logger.child('bookmarks'),
+  );
   const appearance = new AppearanceController(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
@@ -278,6 +288,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         : data.call('addVisit', url, title);
       call.catch((error: unknown) => logger.warn('History not saved', { error: String(error) }));
     },
+    isBookmarked: (url) => bookmarks.has(url),
+    toggleBookmark: (url, title) => bookmarks.toggle(url, title),
     gate,
     router,
     logger,
@@ -293,6 +305,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerNewTabHandlers(router, windows, searchTemplate);
   connectSettingsPage(router, settings, coreSettings, internal);
   connectHistoryPage(router, data, windows);
+  connectBookmarksPage(router, data, bookmarks, windows);
   connectSetupGuide(router, windows);
   const shellSettings = new Set([
     TabStripPositionSetting.key,
@@ -466,6 +479,10 @@ function registerShellHandlers(
     ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
   );
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
+  router.handle(
+    ToggleBookmark,
+    (_request, { sender }) => (windowOf(sender).execute('bookmark.toggle'), null),
+  );
   // The menu code loads with the first menu, not before the first window.
   router.handle(OpenMenu, async (position, { sender }) => {
     const window = windowOf(sender);

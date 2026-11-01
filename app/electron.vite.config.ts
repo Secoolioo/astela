@@ -68,6 +68,7 @@ export default defineConfig({
           settings: resolve(import.meta.dirname, 'src/ui/settings/index.html'),
           setup: resolve(import.meta.dirname, 'src/ui/setup/index.html'),
           history: resolve(import.meta.dirname, 'src/ui/history/index.html'),
+          bookmarks: resolve(import.meta.dirname, 'src/ui/bookmarks/index.html'),
         },
         output: { comments },
       },

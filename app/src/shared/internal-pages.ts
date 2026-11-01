@@ -1,5 +1,5 @@
 /** Internal pages that open in tabs, by their host below `app://`. */
-export const tabPages = ['newtab', 'settings', 'setup', 'history'] as const;
+export const tabPages = ['newtab', 'settings', 'setup', 'history', 'bookmarks'] as const;
 
 /** An internal page that opens in a tab. */
 export type TabPage = (typeof tabPages)[number];
@@ -16,6 +16,7 @@ export const sharedChannels: Readonly<Record<TabPage, readonly TabPage[]>> = {
   settings: [],
   setup: ['settings'],
   history: [],
+  bookmarks: [],
 };
 
 /**
