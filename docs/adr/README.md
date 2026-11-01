@@ -38,31 +38,32 @@ Each rejected option as a bullet point with a short reason.
 
 ## Index
 
-| ADR                                                      | Title                                             |
-| -------------------------------------------------------- | ------------------------------------------------- |
-| [0001](0001-record-architecture-decisions.md)            | Record architecture decisions                     |
-| [0002](0002-electron-and-webcontentsview.md)             | Electron and the WebContentsView model            |
-| [0003](0003-packaging-with-electron-builder.md)          | Packaging with electron-builder                   |
-| [0004](0004-typescript-toolchain-and-build.md)           | TypeScript toolchain and build                    |
-| [0005](0005-ui-with-lit-web-components.md)               | UI with Lit web components                        |
-| [0006](0006-dependency-injection-container.md)           | Dependency injection container                    |
-| [0007](0007-ipc-contracts-and-validation.md)             | IPC contracts and validation                      |
-| [0008](0008-internal-pages-via-app-protocol.md)          | Internal pages via the `app://` protocol          |
-| [0009](0009-storage-with-node-sqlite.md)                 | Storage with `node:sqlite`                        |
-| [0010](0010-module-system-and-lazy-loading.md)           | Module system and lazy loading                    |
-| [0011](0011-settings-schema-as-single-source.md)         | Settings schema as single source                  |
-| [0012](0012-policy-providers-per-os.md)                  | Policy providers per OS                           |
-| [0013](0013-theme-system-and-design-tokens.md)           | Theme system and design tokens                    |
-| [0014](0014-update-architecture-with-signed-feed.md)     | Update architecture with a signed feed            |
-| [0015](0015-linux-package-repositories.md)               | Linux package repositories                        |
-| [0016](0016-release-pipeline-without-bot-commits.md)     | Release pipeline without bot commits              |
-| [0017](0017-performance-budgets-in-ci.md)                | Performance budgets in CI                         |
-| [0018](0018-content-blocker-engine.md)                   | Content blocker engine                            |
-| [0019](0019-license.md)                                  | License: MPL-2.0                                  |
-| [0020](0020-documentation-site-and-api-docs.md)          | Documentation site and API docs                   |
-| [0021](0021-repository-layout-and-architecture-rules.md) | Repository layout, linting and architecture rules |
-| [0022](0022-test-strategy.md)                            | Test strategy                                     |
-| [0023](0023-internationalization.md)                     | Internationalization                              |
-| [0024](0024-icons-and-typography.md)                     | Icons and typography                              |
-| [0025](0025-read-policies-while-electron-starts.md)      | Read policies while Electron starts               |
-| [0026](0026-internal-pages-share-tabs-with-web-pages.md) | Internal pages share tabs with web pages          |
+| ADR                                                             | Title                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------- |
+| [0001](0001-record-architecture-decisions.md)                   | Record architecture decisions                           |
+| [0002](0002-electron-and-webcontentsview.md)                    | Electron and the WebContentsView model                  |
+| [0003](0003-packaging-with-electron-builder.md)                 | Packaging with electron-builder                         |
+| [0004](0004-typescript-toolchain-and-build.md)                  | TypeScript toolchain and build                          |
+| [0005](0005-ui-with-lit-web-components.md)                      | UI with Lit web components                              |
+| [0006](0006-dependency-injection-container.md)                  | Dependency injection container                          |
+| [0007](0007-ipc-contracts-and-validation.md)                    | IPC contracts and validation                            |
+| [0008](0008-internal-pages-via-app-protocol.md)                 | Internal pages via the `app://` protocol                |
+| [0009](0009-storage-with-node-sqlite.md)                        | Storage with `node:sqlite`                              |
+| [0010](0010-module-system-and-lazy-loading.md)                  | Module system and lazy loading                          |
+| [0011](0011-settings-schema-as-single-source.md)                | Settings schema as single source                        |
+| [0012](0012-policy-providers-per-os.md)                         | Policy providers per OS                                 |
+| [0013](0013-theme-system-and-design-tokens.md)                  | Theme system and design tokens                          |
+| [0014](0014-update-architecture-with-signed-feed.md)            | Update architecture with a signed feed                  |
+| [0015](0015-linux-package-repositories.md)                      | Linux package repositories                              |
+| [0016](0016-release-pipeline-without-bot-commits.md)            | Release pipeline without bot commits                    |
+| [0017](0017-performance-budgets-in-ci.md)                       | Performance budgets in CI                               |
+| [0018](0018-content-blocker-engine.md)                          | Content blocker engine                                  |
+| [0019](0019-license.md)                                         | License: MPL-2.0                                        |
+| [0020](0020-documentation-site-and-api-docs.md)                 | Documentation site and API docs                         |
+| [0021](0021-repository-layout-and-architecture-rules.md)        | Repository layout, linting and architecture rules       |
+| [0022](0022-test-strategy.md)                                   | Test strategy                                           |
+| [0023](0023-internationalization.md)                            | Internationalization                                    |
+| [0024](0024-icons-and-typography.md)                            | Icons and typography                                    |
+| [0025](0025-read-policies-while-electron-starts.md)             | Read policies while Electron starts                     |
+| [0026](0026-internal-pages-share-tabs-with-web-pages.md)        | Internal pages share tabs with web pages                |
+| [0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) | Content blocker with the default lists of uBlock Origin |

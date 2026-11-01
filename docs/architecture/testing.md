@@ -40,7 +40,7 @@ A few checks need people. Maintainers perform them once per minor release, not p
 
 - **No skipping.** Tests are never skipped or disabled, and there is no quarantine.
 - **Zero retries.** Playwright runs with 0 retries in CI. A flaky test is fixed immediately and takes priority over other work. The one automatic rerun that the performance harness allows before a budget check fails is part of its measurement method, not a test retry (see [performance.md](performance.md)).
-- **Own fixtures.** Tests use their own test pages, served locally: deterministic and free of third-party brands.
+- **Own fixtures.** Tests use their own test pages, served locally: deterministic and free of third-party brands. The test package carries content blocker data built from the test filters in `app/tests/e2e/fixtures/blocker/`, never from the real lists, and the browser starts with `--no-first-run`, so the setup guide opens only in the tests of the setup guide.
 - **Golden profiles from the release preparation step.** The golden profiles for migration tests will be created by `pnpm release:prepare` in the release pull request that a maintainer authors, not by a workflow (see [data.md](data.md)).
 
 ## Implementation status

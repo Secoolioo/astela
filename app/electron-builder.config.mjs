@@ -34,6 +34,9 @@ const packageScripts = {
 };
 // The public key of the package repositories, once the repository owner has created it.
 const repoKey = new URL('build/keys/linux-repo.pub.asc', import.meta.url);
+// The data of the content blocker, built by tools/blocker/build.ts before packaging. Without
+// it, the package works and blocks nothing.
+const blockerData = new URL('build/blocker/engine.bin', import.meta.url);
 
 /** @type {import('electron-builder').Configuration} */
 export default {
@@ -53,6 +56,7 @@ export default {
     main: 'out/main/index.js',
   },
   asar: true,
+  extraResources: existsSync(blockerData) ? [{ from: 'build/blocker', to: 'blocker' }] : [],
   // The deb and rpm install scripts register the update channel of the package: beta for a
   // prerelease, which also receives stable releases. They read it from this file, because rpm
   // cannot query its database while it installs. The version is the one this build uses,

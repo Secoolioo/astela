@@ -203,6 +203,7 @@ The update policies (`UpdatePolicy`, `TargetChannel`, `TargetVersionPrefix`, `Up
 Also implemented:
 
 - `SetupGuideEnabled` (boolean): `false` as a mandatory policy keeps the [setup guide](../user/setup-guide.md) from opening on the first start of a profile. Starting the browser with `--no-first-run` does the same for one start.
+- `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.
 - `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
 

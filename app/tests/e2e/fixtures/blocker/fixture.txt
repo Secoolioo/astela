@@ -1,0 +1,5 @@
+! Filters of the end-to-end tests: they block, hide and change only fixture pages.
+/fixture-ad.js$script
+||127.0.0.1^*/fixture-tracker.gif
+##.fixture-ad
+127.0.0.1##+js(fixture-mark)

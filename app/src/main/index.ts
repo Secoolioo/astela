@@ -9,6 +9,9 @@ bootstrap({
   rendererDir: join(here, '../renderer'),
   shellPreload: join(here, '../preload/shell.cjs'),
   pagePreload: join(here, '../preload/page.cjs'),
+  blockerDir: app.isPackaged
+    ? join(process.resourcesPath, 'blocker')
+    : join(here, '../../build/blocker'),
   devShellUrl:
     !app.isPackaged && process.env['ELECTRON_RENDERER_URL'] !== undefined
       ? `${process.env['ELECTRON_RENDERER_URL']}/shell/`

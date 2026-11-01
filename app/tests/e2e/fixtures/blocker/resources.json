@@ -1,0 +1,13 @@
+{
+  "scriptlets": [
+    {
+      "name": "fixture-mark.js",
+      "aliases": ["fixture-mark"],
+      "body": "function fixtureMark() { window.fixtureScriptletRan = true; }",
+      "dependencies": [],
+      "executionWorld": "MAIN",
+      "requiresTrust": false
+    }
+  ],
+  "resources": []
+}

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) supersedes the milestone, the delivery of the filter data until the feed exists, and the blocking of main frames.
 
 ## Date
 

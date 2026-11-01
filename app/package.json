@@ -5,6 +5,7 @@
   "type": "module",
   "description": "The browser application: kernel, domain, platform adapters, feature modules and UI.",
   "devDependencies": {
+    "@ghostery/adblocker": "2.20.3",
     "@playwright/test": "1.64.1",
     "builder-util-runtime": "9.7.0",
     "electron": "45.2.1",

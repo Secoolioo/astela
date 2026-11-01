@@ -5,6 +5,7 @@ node_modules/
 dist/
 out/
 /app/release/
+/app/build/blocker/
 coverage/
 test-results/
 playwright-report/

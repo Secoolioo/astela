@@ -62,6 +62,16 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
+/** Whether the content blocker blocks ads, trackers and known malware. */
+export const ContentBlockerSetting = defineSetting<boolean>({
+  key: 'contentBlocker.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'ContentBlockerEnabled', recommended: true },
+  ui: { section: 'privacy', control: 'toggle', order: 1 },
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -77,5 +87,6 @@ export const coreSettings = [
   AccentSetting,
   DensitySetting,
   TabStripPositionSetting,
+  ContentBlockerSetting,
   SetupShownSetting,
 ];
