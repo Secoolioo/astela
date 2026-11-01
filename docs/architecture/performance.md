@@ -28,7 +28,7 @@ These techniques apply from M1:
    - Nothing awaits large bundles before `ready`.
    - `Menu.setApplicationMenu` is set early.
 2. **Shell UI from the `app://` scheme** with the `codeCache` privilege and `v8CacheOptions: 'bypassHeatCheck'`, served with `protocol.registerSource`, so files stream without the main thread (see ADR 0008).
-3. **Bundles:** main, preload and UI are built with Vite and Rolldown. Module chunks load only when their module is active (see [modules](modules.md)). The bundles keep licence comments but no doc comments; that alone took the main process start-up path from 140 to 104 KB.
+3. **Bundles:** main, preload and UI are built with Vite and Rolldown. Module chunks load only when their module is active (see [modules](modules.md)). The bundles keep licence comments but no doc comments; that alone took the main process start-up path from 140 to 104 KB. Code that only some starts need, such as the self-test of the packages, the help page for a missing sandbox and the update feed, is in chunks of its own that load when they are needed; on 2026-11-01 that took 11 KB off the start-up path, which was then 138 KiB.
 4. **No synchronous IPC.** State patches are batched per frame. SQLite and hashing run in a `utilityProcess` (see [IPC](ipc.md) and [data](data.md)).
 5. **Tab resources:**
    - Tabs are lazy and restore their history with `navigationHistory.restore()`.

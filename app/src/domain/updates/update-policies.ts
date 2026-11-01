@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { definePolicy, type PolicyDefinition } from '../policy/policy.ts';
-import { UpdateChannelSchema } from './feed.ts';
+import { UpdateChannelSchema } from './channel.ts';
 import type { UpdateMode } from './update-service.ts';
 
 /** `UpdatePolicy`: 0 turns updates off, 1 updates automatically, 2 only on request. */
