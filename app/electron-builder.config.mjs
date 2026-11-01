@@ -107,6 +107,8 @@ export default {
     entitlementsInherit: 'build/entitlements.mac.plist',
     notarize: false,
     artifactName: `${slug}-macos-\${arch}.\${ext}`,
+    // Lets macOS offer the browser for web links; links arrive as `open-url` events.
+    protocols: [{ name: 'Web page', schemes: ['http', 'https'], role: 'Viewer' }],
     extendInfo: {
       NSCameraUsageDescription: 'A website you visit can ask to use the camera.',
       NSMicrophoneUsageDescription: 'A website you visit can ask to use the microphone.',
