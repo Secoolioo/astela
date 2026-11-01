@@ -162,3 +162,34 @@ describe('createPolicyProviders', () => {
     expect(createPolicyProviders(brand, 'linux').map((p) => p.name)).toEqual(['linux-json']);
   });
 });
+
+describe('JsonFileSessionStore', () => {
+  it('writes the newest session after the delay, keeps a backup and reads it back', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const dir = tempDir();
+    const clock = new ManualClock();
+    const file = join(dir, 'session.json');
+    const store = new JsonFileSessionStore(file, clock, 1000);
+    expect(await store.read()).toBeUndefined();
+    const one = {
+      version: 1 as const,
+      windows: [{ tabs: [{ url: 'https://a.example/', title: 'A' }], active: 0 }],
+    };
+    const two = {
+      version: 1 as const,
+      windows: [{ tabs: [{ url: 'https://b.example/', title: 'B' }], active: 0 }],
+    };
+    store.schedule(one);
+    store.schedule(two);
+    expect(existsSync(file)).toBe(false);
+    clock.advance(1000);
+    await store.flush();
+    expect(await store.read()).toEqual(two);
+    store.schedule(one);
+    await store.flush();
+    expect(JSON.parse(readFileSync(`${file}.bak`, 'utf8'))).toEqual(two);
+    writeFileSync(file, '{broken');
+    expect(await store.read()).toEqual(two);
+    store.dispose();
+  });
+});

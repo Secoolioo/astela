@@ -83,6 +83,15 @@ export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   scope: 'global',
 });
 
+/** What the browser shows when it starts: the tabs of the last session, or a new tab page. */
+export const StartupSetting = defineSetting<'restore' | 'newtab'>({
+  key: 'startup.page',
+  schema: v.picklist(['restore', 'newtab']),
+  default: 'restore',
+  scope: 'global',
+  ui: { section: 'startup', control: 'select', order: 1 },
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -100,5 +109,6 @@ export const coreSettings = [
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,
+  StartupSetting,
   SetupShownSetting,
 ];
