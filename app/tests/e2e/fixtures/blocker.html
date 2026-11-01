@@ -3,11 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <title>Fixture blocker</title>
+    <script>
+      window.scriptletBeforePage = window.fixtureScriptletRan === true;
+    </script>
     <script src="fixture-ad.js"></script>
   </head>
   <body>
     <p>Content</p>
     <div class="fixture-ad">Advertisement</div>
     <img id="tracker" src="fixture-tracker.gif" alt="" />
+    <iframe src="blocker-frame.html" title="Frame"></iframe>
   </body>
 </html>

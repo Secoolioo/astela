@@ -58,6 +58,7 @@ import {
 import { connectSetupGuide } from './setup-guide.ts';
 import { AppearanceController } from './appearance.ts';
 import { connectSettingsPage } from './settings-page.ts';
+import { connectBlockerFrames } from './blocker-frames.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
@@ -74,6 +75,8 @@ export interface BundleLayout {
   readonly pagePreload: string;
   /** Folder of the content blocker data. */
   readonly blockerDir: string;
+  /** Path of the content blocker's preload for the frames of web pages. */
+  readonly framePreload: string;
   /** Dev server URL of the shell, only during development. */
   readonly devShellUrl: string | undefined;
 }
@@ -175,12 +178,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
   pipeline.add(blocker);
   const webSessions = new Set<Session>();
+  const addFramePreload = connectBlockerFrames(
+    blocker,
+    (s) => webSessions.has(s),
+    layout.framePreload,
+  );
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
       protocolHandler.refuse(s);
       hardenSession(s);
       pipeline.attach(s);
+      addFramePreload(s);
     }
   };
   app.on('session-created', protectWebSession);

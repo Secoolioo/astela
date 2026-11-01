@@ -21,6 +21,25 @@ const requestTypes: Readonly<Record<string, RequestType>> = {
   other: 'other',
 };
 
+/** The rules for a frame that starts. */
+export interface FrameRules {
+  /** Element hiding rules of the frame's address, as a style sheet. */
+  readonly styles: string;
+  /** Scriptlets that run in the page's world before its own scripts. */
+  readonly scripts: readonly string[];
+  /** Whether the frame should report its elements for the generic hiding rules. */
+  readonly elements: boolean;
+}
+
+/** The classes, ids and link targets that a frame reported. */
+export interface FrameElements {
+  readonly classes: readonly string[];
+  readonly ids: readonly string[];
+  readonly hrefs: readonly string[];
+}
+
+const noRules: FrameRules = { styles: '', scripts: [], elements: false };
+
 /** Options of the {@link ContentBlocker}. */
 export interface ContentBlockerOptions {
   /** Folder with `engine.bin`, built by `tools/blocker/build.ts`. */
@@ -41,6 +60,8 @@ export interface ContentBlockerOptions {
  */
 export class ContentBlocker implements RequestInterceptor {
   private engine: Promise<LoadedEngine | undefined> | undefined;
+  /** The engine once it has loaded, for the frames, which cannot wait for it. */
+  private loaded: LoadedEngine | undefined;
   private readonly options: ContentBlockerOptions;
 
   /** @param options - Data folder, switch and callbacks. */
@@ -52,6 +73,11 @@ export class ContentBlocker implements RequestInterceptor {
   load(): Promise<LoadedEngine | undefined> {
     this.engine ??= this.read();
     return this.engine;
+  }
+
+  /** The engine while it loads, for a frame that may wait for it; `undefined` otherwise. */
+  loading(): Promise<unknown> | undefined {
+    return this.loaded === undefined ? this.engine : undefined;
   }
 
   async beforeRequest(
@@ -85,6 +111,61 @@ export class ContentBlocker implements RequestInterceptor {
     return { cancel: true };
   }
 
+  /**
+   * The element hiding rules and scriptlets for a frame that starts. The frame waits for
+   * them, so this answers at once: before the engine has loaded, there are none.
+   * @param url - The frame's address.
+   */
+  frameRules(url: string): FrameRules {
+    const page = this.page(url);
+    if (page === undefined) {
+      return noRules;
+    }
+    const { styles, scripts } = page.loaded.engine.getCosmeticsFilters({
+      ...page.address,
+      getRulesFromDOM: false,
+      getExtendedRules: false,
+    });
+    return { styles, scripts, elements: true };
+  }
+
+  /**
+   * The generic element hiding rules for the classes, ids and links of a frame.
+   * @param url - The frame's address.
+   * @param elements - What the frame reported.
+   */
+  elementRules(url: string, elements: FrameElements): string {
+    const page = this.page(url);
+    if (page === undefined) {
+      return '';
+    }
+    return page.loaded.engine.getCosmeticsFilters({
+      ...page.address,
+      classes: [...elements.classes],
+      ids: [...elements.ids],
+      hrefs: [...elements.hrefs],
+      getBaseRules: false,
+      getInjectionRules: false,
+      getExtendedRules: false,
+      getRulesFromHostname: false,
+      getRulesFromDOM: true,
+    }).styles;
+  }
+
+  /** The loaded engine and the parts of an address that cosmetic rules need. */
+  private page(
+    url: string,
+  ):
+    | { loaded: LoadedEngine; address: { url: string; hostname: string; domain: string } }
+    | undefined {
+    const loaded = this.loaded;
+    if (loaded === undefined || !this.options.enabled() || !/^https?:/i.test(url)) {
+      return undefined;
+    }
+    const { hostname, domain } = loaded.Request.fromRawDetails({ url });
+    return { loaded, address: { url, hostname, domain } };
+  }
+
   private async read(): Promise<LoadedEngine | undefined> {
     try {
       const [{ FiltersEngine: Engine, Request }, bytes] = await Promise.all([
@@ -93,7 +174,8 @@ export class ContentBlocker implements RequestInterceptor {
       ]);
       const engine = Engine.deserialize(new Uint8Array(bytes));
       this.options.logger.info('Content blocker ready', { bytes: bytes.length });
-      return { engine, Request };
+      this.loaded = { engine, Request };
+      return this.loaded;
     } catch (error) {
       this.options.logger.warn('Content blocker data is missing or invalid; nothing is blocked', {
         error: String(error),

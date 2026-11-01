@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0028](0028-content-blocker-rules-through-a-frame-preload.md) makes an exception for the two channels of the content blocker's frame preload.
 
 ## Date
 
