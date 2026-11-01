@@ -10,8 +10,12 @@ export type DataApi = Pick<
   | 'clearHistory'
   | 'importHistory'
   | 'bookmarks'
+  | 'bookmarkList'
+  | 'bookmarkUrls'
   | 'addBookmark'
+  | 'updateBookmark'
   | 'removeBookmark'
+  | 'removeBookmarkUrl'
   | 'importBookmarks'
 >;
 
@@ -27,8 +31,12 @@ export const dataMethods: readonly DataMethod[] = [
   'clearHistory',
   'importHistory',
   'bookmarks',
+  'bookmarkList',
+  'bookmarkUrls',
   'addBookmark',
+  'updateBookmark',
   'removeBookmark',
+  'removeBookmarkUrl',
   'importBookmarks',
 ];
 

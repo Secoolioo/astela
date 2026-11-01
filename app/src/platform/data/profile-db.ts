@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { bookmarkRoots } from '../../shared/bookmarks.ts';
 
 /** A page in the history, with its most recent visit. */
 export interface HistoryEntry {
@@ -19,6 +20,16 @@ export interface BookmarkNode {
   readonly children?: readonly BookmarkNode[];
 }
 
+/** A bookmark or folder as the bookmarks page lists it. */
+export interface BookmarkRow {
+  readonly id: number;
+  /** The folder it is in; `null` for the two root folders. */
+  readonly parentId: number | null;
+  readonly title: string;
+  /** The address of a bookmark; `null` for a folder. */
+  readonly url: string | null;
+}
+
 /** A bookmark or folder to import, as another browser stores it. */
 export interface ImportedBookmark {
   readonly title: string;
@@ -34,8 +45,7 @@ export interface ImportedVisit {
   readonly lastVisit: number;
 }
 
-/** Ids of the two root folders: the bookmarks bar and the other bookmarks. */
-export const bookmarkRoots = { bar: 1, other: 2 } as const;
+export { bookmarkRoots };
 
 /** Schema changes in order; the index plus one is the schema version after the step. */
 const migrations: readonly string[] = [
@@ -262,17 +272,65 @@ export class ProfileDatabase {
    */
   addBookmark(parent: number, title: string, url?: string): number {
     if (this.readOnly) return 0;
-    const position = Number(
-      this.db.prepare('SELECT count(*) AS n FROM bookmarks WHERE parent_id = ?').get(parent)?.[
-        'n'
-      ] ?? 0,
-    );
     const result = this.db
       .prepare(
         'INSERT INTO bookmarks(parent_id, title, url, position, added_at) VALUES (?, ?, ?, ?, ?)',
       )
-      .run(parent, title, url ?? null, position, this.clock());
+      .run(parent, title, url ?? null, this.nextPosition(parent), this.clock());
     return Number(result.lastInsertRowid);
+  }
+
+  /**
+   * Every bookmark and folder in display order: the two root folders first, then the
+   * contents of each folder in their order. Roots have no parent, folders no address.
+   */
+  bookmarkList(): BookmarkRow[] {
+    return this.db
+      .prepare('SELECT id, parent_id, title, url FROM bookmarks ORDER BY parent_id, position, id')
+      .all()
+      .map((row) => ({
+        id: Number(row['id']),
+        parentId: row['parent_id'] === null ? null : Number(row['parent_id']),
+        title: String(row['title']),
+        url: typeof row['url'] === 'string' ? row['url'] : null,
+      }));
+  }
+
+  /** The distinct addresses of all bookmarks. */
+  bookmarkUrls(): string[] {
+    return this.db
+      .prepare('SELECT DISTINCT url FROM bookmarks WHERE url IS NOT NULL')
+      .all()
+      .map((row) => String(row['url']));
+  }
+
+  /**
+   * Renames a bookmark or a folder, changes the address of a bookmark, and moves either to
+   * the end of another folder. The root folders stay as they are, and a folder never moves
+   * into itself or one of its own folders.
+   * @param id - The bookmark or folder.
+   * @param title - Its new title.
+   * @param url - The new address of a bookmark; ignored for a folder.
+   * @param parent - The folder to move it to; omitted to keep it where it is.
+   */
+  updateBookmark(id: number, title: string, url?: string, parent?: number): void {
+    if (this.readOnly || id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
+    const row = this.db.prepare('SELECT parent_id, url FROM bookmarks WHERE id = ?').get(id);
+    if (row === undefined) return;
+    const isBookmark = typeof row['url'] === 'string';
+    this.transaction(() => {
+      this.db
+        .prepare('UPDATE bookmarks SET title = ?, url = ? WHERE id = ?')
+        .run(title, isBookmark ? (url ?? String(row['url'])) : null, id);
+      if (parent !== undefined && parent !== Number(row['parent_id'])) {
+        if (!this.isFolder(parent) || this.isInside(parent, id)) {
+          throw new Error(`Cannot move ${id} into ${parent}`);
+        }
+        this.db
+          .prepare('UPDATE bookmarks SET parent_id = ?, position = ? WHERE id = ?')
+          .run(parent, this.nextPosition(parent), id);
+      }
+    });
   }
 
   /**
@@ -282,6 +340,15 @@ export class ProfileDatabase {
   removeBookmark(id: number): void {
     if (this.readOnly || id === bookmarkRoots.bar || id === bookmarkRoots.other) return;
     this.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id);
+  }
+
+  /**
+   * Removes every bookmark of an address, for the star in the address bar.
+   * @param url - The address.
+   */
+  removeBookmarkUrl(url: string): void {
+    if (this.readOnly) return;
+    this.db.prepare('DELETE FROM bookmarks WHERE url = ?').run(url);
   }
 
   /**
@@ -310,6 +377,30 @@ export class ProfileDatabase {
   /** Closes the database. */
   close(): void {
     this.db.close();
+  }
+
+  private nextPosition(parent: number): number {
+    const row = this.db
+      .prepare('SELECT coalesce(max(position) + 1, 0) AS n FROM bookmarks WHERE parent_id = ?')
+      .get(parent);
+    return Number(row?.['n'] ?? 0);
+  }
+
+  private isFolder(id: number): boolean {
+    return (
+      this.db.prepare('SELECT 1 FROM bookmarks WHERE id = ? AND url IS NULL').get(id) !== undefined
+    );
+  }
+
+  /** Whether a bookmark or folder is the folder itself or lies somewhere inside it. */
+  private isInside(id: number, folder: number): boolean {
+    const row = this.db
+      .prepare(
+        `WITH RECURSIVE up(id) AS (SELECT ? UNION SELECT b.parent_id FROM bookmarks b JOIN up ON b.id = up.id WHERE b.parent_id IS NOT NULL)
+         SELECT 1 FROM up WHERE id = ?`,
+      )
+      .get(id, folder);
+    return row !== undefined;
   }
 
   private count(table: 'places' | 'bookmarks'): number {

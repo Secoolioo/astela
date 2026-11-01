@@ -28,6 +28,12 @@ export function popupBrowserMenu(
       registerAccelerator: false,
       click: () => window.execute('history.open'),
     },
+    {
+      label: i18n.t('menu.bookmarks'),
+      accelerator: mac ? 'Shift+Cmd+O' : 'Ctrl+Shift+O',
+      registerAccelerator: false,
+      click: () => window.execute('bookmarks.open'),
+    },
     { type: 'separator' },
     {
       label: i18n.t('menu.settings'),
