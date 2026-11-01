@@ -32,6 +32,8 @@ test('guides a new profile through its look, tabs and search engine', async () =
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('radio', { name: 'Ecosia' }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Bring your bookmarks along' })).toBeVisible();
+    await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: 'You are all set' })).toBeVisible();
     await clickAway(page, 'Start browsing');
     const newTab = await waitForPage(browser, (url) => url.startsWith('app://newtab'));

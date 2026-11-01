@@ -181,6 +181,8 @@ export async function launch(
     readonly firstRun?: boolean;
     /** The profile of an earlier start to use again. */
     readonly profile?: string;
+    /** Environment variables for the browser, such as another home folder. */
+    readonly env?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<Browser> {
   const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
@@ -206,10 +208,14 @@ export async function launch(
   if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
   const packaged = process.env['E2E_APP'];
   const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
+  const spawnOptions = {
+    stdio: ['ignore', 'inherit', 'pipe'] as ['ignore', 'inherit', 'pipe'],
+    env: { ...process.env, ...options.env },
+  };
   const child =
     packaged === undefined
-      ? spawn(electronPath, [appDir, ...args], { stdio: ['ignore', 'inherit', 'pipe'] })
-      : spawn(packaged, args, { stdio: ['ignore', 'inherit', 'pipe'] });
+      ? spawn(electronPath, [appDir, ...args], spawnOptions)
+      : spawn(packaged, args, spawnOptions);
   child.stderr?.on('data', (chunk: Buffer) => process.stderr.write(chunk));
   const inspector = waitForLine(child, /Debugger listening on (ws:\/\/\S+)/);
   const devtools = waitForLine(child, /DevTools listening on (ws:\/\/\S+)/);

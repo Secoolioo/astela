@@ -206,7 +206,7 @@ export class ProfileDatabase {
 
   /**
    * Adds pages of another browser's history; pages that exist keep the newer visit and
-   * the sum of the visits.
+   * the higher count of visits, so importing the same history again changes nothing.
    * @param visits - The pages.
    * @returns How many pages were new.
    */
@@ -215,7 +215,7 @@ export class ProfileDatabase {
     const before = this.count('places');
     const statement = this.db.prepare(
       `INSERT INTO places(url, title, visit_count, last_visit) VALUES (?, ?, ?, ?)
-       ON CONFLICT(url) DO UPDATE SET visit_count = visit_count + excluded.visit_count,
+       ON CONFLICT(url) DO UPDATE SET visit_count = max(visit_count, excluded.visit_count),
          last_visit = max(last_visit, excluded.last_visit),
          title = CASE WHEN title = '' THEN excluded.title ELSE title END`,
     );
@@ -352,13 +352,17 @@ export class ProfileDatabase {
   }
 
   /**
-   * Imports another browser's bookmarks into a new folder of the other bookmarks.
+   * Imports another browser's bookmarks into a new folder of the other bookmarks. A folder
+   * of the same title from an earlier import is replaced, so importing again adds nothing.
    * @param folderTitle - Title of the new folder, such as "Imported from Chrome".
    * @param tree - The bookmarks and folders.
    * @returns How many bookmarks were imported.
    */
   importBookmarks(folderTitle: string, tree: readonly ImportedBookmark[]): number {
     if (this.readOnly) return 0;
+    const earlier = this.db.prepare(
+      'DELETE FROM bookmarks WHERE parent_id = ? AND title = ? AND url IS NULL',
+    );
     let count = 0;
     const add = (parent: number, items: readonly ImportedBookmark[]): void => {
       for (const item of items) {
@@ -370,7 +374,10 @@ export class ProfileDatabase {
         }
       }
     };
-    this.transaction(() => add(this.addBookmark(bookmarkRoots.other, folderTitle), tree));
+    this.transaction(() => {
+      earlier.run(bookmarkRoots.other, folderTitle);
+      add(this.addBookmark(bookmarkRoots.other, folderTitle), tree);
+    });
     return count;
   }
 
