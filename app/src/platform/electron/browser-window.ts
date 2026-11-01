@@ -399,6 +399,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
+              // Lets the content blocker's frame preload run in iframes; Node stays off.
+              nodeIntegrationInSubFrames: true,
               spellcheck: false,
             }
           : {

@@ -27,6 +27,24 @@ for (const enabled of [true, false]) {
         page: document.querySelector('p')?.textContent,
       }));
       expect(loaded).toEqual({ script: !enabled, image: !enabled, page: 'Content' });
+      // Scriptlets run before the page's own scripts, and elements are hidden, in the page
+      // and in its frame.
+      const frame = page.frames().find((f) => f.url().endsWith('/blocker-frame.html'));
+      for (const target of [page, frame]) {
+        expect(
+          await target?.evaluate(
+            () => (window as unknown as { scriptletBeforePage?: boolean }).scriptletBeforePage,
+          ),
+        ).toBe(enabled);
+        await expect
+          .poll(() =>
+            target?.evaluate(() => {
+              const ad = document.querySelector('.fixture-ad');
+              return ad === null ? 'missing' : getComputedStyle(ad).display;
+            }),
+          )
+          .toBe(enabled ? 'none' : 'block');
+      }
     } finally {
       await browser.close();
     }

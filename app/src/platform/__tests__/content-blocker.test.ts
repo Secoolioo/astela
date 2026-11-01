@@ -100,6 +100,33 @@ describe('ContentBlocker', () => {
   });
 });
 
+describe('ContentBlocker cosmetics', () => {
+  it('gives frames their hiding rules and scriptlets, and hides reported elements', async () => {
+    const dir = dataDir('news.example##.banner\n##.generic-ad\n');
+    let enabled = true;
+    const blocker = new ContentBlocker({ dataDir: dir, enabled: () => enabled, logger: logger() });
+    expect(blocker.frameRules('https://news.example/')).toEqual({
+      styles: '',
+      scripts: [],
+      elements: false,
+    });
+    const loading = blocker.load();
+    expect(blocker.loading()).toBe(loading);
+    await loading;
+    expect(blocker.loading()).toBeUndefined();
+    const rules = blocker.frameRules('https://news.example/a');
+    expect(rules.styles).toContain('.banner');
+    expect(rules.elements).toBe(true);
+    expect(blocker.frameRules('https://other.example/').styles).not.toContain('.banner');
+    const report = { classes: ['generic-ad', 'content'], ids: [], hrefs: [] };
+    expect(blocker.elementRules('https://other.example/', report)).toContain('.generic-ad');
+    expect(blocker.frameRules('app://settings/').elements).toBe(false);
+    enabled = false;
+    expect(blocker.frameRules('https://news.example/a').styles).toBe('');
+    expect(blocker.elementRules('https://other.example/', report)).toBe('');
+  });
+});
+
 describe('RequestPipeline', () => {
   it('asks the interceptors in order and lets the first decision win', async () => {
     let listener: ((details: unknown, callback: (response: unknown) => void) => void) | undefined;

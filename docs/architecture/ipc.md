@@ -95,6 +95,7 @@ Implemented for the shell and the internal pages:
 - **Bridges** (`app/src/preload/`): the shell bridge exposes only `invoke` and `on` for its allow-listed channels; the page bridge is scoped by a capability given on its command line.
 - **State:** the shell receives one state snapshot per change, batched within 16 ms.
 - **Settings page:** the capability `page:settings` with `settings.getAll`, `settings.set` and the event `settings.changed` (`app/src/shared/ipc/settings-contracts.ts`). The page bridge offers `on` for the events of the page's own scope; the browser process sends an event only to views that have its capability.
+- **Web frames:** only the content blocker's frame preload talks to the browser process, with `blocker.frame` (synchronous, once per frame) and `blocker.elements`; both answer only frames of web sessions, with filter rules for the frame's own address ([ADR 0028](../adr/0028-content-blocker-rules-through-a-frame-preload.md)).
 - **Appearance:** every view of the browser's own UI has the capability `appearance`; its preload, not the page, receives `appearance.changed` with the style sheet of design tokens.
 - **New tab page:** the capability `page:newtab` with `newtab.getState`, which names the search engine, and `newtab.navigate`, which opens a search or an address in the page's own tab (`app/src/shared/ipc/newtab-contracts.ts`).
 

@@ -9,6 +9,7 @@ bootstrap({
   rendererDir: join(here, '../renderer'),
   shellPreload: join(here, '../preload/shell.cjs'),
   pagePreload: join(here, '../preload/page.cjs'),
+  framePreload: join(here, '../preload/frame.cjs'),
   blockerDir: app.isPackaged
     ? join(process.resourcesPath, 'blocker')
     : join(here, '../../build/blocker'),

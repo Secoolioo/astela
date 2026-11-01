@@ -40,7 +40,11 @@ export default defineConfig({
       isolatedEntries: true,
       outDir: 'out/preload',
       rollupOptions: {
-        input: { shell: 'src/preload/shell.ts', page: 'src/preload/page.ts' },
+        input: {
+          shell: 'src/preload/shell.ts',
+          page: 'src/preload/page.ts',
+          frame: 'src/preload/frame.ts',
+        },
         output: { format: 'cjs', entryFileNames: '[name].cjs', comments },
       },
     },

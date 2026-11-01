@@ -67,3 +67,4 @@ Each rejected option as a bullet point with a short reason.
 | [0025](0025-read-policies-while-electron-starts.md)             | Read policies while Electron starts                     |
 | [0026](0026-internal-pages-share-tabs-with-web-pages.md)        | Internal pages share tabs with web pages                |
 | [0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) | Content blocker with the default lists of uBlock Origin |
+| [0028](0028-content-blocker-rules-through-a-frame-preload.md)   | Content blocker rules through a frame preload           |
