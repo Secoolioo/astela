@@ -20,5 +20,6 @@
   "menu.blockOnSite": "&Block ads on {site}",
   "menu.blockerSettings": "Content blocker &settings",
   "menu.history": "&History",
-  "menu.bookmarks": "&Bookmarks"
+  "menu.bookmarks": "&Bookmarks",
+  "menu.emptyFolder": "(empty)"
 }

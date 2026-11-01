@@ -100,6 +100,16 @@ export const SetupShownSetting = defineSetting<boolean>({
   scope: 'global',
 });
 
+/** Whether the bookmarks bar shows the bookmarks of its folder below the toolbar. */
+export const BookmarksBarSetting = defineSetting<boolean>({
+  key: 'bookmarks.bar',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'BookmarkBarEnabled', recommended: true },
+  ui: { section: 'appearance', control: 'toggle', order: 5 },
+});
+
 /** Settings that exist before any feature module contributes its own. */
 export const coreSettings = [
   SearchUrlTemplate,
@@ -111,4 +121,5 @@ export const coreSettings = [
   BlockerAllowedSitesSetting,
   StartupSetting,
   SetupShownSetting,
+  BookmarksBarSetting,
 ];

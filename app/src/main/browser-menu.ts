@@ -120,3 +120,59 @@ export function macMenuBar(openSettings: () => void): Menu {
     { role: 'windowMenu' },
   ]);
 }
+
+/** A bookmark or folder for the menu of a folder of the bookmarks bar. */
+export interface FolderEntry {
+  readonly id: number;
+  readonly title: string;
+  readonly url: string | null;
+}
+
+/** At most this many bookmarks and folders appear in one menu. */
+const folderMenuLimit = 500;
+
+/**
+ * Shows the contents of a folder of the bookmarks bar as a menu, with a submenu for each
+ * folder in it. Choosing a bookmark opens it in the active tab, or with Ctrl or Command in a
+ * new tab.
+ * @param window - The window whose bookmarks bar was clicked.
+ * @param position - Where the menu opens, in the window's coordinates.
+ * @param folder - The folder.
+ * @param contents - Lists what a folder contains.
+ * @param open - Opens a bookmark.
+ */
+export function popupBookmarkFolder(
+  window: BrowserWindowController,
+  position: { readonly x: number; readonly y: number },
+  folder: number,
+  contents: (folder: number) => readonly FolderEntry[],
+  open: (url: string, newTab: boolean) => void,
+): void {
+  const i18n = translatorFor(app.getLocale(), process.platform);
+  const mac = process.platform === 'darwin';
+  // Elsewhere, & marks the access key of a menu item; a title shows it as it is.
+  const label = (title: string): string => (mac ? title : title.replaceAll('&', '&&'));
+  const items = (id: number, depth: number): Electron.MenuItemConstructorOptions[] => {
+    const entries = contents(id).slice(0, folderMenuLimit);
+    if (entries.length === 0) return [{ label: i18n.t('menu.emptyFolder'), enabled: false }];
+    return entries.map((entry): Electron.MenuItemConstructorOptions => {
+      const url = entry.url;
+      if (url === null) {
+        return {
+          label: label(entry.title),
+          submenu: depth < 20 ? items(entry.id, depth + 1) : [],
+        };
+      }
+      return {
+        label: label(entry.title || url),
+        click: (_item, _window, event) =>
+          open(url, event.ctrlKey === true || event.metaKey === true),
+      };
+    });
+  };
+  Menu.buildFromTemplate(items(folder, 0)).popup({
+    window: window.window,
+    x: position.x,
+    y: position.y,
+  });
+}

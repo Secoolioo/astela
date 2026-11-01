@@ -12,6 +12,7 @@ import type {
   ShellState,
   TabAction,
   ToggleBookmark,
+  OpenBookmarkFolder,
 } from '../../shared/ipc/shell-contracts.ts';
 
 interface Requests {
@@ -26,6 +27,7 @@ interface Requests {
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerMenu': typeof OpenBlockerMenu;
   'shell.toggleBookmark': typeof ToggleBookmark;
+  'shell.openBookmarkFolder': typeof OpenBookmarkFolder;
 }
 
 interface Events {

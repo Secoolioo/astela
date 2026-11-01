@@ -12,4 +12,10 @@ To see and organize your bookmarks, open the menu at the right end of the toolba
 - The × button removes a bookmark. Removing a folder that is not empty asks first, because everything in it is removed as well.
 - Type in the search field to find bookmarks by words of their title or address.
 
+## Bookmarks bar
+
+The bookmarks bar shows the bookmarks of the **Bookmarks bar** folder below the toolbar. To show or hide it, press Ctrl+Shift+B (Command+Shift+B on macOS), or go to [Settings](settings.md) → Appearance → Show bookmarks bar; the setup guide offers it too. It is hidden at first.
+
+Click a bookmark on the bar to open it in the current tab, or Ctrl-click (Command-click on macOS) or middle-click it to open it in a new tab. A folder on the bar opens a menu with what it contains.
+
 Bookmarks are stored on your computer only, in the profile database. See [Data storage](../architecture/data.md).

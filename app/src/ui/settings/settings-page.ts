@@ -170,6 +170,7 @@ export class SettingsPage extends LitElement {
         ${this.renderChoice('appearance.colorMode', 'settings.colorMode')} ${this.renderAccent()}
         ${this.renderChoice('appearance.density', 'settings.density')}
         ${this.renderChoice('tabs.position', 'settings.tabPosition')}
+        ${this.renderToggle('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote')}
       </section>
       <h2 id="startup">${t('settings.startup')}</h2>
       <section aria-labelledby="startup">

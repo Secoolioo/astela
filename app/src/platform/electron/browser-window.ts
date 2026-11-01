@@ -10,6 +10,7 @@ import { DisposableStore, toDisposable, type Disposable } from '../../shared/dis
 import type { Capability } from '../../shared/ipc/contract.ts';
 import type { TabStripPosition } from '../../shared/layout.ts';
 import {
+  type BarItem,
   ShellCommand,
   ShellStateChanged,
   type ShellState,
@@ -76,6 +77,10 @@ export interface BrowserWindowOptions {
   readonly isBookmarked?: (url: string) => boolean;
   /** Adds a bookmark for a page, or removes its bookmarks. */
   readonly toggleBookmark?: (url: string, title: string) => void;
+  /** The items of the bookmarks bar, or `null` while the bar is hidden. */
+  readonly bookmarksBar?: () => BarItem[] | null;
+  /** Shows or hides the bookmarks bar. */
+  readonly toggleBookmarksBar?: () => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -187,6 +192,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       })),
       activeTabId: this.tabs.active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
+      bookmarksBar: this.options.bookmarksBar?.() ?? null,
     };
   }
 
@@ -395,6 +401,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'bookmarks.open':
         this.openPage('bookmarks');
+        break;
+      case 'bookmarks.toggleBar':
+        this.options.toggleBookmarksBar?.();
         break;
       case 'bookmark.toggle':
         // Only web pages get bookmarks; the browser's own pages have their own commands.

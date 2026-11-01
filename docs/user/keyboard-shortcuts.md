@@ -6,20 +6,21 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 
 ## Windows and Linux
 
-| Action                     | Shortcut                                        |
-| -------------------------- | ----------------------------------------------- |
-| New tab                    | `Ctrl+T`                                        |
-| Close the tab              | `Ctrl+W` or `Ctrl+F4`                           |
-| Reopen the last closed tab | `Ctrl+Shift+T`                                  |
-| Next tab                   | `Ctrl+Tab` or `Ctrl+Page Down`                  |
-| Previous tab               | `Ctrl+Shift+Tab` or `Ctrl+Page Up`              |
-| Back                       | `Alt+Left Arrow` or the keyboard's Back key     |
-| Forward                    | `Alt+Right Arrow` or the keyboard's Forward key |
-| Reload                     | `F5` or `Ctrl+R`                                |
-| Go to the address bar      | `Ctrl+L`, `Alt+D` or `F6`                       |
-| Open the history           | `Ctrl+H`                                        |
-| Bookmark the page          | `Ctrl+D`                                        |
-| Open the bookmarks         | `Ctrl+Shift+O`                                  |
+| Action                         | Shortcut                                        |
+| ------------------------------ | ----------------------------------------------- |
+| New tab                        | `Ctrl+T`                                        |
+| Close the tab                  | `Ctrl+W` or `Ctrl+F4`                           |
+| Reopen the last closed tab     | `Ctrl+Shift+T`                                  |
+| Next tab                       | `Ctrl+Tab` or `Ctrl+Page Down`                  |
+| Previous tab                   | `Ctrl+Shift+Tab` or `Ctrl+Page Up`              |
+| Back                           | `Alt+Left Arrow` or the keyboard's Back key     |
+| Forward                        | `Alt+Right Arrow` or the keyboard's Forward key |
+| Reload                         | `F5` or `Ctrl+R`                                |
+| Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
+| Open the history               | `Ctrl+H`                                        |
+| Bookmark the page              | `Ctrl+D`                                        |
+| Open the bookmarks             | `Ctrl+Shift+O`                                  |
+| Show or hide the bookmarks bar | `Ctrl+Shift+B`                                  |
 
 `Ctrl+Shift+R`, `Shift+F5` and `Ctrl+F5` reload the page as well. A reload that bypasses the cache is not available yet.
 
@@ -27,21 +28,22 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 
 ## macOS
 
-| Action                     | Shortcut                                                              |
-| -------------------------- | --------------------------------------------------------------------- |
-| New tab                    | `Command+T`                                                           |
-| Close the tab              | `Command+W`                                                           |
-| Reopen the last closed tab | `Command+Shift+T`                                                     |
-| Next tab                   | `Control+Tab`, `Command+Option+Right Arrow` or `Command+Shift+]`      |
-| Previous tab               | `Control+Shift+Tab`, `Command+Option+Left Arrow` or `Command+Shift+[` |
-| Back                       | `Command+[`                                                           |
-| Forward                    | `Command+]`                                                           |
-| Reload                     | `Command+R`                                                           |
-| Go to the address bar      | `Command+L`                                                           |
-| Open the settings          | `Command+,`                                                           |
-| Open the history           | `Command+Y`                                                           |
-| Bookmark the page          | `Command+D`                                                           |
-| Open the bookmarks         | `Command+Shift+O`                                                     |
+| Action                         | Shortcut                                                              |
+| ------------------------------ | --------------------------------------------------------------------- |
+| New tab                        | `Command+T`                                                           |
+| Close the tab                  | `Command+W`                                                           |
+| Reopen the last closed tab     | `Command+Shift+T`                                                     |
+| Next tab                       | `Control+Tab`, `Command+Option+Right Arrow` or `Command+Shift+]`      |
+| Previous tab                   | `Control+Shift+Tab`, `Command+Option+Left Arrow` or `Command+Shift+[` |
+| Back                           | `Command+[`                                                           |
+| Forward                        | `Command+]`                                                           |
+| Reload                         | `Command+R`                                                           |
+| Go to the address bar          | `Command+L`                                                           |
+| Open the settings              | `Command+,`                                                           |
+| Open the history               | `Command+Y`                                                           |
+| Bookmark the page              | `Command+D`                                                           |
+| Open the bookmarks             | `Command+Shift+O`                                                     |
+| Show or hide the bookmarks bar | `Command+Shift+B`                                                     |
 
 `Command+Shift+R` reloads the page as well.
 

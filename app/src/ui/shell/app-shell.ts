@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { newTabUrl } from '../../shared/internal-pages.ts';
-import type { ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
+import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
 
@@ -26,21 +26,67 @@ export class AppShell extends LitElement {
       position: fixed;
       inset: 0;
       display: grid;
-      grid-template: 'tabs' auto 'nav' auto 'content' 1fr / 1fr;
+      grid-template: 'tabs' auto 'nav' auto 'bar' auto 'content' 1fr / 1fr;
       background: var(--surface-0);
       user-select: none;
     }
     :host([data-tabs='bottom']) {
-      grid-template: 'nav' auto 'content' 1fr 'tabs' auto / 1fr;
+      grid-template: 'nav' auto 'bar' auto 'content' 1fr 'tabs' auto / 1fr;
     }
     :host([data-tabs='left']) {
-      grid-template: 'nav nav' auto 'tabs content' 1fr / var(--sidebar-width, 240px) 1fr;
+      grid-template:
+        'nav nav' auto 'bar bar' auto 'tabs content' 1fr / var(--sidebar-width, 240px)
+        1fr;
     }
     :host([data-tabs='right']) {
-      grid-template: 'nav nav' auto 'content tabs' 1fr / 1fr var(--sidebar-width, 240px);
+      grid-template:
+        'nav nav' auto 'bar bar' auto 'content tabs' 1fr / 1fr
+        var(--sidebar-width, 240px);
     }
     .content {
       grid-area: content;
+    }
+    /* The bookmarks bar belongs to the toolbar: the line below the toolbar moves below it. */
+    nav:has(+ .bookmarks) {
+      border-bottom: 0;
+    }
+    .bookmarks {
+      grid-area: bar;
+      border-bottom: 1px solid var(--border-1);
+      background: var(--surface-1);
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
+      height: 28px;
+      padding: 0 var(--space-2);
+      overflow: hidden;
+      font-size: 12px;
+    }
+    .bookmarks button {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex: none;
+      max-width: 180px;
+      height: 24px;
+      padding: 0 var(--space-2);
+      border: 0;
+      border-radius: var(--radius-1);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+    }
+    .bookmarks button:hover {
+      background: var(--surface-hover);
+    }
+    .bookmarks span {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .bookmarks .hint {
+      color: var(--text-2);
     }
     [role='tablist'] {
       grid-area: tabs;
@@ -210,7 +256,7 @@ export class AppShell extends LitElement {
 
   constructor() {
     super();
-    this.state = { tabs: [], activeTabId: null, tabStrip: 'top' };
+    this.state = { tabs: [], activeTabId: null, tabStrip: 'top', bookmarksBar: null };
     this.editing = undefined;
   }
 
@@ -376,6 +422,7 @@ export class AppShell extends LitElement {
           ${icons.menu}
         </button>
       </nav>
+      ${this.renderBookmarksBar(t)}
       <div class="content"></div>
     `;
   }
@@ -408,6 +455,60 @@ export class AppShell extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  private renderBookmarksBar(
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): TemplateResult | typeof nothing {
+    const items = this.state.bookmarksBar;
+    if (items === null) return nothing;
+    return html`<div class="bookmarks" role="toolbar" aria-label=${t('shell.bookmarksBar')}>
+      ${
+        items.length === 0
+          ? html`<span class="hint">${t('shell.bookmarksBarEmpty')}</span>`
+          : items.map((item) => this.renderBarItem(item))
+      }
+    </div>`;
+  }
+
+  private renderBarItem(item: BarItem): TemplateResult {
+    const url = item.url;
+    if (url === null) {
+      return html`<button
+        aria-haspopup="menu"
+        @click=${(event: MouseEvent) => this.openBarFolder(event, item.id)}
+      >
+        ${icons.folder}<span>${item.title}</span>
+      </button>`;
+    }
+    return html`<button
+      title=${url}
+      @click=${(event: MouseEvent) => this.openBarLink(url, event.ctrlKey || event.metaKey)}
+      @auxclick=${(event: MouseEvent) => event.button === 1 && this.openBarLink(url, true)}
+    >
+      <span>${item.title || url}</span>
+    </button>`;
+  }
+
+  /** Opens a bookmark of the bookmarks bar in the active tab, or in a new one. */
+  private openBarLink(url: string, newTab: boolean): void {
+    const tabId = this.state.activeTabId;
+    void (newTab || tabId === null
+      ? this.bridge?.invoke('tabs.open', { input: url })
+      : this.bridge?.invoke('tabs.navigate', { tabId, input: url }));
+  }
+
+  /** Opens the menu of a folder of the bookmarks bar below its button. */
+  private openBarFolder(event: MouseEvent, id: number): void {
+    const button = event.currentTarget;
+    if (button instanceof HTMLElement) {
+      const rect = button.getBoundingClientRect();
+      void this.bridge?.invoke('shell.openBookmarkFolder', {
+        id,
+        x: Math.round(rect.left),
+        y: Math.round(rect.bottom),
+      });
+    }
   }
 
   private get active(): TabView | undefined {
@@ -552,6 +653,11 @@ const icons = {
   star: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M11.5 2.3a.5.5 0 0 1 1 0l2.3 4.7a2.1 2.1 0 0 0 1.6 1.2l5.2.7a.5.5 0 0 1 .3.9l-3.8 3.7a2.1 2.1 0 0 0-.6 1.9l.9 5.1a.5.5 0 0 1-.8.6l-4.6-2.4a2.1 2.1 0 0 0-2 0L6.4 21a.5.5 0 0 1-.8-.6l.9-5.1a2.1 2.1 0 0 0-.6-1.9L2.2 9.8a.5.5 0 0 1 .3-.9l5.1-.7a2.1 2.1 0 0 0 1.6-1.2z"
+    />
+  </svg>`,
+  folder: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
     />
   </svg>`,
   menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">

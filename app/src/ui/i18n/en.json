@@ -137,5 +137,9 @@
   "defaultBrowser.windows": "Choose {product} in the Windows settings that opened.",
   "defaultBrowser.failed": "The system did not accept the change.",
   "setup.browser.title": "Blocker and default browser",
-  "setup.browser.body": "{product} blocks ads and trackers from the start. As your default browser, it also opens the links from other apps."
+  "setup.browser.body": "{product} blocks ads and trackers from the start. As your default browser, it also opens the links from other apps.",
+  "shell.bookmarksBar": "Bookmarks bar",
+  "shell.bookmarksBarEmpty": "Pages you bookmark with the star appear here.",
+  "settings.bookmarksBar": "Show bookmarks bar",
+  "settings.bookmarksBarNote": "Shows the bookmarks of the bookmarks bar folder below the toolbar."
 }

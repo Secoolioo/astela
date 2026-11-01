@@ -203,6 +203,7 @@ The update policies (`UpdatePolicy`, `TargetChannel`, `TargetVersionPrefix`, `Up
 Also implemented:
 
 - `SetupGuideEnabled` (boolean): `false` as a mandatory policy keeps the [setup guide](../user/setup-guide.md) from opening on the first start of a profile. Starting the browser with `--no-first-run` does the same for one start.
+- `BookmarkBarEnabled` (boolean): shows or hides the [bookmarks bar](../user/bookmarks.md#bookmarks-bar), as mandatory or recommended policy, like the setting `bookmarks.bar`.
 - `DefaultBrowserSettingEnabled` (boolean): `false` as a mandatory policy hides the [default browser setting](../user/default-browser.md) on the settings page and in the setup guide.
 - `ImportEnabled` (boolean): `false` as a mandatory policy hides the [import from other browsers](../user/import.md) on the settings page and in the setup guide, and the browser refuses it.
 - `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.

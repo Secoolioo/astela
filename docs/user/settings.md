@@ -12,6 +12,7 @@ Every change applies at once, in every window, and is kept when the browser rest
 - **Accent color:** blue, teal, green, orange, red, graphite, or any color you pick. A picked color keeps its hue; Astela only makes it darker in light mode or lighter in dark mode where that is needed to stay readable.
 - **Density:** Compact, Normal or Comfortable changes the height of the tabs and the toolbar.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
+- **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 
 ## On startup
 

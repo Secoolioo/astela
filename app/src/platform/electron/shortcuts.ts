@@ -14,7 +14,8 @@ export type WindowCommand =
   | 'settings.open'
   | 'history.open'
   | 'bookmark.toggle'
-  | 'bookmarks.open';
+  | 'bookmarks.open'
+  | 'bookmarks.toggleBar';
 
 // The tables write a key press as `Modifiers+Key`: the modifiers in the order Ctrl, Alt,
 // Shift, Cmd (the meta key: Command on macOS, Windows or Super elsewhere), then the key as
@@ -46,6 +47,7 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Cmd+Y', 'history.open'],
   ['Cmd+D', 'bookmark.toggle'],
   ['Shift+Cmd+O', 'bookmarks.open'],
+  ['Shift+Cmd+B', 'bookmarks.toggleBar'],
 ]);
 
 /**
@@ -78,6 +80,7 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+H', 'history.open'],
   ['Ctrl+D', 'bookmark.toggle'],
   ['Ctrl+Shift+O', 'bookmarks.open'],
+  ['Ctrl+Shift+B', 'bookmarks.toggleBar'],
 ]);
 
 /**

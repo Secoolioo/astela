@@ -25,11 +25,24 @@ export const TabView = v.strictObject({
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;
 
-/** Everything the shell renders. Sent as a whole after changes, at most once per frame. */
+/** A bookmark or folder of the bookmarks bar; folders have no address. */
+export const BarItem = v.strictObject({
+  id: v.number(),
+  title: v.string(),
+  url: v.nullable(v.string()),
+});
+/** A bookmark or folder of the bookmarks bar. */
+export type BarItem = v.InferOutput<typeof BarItem>;
+
+/**
+ * Everything the shell renders. Sent as a whole after changes, at most once per frame.
+ * `bookmarksBar` is `null` while the bookmarks bar is hidden.
+ */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
   activeTabId: v.nullable(TabId),
   tabStrip: v.picklist(tabStripPositions),
+  bookmarksBar: v.nullable(v.array(BarItem)),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -134,6 +147,18 @@ export const OpenBlockerMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Opens a menu with the contents of a folder of the bookmarks bar below its button. */
+export const OpenBookmarkFolder = defineRequest({
+  channel: 'shell.openBookmarkFolder',
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Adds a bookmark for the page of the active tab, or removes its bookmarks. */
 export const ToggleBookmark = defineRequest({
   channel: 'shell.toggleBookmark',
@@ -169,4 +194,5 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   OpenMenu,
   OpenBlockerMenu,
   ToggleBookmark,
+  OpenBookmarkFolder,
 ];
