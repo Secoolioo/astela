@@ -53,6 +53,15 @@ export default {
     main: 'out/main/index.js',
   },
   asar: true,
+  // The deb and rpm install scripts register the update channel of the package: beta for a
+  // prerelease, which also receives stable releases. They read it from this file, because rpm
+  // cannot query its database while it installs. The version is the one this build uses,
+  // including an override on the command line.
+  afterPack: (context) => {
+    if (context.electronPlatformName !== 'linux') return;
+    const channel = context.packager.appInfo.version.includes('-') ? 'beta' : 'stable';
+    writeFileSync(join(context.appOutDir, 'resources', 'package-channel'), `${channel}\n`);
+  },
   electronLanguages: ['en-US', 'de'],
   electronFuses: {
     runAsNode: false,
@@ -120,5 +129,10 @@ export default {
     },
   },
   deb: { packageCategory: 'web', priority: 'optional', ...packageScripts },
-  rpm: { packageCategory: 'Applications/Internet', ...packageScripts },
+  rpm: {
+    packageCategory: 'Applications/Internet',
+    ...packageScripts,
+    // Repairs what the removal script of an older version took away on an upgrade; see the file.
+    fpm: ['--rpm-posttrans', linuxScript('rpm-posttrans')],
+  },
 };

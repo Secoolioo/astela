@@ -52,18 +52,22 @@ if [ "${1:-}" = --upgrade ]; then
     apt-get install -y -qq /packages/*.deb >/dev/null
     dpkg-query -W -f='\${Version}\n' '$slug'
     apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade '$slug' >/dev/null
-    dpkg-query -W -f='\${Version}\n' '$slug'") || true
+    dpkg-query -W -f='\${Version}\n' '$slug'
+    readlink -f '/usr/bin/$slug'") || true
   check "APT installs the earlier release from its file" "$old" "$(sed -n 1p <<<"$versions")"
   check "APT upgrades it through the live repository" "$new" "$(sed -n 2p <<<"$versions")"
+  check "APT keeps the command after the upgrade" "/opt/$product/$slug" "$(sed -n 3p <<<"$versions")"
 
   versions=$(docker run --rm -v "$packages:/packages:ro" fedora:latest bash -c "
     set -e
     dnf install -y -q /packages/*.rpm >/dev/null
     rpm -q --qf '%{VERSION}\n' '$slug'
     dnf upgrade -y -q --refresh '$slug' >/dev/null
-    rpm -q --qf '%{VERSION}\n' '$slug'") || true
+    rpm -q --qf '%{VERSION}\n' '$slug'
+    readlink -f '/usr/bin/$slug'") || true
   check "DNF installs the earlier release from its file" "$old" "$(sed -n 1p <<<"$versions")"
   check "DNF upgrades it through the live repository" "$new" "$(sed -n 2p <<<"$versions")"
+  check "DNF keeps the command after the upgrade" "/opt/$product/$slug" "$(sed -n 3p <<<"$versions")"
   finish
 fi
 

@@ -1,8 +1,16 @@
 #!/bin/bash
-# Runs after the deb or rpm package is removed or upgraded. The first part is
+# Runs after the deb or rpm package is removed or upgraded. The removal part is
 # electron-builder's after-remove template (MIT License, Copyright (c) 2015 Loopline
-# Systems); the last part removes the package repository when the package is removed for
-# good. @SLUG@ comes from brand.json.
+# Systems), followed by the removal of the package repository. @SLUG@ comes from brand.json.
+#
+# Everything here runs only when the package is removed for good: dpkg passes "remove" or
+# "purge", rpm passes 0. On an rpm upgrade, this script of the old package runs after the
+# install script of the new one, so it would take away the command link and the AppArmor
+# profile that the new package has just set up.
+case "$1" in
+  remove | purge | 0) ;;
+  *) exit 0 ;;
+esac
 
 # Delete the link to the binary
 # update-alternatives --remove <name> <path>: 'path' must be the registered alternative binary,
@@ -30,10 +38,5 @@ if [ -f "$APPARMOR_PROFILE_DEST" ]; then
   rm -f "$APPARMOR_PROFILE_DEST"
 fi
 
-# deb passes "remove" or "purge", rpm passes 0 on removal; upgrades keep the repository.
-case "$1" in
-  remove | purge | 0)
-    rm -f '/etc/apt/sources.list.d/@SLUG@.sources' '/usr/share/keyrings/@SLUG@.asc' \
-      '/etc/yum.repos.d/@SLUG@.repo'
-    ;;
-esac
+rm -f '/etc/apt/sources.list.d/@SLUG@.sources' '/usr/share/keyrings/@SLUG@.asc' \
+  '/etc/yum.repos.d/@SLUG@.repo'
