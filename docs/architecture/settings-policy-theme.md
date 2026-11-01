@@ -179,23 +179,25 @@ Policies let administrators set and lock any setting and control features that a
 | macOS   | `MacManagedPrefsPolicyProvider` | Managed preferences for the bundle ID `io.github.secoolioo.astela`, delivered as configuration profiles through MDM.          |
 | Linux   | `LinuxJsonPolicyProvider`       | `/etc/astela/policies/managed/*.json` for mandatory and `/etc/astela/policies/recommended/*.json` for recommended policies.   |
 
-### Loading before the app is ready
+### Loading while Electron starts
 
-Policies are designed to load synchronously, before `app.whenReady()`, within a measured budget of at most 60 ms:
+Policies apply before `app.whenReady()` and are fresh before the first window appears ([ADR 0025](../adr/0025-read-policies-while-electron-starts.md)):
 
-- Some policies have to become Chromium switches before the app is ready, for example authentication allowlists, hardware acceleration and feature flags. Loading policies any later would make them ineffective.
-- The last known policy set is cached and serves as a fallback when a source cannot be read.
-- The shell will render only from the merged settings snapshot, so no value visibly changes after the window appears.
-- When a policy that maps to a startup switch changes while the browser runs, the change takes effect after a restart, and the browser will show that a restart is required.
+- Before `ready`, the last known policy set from the cache in the profile applies, and the sources are read in the background. On Windows and macOS, where reading starts `reg` and `plutil`, both sources are read in parallel without blocking the main thread.
+- The settings and the first window wait for the fresh set, so the shell renders only from the merged settings snapshot, and no value visibly changes after the window appears.
+- A start without a cache, such as the first start of a profile, reads the sources synchronously first.
+- Some policies have to become Chromium switches before the app is ready, for example authentication allowlists, hardware acceleration and feature flags. They take the values that apply before `ready`. A value that changed since the last start, or while the browser runs, takes effect after a restart, and the browser will show that a restart is required.
+- When no source can be read, the last known set stays in effect.
 
 ```mermaid
 flowchart LR
-  SRC[Policy sources] --> PROV[Policy provider]
-  CACHE[(Last known policy set)] -. fallback .-> PROV
-  PROV --> MERGE[Merged settings snapshot]
-  MERGE --> SW[Chromium switches]
+  CACHE[(Last known policy set)] --> SW[Chromium switches]
   SW --> READY[App ready]
+  SRC[Policy sources] --> PROV[Policy providers]
+  CACHE -. fallback .-> MERGE
+  PROV --> MERGE[Merged settings snapshot]
   READY --> SHELL[Shell renders]
+  MERGE --> SHELL
 ```
 
 ### Refresh
@@ -218,8 +220,8 @@ The complete M1 policy set is listed in [Enterprise](enterprise.md).
 The settings and policy core is implemented and covered by unit tests:
 
 - **Settings** (`app/src/domain/settings/`): `defineSetting` with Valibot schemas, the resolution order from defaults to mandatory policies, workspace overrides, `inspect` with value, source and lock state, writes that a mandatory policy blocks, export and import, and stored values that fail validation are set aside instead of deleted.
-- **Policies** (`app/src/domain/policy/`): `definePolicy`, the policy service with mandatory and recommended levels, machine values before user values, sensitive policies only from machine-wide mandatory sources, DWORD values `0` and `1` read as booleans, a status for every policy, and the last known values as a fallback when every provider fails.
+- **Policies** (`app/src/domain/policy/`): `definePolicy`, the policy service with mandatory and recommended levels, machine values before user values, sensitive policies only from machine-wide mandatory sources, DWORD values `0` and `1` read as booleans, a status for every policy, the last known values as a fallback when every provider fails, and the same values applied at start-up until a fresh read is done.
 - **Policy for every setting:** each setting with a `policy` attribute becomes a policy automatically.
-- **Providers** (`app/src/platform/policy/`): the Windows registry, macOS managed preferences and Linux JSON files, read synchronously without a native module, as described in [enterprise.md](enterprise.md#reading-policies). The cache of the last known values is a JSON file in the profile.
+- **Providers** (`app/src/platform/policy/`): the Windows registry, macOS managed preferences and Linux JSON files, read without a native module, as described in [enterprise.md](enterprise.md#reading-policies). The registry and the managed preferences can also be read asynchronously, both sources at the same time. The cache of the last known values is a JSON file in the profile.
 
 Not implemented yet: the settings page, generated artifacts and their drift check, and themes with the theme editor.

@@ -8,6 +8,7 @@ import type {
   PolicyLevel,
   PolicyProvider,
   PolicyReadError,
+  PolicyReadResult,
   PolicyScope,
   RawPolicyValue,
 } from './policy.ts';
@@ -73,6 +74,7 @@ export class PolicyService implements Disposable {
   private recommended = new Map<string, EffectivePolicy>();
   private statusList: readonly PolicyStatus[] = [];
   private errorList: readonly PolicyReadError[] = [];
+  private reading: Promise<readonly string[]> | undefined;
 
   /** Fires with the names of policies whose effective value changed. */
   readonly onDidChange: Event<readonly string[]> = this.changeEmitter.event;
@@ -101,15 +103,49 @@ export class PolicyService implements Disposable {
   }
 
   /**
-   * Reads all providers synchronously and applies the result. Called once before the
-   * browser is ready, then on window focus and periodically.
+   * Reads all providers synchronously and applies the result.
    * @returns The names of policies whose effective value changed.
    */
   refresh(): readonly string[] {
+    return this.merge(this.providers.map((provider) => provider.load()));
+  }
+
+  /**
+   * Reads all providers without blocking and applies the result. Calls made while a read
+   * is running share it.
+   * @returns The names of policies whose effective value changed.
+   */
+  refreshAsync(): Promise<readonly string[]> {
+    this.reading ??= Promise.all(
+      this.providers.map((provider) =>
+        provider.loadAsync === undefined ? Promise.resolve(provider.load()) : provider.loadAsync(),
+      ),
+    )
+      .then((results) => this.merge(results))
+      .finally(() => {
+        this.reading = undefined;
+      });
+    return this.reading;
+  }
+
+  /**
+   * Applies the last known policies from the cache, for the time until fresh values have
+   * been read.
+   * @returns Whether the cache held a state; without one, nothing changes.
+   */
+  applyCached(): boolean {
+    const cached = this.cache?.read();
+    if (cached === undefined) {
+      return false;
+    }
+    this.apply(cached);
+    return true;
+  }
+
+  private merge(results: readonly PolicyReadResult[]): readonly string[] {
     const values: RawPolicyValue[] = [];
     const errors: PolicyReadError[] = [];
-    for (const provider of this.providers) {
-      const result = provider.load();
+    for (const result of results) {
       values.push(...result.values);
       errors.push(...result.errors);
     }

@@ -35,13 +35,13 @@ How policies combine with defaults, user values and workspace overrides is descr
 
 ## Reading policies
 
-In M1, Astela is designed to read every policy source without a native module, synchronously, before the app is ready:
+In M1, Astela reads every policy source without a native module while Electron starts ([ADR 0025](../adr/0025-read-policies-while-electron-starts.md)):
 
-- **Windows:** `reg export` writes the policy keys of `HKLM` and `HKCU` to a temporary file, which is then parsed. The export is UTF-16LE, so non-ASCII characters survive intact.
+- **Windows:** `reg export` writes the policy keys of `HKLM` and `HKCU` to temporary files, both at the same time, which are then parsed. The export is UTF-16LE, so non-ASCII characters survive intact.
 - **macOS:** `plutil -convert xml1 -o -` converts the managed preferences plists to XML, which is then parsed. XML is used instead of JSON because plist dates and binary data (`<date>` and `<data>`) cannot be converted to JSON.
 - **Linux:** the JSON files are read directly.
 
-Reading has a measured budget of at most 60 ms. The last known policy set is cached and used as a fallback when a source cannot be read. Policies will be read again when the browser gains focus and every 15 minutes.
+Until the sources have been read, the last known policy set applies. It is cached in the profile and also serves as the fallback when a source cannot be read. The first window waits for the fresh set; only a start without a cache reads the sources before the app is ready. Policies are read again, in the background, when the browser gains focus and every 15 minutes.
 
 In M5, a native Node-API addon is planned. It will use `RegisterGPNotification` on Windows to be notified of Group Policy changes and `CFPreferencesAppValueIsForced` on macOS to tell forced values apart.
 
@@ -100,7 +100,7 @@ The root store, CRLSet and certificate transparency data are updated only with E
 
 Kerberos (Negotiate) and NTLM are designed to work through allowlist policies together with Electron's `allowNTLMCredentialsForDomains`:
 
-- `AuthServerAllowlist` will be mapped internally to Electron's command-line switch `auth-server-whitelist` (as of October 2026). The switch has to be set before the app is ready, which is one reason why policies are read synchronously at startup.
+- `AuthServerAllowlist` will be mapped internally to Electron's command-line switch `auth-server-whitelist` (as of October 2026). The switch has to be set before the app is ready, so it takes the policy state that applies then: the last known set, or on the first start of a profile the freshly read one. A changed value takes effect after a restart.
 - From M2, `AuthNegotiateDelegateAllowlist` will be mapped the same way to `auth-negotiate-delegate-whitelist` (as of October 2026).
 
 ### Network tests
