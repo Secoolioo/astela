@@ -15,7 +15,7 @@ import {
   type ShellState,
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
+import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import type { IpcGate } from './ipc-gate.ts';
@@ -404,7 +404,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           : {
               preload: this.options.pagePreload,
               partition: this.options.internalPartition,
-              additionalArguments: [`--bridge-scope=${page}`, this.options.appearanceArgument()],
+              additionalArguments: [
+                `--bridge-scope=${[page, ...sharedChannels[page]].join(',')}`,
+                this.options.appearanceArgument(),
+              ],
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
@@ -418,7 +421,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       view.setBackgroundColor(this.options.backgroundColor());
       registration = this.options.gate.registerView(contents.id, {
         origin: `app://${page}`,
-        capabilities: new Set<Capability>([`page:${page}`, 'appearance']),
+        capabilities: new Set<Capability>([
+          `page:${page}`,
+          ...sharedChannels[page].map((other): Capability => `page:${other}`),
+          'appearance',
+        ]),
       });
     }
     const sync = (): void => this.sync(id, contents);

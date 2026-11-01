@@ -62,6 +62,14 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
+/** Whether this profile has shown the setup guide; it opens once per profile. */
+export const SetupShownSetting = defineSetting<boolean>({
+  key: 'setup.shown',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+});
+
 /** Settings that exist before any feature module contributes its own. */
 export const coreSettings = [
   SearchUrlTemplate,
@@ -69,4 +77,5 @@ export const coreSettings = [
   AccentSetting,
   DensitySetting,
   TabStripPositionSetting,
+  SetupShownSetting,
 ];

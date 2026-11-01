@@ -1,11 +1,21 @@
 /** Internal pages that open in tabs, by their host below `app://`. */
-export const tabPages = ['newtab', 'settings'] as const;
+export const tabPages = ['newtab', 'settings', 'setup'] as const;
 
 /** An internal page that opens in a tab. */
 export type TabPage = (typeof tabPages)[number];
 
 /** Address of the new tab page. */
 export const newTabUrl = 'app://newtab/';
+
+/**
+ * Pages whose channels a page may use besides its own: the setup guide changes settings
+ * through the channels of the settings page.
+ */
+export const sharedChannels: Readonly<Record<TabPage, readonly TabPage[]>> = {
+  newtab: [],
+  settings: [],
+  setup: ['settings'],
+};
 
 /**
  * The address of an internal page.

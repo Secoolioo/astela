@@ -168,6 +168,8 @@ async function launch<T>(
     `--user-data-dir=${join(profilesDir, variant.name)}`,
     `--smoke-test=${report}`,
     '--smoke-test-keep-running',
+    // The setup guide of a new profile would change what the first start measures.
+    '--no-first-run',
   ];
   if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
   const spawnedAt = Date.now();

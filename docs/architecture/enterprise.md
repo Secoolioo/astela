@@ -200,6 +200,12 @@ Implemented (`app/src/platform/policy/`), with unit tests against recorded regis
 
 The update policies (`UpdatePolicy`, `TargetChannel`, `TargetVersionPrefix`, `UpdateURL` and `AutoUpdateCheckPeriodMinutes`) are implemented; see [updates.md](updates.md#implementation-status).
 
+Also implemented:
+
+- `SetupGuideEnabled` (boolean): `false` as a mandatory policy keeps the [setup guide](../user/setup-guide.md) from opening on the first start of a profile. Starting the browser with `--no-first-run` does the same for one start.
+- `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
+- `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
+
 The MSI package (x64, per machine, with the fixed upgrade code) is built for every pull request and installed and removed silently in CI.
 
 Not implemented yet: the MSI properties, the install-type marker, the M1 policy set beyond the first settings, the diagnostics page, generated templates, safe mode and the admin guide.
