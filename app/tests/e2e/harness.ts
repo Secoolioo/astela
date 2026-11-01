@@ -209,7 +209,8 @@ export async function launch(
     ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
     ...extraArgs,
   ];
-  if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
+  // Switches go first: after --, the browser takes every argument as a link.
+  if (process.platform === 'linux' && process.getuid?.() === 0) args.unshift('--no-sandbox');
   const packaged = process.env['E2E_APP'];
   const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
   const spawnOptions = {

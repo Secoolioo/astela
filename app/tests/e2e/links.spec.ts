@@ -11,7 +11,9 @@ test.afterAll(async () => {
 });
 
 test('opens links from other apps, at the start and in a running browser', async () => {
-  const browser = await launch([`${server.origin}/index.html`, 'file:///etc/hosts']);
+  // As the installer registers the browser, the links come after --; on Windows, Electron
+  // refuses a command line in which another argument follows a link without it.
+  const browser = await launch(['--', `${server.origin}/index.html`, 'file:///etc/hosts']);
   try {
     await expect(browser.shell.getByRole('tab', { name: 'Fixture home' })).toBeVisible();
     await expect(browser.shell.getByRole('tab')).toHaveCount(1);
