@@ -18,6 +18,14 @@ declare global {
   }
 }
 
+/** The content type of a fixture file. */
+function contentType(file: string): string {
+  if (file.endsWith('.js')) return 'text/javascript';
+  if (file.endsWith('.gif')) return 'image/gif';
+  if (file.endsWith('.png')) return 'image/png';
+  return 'text/html; charset=utf-8';
+}
+
 /** A local web server for test pages; tests never load third-party sites. */
 export class FixtureServer {
   private server: Server | undefined;
@@ -29,8 +37,9 @@ export class FixtureServer {
       const name =
         new URL(request.url ?? '/', 'http://x').pathname.replace(/^\//, '') || 'index.html';
       try {
-        const body = readFileSync(join(fixtures, name.replace(/[^a-z0-9.-]/gi, '')));
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        const file = name.replace(/[^a-z0-9.-]/gi, '');
+        const body = readFileSync(join(fixtures, file));
+        response.writeHead(200, { 'content-type': contentType(file) });
         response.end(body);
       } catch {
         response.writeHead(404).end();

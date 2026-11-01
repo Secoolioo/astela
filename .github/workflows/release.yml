@@ -88,6 +88,9 @@ jobs:
         run: |
           name=$(tools/release/import-mac-certificate.sh "$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" "$RUNNER_TEMP/signing.p12")
           echo "name=$name" >>"$GITHUB_OUTPUT"
+      - name: Build the content blocker data
+        if: steps.signing.outputs.available == 'true'
+        run: node tools/blocker/build.ts --out app/build/blocker
       - name: Build signed packages
         if: steps.signing.outputs.available == 'true'
         working-directory: app

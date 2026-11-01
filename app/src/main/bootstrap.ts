@@ -36,6 +36,8 @@ import {
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
+import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
+import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import {
   cleanUserAgent,
   guardWebContents,
@@ -47,6 +49,7 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  ContentBlockerSetting,
   SearchUrlTemplate,
   SetupShownSetting,
   TabStripPositionSetting,
@@ -69,6 +72,8 @@ export interface BundleLayout {
   readonly shellPreload: string;
   /** Preload script of internal pages. */
   readonly pagePreload: string;
+  /** Folder of the content blocker data. */
+  readonly blockerDir: string;
   /** Dev server URL of the shell, only during development. */
   readonly devShellUrl: string | undefined;
 }
@@ -160,12 +165,22 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
   hardenSession(internal);
+  // Every request of web content passes the request pipeline; the content blocker is its
+  // first step. Its engine loads after the first window, or with the first web request.
+  const pipeline = new RequestPipeline();
+  const blocker = new ContentBlocker({
+    dataDir: layout.blockerDir,
+    enabled: () => settings.get(ContentBlockerSetting),
+    logger: logger.child('blocker'),
+  });
+  pipeline.add(blocker);
   const webSessions = new Set<Session>();
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
       protocolHandler.refuse(s);
       hardenSession(s);
+      pipeline.attach(s);
     }
   };
   app.on('session-created', protectWebSession);
@@ -283,6 +298,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Everything that is not needed for the first window loads after its shell.
   let updates: UpdateService | undefined;
   first.shellContents.once('did-finish-load', () => {
+    void blocker.load();
     void import('./updates.ts')
       .then(({ createUpdateService }) => {
         updates = createUpdateService({ policies, clock, logger, userData, boot });

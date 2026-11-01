@@ -87,6 +87,8 @@ jobs:
       - name: Install rpm tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Build the content blocker data
+        run: node tools/blocker/build.ts --out app/build/blocker
       - name: Build packages
         working-directory: app
         env:
@@ -262,6 +264,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build the content blocker data from the test filters
+        run: node tools/blocker/build.ts --out app/build/blocker --fixture app/tests/e2e/fixtures/blocker
       - name: Build the test package
         working-directory: app
         env:
@@ -319,6 +323,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build the content blocker data
+        run: node tools/blocker/build.ts --out app/build/blocker
       - name: Build the package as shipped, unpacked
         working-directory: app
         env:

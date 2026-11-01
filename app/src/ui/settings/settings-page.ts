@@ -108,6 +108,12 @@ export class SettingsPage extends LitElement {
         flex-direction: column;
         align-items: stretch;
       }
+      input[role='switch'] {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: var(--accent);
+      }
       :focus-visible {
         outline: 2px solid var(--focus-ring);
         outline-offset: 1px;
@@ -162,6 +168,10 @@ export class SettingsPage extends LitElement {
       </section>
       <h2 id="search">${t('settings.search')}</h2>
       <section aria-labelledby="search">${this.renderSearch()}</section>
+      <h2 id="privacy">${t('settings.privacy')}</h2>
+      <section aria-labelledby="privacy">
+        ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
+      </section>
       <h2 id="setup">${t('settings.setup')}</h2>
       <section aria-labelledby="setup">
         <div class="row">
@@ -212,6 +222,29 @@ export class SettingsPage extends LitElement {
             </label>`,
         )}
       </div>
+    </div>`;
+  }
+
+  private renderToggle(key: string, label: MessageKey, note: MessageKey): TemplateResult {
+    const setting = this.client?.get(key);
+    return html`<div class="row">
+      <label class="label" for=${key}>
+        <span>${this.t(label)}</span>
+        <span class="note">
+          ${setting?.locked === true ? this.t('settings.managed') : this.t(note)}
+        </span>
+      </label>
+      <input
+        id=${key}
+        type="checkbox"
+        role="switch"
+        .checked=${setting?.value === true}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const input = event.target;
+          if (input instanceof HTMLInputElement) void this.client?.set(key, input.checked);
+        }}
+      />
     </div>`;
   }
 
