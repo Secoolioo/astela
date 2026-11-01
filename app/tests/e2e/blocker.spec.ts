@@ -129,9 +129,12 @@ test('counts blocked requests and switches the blocker off for one site', async 
     await expect(
       browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
     ).toBeVisible();
+    // The page reloads, so asking it can fail until the new page is there.
     await expect
       .poll(() =>
-        page.evaluate(() => (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded),
+        page
+          .evaluate(() => (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded)
+          .catch(() => undefined),
       )
       .toBe(true);
   } finally {
