@@ -31,6 +31,8 @@ export default defineConfig({
         'src/ui/history/**',
         'src/ui/bookmarks/**',
         'src/ui/ui-kit/browser-import.ts',
+        'src/ui/ui-kit/default-browser.ts',
+        'src/platform/electron/default-browser.ts',
         'src/main/data-service.ts',
         'src/platform/electron/data-service-client.ts',
         'src/platform/electron/app-protocol.ts',

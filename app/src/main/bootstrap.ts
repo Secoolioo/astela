@@ -69,6 +69,8 @@ import { connectSettingsPage } from './settings-page.ts';
 import { connectHistoryPage } from './history-page.ts';
 import { Bookmarks, connectBookmarksPage } from './bookmarks.ts';
 import { connectBrowserImport } from './browser-import.ts';
+import { connectDefaultBrowser } from './default-browser.ts';
+import { DefaultBrowserSettingEnabled } from '../domain/default-browser/default-browser.ts';
 import { ImportEnabled } from '../domain/import/import.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
@@ -143,7 +145,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Until the sources have been read, policies apply as the last start left them, so the
   // read runs while Electron starts. Only a start without that state waits for the read.
   const policies = new PolicyService(
-    [...settingPolicies(coreSettings), ...updatePolicies, SetupGuideEnabled, ImportEnabled],
+    [
+      ...settingPolicies(coreSettings),
+      ...updatePolicies,
+      SetupGuideEnabled,
+      ImportEnabled,
+      DefaultBrowserSettingEnabled,
+    ],
     createPolicyProviders(brand, process.platform),
     logger,
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
@@ -327,6 +335,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     bookmarks,
     windows,
     () => policies.mandatoryValue(ImportEnabled) !== false,
+  );
+  connectDefaultBrowser(
+    router,
+    () => policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
   );
   connectSetupGuide(router, windows);
   const shellSettings = new Set([

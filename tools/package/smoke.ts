@@ -83,6 +83,36 @@ function run(command: string, args: readonly string[]): SpawnSyncReturns<string>
  * @param dir - Directory to search.
  * @param match - Name test.
  */
+/**
+ * Reads a value of the Windows registry.
+ * @param key - The key, such as `HKCU\\Software\\RegisteredApplications`.
+ * @param name - The value's name; empty for the default value.
+ * @returns The value, or `undefined` when the key or value does not exist.
+ */
+function registryValue(key: string, name: string): string | undefined {
+  const result = spawnSync('reg', ['query', key, ...(name === '' ? ['/ve'] : ['/v', name])], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  if (result.status !== 0) return undefined;
+  return /REG_\w+\s+(.*?)\s*$/m.exec(result.stdout)?.[1];
+}
+
+/** Checks that the installer registered the browser for web links, as installer.nsh does. */
+function checkLinkRegistration(registered: boolean): void {
+  const command = registryValue(
+    `HKCU\\Software\\Classes\\${brand.productName}URL\\shell\\open\\command`,
+    '',
+  );
+  const application = registryValue('HKCU\\Software\\RegisteredApplications', brand.productName);
+  if (registered && (!(command ?? '').endsWith('-- "%1"') || application === undefined)) {
+    throw new Error(`The browser is not registered for web links: ${command} ${application}`);
+  }
+  if (!registered && (command !== undefined || application !== undefined)) {
+    throw new Error('The uninstaller left the registration for web links behind');
+  }
+}
+
 function find(dir: string, match: (name: string, path: string) => boolean): string | undefined {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
@@ -237,9 +267,20 @@ async function main(): Promise<void> {
       const exe = join(dir, `${brand.slug}.exe`);
       checkFuses(exe);
       checkReport(await selfTest(exe), true);
+      checkLinkRegistration(true);
       const uninstaller = find(dir, (name) => /^Uninstall .*\.exe$/.test(name));
       if (uninstaller === undefined) throw new Error('No uninstaller found');
       run(uninstaller, ['/S']);
+      // The uninstaller copies itself and runs from there; wait until the registration is gone.
+      for (
+        let i = 0;
+        i < 60 &&
+        registryValue('HKCU\\Software\\RegisteredApplications', brand.productName) !== undefined;
+        i += 1
+      ) {
+        await new Promise((done) => setTimeout(done, 1000));
+      }
+      checkLinkRegistration(false);
       break;
     }
     case 'msi': {

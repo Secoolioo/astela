@@ -135,15 +135,15 @@ test('imports bookmarks, history and open tabs from Chrome and Firefox profiles'
     await address.fill('app://settings');
     await address.press('Enter');
     const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    const status = (name: string): ReturnType<typeof settings.getByRole> =>
+      settings.getByRole('listitem').filter({ hasText: name }).getByRole('status');
     await settings.getByRole('checkbox', { name: 'Open tabs' }).check();
     await settings.getByRole('button', { name: 'Import from Google Chrome' }).click();
-    await expect(settings.getByRole('status').first()).toHaveText(
+    await expect(status('Google Chrome')).toHaveText(
       'Imported. Bookmarks: 2, history: 1, tabs: 0.',
     );
     await settings.getByRole('button', { name: 'Import from Firefox' }).click();
-    await expect(settings.getByRole('status').nth(1)).toHaveText(
-      'Imported. Bookmarks: 1, history: 1, tabs: 2.',
-    );
+    await expect(status('Firefox')).toHaveText('Imported. Bookmarks: 1, history: 1, tabs: 2.');
     // The tabs open in a new window, where only the active tab loads.
     await expect
       .poll(() =>
@@ -156,7 +156,7 @@ test('imports bookmarks, history and open tabs from Chrome and Firefox profiles'
       );
     // Importing again replaces the folder of the first import and adds no pages twice.
     await settings.getByRole('button', { name: 'Import from Google Chrome' }).click();
-    await expect(settings.getByRole('status').first()).toHaveText(
+    await expect(status('Google Chrome')).toHaveText(
       'Imported. Bookmarks: 2, history: 0, tabs: 0.',
     );
 

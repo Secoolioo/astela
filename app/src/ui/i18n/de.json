@@ -129,5 +129,13 @@
   "import.firefoxOther": "Weitere Lesezeichen",
   "import.firefoxMobile": "Mobile Lesezeichen",
   "setup.import.title": "Nimm deine Lesezeichen mit",
-  "setup.import.body": "Importiere Lesezeichen und Verlauf aus deinem bisherigen Browser. Er bleibt, wie er ist, und du kannst auch später in den Einstellungen importieren."
+  "setup.import.body": "Importiere Lesezeichen und Verlauf aus deinem bisherigen Browser. Er bleibt, wie er ist, und du kannst auch später in den Einstellungen importieren.",
+  "defaultBrowser.title": "Standardbrowser",
+  "defaultBrowser.is": "{product} ist dein Standardbrowser.",
+  "defaultBrowser.not": "Links aus anderen Apps öffnen sich in einem anderen Browser.",
+  "defaultBrowser.make": "Als Standard festlegen",
+  "defaultBrowser.windows": "Wähle {product} in den geöffneten Windows-Einstellungen.",
+  "defaultBrowser.failed": "Das System hat die Änderung nicht übernommen.",
+  "setup.browser.title": "Blocker und Standardbrowser",
+  "setup.browser.body": "{product} blockiert Werbung und Tracker von Anfang an. Als Standardbrowser öffnet es auch die Links aus anderen Apps."
 }

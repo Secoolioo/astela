@@ -2,6 +2,16 @@
 
 > **Status:** available from 0.1.0-beta.3.
 
+## Make Astela your default browser
+
+Go to [Settings](settings.md) → Default browser, or to the last step but one of the [setup guide](setup-guide.md), and choose **Make default**:
+
+- **Windows:** Windows lets only you choose the default browser. The Windows settings open on the page of Astela; choose it there for web links. The installer registers Astela with Windows for this, and the uninstaller removes the registration. MSI installations are not registered; organizations set the default browser of their computers with their own tools.
+- **macOS:** macOS asks whether to use Astela or keep the current browser.
+- **Linux:** Astela becomes the default for web links through `xdg-settings`.
+
+Once Astela is the default browser, the setting says so. Organizations can hide the setting with the policy `DefaultBrowserSettingEnabled`.
+
 ## Links from other apps
 
 When another app opens a web link with Astela, for example from an email or a chat, the link opens in a new tab of the browser window you used last, and that window comes to the front. If Astela was not running, it starts with the link; tabs of the last session are restored next to it. Astela opens only `http` and `https` links this way.

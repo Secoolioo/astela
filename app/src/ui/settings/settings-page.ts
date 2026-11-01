@@ -181,6 +181,10 @@ export class SettingsPage extends LitElement {
       <section aria-labelledby="privacy">
         ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
       </section>
+      <h2 id="default-browser">${t('defaultBrowser.title')}</h2>
+      <section aria-labelledby="default-browser">
+        <default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>
+      </section>
       <h2 id="import">${t('import.title')}</h2>
       <div class="plain" role="group" aria-labelledby="import">
         <p class="intro">${t('import.note')}</p>

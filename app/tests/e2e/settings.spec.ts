@@ -46,6 +46,18 @@ test('changes the appearance at once in every view', async () => {
   expect(shellCall).toBe('refused');
 });
 
+test('tells whether the browser is the default browser and offers to make it one', async () => {
+  const page = await openSettings();
+  await expect(page.getByText('Links from other apps open in another browser.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Make default' })).toBeVisible();
+  expect(await page.evaluate(() => window.bridge.invoke('settings.getDefaultBrowser', {}))).toEqual(
+    {
+      isDefault: false,
+      allowed: true,
+    },
+  );
+});
+
 test('chooses the search engine of the new tab page and the address bar', async () => {
   const page = await openSettings();
   const engine = page.getByRole('combobox', { name: 'Search engine' });

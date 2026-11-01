@@ -129,5 +129,13 @@
   "import.firefoxOther": "Other bookmarks",
   "import.firefoxMobile": "Mobile bookmarks",
   "setup.import.title": "Bring your bookmarks along",
-  "setup.import.body": "Import bookmarks and history from the browser you used so far. It stays as it is, and you can import later in the settings, too."
+  "setup.import.body": "Import bookmarks and history from the browser you used so far. It stays as it is, and you can import later in the settings, too.",
+  "defaultBrowser.title": "Default browser",
+  "defaultBrowser.is": "{product} is your default browser.",
+  "defaultBrowser.not": "Links from other apps open in another browser.",
+  "defaultBrowser.make": "Make default",
+  "defaultBrowser.windows": "Choose {product} in the Windows settings that opened.",
+  "defaultBrowser.failed": "The system did not accept the change.",
+  "setup.browser.title": "Blocker and default browser",
+  "setup.browser.body": "{product} blocks ads and trackers from the start. As your default browser, it also opens the links from other apps."
 }
