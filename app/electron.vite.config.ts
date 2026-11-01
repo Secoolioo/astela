@@ -15,6 +15,9 @@ const updateKeys = existsSync(keysDir)
       .map((name) => readFileSync(join(keysDir, name), 'utf8'))
   : [];
 const define = { BUILD_BRAND: JSON.stringify(brand) };
+// The bundles keep licence comments but drop doc comments: they only document the source,
+// and in the main process every byte of the start-up path is read before the first window.
+const comments = { legal: true, annotation: false, jsdoc: false };
 
 export default defineConfig({
   main: {
@@ -27,6 +30,7 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       lib: { entry: 'src/main/index.ts', formats: ['es'] },
+      rollupOptions: { output: { comments } },
     },
   },
   preload: {
@@ -35,7 +39,7 @@ export default defineConfig({
       outDir: 'out/preload',
       rollupOptions: {
         input: { shell: 'src/preload/shell.ts', page: 'src/preload/page.ts' },
-        output: { format: 'cjs', entryFileNames: '[name].cjs' },
+        output: { format: 'cjs', entryFileNames: '[name].cjs', comments },
       },
     },
   },
@@ -52,6 +56,7 @@ export default defineConfig({
           shell: resolve(import.meta.dirname, 'src/ui/shell/index.html'),
           'sandbox-help': resolve(import.meta.dirname, 'src/ui/sandbox-help/index.html'),
         },
+        output: { comments },
       },
     },
   },
