@@ -2,7 +2,7 @@
 
 > **Status:** available from 0.1.0-beta.3.
 
-Open the settings from the menu button at the right end of the toolbar, then **Settings**. On macOS, the application menu has **Settings…** as well, and Cmd+, opens them. The settings open in their own tab; if a tab shows them already, that tab comes to the front.
+Open the settings from the menu button at the right end of the toolbar, then **Settings**. On macOS, the application menu has **Settings…** as well, and Cmd+, opens them. The settings open in a new tab, or in place of the new tab page when the current tab shows it; if a tab of the same window shows them already, that tab comes to the front.
 
 Every change applies at once, in every window, and is kept when the browser restarts.
 
@@ -33,7 +33,7 @@ Every change applies at once, in every window, and is kept when the browser rest
 
 ## Import from another browser
 
-- **Import:** bookmarks, history and open tabs from Chrome, Edge, Brave, Vivaldi, Opera, Firefox and other browsers on this computer. See [Import from other browsers](import.md).
+- **Import:** bookmarks and history from Chrome, Edge, Brave, Vivaldi, Opera, Firefox and other browsers on this computer, and open tabs from Firefox and the browsers based on it. See [Import from other browsers](import.md).
 
 ## Setup
 

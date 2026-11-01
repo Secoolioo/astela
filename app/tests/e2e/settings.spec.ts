@@ -54,6 +54,7 @@ test('tells whether the browser is the default browser and offers to make it one
     {
       isDefault: false,
       allowed: true,
+      supported: true,
     },
   );
 });

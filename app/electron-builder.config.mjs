@@ -130,7 +130,7 @@ export default {
     desktop: {
       entry: {
         StartupWMClass: slug,
-        MimeType: 'text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;',
+        MimeType: 'x-scheme-handler/http;x-scheme-handler/https;',
       },
     },
   },

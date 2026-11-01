@@ -63,6 +63,30 @@ test('shows the bookmarks bar with its bookmarks and folders', async () => {
       )
       .toEqual([[process.platform === 'darwin' ? '(Empty)' : '(empty)', false]]);
 
+    // Bookmarks that do not fit in the bar are in the menu of its » button.
+    await bookmarks.evaluate(async () => {
+      for (let n = 1; n <= 12; n += 1) {
+        await window.bridge.invoke('bookmarks.add', {
+          parentId: 1,
+          title: `A bookmark with a long title ${n}`,
+          url: `https://example.com/${n}`,
+        });
+      }
+    });
+    const more = bar.getByRole('button', { name: 'More bookmarks' });
+    await expect(more).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'A bookmark with a long title 12' })).toBeHidden();
+    await expect(bar.getByRole('button', { name: 'Fixture home' })).toBeVisible();
+    await more.click();
+    const labels = (): Promise<string[] | undefined> =>
+      browser.main.evaluate(() =>
+        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
+          .at(-1)
+          ?.items.map((item) => item.label),
+      );
+    await expect.poll(async () => (await labels())?.at(-1)).toBe('A bookmark with a long title 12');
+    expect(await labels()).not.toContain('Fixture home');
+
     await pressNative(browser, 'B', ['primary', 'shift']);
     await expect(bar).toHaveCount(0);
   } finally {

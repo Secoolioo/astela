@@ -44,16 +44,16 @@ export function connectBlockerFrames(
       },
     );
   });
-  ipcMain.handle('blocker.elements', (event, payload: unknown) => {
+  ipcMain.handle('blocker.elements', async (event, payload: unknown) => {
     const elements = v.safeParse(FrameElements, payload);
     if (!elements.success || !isWebSession(event.sender.session)) {
       return '';
     }
-    return blocker.elementRules(
-      event.senderFrame?.url ?? '',
-      topUrl(event.senderFrame),
-      elements.output,
-    );
+    const url = event.senderFrame?.url ?? '';
+    const top = topUrl(event.senderFrame);
+    // A frame reports each element once, so a report that comes while the engine loads waits.
+    await blocker.loading()?.catch(() => undefined);
+    return blocker.elementRules(url, top, elements.output);
   });
   return (session) => {
     session.registerPreloadScript({ type: 'frame', id: 'content-blocker', filePath: preload });

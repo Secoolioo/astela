@@ -2,13 +2,22 @@ import { utilityProcess, type UtilityProcess } from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
 import type { DataApi, DataMethod, DataResponse } from '../data/data-protocol.ts';
 
+/** After this many failed starts in a row, the service rests before it starts again. */
+const failedStartLimit = 3;
+/** How long the service rests after failed starts, in milliseconds. */
+const restMs = 60_000;
+
 /**
  * Talks to the data service. The service starts with the first call, outside the start-up
- * path, and starts again with the next call if it ever stops.
+ * path, and starts again with the next call if it ever stops. A service that keeps failing,
+ * for example because `profile.db` cannot be opened, rests for a minute, during which calls
+ * fail at once instead of starting it again and again.
  */
 export class DataServiceClient {
   private child: UtilityProcess | undefined;
   private nextId = 1;
+  private failedStarts = 0;
+  private restingUntil = 0;
   private readonly pending = new Map<number, (response: DataResponse) => void>();
   private readonly entry: string;
   private readonly databasePath: string;
@@ -34,6 +43,9 @@ export class DataServiceClient {
     method: M,
     ...params: Parameters<DataApi[M]>
   ): Promise<ReturnType<DataApi[M]>> {
+    if (this.child === undefined && Date.now() < this.restingUntil) {
+      return Promise.reject(new Error('The data service is resting after failed starts'));
+    }
     const child = (this.child ??= this.start());
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
@@ -60,6 +72,7 @@ export class DataServiceClient {
       serviceName: 'data-service',
     });
     child.on('message', (response: DataResponse) => {
+      this.failedStarts = 0;
       this.pending.get(response.id)?.(response);
       this.pending.delete(response.id);
     });
@@ -68,7 +81,14 @@ export class DataServiceClient {
       for (const [id, settle] of this.pending)
         settle({ id, error: `The data service stopped (${code})` });
       this.pending.clear();
-      if (code !== 0) this.logger.warn('The data service stopped', { code });
+      if (code !== 0) {
+        this.logger.warn('The data service stopped', { code });
+        this.failedStarts += 1;
+        if (this.failedStarts >= failedStartLimit) {
+          this.failedStarts = 0;
+          this.restingUntil = Date.now() + restMs;
+        }
+      }
     });
     return child;
   }

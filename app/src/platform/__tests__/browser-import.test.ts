@@ -134,10 +134,10 @@ function firefoxProfile(dir: string, withSession = true): void {
 }
 
 class Target {
-  readonly bookmarks: [string, readonly ImportedBookmark[]][] = [];
+  readonly bookmarks: [string, readonly ImportedBookmark[], string][] = [];
   readonly visits: ImportedVisit[] = [];
-  importBookmarks(folder: string, tree: readonly ImportedBookmark[]): number {
-    this.bookmarks.push([folder, tree]);
+  importBookmarks(folder: string, tree: readonly ImportedBookmark[], source: string): number {
+    this.bookmarks.push([folder, tree, source]);
     const count = (items: readonly ImportedBookmark[]): number =>
       items.reduce(
         (sum, item) => sum + (item.url === undefined ? count(item.children ?? []) : 1),
@@ -222,6 +222,7 @@ describe('BrowserImporter', () => {
         },
         { title: 'Other bookmarks', children: [] },
       ],
+      chrome?.id,
     ]);
     expect(target.visits).toEqual([
       { url: 'https://news.example/', title: 'News', visitCount: 3, lastVisit: 1_355_526_400_000 },
@@ -235,6 +236,7 @@ describe('BrowserImporter', () => {
         { title: 'Toolbar', children: [{ title: 'Docs', url: 'https://docs.example/' }] },
         { title: 'Menu', children: [{ title: 'Reading', children: [] }] },
       ],
+      firefox?.id,
     ]);
     expect(target.visits.at(-1)).toEqual({
       url: 'https://docs.example/',

@@ -10,27 +10,33 @@ export type DefaultBrowserOutcome = 'done' | 'settings' | 'failed';
 const windowsProgId = `${brand.productName}URL`;
 
 /**
- * Whether the system opens web links with this browser. On Windows, the user's choice in
- * the system settings decides; elsewhere, the registered handler of http and https links.
+ * Whether the system opens web links with this browser: both http and https links. On
+ * Windows, the user's choice in the system settings decides; elsewhere, the registered
+ * handler of each scheme.
  */
 export async function isDefaultBrowser(): Promise<boolean> {
   if (process.platform === 'win32') {
-    const output = await new Promise<string>((done) => {
-      execFile(
-        'reg',
-        [
-          'query',
-          'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice',
-          '/v',
-          'ProgId',
-        ],
-        { windowsHide: true, timeout: 10_000 },
-        (_error, stdout) => done(stdout),
-      );
-    });
-    return userChoiceProgId(output) === windowsProgId;
+    const choices = await Promise.all(['http', 'https'].map((scheme) => userChoice(scheme)));
+    return choices.every((progId) => progId === windowsProgId);
   }
   return app.isDefaultProtocolClient('https') && app.isDefaultProtocolClient('http');
+}
+
+/**
+ * The program that the user chose in Windows for links of a scheme.
+ * @param scheme - `http` or `https`.
+ */
+async function userChoice(scheme: string): Promise<string | undefined> {
+  const key = `HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${scheme}\\UserChoice`;
+  const output = await new Promise<string>((done) => {
+    execFile(
+      'reg',
+      ['query', key, '/v', 'ProgId'],
+      { windowsHide: true, timeout: 10_000 },
+      (_error, stdout) => done(stdout),
+    );
+  });
+  return userChoiceProgId(output);
 }
 
 /**

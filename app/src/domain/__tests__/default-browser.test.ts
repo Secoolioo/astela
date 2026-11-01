@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { userChoiceProgId } from '../default-browser/default-browser.ts';
+import { canBeDefaultBrowser, userChoiceProgId } from '../default-browser/default-browser.ts';
 
 describe('userChoiceProgId', () => {
   it('reads the program id of the https links from reg query', () => {
@@ -12,5 +12,15 @@ describe('userChoiceProgId', () => {
     expect(
       userChoiceProgId('ERROR: The system was unable to find the specified registry key.'),
     ).toBe(undefined);
+  });
+});
+
+describe('canBeDefaultBrowser', () => {
+  it('leaves out the AppImage and MSI installations', () => {
+    expect(canBeDefaultBrowser('appimage')).toBe(false);
+    expect(canBeDefaultBrowser('msi')).toBe(false);
+    for (const type of ['nsis', 'mac', 'deb', 'rpm', 'unpacked'] as const) {
+      expect(canBeDefaultBrowser(type)).toBe(true);
+    }
   });
 });

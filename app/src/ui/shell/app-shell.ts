@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
@@ -63,6 +64,18 @@ export class AppShell extends LitElement {
       overflow: hidden;
       font-size: 12px;
     }
+    .bookmarks .items {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+    /* Bookmarks that do not fit keep their place but are hidden; the » button lists them. */
+    .bookmarks [data-hidden] {
+      visibility: hidden;
+    }
     .bookmarks button {
       display: flex;
       align-items: center;
@@ -108,6 +121,7 @@ export class AppShell extends LitElement {
       min-height: 0;
       padding: var(--space-2);
       overflow: hidden auto;
+      scrollbar-width: thin;
     }
     :host([data-tabs='left']) [role='tablist'] {
       border-right: 1px solid var(--border-1);
@@ -253,6 +267,8 @@ export class AppShell extends LitElement {
   private focusedTabId: string | undefined;
   /** The insets last sent to the browser. */
   private reportedInsets = '';
+  /** Index of the first bookmark of the bookmarks bar that does not fit. */
+  private barOverflow = 0;
 
   constructor() {
     super();
@@ -272,8 +288,17 @@ export class AppShell extends LitElement {
       bridge.on('shell.command', () => this.focusAddress()),
     );
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
-    this.resizeObserver = new ResizeObserver(() => this.reportInsets());
+    this.resizeObserver = new ResizeObserver(() => {
+      this.reportInsets();
+      this.layoutBookmarksBar();
+    });
     this.resizeObserver.observe(this);
+  }
+
+  protected override firstUpdated(): void {
+    // The content area also changes size without the window, for example with the density.
+    const content = this.renderRoot.querySelector('.content');
+    if (content !== null) this.resizeObserver?.observe(content);
   }
 
   override disconnectedCallback(): void {
@@ -294,6 +319,7 @@ export class AppShell extends LitElement {
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has('state')) {
       this.reportInsets();
+      this.layoutBookmarksBar();
     }
     if (changed.has('state') && this.active === undefined) {
       this.editing = undefined;
@@ -302,6 +328,9 @@ export class AppShell extends LitElement {
     const active = this.active;
     if (changed.has('state') && active?.id !== this.focusedTabId) {
       this.focusedTabId = active?.id;
+      this.renderRoot
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       if (active?.url === newTabUrl) {
         this.focusAddress();
       }
@@ -466,7 +495,18 @@ export class AppShell extends LitElement {
       ${
         items.length === 0
           ? html`<span class="hint">${t('shell.bookmarksBarEmpty')}</span>`
-          : items.map((item) => this.renderBarItem(item))
+          : html`<div class="items">${items.map((item) => this.renderBarItem(item))}</div>
+              <button
+                class="more"
+                data-hidden
+                title=${t('shell.moreBookmarks')}
+                aria-label=${t('shell.moreBookmarks')}
+                aria-haspopup="menu"
+                @click=${(event: MouseEvent) =>
+                  this.openFolderMenu(event, bookmarkRoots.bar, this.barOverflow)}
+              >
+                ${icons.more}
+              </button>`
       }
     </div>`;
   }
@@ -476,7 +516,7 @@ export class AppShell extends LitElement {
     if (url === null) {
       return html`<button
         aria-haspopup="menu"
-        @click=${(event: MouseEvent) => this.openBarFolder(event, item.id)}
+        @click=${(event: MouseEvent) => this.openFolderMenu(event, item.id, 0)}
       >
         ${icons.folder}<span>${item.title}</span>
       </button>`;
@@ -498,17 +538,38 @@ export class AppShell extends LitElement {
       : this.bridge?.invoke('tabs.navigate', { tabId, input: url }));
   }
 
-  /** Opens the menu of a folder of the bookmarks bar below its button. */
-  private openBarFolder(event: MouseEvent, id: number): void {
+  /**
+   * Opens the menu of a folder of the bookmarks bar below the clicked button.
+   * @param event - The click.
+   * @param id - The folder.
+   * @param from - How many of the folder's first entries the menu leaves out.
+   */
+  private openFolderMenu(event: MouseEvent, id: number, from: number): void {
     const button = event.currentTarget;
     if (button instanceof HTMLElement) {
       const rect = button.getBoundingClientRect();
       void this.bridge?.invoke('shell.openBookmarkFolder', {
         id,
+        from,
         x: Math.round(rect.left),
         y: Math.round(rect.bottom),
       });
     }
+  }
+
+  /** Hides the bookmarks that do not fit in the bookmarks bar and shows the » button then. */
+  private layoutBookmarksBar(): void {
+    const list = this.renderRoot.querySelector('.bookmarks .items');
+    const more = this.renderRoot.querySelector('.bookmarks .more');
+    if (list === null || more === null) return;
+    const end = list.getBoundingClientRect().right;
+    const buttons = [...list.children];
+    const first = buttons.findIndex((button) => button.getBoundingClientRect().right > end + 0.5);
+    this.barOverflow = first === -1 ? buttons.length : first;
+    for (const [index, button] of buttons.entries()) {
+      button.toggleAttribute('data-hidden', index >= this.barOverflow);
+    }
+    more.toggleAttribute('data-hidden', first === -1);
   }
 
   private get active(): TabView | undefined {
@@ -659,6 +720,10 @@ const icons = {
     <path
       d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
     />
+  </svg>`,
+  more: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m6 17 5-5-5-5" />
+    <path d="m13 17 5-5-5-5" />
   </svg>`,
   menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="5" r="1" />

@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { definePolicy } from '../policy/policy.ts';
+import type { InstallType } from '../updates/update-service.ts';
 
 /**
  * Lets administrators keep users from making the browser their default browser: `false`
@@ -11,8 +12,18 @@ export const DefaultBrowserSettingEnabled = definePolicy({
 });
 
 /**
- * Reads the program that Windows opens for https links, from the output of
- * `reg query …\UrlAssociations\https\UserChoice /v ProgId`.
+ * Whether an installation can become the default browser. An AppImage has no installed
+ * desktop entry that the system could open links with, and MSI installations are not
+ * registered with Windows; organizations set the default browser with their own tools.
+ * @param type - How the browser was installed.
+ */
+export function canBeDefaultBrowser(type: InstallType): boolean {
+  return type !== 'appimage' && type !== 'msi';
+}
+
+/**
+ * Reads the program that Windows opens for http or https links, from the output of
+ * `reg query …\UrlAssociations\<scheme>\UserChoice /v ProgId`.
  * @param output - What `reg query` printed.
  * @returns The program id, or `undefined` when there is none.
  */

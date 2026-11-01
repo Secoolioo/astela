@@ -72,7 +72,10 @@ import { connectHistoryPage } from './history-page.ts';
 import { Bookmarks, connectBookmarksPage } from './bookmarks.ts';
 import { connectBrowserImport } from './browser-import.ts';
 import { connectDefaultBrowser } from './default-browser.ts';
-import { DefaultBrowserSettingEnabled } from '../domain/default-browser/default-browser.ts';
+import {
+  canBeDefaultBrowser,
+  DefaultBrowserSettingEnabled,
+} from '../domain/default-browser/default-browser.ts';
 import { ImportEnabled } from '../domain/import/import.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
@@ -109,13 +112,15 @@ const webPartition = 'persist:default';
  * @param layout - Where the bundled files are.
  */
 export async function bootstrap(layout: BundleLayout): Promise<void> {
-  // macOS hands over links from other apps as events, also before the first window exists.
+  // Other apps hand over links as events on macOS and as a second start elsewhere, also
+  // before the first window exists; until then the links wait.
   const pendingLinks: string[] = [];
   let openLinks = (links: readonly string[]): void => void pendingLinks.push(...links);
   app.on('open-url', (event, url) => {
     event.preventDefault();
     openLinks(linksFromArguments([url]));
   });
+  app.on('second-instance', (_event, argv) => openLinks(linksFromArguments(argv.slice(1))));
   // Milliseconds since process start at each step, for the self-test report.
   const marks: Record<string, number> = { main: Math.round(performance.now()) };
   // Wall-clock time at which these milliseconds start, to add the shell page's own timing.
@@ -345,6 +350,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   connectDefaultBrowser(
     router,
     () => policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
+    canBeDefaultBrowser(boot.installType),
   );
   connectSetupGuide(router, windows);
   const shellSettings = new Set([
@@ -356,14 +362,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   settings.onDidChange(({ keys }) => {
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
   });
-  router.handle(OpenBookmarkFolder, async ({ id, x, y }, { sender }) => {
+  router.handle(OpenBookmarkFolder, async ({ id, from, x, y }, { sender }) => {
     const window = windows.forShell(sender);
     if (window === undefined) return null;
     const { popupBookmarkFolder } = await import('./browser-menu.ts');
     popupBookmarkFolder(
       window,
       { x, y },
-      id,
+      { id, from },
       (folder) => bookmarks.contents(folder),
       (url, newTab) => {
         const active = window.tabs.active;
@@ -416,13 +422,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     lastSession === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
       : windows.restore(lastSession);
+  // Later links open in the window used last, which comes to the front, also without links;
+  // without a window, the first link opens one.
   openLinks = (links) => {
-    const target =
-      windows.all.find((w) => w.window.isFocused()) ?? windows.all[0] ?? windows.open();
-    for (const url of links) target.tabs.open(url);
-    if (links.length > 0 && !target.window.isDestroyed()) target.window.focus();
+    const [link, ...more] = links;
+    const used = windows.lastUsed;
+    const target = used ?? windows.open(link);
+    if (used !== undefined && link !== undefined) target.tabs.open(link);
+    for (const url of more) target.tabs.open(url);
+    if (!target.window.isDestroyed()) target.window.focus();
   };
-  openLinks(startLinks);
+  if (startLinks.length > 0) openLinks(startLinks);
   // The session follows every change of tabs and windows; an empty one, after the last window
   // closed, is not kept, so the next start restores that window.
   windows.onDidChange(() => {
@@ -448,8 +458,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   }
   logger.info('First window opened', { ms: Math.round(process.uptime() * 1000) });
   if (process.platform === 'darwin') {
-    const frontWindow = (): BrowserWindowController =>
-      windows.all.find((w) => w.window.isFocused()) ?? windows.all[0] ?? windows.open();
+    const frontWindow = (): BrowserWindowController => windows.lastUsed ?? windows.open();
     void import('./browser-menu.ts')
       .then(({ macMenuBar }) =>
         Menu.setApplicationMenu(macMenuBar(() => frontWindow().execute('settings.open'))),
@@ -473,13 +482,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const timer = setInterval(refreshPolicies, 15 * 60 * 1000);
   timer.unref();
 
-  // A second start, such as a link from another app, opens its links in this browser.
-  app.on('second-instance', (_event, argv) => {
-    const links = linksFromArguments(argv.slice(1));
-    if (links.length > 0) openLinks(links);
-    else if (windows.all[0] === undefined) windows.open();
-    else windows.all[0].window.focus();
-  });
   app.on('activate', () => {
     if (windows.all.length === 0) windows.open();
   });

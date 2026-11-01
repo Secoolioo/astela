@@ -19,7 +19,7 @@ import type { Logger } from '../../kernel/logging/logger.ts';
 import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
-import { keepsUrl, type SessionSnapshot } from '../../domain/session/session.ts';
+import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
@@ -502,8 +502,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     const sync = (): void => this.sync(id, contents);
     if (page === undefined) {
+      // Pages that change their address with the History API, as many web apps do, count as
+      // visits too; a jump to an anchor on the same page does not.
+      let visited = '';
+      const visit = (address: string): void => {
+        if (!/^https?:/i.test(address) || withoutHash(address) === withoutHash(visited)) return;
+        visited = address;
+        this.options.onVisit?.(address, contents.getTitle(), false);
+      };
       contents.on('did-navigate', (_event, address) => {
-        if (/^https?:/i.test(address)) this.options.onVisit?.(address, contents.getTitle(), false);
+        visited = '';
+        visit(address);
+      });
+      contents.on('did-navigate-in-page', (_event, address, isMainFrame) => {
+        if (isMainFrame) visit(address);
       });
       contents.on('page-title-updated', (_event, title) => {
         const address = contents.getURL();
@@ -657,6 +669,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 /** Keeps track of open windows and routes shell requests to the right one. */
 export class WindowManager implements Disposable {
   private readonly windows = new Set<BrowserWindowController>();
+  /** The windows in the order they last had the focus, the most recent last. */
+  private readonly focusOrder: BrowserWindowController[] = [];
   private readonly changeEmitter = new Emitter<void>();
 
   /** Fires after windows opened or closed, or their tabs changed. */
@@ -703,16 +717,10 @@ export class WindowManager implements Disposable {
     return {
       version: 1,
       windows: [...this.windows].flatMap((controller) => {
-        const tabs = controller.tabs.all.filter((tab) => keepsUrl(tab.url));
+        const tabs = controller.tabs.all;
         const active = controller.tabs.active;
-        return tabs.length === 0
-          ? []
-          : [
-              {
-                tabs: tabs.map(({ url, title }) => ({ url, title })),
-                active: Math.max(0, active === undefined ? 0 : tabs.indexOf(active)),
-              },
-            ];
+        const window = sessionWindow(tabs, active === undefined ? -1 : tabs.indexOf(active));
+        return window === undefined ? [] : [window];
       }),
     };
   }
@@ -721,12 +729,26 @@ export class WindowManager implements Disposable {
     const controller = new BrowserWindowController(this.options);
     this.windows.add(controller);
     const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
+    const forget = (): void => {
+      const index = this.focusOrder.indexOf(controller);
+      if (index !== -1) this.focusOrder.splice(index, 1);
+    };
+    controller.window.on('focus', () => {
+      forget();
+      this.focusOrder.push(controller);
+    });
     controller.window.on('closed', () => {
       listener.dispose();
+      forget();
       this.windows.delete(controller);
       this.changeEmitter.fire();
     });
     return controller;
+  }
+
+  /** The window that had the focus last, or else the newest window. */
+  get lastUsed(): BrowserWindowController | undefined {
+    return this.focusOrder.at(-1) ?? [...this.windows].at(-1);
   }
 
   /**
@@ -786,4 +808,10 @@ export class WindowManager implements Disposable {
   toDisposable(): Disposable {
     return toDisposable(() => this.dispose());
   }
+}
+
+/** An address without its fragment, which names a place on the page. */
+function withoutHash(address: string): string {
+  const hash = address.indexOf('#');
+  return hash === -1 ? address : address.slice(0, hash);
 }

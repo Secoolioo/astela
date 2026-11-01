@@ -152,6 +152,8 @@ export const OpenBookmarkFolder = defineRequest({
   channel: 'shell.openBookmarkFolder',
   request: v.strictObject({
     id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    // How many of the folder's first entries the menu leaves out, as the bar shows them.
+    from: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
     x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
     y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
   }),

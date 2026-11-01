@@ -44,6 +44,7 @@ export class SetupGuide extends LitElement {
     step: { state: true },
     revision: { state: true },
     searchError: { state: true },
+    customSearch: { state: true },
   };
 
   /** Styles of the guide, scoped to its shadow root. */
@@ -255,6 +256,8 @@ export class SetupGuide extends LitElement {
   declare step: Step;
   declare revision: number;
   declare searchError: boolean;
+  /** Whether the user chose to enter a search address of their own. */
+  declare customSearch: boolean;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -264,6 +267,7 @@ export class SetupGuide extends LitElement {
     this.step = 'welcome';
     this.revision = 0;
     this.searchError = false;
+    this.customSearch = false;
   }
 
   override connectedCallback(): void {
@@ -471,6 +475,7 @@ export class SetupGuide extends LitElement {
     const value = typeof setting?.value === 'string' ? setting.value : '';
     const disabled = setting?.locked !== false;
     const known = searchEngines.find((engine) => engine.searchUrl === value);
+    const custom = this.customSearch || known === undefined;
     return html`<h1>${this.t('setup.search.title')}</h1>
       <p>${this.t('setup.search.body')}</p>
       <div class="cards engines" role="radiogroup" aria-label=${this.t('settings.searchEngine')}>
@@ -480,9 +485,10 @@ export class SetupGuide extends LitElement {
               <input
                 type="radio"
                 name="engine"
-                .checked=${known?.id === engine.id}
+                .checked=${!custom && known?.id === engine.id}
                 ?disabled=${disabled}
                 @change=${() => {
+                  this.customSearch = false;
                   this.searchError = false;
                   void this.client?.set('search.urlTemplate', engine.searchUrl);
                 }}
@@ -490,15 +496,28 @@ export class SetupGuide extends LitElement {
               <span>${engine.name}</span>
             </label>`,
         )}
+        <label class="card">
+          <input
+            type="radio"
+            name="engine"
+            .checked=${custom}
+            ?disabled=${disabled}
+            @change=${() => {
+              this.customSearch = true;
+              this.searchError = false;
+            }}
+          />
+          <span>${this.t('settings.searchEngine.custom')}</span>
+        </label>
       </div>
       ${
-        known === undefined
+        custom
           ? html`<h2>${this.t('settings.searchUrl')}</h2>
               <input
                 type="url"
                 aria-label=${this.t('settings.searchUrl')}
                 spellcheck="false"
-                .value=${value}
+                .value=${known === undefined ? value : ''}
                 ?disabled=${disabled}
                 @change=${(event: Event) => void this.setSearchUrl(event)}
               />

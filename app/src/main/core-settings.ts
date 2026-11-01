@@ -62,7 +62,7 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
-/** Whether the content blocker blocks ads, trackers and known malware. */
+/** Whether the content blocker blocks ads, trackers and what pages load from known malware hosts. */
 export const ContentBlockerSetting = defineSetting<boolean>({
   key: 'contentBlocker.enabled',
   schema: v.boolean(),

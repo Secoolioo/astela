@@ -15,10 +15,10 @@ A browser is only used every day when it opens the links of other apps. Each sys
 ## Decision
 
 - **Links:** the browser opens `http` and `https` links from its command line, from the start of a second instance and from `open-url` events, at most 50 per start, in new tabs of the window used last. A start with links and without a session to restore shows only them. Every other argument is ignored.
-- **Registration on Windows:** the NSIS installer registers the browser under `StartMenuInternet` and `RegisteredApplications` with a program id for web links whose command passes the link after `--`, and the uninstaller removes it unless an update replaces the version. The Windows smoke test checks both. Making the browser the default opens the Windows settings on its page.
+- **Registration on Windows:** the NSIS installer registers the browser under `StartMenuInternet` and `RegisteredApplications` with a program id for web links whose command passes the link after `--`, and the uninstaller removes it unless an update replaces the version. The Windows smoke test checks both. Making the browser the default opens the Windows settings on its page; the browser counts as the default only when the user chose it for both `http` and `https`.
 - **macOS and Linux:** the app declares itself a viewer of web links and asks the system to make it the handler of `http` and `https` links.
-- **Policy:** `DefaultBrowserSettingEnabled` set to `false` hides the setting.
-- MSI installations are not registered; organizations manage the default browser of their computers with their own tools.
+- **Policy:** `DefaultBrowserSettingEnabled` set to `false` shows the setting as managed, without its button, and the browser refuses the change.
+- MSI installations are not registered; organizations manage the default browser of their computers with their own tools. An AppImage has no installed desktop entry. The setting tells both that they cannot become the default browser.
 
 ## Consequences
 

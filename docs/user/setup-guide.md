@@ -14,4 +14,4 @@ The first time you start Astela with a new profile, it opens the setup guide in 
 
 Every choice applies at once, so the browser around the guide shows it. Back returns to the previous step, and Skip setup ends the guide at any step and keeps what you chose so far. The guide opens by itself only once per profile; to open it again, go to [Settings](settings.md) → Setup → Open the setup guide.
 
-Organizations can turn the guide off with the policy `SetupGuideEnabled`.
+Organizations can keep the guide from opening by itself with the policy `SetupGuideEnabled`; it can still be opened from the settings.

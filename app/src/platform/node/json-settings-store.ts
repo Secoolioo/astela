@@ -20,7 +20,8 @@ interface SettingsFile {
 /**
  * Stores settings in `settings.json` and values that failed validation in
  * `settings.rejected.json`. Writes are atomic and debounced; a corrupt file is moved aside
- * instead of being overwritten.
+ * instead of being overwritten, and a file that exists but cannot be read is not written
+ * over until the next start.
  */
 export class JsonFileSettingsStore implements SettingsStore, Disposable {
   private readonly file: string;
@@ -31,6 +32,8 @@ export class JsonFileSettingsStore implements SettingsStore, Disposable {
   private timer: Disposable | undefined;
   private waiters: { resolve: () => void; reject: (error: unknown) => void }[] = [];
   private writing: Promise<void> = Promise.resolve();
+  /** Whether the file exists but could not be read, so writing would lose the settings. */
+  private unreadable = false;
 
   /**
    * @param file - Path of `settings.json`.
@@ -49,7 +52,10 @@ export class JsonFileSettingsStore implements SettingsStore, Disposable {
     let text: string;
     try {
       text = await readFile(this.file, 'utf8');
-    } catch {
+    } catch (error) {
+      // Without a file, the settings start empty; a file that another program holds or that
+      // this user cannot read is kept for a later start.
+      this.unreadable = !isMissing(error);
       return { user: {}, workspaces: {} };
     }
     try {
@@ -67,14 +73,21 @@ export class JsonFileSettingsStore implements SettingsStore, Disposable {
         ),
       };
     } catch {
-      await rename(this.file, `${this.file}.corrupt-${this.clock.wallTime()}`).catch(
-        () => undefined,
+      this.unreadable = await rename(
+        this.file,
+        `${this.file}.corrupt-${this.clock.wallTime()}`,
+      ).then(
+        () => false,
+        () => true,
       );
       return { user: {}, workspaces: {} };
     }
   }
 
   save(settings: StoredSettings, rejected: readonly RejectedSetting[]): Promise<void> {
+    if (this.unreadable) {
+      return Promise.reject(new Error(`${this.file} could not be read, so it is kept as it is`));
+    }
     this.pending = { settings, rejected };
     this.timer?.dispose();
     this.timer = this.clock.setTimeout(() => void this.flush(), this.debounceMs);
@@ -125,6 +138,10 @@ export class JsonFileSettingsStore implements SettingsStore, Disposable {
 
 function sortKeys(values: Readonly<Record<string, unknown>>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).toSorted(([a], [b]) => a.localeCompare(b)));
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

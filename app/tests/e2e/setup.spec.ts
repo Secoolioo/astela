@@ -30,7 +30,10 @@ test('guides a new profile through its look, tabs and search engine', async () =
     );
     await page.getByRole('radio', { name: 'Compact' }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('radio', { name: 'Custom' }).check();
+    await expect(page.getByRole('textbox', { name: 'Search address' })).toHaveValue('');
     await page.getByRole('radio', { name: 'Ecosia' }).check();
+    await expect(page.getByRole('textbox', { name: 'Search address' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: 'Bring your bookmarks along' })).toBeVisible();
     await page.getByRole('button', { name: 'Continue' }).click();

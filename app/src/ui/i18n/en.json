@@ -74,7 +74,7 @@
   "setup.finish": "Start browsing",
   "settings.privacy": "Privacy",
   "settings.contentBlocker": "Block ads and trackers",
-  "settings.contentBlockerNote": "Uses the filter lists that uBlock Origin enables by default, which also block known malware sites.",
+  "settings.contentBlockerNote": "Uses the filter lists that uBlock Origin enables by default, except Peter Lowe's list.",
   "shell.blocker": "Content blocker",
   "shell.blockerOn": "Content blocker: {count} blocked",
   "shell.blockerOff": "Content blocker: off on this site",
@@ -135,11 +135,13 @@
   "defaultBrowser.not": "Links from other apps open in another browser.",
   "defaultBrowser.make": "Make default",
   "defaultBrowser.windows": "Choose {product} in the Windows settings that opened.",
+  "defaultBrowser.unsupported": "This kind of installation cannot become the default browser.",
   "defaultBrowser.failed": "The system did not accept the change.",
   "setup.browser.title": "Blocker and default browser",
   "setup.browser.body": "{product} blocks ads and trackers from the start. As your default browser, it also opens the links from other apps.",
   "shell.bookmarksBar": "Bookmarks bar",
   "shell.bookmarksBarEmpty": "Pages you bookmark with the star appear here.",
+  "shell.moreBookmarks": "More bookmarks",
   "settings.bookmarksBar": "Show bookmarks bar",
   "settings.bookmarksBarNote": "Shows the bookmarks of the bookmarks bar folder below the toolbar."
 }

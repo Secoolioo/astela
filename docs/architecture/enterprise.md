@@ -204,8 +204,8 @@ Also implemented:
 
 - `SetupGuideEnabled` (boolean): `false` as a mandatory policy keeps the [setup guide](../user/setup-guide.md) from opening on the first start of a profile. Starting the browser with `--no-first-run` does the same for one start.
 - `BookmarkBarEnabled` (boolean): shows or hides the [bookmarks bar](../user/bookmarks.md#bookmarks-bar), as mandatory or recommended policy, like the setting `bookmarks.bar`.
-- `DefaultBrowserSettingEnabled` (boolean): `false` as a mandatory policy hides the [default browser setting](../user/default-browser.md) on the settings page and in the setup guide.
-- `ImportEnabled` (boolean): `false` as a mandatory policy hides the [import from other browsers](../user/import.md) on the settings page and in the setup guide, and the browser refuses it.
+- `DefaultBrowserSettingEnabled` (boolean): `false` as a mandatory policy keeps users from making Astela the default browser. The [default browser setting](../user/default-browser.md) on the settings page and in the setup guide then shows that the organization manages it and has no Make default button, and the browser refuses the change.
+- `ImportEnabled` (boolean): `false` as a mandatory policy turns off the [import from other browsers](../user/import.md). The settings page and the import step of the setup guide then say that the organization turned it off instead of listing the browsers, and the browser refuses an import.
 - `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.
 - `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
