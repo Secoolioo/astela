@@ -35,6 +35,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Forward                    | `Command+]`                                                           |
 | Reload                     | `Command+R`                                                           |
 | Go to the address bar      | `Command+L`                                                           |
+| Open the settings          | `Command+,`                                                           |
 
 `Command+Shift+R` reloads the page as well.
 

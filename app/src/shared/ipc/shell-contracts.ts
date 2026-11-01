@@ -103,6 +103,17 @@ export const SetShellInsets = defineRequest({
   ratePerSecond: 120,
 });
 
+/** Opens the browser menu below the menu button, at a point of the shell in CSS pixels. */
+export const OpenMenu = defineRequest({
+  channel: 'shell.openMenu',
+  request: v.strictObject({
+    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Sent to the shell when its state changed. */
 export const ShellStateChanged = defineEvent({
   channel: 'shell.stateChanged',
@@ -127,4 +138,5 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   NavigateTab,
   TabAction,
   SetShellInsets,
+  OpenMenu,
 ];

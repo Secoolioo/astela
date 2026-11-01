@@ -1,11 +1,19 @@
 /** Internal pages that open in tabs, by their host below `app://`. */
-export const tabPages = ['newtab'] as const;
+export const tabPages = ['newtab', 'settings'] as const;
 
 /** An internal page that opens in a tab. */
 export type TabPage = (typeof tabPages)[number];
 
 /** Address of the new tab page. */
 export const newTabUrl = 'app://newtab/';
+
+/**
+ * The address of an internal page.
+ * @param page - The page.
+ */
+export function pageUrl(page: TabPage): string {
+  return `app://${page}/`;
+}
 
 /**
  * Tells which internal page a URL opens in a tab. Other `app://` hosts, such as the shell,

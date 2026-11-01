@@ -7,6 +7,7 @@ import {
   ActivateTab,
   CloseTab,
   GetShellState,
+  OpenMenu,
   NavigateTab,
   OpenTab,
   ReopenClosedTab,
@@ -46,6 +47,7 @@ import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import { SearchUrlTemplate, coreSettings } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
+import { connectSettingsPage } from './settings-page.ts';
 import { showSandboxHelp } from './sandbox-help.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
@@ -227,6 +229,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
   registerShellHandlers(router, windows, searchTemplate);
   registerNewTabHandlers(router, windows, searchTemplate);
+  connectSettingsPage(router, settings, coreSettings, internal);
 
   const first = windows.open();
   marks['window'] = Math.round(performance.now());
@@ -246,6 +249,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     });
   }
   logger.info('First window opened', { ms: Math.round(process.uptime() * 1000) });
+  if (process.platform === 'darwin') {
+    const frontWindow = (): BrowserWindowController =>
+      windows.all.find((w) => w.window.isFocused()) ?? windows.all[0] ?? windows.open();
+    void import('./browser-menu.ts')
+      .then(({ macMenuBar }) =>
+        Menu.setApplicationMenu(macMenuBar(() => frontWindow().execute('settings.open'))),
+      )
+      .catch((error: unknown) => logger.error('The menu bar failed', error));
+  }
 
   // Everything that is not needed for the first window loads after its shell.
   let updates: UpdateService | undefined;
@@ -333,6 +345,13 @@ function registerShellHandlers(
     ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
   );
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
+  // The menu code loads with the first menu, not before the first window.
+  router.handle(OpenMenu, async (position, { sender }) => {
+    const window = windowOf(sender);
+    const { popupBrowserMenu } = await import('./browser-menu.ts');
+    popupBrowserMenu(window, position);
+    return null;
+  });
 }
 
 function registerNewTabHandlers(

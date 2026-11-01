@@ -1,4 +1,4 @@
-import { chromium, type Browser as CdpBrowser, type Page } from '@playwright/test';
+import { chromium, test, type Browser as CdpBrowser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -216,6 +216,8 @@ export async function launch(
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
+      // After a failed test, the job log shows what the browser showed.
+      if (testFailed()) await printState(main, shell, profile);
       await main.evaluate(({ app }) => {
         setTimeout(() => app.quit(), 0);
       });
@@ -234,6 +236,53 @@ export async function launch(
       rmSync(profile, { recursive: true, force: true });
     },
   };
+}
+
+/** Whether the running test has failed; false outside of a test. */
+function testFailed(): boolean {
+  try {
+    const info = test.info();
+    return info.status !== info.expectedStatus;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prints what the browser showed when a test failed: the shell's state and address bar,
+ * every web contents, and the end of the browser's log. Traces stay with the CI run, while
+ * the job log is always at hand.
+ */
+async function printState(main: MainProcess, shell: Page, profile: string): Promise<void> {
+  try {
+    const state = await shellState(shell);
+    const address = await shell.evaluate(() => {
+      const root = document.querySelector('app-shell')?.shadowRoot;
+      const input = root?.querySelector('input');
+      return { value: input?.value, focused: input !== undefined && root?.activeElement === input };
+    });
+    const views = await main.evaluate(({ webContents }) =>
+      webContents.getAllWebContents().map((contents) => ({
+        id: contents.id,
+        url: contents.getURL(),
+        title: contents.getTitle(),
+        loading: contents.isLoading(),
+        crashed: contents.isCrashed(),
+        focused: contents.isFocused(),
+      })),
+    );
+    process.stdout.write(
+      `Browser after the failure: ${JSON.stringify({ state, address, views })}\n`,
+    );
+  } catch (error) {
+    process.stdout.write(`Browser state not available: ${String(error)}\n`);
+  }
+  const log = join(profile, 'data', 'logs', 'main.log');
+  if (existsSync(log)) {
+    process.stdout.write(
+      `End of the browser log:\n${readFileSync(log, 'utf8').split('\n').slice(-40).join('\n')}\n`,
+    );
+  }
 }
 
 /**

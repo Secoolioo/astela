@@ -11,6 +11,7 @@ export const shellChannels = [
   'tabs.navigate',
   'tabs.action',
   'shell.setInsets',
+  'shell.openMenu',
 ] as const;
 
 /** Event channels the shell listens to. */

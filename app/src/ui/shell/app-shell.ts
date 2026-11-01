@@ -246,6 +246,15 @@ export class AppShell extends LitElement {
           @keydown=${this.onAddressKey}
           @blur=${() => (this.editing = undefined)}
         />
+        <button
+          class="icon"
+          title=${t('shell.menu')}
+          aria-label=${t('shell.menu')}
+          aria-haspopup="menu"
+          @click=${this.openMenu}
+        >
+          ${icons.menu}
+        </button>
       </nav>
     `;
   }
@@ -283,6 +292,18 @@ export class AppShell extends LitElement {
   private get active(): TabView | undefined {
     return this.state.tabs.find((tab) => tab.id === this.state.activeTabId);
   }
+
+  /** Opens the browser menu below the button. */
+  private readonly openMenu = (event: MouseEvent): void => {
+    const button = event.currentTarget;
+    if (button instanceof HTMLElement) {
+      const rect = button.getBoundingClientRect();
+      void this.bridge?.invoke('shell.openMenu', {
+        x: Math.round(rect.left),
+        y: Math.round(rect.bottom),
+      });
+    }
+  };
 
   private readonly newTab = (): void => {
     void this.bridge?.invoke('tabs.open', {});
@@ -361,4 +382,9 @@ const icons = {
     <path d="M21 3v5h-5" />
   </svg>`,
   stop: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
+  menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="5" r="1" />
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="12" cy="19" r="1" />
+  </svg>`,
 };
