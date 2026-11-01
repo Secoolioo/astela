@@ -71,7 +71,7 @@ The client will reject a feed or manifest when:
 ### Freshness and expiry
 
 - The `pages.yml` workflow will re-sign the feed every week with a fresh `expiresAt`. Re-signing is a deployment, not a commit.
-- An expired feed fails safe: nothing will be installed. The status "Feed out of date" will appear on the About page and on `app://diagnostics`, and the `freshness.yml` workflow will raise an alarm.
+- An expired feed fails safe: nothing will be installed. The status "Feed out of date" will appear on the About page and on `app://diagnostics`, and `verify-live` fails when the published feed is close to its expiry.
 - GitHub pauses scheduled workflows in public repositories after 60 days without activity (as of October 2026). The maintainer workflow will document how to re-sign manually with `workflow_dispatch`.
 - Mirrors must synchronize at least every 14 days.
 
