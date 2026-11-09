@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { accentPresets } from '../domain/appearance/accent.ts';
+import { accentPresets } from '../domain/appearance/accent-presets.ts';
 import {
   colorModes,
   densities,

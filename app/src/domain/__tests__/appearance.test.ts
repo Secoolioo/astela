@@ -6,6 +6,7 @@ import {
   minimumAccentContrast,
   oklchFromHex,
 } from '../appearance/accent.ts';
+import { isAccentPreset, presetAccentColors } from '../appearance/accent-presets.ts';
 import { appearanceCss } from '../appearance/appearance.ts';
 
 const parse = (css: string): { l: number; c: number; h: number } => {
@@ -39,6 +40,15 @@ describe('accent colors', () => {
     expect(parse(yellow.dark).l).toBeCloseTo(oklchFromHex('#ffcc00').l, 2);
   });
 
+  it('writes out the colors of the presets as the color math computes them', () => {
+    for (const preset of accentPresets) {
+      expect(presetAccentColors[preset]).toEqual(accentColors(preset));
+      expect(isAccentPreset(preset)).toBe(true);
+    }
+    expect(isAccentPreset('#2a7f62')).toBe(false);
+    expect(isAccentPreset('constructor')).toBe(false);
+  });
+
   it('reads hex colors and measures contrast as WCAG does', () => {
     expect(contrastRatio(oklchFromHex('#000000'), oklchFromHex('#ffffff'))).toBeCloseTo(21, 1);
     expect(contrastRatio(oklchFromHex('#777777'), oklchFromHex('#ffffff'))).toBeCloseTo(4.48, 1);
@@ -48,12 +58,12 @@ describe('accent colors', () => {
 
 describe('appearanceCss', () => {
   it('sets the accent of both modes and the sizes of the density', () => {
-    const css = appearanceCss({ accent: 'green', density: 'compact' });
+    const css = appearanceCss({ accent: accentColors('green'), density: 'compact' });
     expect(css).toMatch(/^:root:root\{/);
     expect(css).toContain(`--accent-light:${accentColors('green').light}`);
     expect(css).toContain(`--accent-dark:${accentColors('green').dark}`);
     expect(css).toContain('--toolbar-height:32px;--tab-height:28px');
-    expect(appearanceCss({ accent: 'blue', density: 'comfortable' })).toContain(
+    expect(appearanceCss({ accent: accentColors('blue'), density: 'comfortable' })).toContain(
       '--toolbar-height:48px;--tab-height:40px',
     );
   });

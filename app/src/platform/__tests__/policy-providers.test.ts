@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PlistError, parsePlist } from '../policy/plist.ts';
+import { JsonFilePolicyCache } from '../policy/policy-cache.ts';
 import {
-  JsonFilePolicyCache,
   LinuxJsonPolicyProvider,
   MacManagedPreferencesPolicyProvider,
   WindowsRegistryPolicyProvider,

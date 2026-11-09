@@ -1,3 +1,7 @@
+import { accentPresets, type AccentColors, type AccentPreset } from './accent-presets.ts';
+
+export { accentPresets, type AccentColors, type AccentPreset };
+
 /** A color in OKLCH: lightness 0-1, chroma and hue in degrees. */
 export interface Oklch {
   readonly l: number;
@@ -7,12 +11,6 @@ export interface Oklch {
 
 /** Linear sRGB components, 0-1 inside the gamut. */
 type Rgb = readonly [number, number, number];
-
-/** Identifiers of the accent colors offered without picking a custom color. */
-export const accentPresets = ['blue', 'teal', 'green', 'orange', 'red', 'graphite'] as const;
-
-/** An accent preset. */
-export type AccentPreset = (typeof accentPresets)[number];
 
 /** Hue and chroma of each preset; the lightness follows from the contrast rule. */
 const presets: Readonly<Record<AccentPreset, { readonly c: number; readonly h: number }>> = {
@@ -34,12 +32,6 @@ const darkSurface: Oklch = { l: 0.33, c: 0.011, h: 260 };
 
 /** Contrast that accents keep against those surfaces, as WCAG requires for text. */
 export const minimumAccentContrast = 4.5;
-
-/** The accent of a color mode, as CSS. */
-export interface AccentColors {
-  readonly light: string;
-  readonly dark: string;
-}
 
 /**
  * Computes the accent for light and dark mode. A preset or a custom `#rrggbb` color keeps

@@ -1,4 +1,4 @@
-import { accentColors } from './accent.ts';
+import type { AccentColors } from './accent-presets.ts';
 
 /** Which colors the browser uses: those of the system, or always light or dark. */
 export const colorModes = ['system', 'light', 'dark'] as const;
@@ -22,13 +22,13 @@ const sizes: Readonly<Record<Density, { readonly toolbar: number; readonly tab: 
 /**
  * The style sheet that applies the accent and the density to the browser's own pages. It
  * sets design tokens only; `tokens.css` picks the accent of the current color mode.
- * @param appearance - Accent preset or `#rrggbb` color, and density.
+ * @param appearance - The colors of the accent, and the density.
  */
 export function appearanceCss(appearance: {
-  readonly accent: string;
+  readonly accent: AccentColors;
   readonly density: Density;
 }): string {
-  const accent = accentColors(appearance.accent);
+  const accent = appearance.accent;
   const size = sizes[appearance.density];
   // Two :root selectors outrank the defaults in tokens.css, whatever the order of sheets.
   return (
