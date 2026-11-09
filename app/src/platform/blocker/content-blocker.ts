@@ -1,14 +1,18 @@
-import type { FiltersEngine, Request as EngineRequest, RequestType } from '@ghostery/adblocker';
+import type { RequestType } from '@ghostery/adblocker';
 import type { OnBeforeRequestListenerDetails, OnHeadersReceivedListenerDetails } from 'electron';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { Logger } from '../../kernel/logging/logger.ts';
 import type {
   HeaderAdditions,
   RequestDecision,
   RequestInterceptor,
 } from '../electron/request-pipeline.ts';
-import { resourceUrl, type ReplacementResource } from './resource-protocol.ts';
+import type { BlockerEngine } from './blocker-engine.ts';
+import type {
+  BlockerStatus,
+  ContentBlockerOptions,
+  FrameElements,
+  FrameRules,
+} from './blocker-types.ts';
+import type { ReplacementResource } from './resource-protocol.ts';
 
 /** Electron's resource types and the request types of the filter engine. */
 const requestTypes: Readonly<Record<string, RequestType>> = {
@@ -26,76 +30,30 @@ const requestTypes: Readonly<Record<string, RequestType>> = {
   other: 'other',
 };
 
-/**
- * A procedural rule, such as `:has-text()`: the frame finds its elements itself, then marks
- * them with the attribute that the style sheet hides, or runs the directive on them.
- */
-export interface ExtendedRule {
-  /** The selector of the elements, parsed. */
-  readonly ast: unknown;
-  /** The attribute that hides an element, for hiding rules. */
-  readonly attribute?: string | undefined;
-  /** What to do with an element, such as removing it, for the other rules. */
-  readonly directive?: unknown;
-}
-
-/** The rules for a frame that starts. */
-export interface FrameRules {
-  /** Element hiding rules of the frame's address, as a style sheet. */
-  readonly styles: string;
-  /** Scriptlets that run in the page's world before its own scripts. */
-  readonly scripts: readonly string[];
-  /** Procedural rules of the frame's address. */
-  readonly extended: readonly ExtendedRule[];
-  /** Whether the frame should report its elements for the generic hiding rules. */
-  readonly elements: boolean;
-}
-
-/** The classes, ids and link targets that a frame reported. */
-export interface FrameElements {
-  readonly classes: readonly string[];
-  readonly ids: readonly string[];
-  readonly hrefs: readonly string[];
-}
+export type {
+  BlockerStatus,
+  ContentBlockerOptions,
+  ExtendedRule,
+  ExtraLists,
+  FrameElements,
+  FrameRules,
+} from './blocker-types.ts';
 
 const noRules: FrameRules = { styles: '', scripts: [], extended: [], elements: false };
 
-/** Where the content blocker is: not loaded yet, loading, working, or without usable data. */
-export type BlockerStatus = 'idle' | 'loading' | 'ready' | 'failed';
-
-/** A group of optional lists with an engine of its own: cookie notices or annoyances. */
-export type ExtraLists = 'cookies' | 'annoyances';
-
-/** Options of the {@link ContentBlocker}. */
-export interface ContentBlockerOptions {
-  /** Folder with `engine.bin`, built by `tools/blocker/build.ts`. */
-  readonly dataDir: string;
-  /** Whether blocking is on for a page, by its address; read for every request. */
-  readonly enabled: (pageUrl: string) => boolean;
-  /** Called for every blocked request, with the id of the tab's web contents. */
-  readonly onBlocked?: (webContentsId: number) => void;
-  /** Called when the {@link ContentBlocker.status} changes. */
-  readonly onStatus?: (status: BlockerStatus) => void;
-  /** The groups of optional lists that are on; read for every request and frame. */
-  readonly extras?: () => readonly ExtraLists[];
-  readonly logger: Logger;
-}
-
 /**
  * Blocks requests that the filter lists name, with the engine that `tools/blocker` built.
- * The engine loads with the first web page, not at the start: a browser that shows only
- * its own pages keeps neither its memory nor the work of collecting it. Requests wait for
- * the engine, so even the first page is filtered. Main-frame requests are not blocked: a
- * page the user opens is never replaced by an error page.
+ * The engine loads with the first web page, not at the start, and so does the code that
+ * uses it (`blocker-engine.ts`): a browser that shows only its own pages keeps neither its
+ * memory nor the work of collecting it. Requests wait for the engine, so even the first
+ * page is filtered. Main-frame requests are not blocked: a page the user opens is never
+ * replaced by an error page.
  */
 export class ContentBlocker implements RequestInterceptor {
-  private engine: Promise<LoadedEngine | undefined> | undefined;
+  private engine: Promise<BlockerEngine | undefined> | undefined;
   /** The engine once it has loaded, for the frames, which cannot wait for it. */
-  private loaded: LoadedEngine | undefined;
+  private loaded: BlockerEngine | undefined;
   private current: BlockerStatus = 'idle';
-  /** The engines of optional lists by group, once asked for; `null` without usable data. */
-  private readonly extras = new Map<ExtraLists, Promise<FiltersEngine | null>>();
-  private readonly loadedExtras = new Map<ExtraLists, FiltersEngine | null>();
   private readonly options: ContentBlockerOptions;
 
   /** @param options - Data folder, switch and callbacks. */
@@ -104,7 +62,7 @@ export class ContentBlocker implements RequestInterceptor {
   }
 
   /** Loads the engine; resolves to `undefined` when the data is missing or broken. */
-  load(): Promise<LoadedEngine | undefined> {
+  load(): Promise<BlockerEngine | undefined> {
     if (this.engine === undefined) {
       this.setStatus('loading');
       this.engine = this.read();
@@ -139,15 +97,7 @@ export class ContentBlocker implements RequestInterceptor {
         void this.load();
         return undefined;
       }
-      const page = this.loaded.Request.fromRawDetails({
-        url: details.url,
-        sourceUrl: details.url,
-        type: 'main_frame',
-      });
-      const rewritten = this.loaded.engine.match(page).rewrite?.url;
-      return rewritten === undefined || rewritten === details.url
-        ? undefined
-        : { redirectURL: rewritten };
+      return this.loaded.mainFrame(details.url);
     }
     const type = requestTypes[details.resourceType];
     const sourceUrl = pageUrl(details);
@@ -159,34 +109,7 @@ export class ContentBlocker implements RequestInterceptor {
       return undefined;
     }
     const loaded = await this.load();
-    if (loaded === undefined) {
-      return undefined;
-    }
-    const request = loaded.Request.fromRawDetails({
-      url: details.url,
-      sourceUrl,
-      type,
-    });
-    const main = loaded.engine.match(request);
-    const result = main.match
-      ? main
-      : this.extraEngines(loaded)
-          .map((engine) => engine.match(request))
-          .find((extra) => extra.match);
-    if (result === undefined) {
-      // Tracking parameters leave the address of a request that is not blocked.
-      const rewritten = main.rewrite?.url;
-      return rewritten === undefined || rewritten === details.url
-        ? undefined
-        : { redirectURL: rewritten };
-    }
-    if (details.webContentsId !== undefined) {
-      this.options.onBlocked?.(details.webContentsId);
-    }
-    // A harmless stand-in keeps pages working that wait for the file they asked for.
-    return result.redirect === undefined
-      ? { cancel: true }
-      : { redirectURL: resourceUrl(result.redirect.filename) };
+    return loaded?.subresource(details, sourceUrl, type);
   }
 
   /**
@@ -194,23 +117,15 @@ export class ContentBlocker implements RequestInterceptor {
    * @param details - The response of a page.
    */
   headersReceived(details: OnHeadersReceivedListenerDetails): HeaderAdditions | undefined {
-    const loaded = this.loaded;
     if (
       details.resourceType !== 'mainFrame' ||
-      loaded === undefined ||
+      this.loaded === undefined ||
       !/^https?:/i.test(details.url) ||
       !this.options.enabled(details.url)
     ) {
       return undefined;
     }
-    const directives = loaded.engine.getCSPDirectives(
-      loaded.Request.fromRawDetails({
-        url: details.url,
-        sourceUrl: details.url,
-        type: 'main_frame',
-      }),
-    );
-    return directives === undefined ? undefined : { 'Content-Security-Policy': [directives] };
+    return this.loaded.headersReceived(details);
   }
 
   /**
@@ -218,10 +133,7 @@ export class ContentBlocker implements RequestInterceptor {
    * @param name - The file name.
    */
   resource(name: string): ReplacementResource | undefined {
-    const resource = this.loaded?.engine.resources.getResource(name);
-    return resource === undefined
-      ? undefined
-      : { body: resource.body, contentType: resource.contentType };
+    return this.loaded?.resource(name);
   }
 
   /**
@@ -231,28 +143,7 @@ export class ContentBlocker implements RequestInterceptor {
    * @param top - The address of the page the frame belongs to.
    */
   frameRules(url: string, top: string = url): FrameRules {
-    const page = this.page(url, top);
-    if (page === undefined) {
-      return noRules;
-    }
-    const results = [page.loaded.engine, ...this.extraEngines(page.loaded)].map((engine) =>
-      engine.getCosmeticsFilters({
-        ...page.address,
-        getRulesFromDOM: false,
-        getExtendedRules: true,
-      }),
-    );
-    return {
-      styles: results
-        .map((result) => result.styles)
-        .filter((styles) => styles !== '')
-        .join('\n'),
-      scripts: results.flatMap((result) => result.scripts),
-      extended: results.flatMap((result) =>
-        result.extended.map(({ ast, attribute, directive }) => ({ ast, attribute, directive })),
-      ),
-      elements: true,
-    };
+    return this.applies(url, top) ? (this.loaded?.frameRules(url) ?? noRules) : noRules;
   }
 
   /**
@@ -262,27 +153,7 @@ export class ContentBlocker implements RequestInterceptor {
    * @param elements - What the frame reported.
    */
   elementRules(url: string, top: string, elements: FrameElements): string {
-    const page = this.page(url, top);
-    if (page === undefined) {
-      return '';
-    }
-    return [page.loaded.engine, ...this.extraEngines(page.loaded)]
-      .map(
-        (engine) =>
-          engine.getCosmeticsFilters({
-            ...page.address,
-            classes: [...elements.classes],
-            ids: [...elements.ids],
-            hrefs: [...elements.hrefs],
-            getBaseRules: false,
-            getInjectionRules: false,
-            getExtendedRules: false,
-            getRulesFromHostname: false,
-            getRulesFromDOM: true,
-          }).styles,
-      )
-      .filter((styles) => styles !== '')
-      .join('\n');
+    return this.applies(url, top) ? (this.loaded?.elementRules(url, elements) ?? '') : '';
   }
 
   /**
@@ -291,9 +162,7 @@ export class ContentBlocker implements RequestInterceptor {
    * @param url - The page's address.
    */
   domainOf(url: string): string | undefined {
-    if (this.loaded === undefined || !/^https?:/i.test(url)) return undefined;
-    const { domain, hostname } = this.loaded.Request.fromRawDetails({ url });
-    return domain === '' ? hostname : domain;
+    return /^https?:/i.test(url) ? this.loaded?.domainOf(url) : undefined;
   }
 
   /**
@@ -302,21 +171,12 @@ export class ContentBlocker implements RequestInterceptor {
    * @param openerUrl - The address of the page that opens it.
    */
   blocksPopup(url: string, openerUrl: string): boolean {
-    const loaded = this.loaded;
-    if (
-      loaded?.popups === undefined ||
-      !/^https?:/i.test(url) ||
-      !/^https?:/i.test(openerUrl) ||
-      !this.options.enabled(openerUrl)
-    ) {
-      return false;
-    }
-    const request = loaded.Request.fromRawDetails({
-      url,
-      sourceUrl: openerUrl,
-      type: 'main_frame',
-    });
-    return loaded.popups.match(request).match;
+    return (
+      /^https?:/i.test(url) &&
+      /^https?:/i.test(openerUrl) &&
+      this.options.enabled(openerUrl) &&
+      (this.loaded?.blocksPopup(url, openerUrl) ?? false)
+    );
   }
 
   /**
@@ -324,87 +184,20 @@ export class ContentBlocker implements RequestInterceptor {
    * request on; a group whose engine has loaded already costs nothing.
    */
   async loadExtras(): Promise<void> {
-    const loaded = await this.load();
-    if (loaded === undefined) return;
-    await Promise.all(
-      (this.options.extras?.() ?? []).map((group) => this.loadExtra(loaded, group)),
-    );
+    await (await this.load())?.loadExtras();
   }
 
-  /**
-   * The engines of the optional lists that are on and have loaded. A group that is on but
-   * not loaded yet starts to load and applies from a later request on, because requests and
-   * frames do not wait for it.
-   */
-  private extraEngines(loaded: LoadedEngine): FiltersEngine[] {
-    const engines: FiltersEngine[] = [];
-    for (const group of this.options.extras?.() ?? []) {
-      const engine = this.loadedExtras.get(group);
-      if (engine === undefined) void this.loadExtra(loaded, group);
-      else if (engine !== null) engines.push(engine);
-    }
-    return engines;
+  /** Whether the cosmetic rules of the lists apply to a frame of a page. */
+  private applies(url: string, top: string): boolean {
+    return this.loaded !== undefined && /^https?:/i.test(url) && this.options.enabled(top);
   }
 
-  private loadExtra(loaded: LoadedEngine, group: ExtraLists): Promise<FiltersEngine | null> {
-    let extra = this.extras.get(group);
-    if (extra === undefined) {
-      extra = readFile(join(this.options.dataDir, `${group}.bin`))
-        .then((bytes) => {
-          const engine = loaded.Engine.deserialize(new Uint8Array(bytes));
-          // The optional engines use the scriptlets and stand-ins of the main engine.
-          engine.resources = loaded.engine.resources;
-          this.options.logger.info('Optional filter lists ready', { group, bytes: bytes.length });
-          return engine;
-        })
-        .catch((error: unknown) => {
-          this.options.logger.warn('Optional filter lists are missing or invalid', {
-            group,
-            error: String(error),
-          });
-          return null;
-        })
-        .then((engine) => {
-          this.loadedExtras.set(group, engine);
-          return engine;
-        });
-      this.extras.set(group, extra);
-    }
-    return extra;
-  }
-
-  /** The loaded engine and the parts of an address that cosmetic rules need. */
-  private page(
-    url: string,
-    top: string,
-  ):
-    | { loaded: LoadedEngine; address: { url: string; hostname: string; domain: string } }
-    | undefined {
-    const loaded = this.loaded;
-    if (loaded === undefined || !/^https?:/i.test(url) || !this.options.enabled(top)) {
-      return undefined;
-    }
-    const { hostname, domain } = loaded.Request.fromRawDetails({ url });
-    return { loaded, address: { url, hostname, domain } };
-  }
-
-  private async read(): Promise<LoadedEngine | undefined> {
+  private async read(): Promise<BlockerEngine | undefined> {
     try {
-      const [{ FiltersEngine: Engine, Request }, bytes, popupBytes] = await Promise.all([
-        import('@ghostery/adblocker'),
-        readFile(join(this.options.dataDir, 'engine.bin')),
-        // The filters with `$popup`, which the engine itself does not support; optional.
-        readFile(join(this.options.dataDir, 'popups.bin')).catch(() => undefined),
-      ]);
-      const engine = Engine.deserialize(new Uint8Array(bytes));
-      const popups =
-        popupBytes === undefined ? undefined : Engine.deserialize(new Uint8Array(popupBytes));
-      this.options.logger.info('Content blocker ready', { bytes: bytes.length });
-      const loaded: LoadedEngine = { engine, popups, Engine, Request };
-      this.loaded = loaded;
+      const { openBlockerEngine } = await import('./blocker-engine.ts');
+      this.loaded = await openBlockerEngine(this.options);
       this.setStatus('ready');
-      for (const group of this.options.extras?.() ?? []) void this.loadExtra(loaded, group);
-      return loaded;
+      return this.loaded;
     } catch (error) {
       this.options.logger.error(
         'Content blocker data is missing or invalid; nothing is blocked',
@@ -414,15 +207,6 @@ export class ContentBlocker implements RequestInterceptor {
       return undefined;
     }
   }
-}
-
-/** The engine and the request class of the library, loaded together. */
-interface LoadedEngine {
-  readonly engine: FiltersEngine;
-  /** An engine of the popup filters alone, matched against the addresses of popups. */
-  readonly popups: FiltersEngine | undefined;
-  readonly Engine: typeof FiltersEngine;
-  readonly Request: typeof EngineRequest;
 }
 
 /**
