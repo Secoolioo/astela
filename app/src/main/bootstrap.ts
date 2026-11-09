@@ -342,6 +342,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     router,
     logger,
     onContextMenu,
+    onUnresponsive: (window, tabId, contents) =>
+      void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
+        askAboutHangingPage(window, tabId, contents),
+      ),
   });
   // Not asked for yet, loading, or `true` once the handlers are there.
   let pages: Promise<void> | true | undefined;

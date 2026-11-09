@@ -21,5 +21,9 @@
   "menu.blockerListFull": "Die Liste der Websites ohne Blockieren ist voll.",
   "menu.history": "&Verlauf",
   "menu.bookmarks": "&Lesezeichen",
-  "menu.emptyFolder": "(leer)"
+  "menu.emptyFolder": "(leer)",
+  "dialog.pageUnresponsive": "{site} reagiert nicht",
+  "dialog.pageUnresponsiveDetail": "Du kannst warten oder die Seite schließen.",
+  "dialog.wait": "Warten",
+  "dialog.closePage": "Seite schließen"
 }

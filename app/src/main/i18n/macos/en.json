@@ -21,5 +21,9 @@
   "menu.blockerListFull": "The list of sites without blocking is full.",
   "menu.history": "History",
   "menu.bookmarks": "Bookmarks",
-  "menu.emptyFolder": "(Empty)"
+  "menu.emptyFolder": "(Empty)",
+  "dialog.pageUnresponsive": "{site} isn't responding",
+  "dialog.pageUnresponsiveDetail": "You can wait for it, or close the page.",
+  "dialog.wait": "Wait",
+  "dialog.closePage": "Close Page"
 }

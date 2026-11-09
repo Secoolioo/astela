@@ -5,6 +5,17 @@ import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 /** Identifier of a tab, such as `t1a`. */
 export type TabId = string;
 
+/**
+ * Why a tab shows no page: the page could not be loaded (`error`) or the process that
+ * showed it is gone (`crashed`). `code` is Chromium's name for the cause, such as
+ * `ERR_CONNECTION_REFUSED`, and `url` the address of the page.
+ */
+export interface TabProblem {
+  readonly kind: 'error' | 'crashed';
+  readonly code: string;
+  readonly url: string;
+}
+
 /** The state of one tab. */
 export interface Tab {
   readonly id: TabId;
@@ -15,6 +26,8 @@ export interface Tab {
   readonly canGoForward: boolean;
   /** Requests that the content blocker blocked on the current page. */
   readonly blocked: number;
+  /** Why the tab shows no page, or `null` when it shows one. */
+  readonly problem: TabProblem | null;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -58,7 +71,15 @@ export interface OpenTabOptions {
 export const TabServiceToken: Token<TabService> = token<TabService>('TabService');
 
 /** Fields that {@link TabService.update} compares. */
-const tabFields = ['url', 'title', 'loading', 'canGoBack', 'canGoForward', 'blocked'] as const;
+const tabFields = [
+  'url',
+  'title',
+  'loading',
+  'canGoBack',
+  'canGoForward',
+  'blocked',
+  'problem',
+] as const;
 
 /** How many closed tabs can be reopened. */
 const closedTabLimit = 25;
@@ -118,6 +139,7 @@ export class TabService implements Disposable {
       canGoBack: false,
       canGoForward: false,
       blocked: 0,
+      problem: null,
     };
     const activate = options.activate ?? true;
     this.tabs.splice(this.insertionIndex(activate), 0, tab);
