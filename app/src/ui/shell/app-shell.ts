@@ -27,26 +27,71 @@ export class AppShell extends LitElement {
       position: fixed;
       inset: 0;
       display: grid;
-      grid-template: 'tabs' auto 'nav' auto 'bar' auto 'content' 1fr / 1fr;
+      grid-template: 'tabs' auto 'nav' auto 'bar' auto 'find' auto 'content' 1fr / 1fr;
       background: var(--surface-0);
       user-select: none;
     }
     :host([data-tabs='bottom']) {
-      grid-template: 'nav' auto 'bar' auto 'content' 1fr 'tabs' auto / 1fr;
+      grid-template: 'nav' auto 'bar' auto 'find' auto 'content' 1fr 'tabs' auto / 1fr;
     }
     :host([data-tabs='left']) {
       grid-template:
-        'nav nav' auto 'bar bar' auto 'tabs content' 1fr / var(--sidebar-width, 240px)
+        'nav nav' auto 'bar bar' auto 'find find' auto 'tabs content' 1fr / var(
+          --sidebar-width,
+          240px
+        )
         1fr;
     }
     :host([data-tabs='right']) {
       grid-template:
-        'nav nav' auto 'bar bar' auto 'content tabs' 1fr / 1fr
+        'nav nav' auto 'bar bar' auto 'find find' auto 'content tabs' 1fr / 1fr
         var(--sidebar-width, 240px);
     }
     .content {
       grid-area: content;
       overflow: auto;
+    }
+    /* The find bar of the active tab, between the toolbar and the page. */
+    .find {
+      grid-area: find;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--space-1);
+      padding: 2px var(--space-2);
+      border-bottom: 1px solid var(--border-1);
+      background: var(--surface-1);
+    }
+    .find input {
+      flex: none;
+      width: 240px;
+      height: 24px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-1);
+      background: var(--surface-0);
+      color: var(--text-1);
+      font: inherit;
+    }
+    /* The bar has its own close button. */
+    .find input::-webkit-search-cancel-button {
+      display: none;
+    }
+    .find .count {
+      min-width: 64px;
+      color: var(--text-2);
+      font-size: 12px;
+      text-align: end;
+    }
+    .zoom {
+      height: 24px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-1);
+      background: var(--surface-1);
+      color: var(--text-1);
+      font: inherit;
+      font-size: 12px;
     }
     /* What a tab shows when it could not load its page or lost it. */
     .problem {
@@ -312,6 +357,7 @@ export class AppShell extends LitElement {
   private unsubscribers: (() => void)[] = [];
   /** The active tab that the shell last handled focus for. */
   private focusedTabId: string | undefined;
+  private findFocusPending = false;
   /** The insets last sent to the browser. */
   private reportedInsets = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
@@ -319,7 +365,7 @@ export class AppShell extends LitElement {
 
   constructor() {
     super();
-    this.state = { tabs: [], activeTabId: null, tabStrip: 'top', bookmarksBar: null };
+    this.state = { tabs: [], activeTabId: null, tabStrip: 'top', bookmarksBar: null, find: null };
     this.editing = undefined;
   }
 
@@ -332,7 +378,9 @@ export class AppShell extends LitElement {
     }
     this.unsubscribers.push(
       bridge.on('shell.stateChanged', (state) => (this.state = state)),
-      bridge.on('shell.command', () => this.focusAddress()),
+      bridge.on('shell.command', (command) =>
+        command === 'find.focus' ? this.focusFind() : this.focusAddress(),
+      ),
     );
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
     this.resizeObserver = new ResizeObserver(() => {
@@ -367,6 +415,7 @@ export class AppShell extends LitElement {
     if (changed.has('state')) {
       this.reportInsets();
       this.layoutBookmarksBar();
+      this.takeFindFocus();
     }
     if (changed.has('state') && this.active === undefined) {
       this.editing = undefined;
@@ -455,6 +504,18 @@ export class AppShell extends LitElement {
           @blur=${() => (this.editing = undefined)}
         />
         ${
+          active === undefined || active.zoom === 1
+            ? nothing
+            : html`<button
+                class="zoom"
+                title=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
+                aria-label=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
+                @click=${() => void this.bridge?.invoke('tabs.resetZoom', { tabId: active.id })}
+              >
+                ${percent(active.zoom, this.i18n?.language)}
+              </button>`
+        }
+        ${
           active === undefined || !/^https?:/i.test(active.url)
             ? nothing
             : html`<button
@@ -504,7 +565,7 @@ export class AppShell extends LitElement {
           ${icons.menu}
         </button>
       </nav>
-      ${this.renderBookmarksBar(t)}
+      ${this.renderBookmarksBar(t)} ${this.renderFind()}
       <div class="content">${active?.problem ? this.renderProblem(active) : nothing}</div>
     `;
   }
@@ -674,6 +735,98 @@ export class AppShell extends LitElement {
     void this.bridge?.invoke('tabs.close', { tabId });
   }
 
+  /** The find bar of the active tab, with the number of matches and the way between them. */
+  private renderFind(): TemplateResult | typeof nothing {
+    const find = this.state.find;
+    const tab = this.active;
+    if (find === null || tab === undefined) return nothing;
+    const count =
+      find.query === ''
+        ? ''
+        : find.matches === 0
+          ? this.tp('find.none')
+          : this.tp('find.count', { active: String(find.active), matches: String(find.matches) });
+    return html`<div class="find" role="search" aria-label=${this.tp('find.label')}>
+      <input
+        id="find"
+        type="search"
+        spellcheck="false"
+        autocomplete="off"
+        maxlength="1000"
+        aria-label=${this.tp('find.label')}
+        placeholder=${this.tp('find.label')}
+        @input=${(event: Event) => {
+          const input = inputOf(event);
+          if (input !== undefined) this.findIn(tab.id, input.value, true, false);
+        }}
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === 'Enter') this.findStep(tab.id, !event.shiftKey);
+          else if (event.key === 'Escape') {
+            // A search field clears itself on Escape; the find bar keeps its text instead.
+            event.preventDefault();
+            void this.bridge?.invoke('tabs.stopFind', { tabId: tab.id });
+          }
+        }}
+      />
+      <span class="count" aria-live="polite">${count}</span>
+      <button
+        class="icon"
+        title=${this.tp('find.previous')}
+        aria-label=${this.tp('find.previous')}
+        @click=${() => this.findStep(tab.id, false)}
+      >
+        ${icons.up}
+      </button>
+      <button
+        class="icon"
+        title=${this.tp('find.next')}
+        aria-label=${this.tp('find.next')}
+        @click=${() => this.findStep(tab.id, true)}
+      >
+        ${icons.down}
+      </button>
+      <button
+        class="icon"
+        title=${this.tp('find.close')}
+        aria-label=${this.tp('find.close')}
+        @click=${() => void this.bridge?.invoke('tabs.stopFind', { tabId: tab.id })}
+      >
+        ${icons.close}
+      </button>
+    </div>`;
+  }
+
+  private findIn(tabId: string, query: string, forward: boolean, next: boolean): void {
+    void this.bridge?.invoke('tabs.find', { tabId, query, forward, next });
+  }
+
+  /**
+   * Moves to the next or previous match of the text in the find bar. It reads the field, not
+   * the state, which can still hold the text from before the last key.
+   */
+  private findStep(tabId: string, forward: boolean): void {
+    const query = this.renderRoot.querySelector<HTMLInputElement>('#find')?.value;
+    this.findIn(tabId, query ?? this.state.find?.query ?? '', forward, true);
+  }
+
+  /**
+   * Focuses the find bar with the text it looked for last, selected. The command can come
+   * before the state that opens the bar, so the bar takes the focus when it appears.
+   */
+  private focusFind(): void {
+    this.findFocusPending = true;
+    this.takeFindFocus();
+  }
+
+  private takeFindFocus(): void {
+    const input = this.renderRoot.querySelector<HTMLInputElement>('#find');
+    if (!this.findFocusPending || input === null) return;
+    this.findFocusPending = false;
+    if (input.value === '') input.value = this.state.find?.query ?? '';
+    input.focus();
+    input.select();
+  }
+
   /** What the active tab shows when it has no page: why, and the ways on from there. */
   private renderProblem(tab: TabView): TemplateResult | typeof nothing {
     const problem = tab.problem;
@@ -794,8 +947,15 @@ function displayUrl(url: string | undefined): string {
   return url === undefined || url === 'about:blank' || url === newTabUrl ? '' : url;
 }
 
+/** A zoom factor as a percentage in the shell's language, such as 125 %. */
+function percent(factor: number, language: string | undefined): string {
+  return new Intl.NumberFormat(language, { style: 'percent' }).format(factor);
+}
+
 /** Icons drawn after Lucide (ISC license), inlined so the shell needs no icon requests. */
 const icons = {
+  up: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>`,
+  down: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>`,
   plus: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>`,
   close: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
   back: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7M19 12H5" /></svg>`,

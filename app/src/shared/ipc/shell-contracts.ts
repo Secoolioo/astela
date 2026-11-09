@@ -26,7 +26,8 @@ export type TabProblem = v.InferOutput<typeof TabProblem>;
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
  * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
- * `problem` why the tab shows no page, which the shell then shows in its place.
+ * `problem` why the tab shows no page, which the shell then shows in its place;
+ * `zoom` the zoom factor of the page, 1 for 100 %.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -39,6 +40,7 @@ export const TabView = v.strictObject({
   blocking: v.picklist(['on', 'off', 'none', 'failed']),
   bookmarked: v.boolean(),
   problem: v.nullable(TabProblem),
+  zoom: v.pipe(v.number(), v.minValue(0.25), v.maxValue(5)),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;
@@ -52,15 +54,26 @@ export const BarItem = v.strictObject({
 /** A bookmark or folder of the bookmarks bar. */
 export type BarItem = v.InferOutput<typeof BarItem>;
 
+/** The find bar of the active tab: what it looks for, the current match and their number. */
+export const FindState = v.strictObject({
+  query: v.pipe(v.string(), v.maxLength(1000)),
+  active: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  matches: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
+/** The find bar of the active tab. */
+export type FindState = v.InferOutput<typeof FindState>;
+
 /**
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
- * `bookmarksBar` is `null` while the bookmarks bar is hidden.
+ * `bookmarksBar` is `null` while the bookmarks bar is hidden, and `find` while the find bar
+ * is closed.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
   activeTabId: v.nullable(TabId),
   tabStrip: v.picklist(tabStripPositions),
   bookmarksBar: v.nullable(v.array(BarItem)),
+  find: v.nullable(FindState),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -154,6 +167,35 @@ export const OpenMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Looks for text in the page of a tab, or for its next or previous match. */
+export const FindInPage = defineRequest({
+  channel: 'tabs.find',
+  request: v.strictObject({
+    tabId: TabId,
+    query: v.pipe(v.string(), v.maxLength(1000)),
+    forward: v.boolean(),
+    next: v.boolean(),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
+/** Closes the find bar and stops looking. */
+export const StopFinding = defineRequest({
+  channel: 'tabs.stopFind',
+  request: v.strictObject({ tabId: TabId }),
+  response: Done,
+  capability: 'shell',
+});
+
+/** Sets the zoom of a tab's page back to 100 %. */
+export const ResetZoom = defineRequest({
+  channel: 'tabs.resetZoom',
+  request: v.strictObject({ tabId: TabId }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Accepts the certificate that a tab's page was refused, for this session, and reloads it. */
 export const ProceedUnsafely = defineRequest({
   channel: 'tabs.proceedUnsafely',
@@ -202,7 +244,7 @@ export const ShellStateChanged = defineEvent({
 /** Asks the shell to run a UI command, such as focusing the address bar after a shortcut. */
 export const ShellCommand = defineEvent({
   channel: 'shell.command',
-  payload: v.picklist(['omnibox.focus']),
+  payload: v.picklist(['omnibox.focus', 'find.focus']),
   capability: 'shell',
 });
 
@@ -219,6 +261,9 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   OpenMenu,
   OpenBlockerPopover,
   ProceedUnsafely,
+  FindInPage,
+  StopFinding,
+  ResetZoom,
   ToggleBookmark,
   OpenBookmarkFolder,
 ];

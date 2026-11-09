@@ -24,6 +24,7 @@ export function contextMenuLabels(locale: string, platform: string): ContextMenu
     back: i18n.t('contextMenu.back'),
     forward: i18n.t('contextMenu.forward'),
     reload: i18n.t('contextMenu.reload'),
+    inspect: i18n.t('contextMenu.inspect'),
     searchFor: (engine, query) => i18n.t('contextMenu.searchFor', { engine, query }),
   };
 }

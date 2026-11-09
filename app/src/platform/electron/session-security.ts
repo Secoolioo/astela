@@ -14,6 +14,12 @@ const blockedPermissions = new Set([
 ]);
 
 /**
+ * Permissions that are granted without asking, as in other browsers: a page may show an
+ * element in full screen after a click, and Escape leaves it.
+ */
+const harmlessPermissions = new Set(['fullscreen']);
+
+/**
  * Decides about a permission request. Until the permission prompt exists, every request is
  * denied. Electron grants everything by default, so this handler must be installed on
  * every session.
@@ -35,11 +41,15 @@ export function hardenSession(
   decide: PermissionDecider = denyAllPermissions,
 ): void {
   session.setPermissionRequestHandler((_contents, permission, callback, details) => {
-    callback(!blockedPermissions.has(permission) && decide(permission, details.requestingUrl));
+    callback(
+      harmlessPermissions.has(permission) ||
+        (!blockedPermissions.has(permission) && decide(permission, details.requestingUrl)),
+    );
   });
   session.setPermissionCheckHandler(
     (_contents, permission, requestingOrigin) =>
-      !blockedPermissions.has(permission) && decide(permission, requestingOrigin),
+      harmlessPermissions.has(permission) ||
+      (!blockedPermissions.has(permission) && decide(permission, requestingOrigin)),
   );
   session.setDevicePermissionHandler(() => false);
   session.setDisplayMediaRequestHandler((_request, callback) => callback({}));

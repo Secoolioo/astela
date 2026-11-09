@@ -9,6 +9,9 @@ import {
   GetShellState,
   OpenBlockerPopover,
   ProceedUnsafely,
+  FindInPage,
+  StopFinding,
+  ResetZoom,
   OpenBookmarkFolder,
   ToggleBookmark,
   OpenMenu,
@@ -29,7 +32,7 @@ import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { linksFromArguments } from '../domain/navigation/links.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
-import { blockingFor, type Blocking } from '../domain/blocker/blocking.ts';
+import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
@@ -66,6 +69,7 @@ import {
   ContentBlockerSetting,
   SearchUrlTemplate,
   SetupShownSetting,
+  SiteZoomSetting,
   TabStripPositionSetting,
   coreSettings,
 } from './core-settings.ts';
@@ -77,6 +81,7 @@ import {
 } from '../domain/default-browser/default-browser.ts';
 import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
+import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
@@ -160,6 +165,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       SetupGuideEnabled,
       ImportEnabled,
       SSLErrorOverrideAllowed,
+      DeveloperToolsAvailability,
       DefaultBrowserSettingEnabled,
     ],
     createPolicyProviders(brand, process.platform),
@@ -293,11 +299,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const openFromPage = (url: string, opener: Electron.WebContents, activate = true): void => {
     if (mayOpenInNewTab(url)) windows.forTab(opener)?.tabs.open(url, { activate });
   };
+  // Chromium's value 2 keeps the developer tools closed; 0 and 1 allow them for web pages.
+  const developerTools = (): boolean => policies.mandatoryValue(DeveloperToolsAvailability) !== 2;
   // The menu code loads with the first context menu, not before the first window.
   const onContextMenu = (request: ContextMenuRequest): void => {
     void import('./context-menu.ts')
       .then(({ popupContextMenu }) =>
-        popupContextMenu(request, { searchTemplate, openTab: openFromPage, logger }),
+        popupContextMenu(request, {
+          searchTemplate,
+          openTab: openFromPage,
+          developerTools,
+          logger,
+        }),
       )
       .catch((error: unknown) => logger.error('The context menu failed', error));
   };
@@ -346,6 +359,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+    onPageCommand: (window, command, contents) =>
+      void import('./page-tools.ts').then(({ runPageCommand }) =>
+        runPageCommand(window, command, contents, {
+          developerTools,
+          logger,
+        }),
+      ),
+    zoomFor: (url) => {
+      const host = siteOf(url);
+      return host === undefined ? undefined : settings.get(SiteZoomSetting)[host];
+    },
+    onZoom: (url, factor) => {
+      const host = siteOf(url);
+      if (host === undefined) return;
+      const { [host]: _old, ...others } = settings.get(SiteZoomSetting);
+      void settings.set(SiteZoomSetting, factor === 1 ? others : { ...others, [host]: factor });
+    },
     onUnresponsive: (window, tabId, contents) =>
       void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
         askAboutHangingPage(window, tabId, contents),
@@ -530,7 +560,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     const frontWindow = (): BrowserWindowController => windows.lastUsed ?? windows.open();
     void import('./browser-menu.ts')
       .then(({ macMenuBar }) =>
-        Menu.setApplicationMenu(macMenuBar(() => frontWindow().execute('settings.open'))),
+        Menu.setApplicationMenu(macMenuBar((command) => frontWindow().execute(command))),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
   }
@@ -624,6 +654,12 @@ function registerShellHandlers(
     ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
   );
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
+  router.handle(FindInPage, ({ tabId, query, forward, next }, { sender }) => {
+    windowOf(sender).find(tabId, query, forward, next);
+    return null;
+  });
+  router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
+  router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
   router.handle(
     ToggleBookmark,
     (_request, { sender }) => (windowOf(sender).execute('bookmark.toggle'), null),
@@ -656,6 +692,10 @@ function registerNewTabHandlers(
   });
 }
 
+/**
+ * The first menu bar of macOS, until the full one loads. It has no View menu: the roles of
+ * that menu act on the focused view, the browser's own ones too, and ignore the policies.
+ */
 function macMenu(): Electron.MenuItemConstructorOptions[] {
-  return [{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }];
+  return [{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }];
 }

@@ -14,6 +14,9 @@ export const shellChannels = [
   'shell.openMenu',
   'shell.openBlockerPopover',
   'tabs.proceedUnsafely',
+  'tabs.find',
+  'tabs.stopFind',
+  'tabs.resetZoom',
   'shell.toggleBookmark',
   'shell.openBookmarkFolder',
 ] as const;

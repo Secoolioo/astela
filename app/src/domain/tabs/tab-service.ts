@@ -30,6 +30,8 @@ export interface Tab {
   readonly blocked: number;
   /** Why the tab shows no page, or `null` when it shows one. */
   readonly problem: TabProblem | null;
+  /** The zoom factor of the page, 1 for 100 %. */
+  readonly zoom: number;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -81,6 +83,7 @@ const tabFields = [
   'canGoForward',
   'blocked',
   'problem',
+  'zoom',
 ] as const;
 
 /** How many closed tabs can be reopened. */
@@ -142,6 +145,7 @@ export class TabService implements Disposable {
       canGoForward: false,
       blocked: 0,
       problem: null,
+      zoom: 1,
     };
     const activate = options.activate ?? true;
     this.tabs.splice(this.insertionIndex(activate), 0, tab);

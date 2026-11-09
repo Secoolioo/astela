@@ -11,6 +11,7 @@ import type { Capability } from '../../shared/ipc/contract.ts';
 import type { TabStripPosition } from '../../shared/layout.ts';
 import {
   type BarItem,
+  type FindState,
   ShellCommand,
   ShellStateChanged,
   type ShellState,
@@ -94,6 +95,16 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
   /** Whether people may continue to a site whose certificate is not trusted. */
   readonly certificateOverride?: () => boolean;
+  /** Prints, saves or shows the source of a web page, or opens its developer tools. */
+  readonly onPageCommand?: (
+    window: BrowserWindowController,
+    command: PageCommand,
+    contents: WebContents,
+  ) => void;
+  /** The zoom factor that a site was left at, to give its pages again. */
+  readonly zoomFor?: (url: string) => number | undefined;
+  /** Remembers the zoom factor of a site. */
+  readonly onZoom?: (url: string, factor: number) => void;
   /** Asks what to do about a web page that stopped responding to input. */
   readonly onUnresponsive?: (
     window: BrowserWindowController,
@@ -106,6 +117,14 @@ export interface BrowserWindowOptions {
    */
   readonly prepareInternalPage?: (page: TabPage) => Promise<void> | undefined;
 }
+
+/** The commands that tools outside the window carry out on a web page. */
+export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools.toggle';
+
+/** The zoom factors that zooming in and out steps through, as in other browsers. */
+const zoomFactors = [
+  0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5,
+];
 
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
@@ -140,6 +159,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly entries = new Map<TabId, TabEntry>();
   /** The overlay while it shows something; a change of the visible tab closes it. */
   overlay: OverlayHandle | undefined;
+  /** The find bar of the active tab, or `null` while it is closed. */
+  private finding: FindState | null = null;
+  /** What the find bar looked for last, to look for it again. */
+  private lastQuery = '';
+  /** Whether the visible page shows an element in full screen, which covers the shell. */
+  private pageFullScreen = false;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
@@ -209,7 +234,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   state(): ShellState {
     return {
       tabs: this.tabs.all.map(
-        ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem }) => ({
+        ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem, zoom }) => ({
           id,
           title,
           url,
@@ -220,11 +245,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           blocking: this.options.blocking(url),
           bookmarked: this.options.isBookmarked?.(url) ?? false,
           problem,
+          zoom,
         }),
       ),
       activeTabId: this.tabs.active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
+      find: this.finding,
     };
   }
 
@@ -294,6 +321,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       return;
     }
     this.overlay?.close();
+    const previous = this.tabs.all.find(
+      (tab) => this.entries.get(tab.id)?.view === this.visible,
+    )?.id;
+    if (previous !== undefined) this.stopFind(previous);
     if (this.visible !== undefined) {
       this.window.contentView.removeChildView(this.visible);
     }
@@ -486,7 +517,107 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           this.options.toggleBookmark?.(active.url, active.title);
         }
         break;
+      case 'find.open':
+      case 'find.next':
+      case 'find.previous':
+        if (active === undefined) break;
+        if (this.finding === null || command === 'find.open') {
+          if (this.finding === null) {
+            // The bar opens with the text of the last search and looks for it again.
+            this.finding = { query: this.lastQuery, active: 0, matches: 0 };
+            if (this.lastQuery !== '') this.find(active.id, this.lastQuery, true, false);
+          }
+          this.schedulePublish();
+          this.shell.webContents.focus();
+          this.options.router.publish(ShellCommand, this.shell.webContents, 'find.focus');
+        } else {
+          this.find(active.id, this.finding.query, command === 'find.next', true);
+        }
+        break;
+      case 'zoom.in':
+      case 'zoom.out':
+      case 'zoom.reset':
+        if (active !== undefined) {
+          this.zoom(active.id, command === 'zoom.in' ? 1 : command === 'zoom.out' ? -1 : 0);
+        }
+        break;
+      case 'window.fullscreen':
+        this.window.setFullScreen(!this.window.isFullScreen());
+        break;
+      case 'page.reloadHard':
+      case 'page.print':
+      case 'page.save':
+      case 'page.source':
+      case 'devtools.toggle': {
+        // These work on web pages; the browser's own pages keep them to themselves.
+        const contents = active === undefined ? undefined : this.webContentsOf(active.id);
+        if (contents === undefined) break;
+        if (command === 'page.reloadHard') contents.reloadIgnoringCache();
+        else this.options.onPageCommand?.(this, command, contents);
+        break;
+      }
     }
+  }
+
+  /**
+   * Looks for text in a tab's page, or for its next or previous match.
+   * @param id - The tab.
+   * @param query - The text.
+   * @param forward - Whether to look forward.
+   * @param next - Whether to go on from the current match.
+   */
+  find(id: TabId, query: string, forward: boolean, next: boolean): void {
+    const contents = this.webContentsOf(id);
+    // Only an open find bar looks; a late request after Escape does not open it again.
+    if (contents === undefined || id !== this.tabs.active?.id || this.finding === null) return;
+    this.lastQuery = query;
+    // The numbers stay until the page reports those of the new search, so they do not flicker.
+    this.finding = { ...this.finding, query };
+    if (query === '') contents.stopFindInPage('clearSelection');
+    else contents.findInPage(query, { forward, findNext: next });
+    this.schedulePublish();
+  }
+
+  /**
+   * Closes the find bar and leaves the current match selected.
+   * @param id - The tab.
+   */
+  stopFind(id: TabId): void {
+    const contents = this.entries.get(id)?.view.webContents;
+    if (contents !== undefined && !contents.isDestroyed()) contents.stopFindInPage('keepSelection');
+    if (this.finding === null) return;
+    this.finding = null;
+    this.schedulePublish();
+    this.focusContent();
+  }
+
+  /**
+   * Zooms a tab's page in or out by one step, or back to 100 %. The zoom holds for the
+   * page's site, in every tab, and is remembered for the next visit.
+   * @param id - The tab.
+   * @param direction - 1 to zoom in, -1 to zoom out, 0 for 100 %.
+   */
+  zoom(id: TabId, direction: 1 | -1 | 0): void {
+    const contents = this.webContentsOf(id);
+    if (contents === undefined) return;
+    const current = contents.getZoomFactor();
+    const factor =
+      direction === 0
+        ? 1
+        : direction > 0
+          ? (zoomFactors.find((step) => step > current + 0.001) ?? current)
+          : (zoomFactors.toReversed().find((step) => step < current - 0.001) ?? current);
+    contents.setZoomFactor(factor);
+    this.tabs.update(id, { zoom: factor });
+    this.options.onZoom?.(contents.getURL(), factor);
+  }
+
+  /** The web contents of a tab that shows a web page, and no internal page or problem. */
+  private webContentsOf(id: TabId): WebContents | undefined {
+    const entry = this.entries.get(id);
+    return entry === undefined || entry.page !== undefined || entry.view.webContents.isDestroyed()
+      ? undefined
+      : entry.view.webContents;
   }
 
   /**
@@ -619,8 +750,35 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         const code = details.reason.toUpperCase().replaceAll('-', '_');
         this.setProblem(id, { kind: 'crashed', code, url: contents.getURL(), proceed: false });
       });
-      contents.on('did-navigate', () => this.setProblem(id, null));
+      contents.on('did-navigate', (_event, address) => {
+        this.setProblem(id, null);
+        // A site keeps the zoom it was left at, also after the browser restarts.
+        const saved = this.options.zoomFor?.(address);
+        if (saved !== undefined && contents.getZoomFactor() === 1) contents.setZoomFactor(saved);
+      });
       contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));
+      contents.on('found-in-page', (_event, result) => {
+        if (this.finding === null || id !== this.tabs.active?.id) return;
+        this.finding = {
+          query: this.finding.query,
+          active: result.activeMatchOrdinal,
+          matches: result.matches,
+        };
+        this.schedulePublish();
+      });
+      // Ctrl and the mouse wheel, or a pinch, zoom in steps like the keys.
+      contents.on('zoom-changed', (_event, direction) =>
+        this.zoom(id, direction === 'in' ? 1 : -1),
+      );
+      // A video or another element in full screen covers the whole window.
+      contents.on('enter-html-full-screen', () => {
+        this.pageFullScreen = true;
+        this.layout();
+      });
+      contents.on('leave-html-full-screen', () => {
+        this.pageFullScreen = false;
+        this.layout();
+      });
     }
     // The count of blocked requests belongs to one page.
     contents.on('did-start-navigation', (details) => {
@@ -651,6 +809,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       loading: contents.isLoading(),
       canGoBack: history.canGoBack() || entry.history.canGoBack,
       canGoForward: history.canGoForward() || entry.history.canGoForward,
+      zoom: contents.getZoomFactor(),
     });
   }
 
@@ -768,7 +927,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     const { width, height } = this.window.getContentBounds();
     this.shell.setBounds({ x: 0, y: 0, width, height });
-    const { top, right, bottom, left } = this.insets;
+    const { top, right, bottom, left } = this.pageFullScreen
+      ? { top: 0, right: 0, bottom: 0, left: 0 }
+      : this.insets;
     this.visible?.setBounds({
       x: left,
       y: top,

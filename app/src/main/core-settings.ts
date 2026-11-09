@@ -107,6 +107,20 @@ export const BlockerAnnoyancesSetting = defineSetting<boolean>({
   ui: { section: 'privacy', control: 'toggle', order: 3 },
 });
 
+/** The zoom factor of each site whose zoom someone changed, by host name. */
+export const SiteZoomSetting = defineSetting<Record<string, number>>({
+  key: 'zoom.sites',
+  schema: v.pipe(
+    v.record(
+      v.pipe(v.string(), v.regex(/^[a-z0-9.:[\]-]{1,253}$/i, 'Must be a host name')),
+      v.pipe(v.number(), v.minValue(0.25), v.maxValue(5)),
+    ),
+    v.check((sites) => Object.keys(sites).length <= 10_000, 'Too many sites'),
+  ),
+  default: {},
+  scope: 'global',
+});
+
 /** What the browser shows when it starts: the tabs of the last session, or a new tab page. */
 export const StartupSetting = defineSetting<'restore' | 'newtab'>({
   key: 'startup.page',
@@ -145,6 +159,7 @@ export const coreSettings = [
   BlockerAllowedSitesSetting,
   BlockerCookieNoticesSetting,
   BlockerAnnoyancesSetting,
+  SiteZoomSetting,
   StartupSetting,
   SetupShownSetting,
   BookmarksBarSetting,

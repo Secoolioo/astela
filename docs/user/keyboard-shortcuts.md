@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools from 0.1.0-beta.4.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. Shortcuts cannot be changed yet; a shortcut editor is planned for 0.1.0, see the [roadmap](../roadmap.md).
 
@@ -21,8 +21,18 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 | Bookmark the page              | `Ctrl+D`                                        |
 | Open the bookmarks             | `Ctrl+Shift+O`                                  |
 | Show or hide the bookmarks bar | `Ctrl+Shift+B`                                  |
-
-`Ctrl+Shift+R`, `Shift+F5` and `Ctrl+F5` reload the page as well. A reload that bypasses the cache is not available yet.
+| Reload without the cache       | `Ctrl+Shift+R`, `Shift+F5` or `Ctrl+F5`         |
+| Find in the page               | `Ctrl+F`                                        |
+| Next match                     | `F3` or `Ctrl+G`                                |
+| Previous match                 | `Shift+F3` or `Ctrl+Shift+G`                    |
+| Zoom in                        | `Ctrl+Plus` or `Ctrl+=`                         |
+| Zoom out                       | `Ctrl+-`                                        |
+| Actual size                    | `Ctrl+0`                                        |
+| Full screen                    | `F11`                                           |
+| Print                          | `Ctrl+P`                                        |
+| Save the page                  | `Ctrl+S`                                        |
+| View the source                | `Ctrl+U`                                        |
+| Developer tools                | `F12` or `Ctrl+Shift+I`                         |
 
 None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as Ctrl+Alt, so AltGr keeps typing characters such as `@`, `€` or `{`.
 
@@ -44,8 +54,18 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Bookmark the page              | `Command+D`                                                           |
 | Open the bookmarks             | `Command+Shift+O`                                                     |
 | Show or hide the bookmarks bar | `Command+Shift+B`                                                     |
-
-`Command+Shift+R` reloads the page as well.
+| Reload without the cache       | `Command+Shift+R`                                                     |
+| Find in the page               | `Command+F`                                                           |
+| Next match                     | `Command+G`                                                           |
+| Previous match                 | `Command+Shift+G`                                                     |
+| Zoom in                        | `Command+Plus` or `Command+=`                                         |
+| Zoom out                       | `Command+-`                                                           |
+| Actual size                    | `Command+0`                                                           |
+| Full screen                    | `Control+Command+F`                                                   |
+| Print                          | `Command+P`                                                           |
+| Save the page                  | `Command+S`                                                           |
+| View the source                | `Command+Option+U`                                                    |
+| Developer tools                | `Command+Option+I`                                                    |
 
 `Command+Left Arrow` and `Command+Right Arrow` move the cursor to the start and the end of the line, as everywhere on macOS, so they do not go back and forward. `Command+Tab` switches between apps.
 
@@ -53,7 +73,7 @@ On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, 
 
 ## Mouse
 
-The back and forward buttons of a mouse go back and forward in the current tab, over the page as well as over the toolbar.
+The back and forward buttons of a mouse go back and forward in the current tab, over the page as well as over the toolbar. Ctrl and the mouse wheel zoom the page in and out.
 
 ## Other layouts and input methods
 
