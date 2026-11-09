@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { release } from 'node:os';
 import { FixtureServer, launch, pressNative, waitForPage, type Browser } from './harness.ts';
 
 const server = new FixtureServer();
@@ -11,6 +12,12 @@ test.afterAll(async () => {
 });
 
 const url = (): string => `${server.origin}/permissions.html`;
+
+/**
+ * macOS 15 and later (Darwin 24) let people choose what to share in a picker of their own,
+ * which needs no access to the whole screen, and the browser leaves the choice to it.
+ */
+const systemPicker = process.platform === 'darwin' && Number.parseInt(release(), 10) >= 24;
 
 async function open(browser: Browser, address: string): Promise<Page> {
   const field = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
@@ -176,10 +183,17 @@ test('lets a site see the screen or the window that the user chooses', async () 
   const browser = await launch();
   try {
     const page = await open(browser, url());
-    const overlay = await (async () => {
-      await page.getByRole('button', { name: 'Share the screen' }).click();
-      return waitForPage(browser, (current) => current.startsWith('app://overlay'));
-    })();
+    await page.getByRole('button', { name: 'Share the screen' }).click();
+    if (systemPicker) {
+      // The picker of the system asks, and a test cannot answer it: the browser shows no
+      // picker of its own, and the site waits.
+      await new Promise((done) => setTimeout(done, 2000));
+      const pages = browser.cdp.contexts().flatMap((context) => context.pages());
+      expect(pages.some((current) => current.url().startsWith('app://overlay'))).toBe(false);
+      await expect(page.locator('#result')).toHaveText('');
+      return;
+    }
+    const overlay = await waitForPage(browser, (current) => current.startsWith('app://overlay'));
     const picker = overlay.getByRole('dialog', {
       name: `Choose what ${new URL(server.origin).host} may see`,
     });
