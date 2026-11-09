@@ -16,6 +16,7 @@ When a page could not be loaded, Electron showed an empty page, and a page whose
 
 - **The shell draws the page:** when the main frame of a tab fails to load (except a load that a new navigation stopped) or its renderer is gone, the tab records the problem: its kind, Chromium's name for the cause and the address. The browser hides the tab's view, and the shell shows the problem in its content area, with a button that reloads the tab.
 - **Chromium keeps the history:** the failed load stays Chromium's own history entry. The address bar shows its address, the reload button and shortcut try it again, and Back leaves it. The problem ends with the next page that the tab shows.
+- **Certificates:** a failed load whose cause is the certificate of the site shows a warning instead. It offers the way back and, unless the policy `SSLErrorOverrideAllowed` is `false`, a way on to the page behind a disclosure. Continuing accepts that certificate for that host until the browser quits; certificates of embedded frames are refused without a warning.
 - **Hanging pages:** when a page stops responding to input, a dialog of the system asks whether to wait or to close the page; it closes by itself when the page responds again.
 
 ## Consequences

@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
-import type { BarItem, ShellState, TabProblem, TabView } from '../../shared/ipc/shell-contracts.ts';
+import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
 
@@ -80,6 +80,16 @@ export class AppShell extends LitElement {
     }
     .problem button:hover {
       background: var(--surface-hover);
+    }
+    .problem details {
+      margin-top: var(--space-3);
+    }
+    .problem summary {
+      color: var(--text-2);
+      cursor: pointer;
+    }
+    .problem details p {
+      margin-top: var(--space-2);
     }
     /* The bookmarks bar belongs to the toolbar: the line below the toolbar moves below it. */
     nav:has(+ .bookmarks) {
@@ -495,7 +505,7 @@ export class AppShell extends LitElement {
         </button>
       </nav>
       ${this.renderBookmarksBar(t)}
-      <div class="content">${active?.problem ? this.renderProblem(active.problem) : nothing}</div>
+      <div class="content">${active?.problem ? this.renderProblem(active) : nothing}</div>
     `;
   }
 
@@ -664,9 +674,36 @@ export class AppShell extends LitElement {
     void this.bridge?.invoke('tabs.close', { tabId });
   }
 
-  /** What the active tab shows when it has no page: why, and the way to load it again. */
-  private renderProblem(problem: TabProblem): TemplateResult {
+  /** What the active tab shows when it has no page: why, and the ways on from there. */
+  private renderProblem(tab: TabView): TemplateResult | typeof nothing {
+    const problem = tab.problem;
+    if (problem === null) return nothing;
     const site = hostOf(problem.url);
+    if (problem.kind === 'certificate') {
+      return html`<section class="problem" aria-labelledby="problem-title">
+        <h1 id="problem-title">${this.tp('problem.certificateTitle')}</h1>
+        <p>${this.tp('problem.certificate', { site })}</p>
+        <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
+        ${
+          tab.canGoBack
+            ? html`<button @click=${() => this.action('back')}>${this.tp('problem.back')}</button>`
+            : nothing
+        }
+        ${
+          problem.proceed
+            ? html`<details>
+                <summary>${this.tp('problem.details')}</summary>
+                <p>${this.tp('problem.certificateRisk')}</p>
+                <button
+                  @click=${() => void this.bridge?.invoke('tabs.proceedUnsafely', { tabId: tab.id })}
+                >
+                  ${this.tp('problem.proceed', { site })}
+                </button>
+              </details>`
+            : html`<p>${this.tp('problem.certificateManaged')}</p>`
+        }
+      </section>`;
+    }
     const crashed = problem.kind === 'crashed';
     return html`<section class="problem" aria-labelledby="problem-title">
       <h1 id="problem-title">

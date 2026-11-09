@@ -92,6 +92,8 @@ export interface BrowserWindowOptions {
   readonly logger: Logger;
   /** Shows the context menu of a view; without it, views have none. */
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
+  /** Whether people may continue to a site whose certificate is not trusted. */
+  readonly certificateOverride?: () => boolean;
   /** Asks what to do about a web page that stopped responding to input. */
   readonly onUnresponsive?: (
     window: BrowserWindowController,
@@ -300,6 +302,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     view.setVisible(this.problemOf(id) === null);
     this.layout();
     this.focusContent();
+  }
+
+  /**
+   * Continues to a page whose certificate was refused, once the certificate is accepted.
+   * @param id - The tab.
+   * @param accept - Accepts the certificate that the page's web contents were refused.
+   */
+  proceedUnsafely(id: TabId, accept: (contents: WebContents) => boolean): void {
+    const contents = this.entries.get(id)?.view.webContents;
+    if (this.problemOf(id)?.kind === 'certificate' && contents !== undefined && accept(contents)) {
+      contents.reload();
+    }
   }
 
   /** Why a tab shows no page, or `null` when it shows one. */
@@ -589,7 +603,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
         if (!isMainFrame || code === -3) return;
         const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
-        this.setProblem(id, { kind: 'error', code: name, url: failed });
+        const certificate = code <= -200 && code > -300;
+        this.setProblem(id, {
+          kind: certificate ? 'certificate' : 'error',
+          code: name,
+          url: failed,
+          proceed: certificate && (this.options.certificateOverride?.() ?? false),
+        });
       });
       // Electron reports only the process of the page itself, and the tab has nothing to show
       // once it ended, however it ended: with the sandbox of Linux, a renderer that crashed can
@@ -597,7 +617,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       contents.on('render-process-gone', (_event, details) => {
         if (this.window.isDestroyed() || contents.isDestroyed()) return;
         const code = details.reason.toUpperCase().replaceAll('-', '_');
-        this.setProblem(id, { kind: 'crashed', code, url: contents.getURL() });
+        this.setProblem(id, { kind: 'crashed', code, url: contents.getURL(), proceed: false });
       });
       contents.on('did-navigate', () => this.setProblem(id, null));
       contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));
