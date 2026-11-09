@@ -80,6 +80,32 @@ function notice(metadata: Metadata): string {
   ].join('\n');
 }
 
+/**
+ * Marks the scriptlets that uBlock Origin runs in an isolated world, so the frame preload of
+ * the browser runs them there. The mark has to match the one in `app/src/preload/frame.ts`.
+ */
+export const isolatedScriptletMark = '/*astela:isolated-world*/';
+
+/**
+ * Puts {@link isolatedScriptletMark} in front of the body of every scriptlet whose world is
+ * `ISOLATED`; the engine keeps the world but does not tell it when it hands out scripts.
+ * @param resources - The resources JSON for `updateResources`.
+ */
+export function markIsolatedScriptlets(resources: string): string {
+  const parsed = JSON.parse(resources) as { scriptlets?: unknown };
+  if (!Array.isArray(parsed.scriptlets)) return resources;
+  parsed.scriptlets = parsed.scriptlets.map((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const { body, executionWorld } = item as { body?: unknown; executionWorld?: unknown };
+    return executionWorld === 'ISOLATED' &&
+      typeof body === 'string' &&
+      !body.startsWith(isolatedScriptletMark)
+      ? { ...item, body: `${isolatedScriptletMark}${body}` }
+      : item;
+  });
+  return JSON.stringify(parsed);
+}
+
 /** Builds the engine from lists and scriptlets and writes the data folder. */
 export async function build(options: {
   readonly out: string;
@@ -118,6 +144,7 @@ export async function build(options: {
       : JSON.stringify({ scriptlets: [], resources: [] });
     scriptletSource = { source: 'fixture', license: 'MPL-2.0', count: 0 };
   }
+  resources = markIsolatedScriptlets(resources);
   const engine = FiltersEngine.parse(lists.map(({ text }) => text).join('\n'), {
     enableCompression: true,
     loadCosmeticFilters: true,

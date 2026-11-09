@@ -79,6 +79,7 @@ import {
 import { ImportEnabled } from '../domain/import/import.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
+import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
 import type { UpdateService } from '../domain/updates/update-service.ts';
@@ -217,13 +218,21 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Every request of web content passes the request pipeline; the content blocker is its
   // first step. Its engine loads with the first web page.
   const pipeline = new RequestPipeline();
-  const blocking = (url: string): Blocking =>
-    blockingFor(url, settings.get(ContentBlockerSetting), settings.get(BlockerAllowedSitesSetting));
-  const blocker = new ContentBlocker({
+  // A blocker without filter data shows that it fails where it should block.
+  const blocking = (url: string): Blocking => {
+    const value = blockingFor(
+      url,
+      settings.get(ContentBlockerSetting),
+      settings.get(BlockerAllowedSitesSetting),
+    );
+    return value === 'on' && blocker.status === 'failed' ? 'failed' : value;
+  };
+  const blocker: ContentBlocker = new ContentBlocker({
     dataDir: layout.blockerDir,
     // Off everywhere wins; a page whose address is not known yet is blocked as usual.
     enabled: (page) => settings.get(ContentBlockerSetting) && blocking(page) !== 'off',
     onBlocked: (contentsId) => windows.countBlocked(contentsId),
+    onStatus: () => windows.refreshShells(),
     logger: logger.child('blocker'),
   });
   pipeline.add(blocker);
@@ -390,7 +399,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     popupBlockerMenu(window, position, {
       site,
       blocked: tab.blocked,
-      on: blocking(tab.url) === 'on',
+      on: blocking(tab.url) !== 'off',
+      failed: blocker.status === 'failed',
       available: settings.get(ContentBlockerSetting),
       toggle: () => {
         settings.set(
@@ -401,6 +411,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       },
     });
     return null;
+  });
+
+  router.handle(GetBlockerStatus, async () => {
+    if (settings.get(ContentBlockerSetting)) await blocker.load();
+    return { status: blocker.status };
   });
 
   // The first start of a profile opens the setup guide instead of a new tab page.

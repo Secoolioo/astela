@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { build } from './build.ts';
+import { build, isolatedScriptletMark, markIsolatedScriptlets } from './build.ts';
 import { applyConditions, evaluateCondition, loadList } from './preprocess.ts';
 import { fetchSources, relativeImports, type UboSources } from './scriptlets.ts';
 
@@ -90,6 +90,29 @@ describe('scriptlet sources', () => {
   });
 });
 
+describe('markIsolatedScriptlets', () => {
+  it('marks only the scriptlets of the isolated world, once', () => {
+    const resources = JSON.stringify({
+      scriptlets: [
+        { name: 'a.js', body: 'function a() {}', executionWorld: 'ISOLATED' },
+        { name: 'b.js', body: 'function b() {}', executionWorld: 'MAIN' },
+        { name: 'c.js', body: 'function c() {}' },
+      ],
+      redirects: [],
+    });
+    const marked = markIsolatedScriptlets(resources);
+    const bodies = (JSON.parse(marked) as { scriptlets: { body: string }[] }).scriptlets.map(
+      (item) => item.body,
+    );
+    assert.deepEqual(bodies, [
+      `${isolatedScriptletMark}function a() {}`,
+      'function b() {}',
+      'function c() {}',
+    ]);
+    assert.equal(markIsolatedScriptlets(marked), marked);
+  });
+});
+
 describe('build', () => {
   it('builds a working engine with notices from fixture lists', async () => {
     const out = mkdtempSync(join(tmpdir(), 'blocker-'));
@@ -113,7 +136,12 @@ describe('build', () => {
         classes: ['fixture-ad'],
       });
       assert.match(cosmetics.styles, /\.fixture-ad/);
-      assert.equal(cosmetics.scripts.length, 1);
+      // Five fixture scriptlets apply; the isolated one carries its mark.
+      assert.equal(cosmetics.scripts.length, 5);
+      assert.equal(
+        cosmetics.scripts.filter((script) => script.includes(isolatedScriptletMark)).length,
+        1,
+      );
       assert.match(readFileSync(join(out, 'NOTICE.txt'), 'utf8'), /License: MPL-2.0/);
     } finally {
       rmSync(out, { recursive: true, force: true });

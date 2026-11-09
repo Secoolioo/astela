@@ -1,0 +1,32 @@
+diff --git a/dist/commonjs/filters/cosmetic.js b/dist/commonjs/filters/cosmetic.js
+index e8e99a2b4994bb211c752d7e8f356a6fcf7add10..03bdce35863e1953b8f083702a4a6e5e8c87d2bd 100644
+--- a/dist/commonjs/filters/cosmetic.js
++++ b/dist/commonjs/filters/cosmetic.js
+@@ -814,8 +814,9 @@ class CosmeticFilter {
+         let script = getScriptlet(name);
+         if (script !== undefined) {
+             for (let i = 0; i < args.length; i += 1) {
+-                // escape some characters so they wont get evaluated with escape characters during script injection
+-                const arg = args[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++                // Percent-encoded, the argument cannot leave the template literal it goes into, and
++                // the decodeURIComponent of the assembled script restores it exactly.
++                const arg = encodeURIComponent(args[i]);
+                 script = script.replace(`{{${i + 1}}}`, arg);
+             }
+             return script;
+diff --git a/dist/esm/filters/cosmetic.js b/dist/esm/filters/cosmetic.js
+index 5d0fd9e54166c6c4112058f5ae0233f5705ff9e3..e53f516cf60c98af7ddee369253a2665f4568d88 100644
+--- a/dist/esm/filters/cosmetic.js
++++ b/dist/esm/filters/cosmetic.js
+@@ -810,8 +810,9 @@ export default class CosmeticFilter {
+         let script = getScriptlet(name);
+         if (script !== undefined) {
+             for (let i = 0; i < args.length; i += 1) {
+-                // escape some characters so they wont get evaluated with escape characters during script injection
+-                const arg = args[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++                // Percent-encoded, the argument cannot leave the template literal it goes into, and
++                // the decodeURIComponent of the assembled script restores it exactly.
++                const arg = encodeURIComponent(args[i]);
+                 script = script.replace(`{{${i + 1}}}`, arg);
+             }
+             return script;

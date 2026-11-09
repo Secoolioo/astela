@@ -211,6 +211,9 @@ export class AppShell extends LitElement {
     .blocker[data-state='off'] svg {
       color: var(--text-2);
     }
+    .blocker[data-state='failed'] svg {
+      color: var(--danger);
+    }
     .bookmark[aria-pressed='true'] svg {
       color: var(--accent);
       fill: currentColor;
@@ -431,7 +434,13 @@ export class AppShell extends LitElement {
                 aria-haspopup="menu"
                 @click=${this.openBlockerMenu}
               >
-                ${active.blocking === 'on' ? icons.shield : icons.shieldOff}
+                ${
+                  active.blocking === 'on'
+                    ? icons.shield
+                    : active.blocking === 'failed'
+                      ? icons.shieldAlert
+                      : icons.shieldOff
+                }
                 ${
                   active.blocking === 'on' && active.blocked > 0
                     ? html`<span class="count" aria-hidden="true"
@@ -578,10 +587,13 @@ export class AppShell extends LitElement {
 
   private blockerLabel(tab: TabView): string {
     const params = { count: String(tab.blocked) };
-    return (
-      this.i18n?.t(tab.blocking === 'on' ? 'shell.blockerOn' : 'shell.blockerOff', params) ??
-      'shell.blocker'
-    );
+    const key =
+      tab.blocking === 'on'
+        ? 'shell.blockerOn'
+        : tab.blocking === 'failed'
+          ? 'shell.blockerFailed'
+          : 'shell.blockerOff';
+    return this.i18n?.t(key, params) ?? 'shell.blocker';
   }
 
   /** Opens the content blocker's menu below its button. */
@@ -703,6 +715,13 @@ const icons = {
     <path
       d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"
     />
+  </svg>`,
+  shieldAlert: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"
+    />
+    <path d="M12 8v4" />
+    <path d="M12 16h.01" />
   </svg>`,
   shieldOff: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="m2 2 20 20" />

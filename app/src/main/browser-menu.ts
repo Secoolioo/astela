@@ -50,8 +50,10 @@ export interface BlockerMenuState {
   readonly site: string;
   /** Requests blocked on the page. */
   readonly blocked: number;
-  /** Whether blocking works on the page. */
+  /** Whether blocking is on for the page. */
   readonly on: boolean;
+  /** Whether the blocker has no usable filter data, so it blocks nothing. */
+  readonly failed: boolean;
   /** Whether the blocker is on at all; when it is off, sites cannot be switched. */
   readonly available: boolean;
   /** Turns blocking on the site on or off and reloads the page. */
@@ -72,6 +74,9 @@ export function popupBlockerMenu(
 ): void {
   const i18n = translatorFor(app.getLocale(), process.platform);
   const menu = Menu.buildFromTemplate([
+    ...(state.failed
+      ? [{ label: i18n.t('menu.blockerFailed'), enabled: false }, { type: 'separator' as const }]
+      : []),
     { label: i18n.t('menu.blockedCount', { count: String(state.blocked) }), enabled: false },
     { type: 'separator' },
     {

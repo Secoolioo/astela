@@ -17,6 +17,7 @@
   "menu.newTab": "New &tab",
   "menu.settings": "&Settings",
   "menu.blockedCount": "Blocked on this page: {count}",
+  "menu.blockerFailed": "Not working: the filter data is missing",
   "menu.blockOnSite": "&Block ads on {site}",
   "menu.blockerSettings": "Content blocker &settings",
   "menu.history": "&History",

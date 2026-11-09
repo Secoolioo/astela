@@ -40,6 +40,9 @@ export interface FrameElements {
 
 const noRules: FrameRules = { styles: '', scripts: [], elements: false };
 
+/** Where the content blocker is: not loaded yet, loading, working, or without usable data. */
+export type BlockerStatus = 'idle' | 'loading' | 'ready' | 'failed';
+
 /** Options of the {@link ContentBlocker}. */
 export interface ContentBlockerOptions {
   /** Folder with `engine.bin`, built by `tools/blocker/build.ts`. */
@@ -48,6 +51,8 @@ export interface ContentBlockerOptions {
   readonly enabled: (pageUrl: string) => boolean;
   /** Called for every blocked request, with the id of the tab's web contents. */
   readonly onBlocked?: (webContentsId: number) => void;
+  /** Called when the {@link ContentBlocker.status} changes. */
+  readonly onStatus?: (status: BlockerStatus) => void;
   readonly logger: Logger;
 }
 
@@ -62,6 +67,7 @@ export class ContentBlocker implements RequestInterceptor {
   private engine: Promise<LoadedEngine | undefined> | undefined;
   /** The engine once it has loaded, for the frames, which cannot wait for it. */
   private loaded: LoadedEngine | undefined;
+  private current: BlockerStatus = 'idle';
   private readonly options: ContentBlockerOptions;
 
   /** @param options - Data folder, switch and callbacks. */
@@ -71,8 +77,22 @@ export class ContentBlocker implements RequestInterceptor {
 
   /** Loads the engine; resolves to `undefined` when the data is missing or broken. */
   load(): Promise<LoadedEngine | undefined> {
-    this.engine ??= this.read();
+    if (this.engine === undefined) {
+      this.setStatus('loading');
+      this.engine = this.read();
+    }
     return this.engine;
+  }
+
+  /** Whether the engine has loaded, is loading, or could not load, so the UI can tell. */
+  get status(): BlockerStatus {
+    return this.current;
+  }
+
+  private setStatus(status: BlockerStatus): void {
+    if (status === this.current) return;
+    this.current = status;
+    this.options.onStatus?.(status);
   }
 
   /** The engine while it loads, for a frame that may wait for it; `undefined` otherwise. */
@@ -183,11 +203,14 @@ export class ContentBlocker implements RequestInterceptor {
       const engine = Engine.deserialize(new Uint8Array(bytes));
       this.options.logger.info('Content blocker ready', { bytes: bytes.length });
       this.loaded = { engine, Request };
+      this.setStatus('ready');
       return this.loaded;
     } catch (error) {
-      this.options.logger.warn('Content blocker data is missing or invalid; nothing is blocked', {
-        error: String(error),
-      });
+      this.options.logger.error(
+        'Content blocker data is missing or invalid; nothing is blocked',
+        error,
+      );
+      this.setStatus('failed');
       return undefined;
     }
   }

@@ -18,11 +18,11 @@
   },
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../tools/blocker/ensure.ts && electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "package": "electron-vite build && electron-builder --config electron-builder.config.mjs --publish never",
-    "package:dir": "electron-vite build && electron-builder --config electron-builder.config.mjs --publish never --dir",
+    "package": "node ../tools/blocker/ensure.ts && electron-vite build && electron-builder --config electron-builder.config.mjs --publish never",
+    "package:dir": "node ../tools/blocker/ensure.ts && electron-vite build && electron-builder --config electron-builder.config.mjs --publish never --dir",
     "test:e2e": "playwright test"
   }
 }
