@@ -49,5 +49,18 @@
       "requiresTrust": false
     }
   ],
-  "resources": []
+  "redirects": [
+    {
+      "name": "noop.js",
+      "aliases": ["noopjs"],
+      "body": "(function() {})();",
+      "contentType": "application/javascript"
+    },
+    {
+      "name": "fixture-ima.js",
+      "aliases": [],
+      "body": "window.fixtureIma = { ready: true };",
+      "contentType": "application/javascript"
+    }
+  ]
 }

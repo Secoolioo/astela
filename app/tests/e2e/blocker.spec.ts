@@ -1,5 +1,11 @@
-import { expect, test } from '@playwright/test';
-import { FixtureServer, launch, packageWithoutBlockerData, waitForPage } from './harness.ts';
+import { expect, test, type Page } from '@playwright/test';
+import {
+  FixtureServer,
+  launch,
+  packageWithoutBlockerData,
+  shellState,
+  waitForPage,
+} from './harness.ts';
 
 const server = new FixtureServer();
 
@@ -198,5 +204,45 @@ test('shows when the content blocker has no filter data', async () => {
   } finally {
     await browser.close();
     copy.remove();
+  }
+});
+
+test('serves stand-ins for redirected scripts, removes tracking parameters and adds policies', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const open = async (path: string): Promise<Page> => {
+      await address.fill(`${server.origin}${path}`);
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url.includes(path.split('?')[0] ?? path));
+      await page.waitForLoadState('load');
+      return page;
+    };
+    // A blocked script with a stand-in loads it, so its load event fires, not its error.
+    const page = await open('/redirect.html');
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          events: (window as unknown as { events: string[] }).events,
+          ima: (window as unknown as { fixtureIma?: { ready: boolean } }).fixtureIma?.ready,
+        })),
+      )
+      .toEqual({ events: ['noop:load', 'ima:load'], ima: true });
+    // Tracking parameters leave the addresses of requests and of pages.
+    expect(
+      await page.evaluate(async () => (await fetch('/probe.html?fixture_tracking=1&keep=2')).url),
+    ).toBe(`${server.origin}/probe.html?keep=2`);
+    await address.fill(`${server.origin}/second.html?fixture_tracking=1&keep=2`);
+    await address.press('Enter');
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs[0]?.url)
+      .toBe(`${server.origin}/second.html?keep=2`);
+    // A page with a policy filter runs none of its inline scripts.
+    const policy = await open('/csp.html');
+    expect(
+      await policy.evaluate(() => (window as unknown as { inlineRan?: boolean }).inlineRan),
+    ).toBeUndefined();
+  } finally {
+    await browser.close();
   }
 });

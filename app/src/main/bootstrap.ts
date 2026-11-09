@@ -44,6 +44,7 @@ import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
 import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
+import { serveResources } from '../platform/blocker/resource-protocol.ts';
 import {
   cleanUserAgent,
   guardWebContents,
@@ -246,6 +247,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
       protocolHandler.refuse(s);
+      serveResources(s, (name) => blocker.resource(name));
       hardenSession(s);
       pipeline.attach(s);
       addFramePreload(s);
