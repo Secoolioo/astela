@@ -1,0 +1,3 @@
+! A newsletter box of the fixture pages, hidden when annoyances are hidden.
+127.0.0.1###fixture-newsletter
+||127.0.0.1^*/fixture-annoyance.js$script

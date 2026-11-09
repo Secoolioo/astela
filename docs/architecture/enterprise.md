@@ -207,6 +207,7 @@ Also implemented:
 - `DefaultBrowserSettingEnabled` (boolean): `false` as a mandatory policy keeps users from making Astela the default browser. The [default browser setting](../user/default-browser.md) on the settings page and in the setup guide then shows that the organization manages it and has no Make default button, and the browser refuses the change.
 - `ImportEnabled` (boolean): `false` as a mandatory policy turns off the [import from other browsers](../user/import.md). The settings page and the import step of the setup guide then say that the organization turned it off instead of listing the browsers, and the browser refuses an import.
 - `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.
+- `ContentBlockerCookieNoticesEnabled` and `ContentBlockerAnnoyancesEnabled` (boolean): turn the optional lists of the content blocker against cookie notices and against annoyances on or off, as mandatory or recommended policy, like the settings `contentBlocker.cookieNotices` and `contentBlocker.annoyances`.
 - `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
 

@@ -75,3 +75,49 @@ export const filterLists: readonly FilterList[] = [
     license: 'CC0-1.0 (data from URLhaus) and MIT',
   },
 ];
+
+/** Groups of lists that are off by default and have engines of their own. */
+export const extraListGroups = ['cookies', 'annoyances'] as const;
+
+/** A group of lists that the user can turn on in addition to the default ones. */
+export type ExtraListGroup = (typeof extraListGroups)[number];
+
+const easyList = (id: string, name: string, file: string): FilterList => ({
+  id,
+  name,
+  url: `${uAssetsCdn}${file}`,
+  homepage: easyListHome,
+  license: 'GPL-3.0 or CC-BY-SA-3.0',
+});
+
+/**
+ * Lists that uBlock Origin offers in its categories for cookie notices and annoyances, off
+ * by default (`assets/assets.json` of uBlock Origin 1.75): those of EasyList and of uBlock
+ * Origin itself, from the same repositories as the default lists.
+ */
+export const extraLists: Readonly<Record<ExtraListGroup, readonly FilterList[]>> = {
+  cookies: [
+    easyList('easylist-cookies', 'EasyList – Cookie Notices', 'easylist-cookies.txt'),
+    {
+      id: 'ublock-cookies',
+      name: 'uBlock filters – Cookie Notices',
+      url: `${uAssets}annoyances-cookies.txt`,
+      homepage: ublockHome,
+      license: 'GPL-3.0',
+    },
+  ],
+  annoyances: [
+    easyList('easylist-annoyances', 'EasyList – Other Annoyances', 'easylist-annoyances.txt'),
+    easyList('easylist-chat', 'EasyList – Chat Widgets', 'easylist-chat.txt'),
+    easyList('easylist-newsletters', 'EasyList – Newsletter Notices', 'easylist-newsletters.txt'),
+    easyList('easylist-notifications', 'EasyList – Notifications', 'easylist-notifications.txt'),
+    easyList('easylist-social', 'EasyList – Social Widgets', 'easylist-social.txt'),
+    {
+      id: 'ublock-annoyances',
+      name: 'uBlock filters – Annoyances',
+      url: `${uAssets}annoyances.txt`,
+      homepage: ublockHome,
+      license: 'GPL-3.0',
+    },
+  ],
+};

@@ -63,6 +63,9 @@ const noRules: FrameRules = { styles: '', scripts: [], extended: [], elements: f
 /** Where the content blocker is: not loaded yet, loading, working, or without usable data. */
 export type BlockerStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
+/** A group of optional lists with an engine of its own: cookie notices or annoyances. */
+export type ExtraLists = 'cookies' | 'annoyances';
+
 /** Options of the {@link ContentBlocker}. */
 export interface ContentBlockerOptions {
   /** Folder with `engine.bin`, built by `tools/blocker/build.ts`. */
@@ -73,6 +76,8 @@ export interface ContentBlockerOptions {
   readonly onBlocked?: (webContentsId: number) => void;
   /** Called when the {@link ContentBlocker.status} changes. */
   readonly onStatus?: (status: BlockerStatus) => void;
+  /** The groups of optional lists that are on; read for every request and frame. */
+  readonly extras?: () => readonly ExtraLists[];
   readonly logger: Logger;
 }
 
@@ -88,6 +93,9 @@ export class ContentBlocker implements RequestInterceptor {
   /** The engine once it has loaded, for the frames, which cannot wait for it. */
   private loaded: LoadedEngine | undefined;
   private current: BlockerStatus = 'idle';
+  /** The engines of optional lists by group, once asked for; `null` without usable data. */
+  private readonly extras = new Map<ExtraLists, Promise<FiltersEngine | null>>();
+  private readonly loadedExtras = new Map<ExtraLists, FiltersEngine | null>();
   private readonly options: ContentBlockerOptions;
 
   /** @param options - Data folder, switch and callbacks. */
@@ -159,10 +167,15 @@ export class ContentBlocker implements RequestInterceptor {
       sourceUrl,
       type,
     });
-    const result = loaded.engine.match(request);
-    if (!result.match) {
+    const main = loaded.engine.match(request);
+    const result = main.match
+      ? main
+      : this.extraEngines(loaded)
+          .map((engine) => engine.match(request))
+          .find((extra) => extra.match);
+    if (result === undefined) {
       // Tracking parameters leave the address of a request that is not blocked.
-      const rewritten = result.rewrite?.url;
+      const rewritten = main.rewrite?.url;
       return rewritten === undefined || rewritten === details.url
         ? undefined
         : { redirectURL: rewritten };
@@ -222,15 +235,22 @@ export class ContentBlocker implements RequestInterceptor {
     if (page === undefined) {
       return noRules;
     }
-    const { styles, scripts, extended } = page.loaded.engine.getCosmeticsFilters({
-      ...page.address,
-      getRulesFromDOM: false,
-      getExtendedRules: true,
-    });
+    const results = [page.loaded.engine, ...this.extraEngines(page.loaded)].map((engine) =>
+      engine.getCosmeticsFilters({
+        ...page.address,
+        getRulesFromDOM: false,
+        getExtendedRules: true,
+      }),
+    );
     return {
-      styles,
-      scripts,
-      extended: extended.map(({ ast, attribute, directive }) => ({ ast, attribute, directive })),
+      styles: results
+        .map((result) => result.styles)
+        .filter((styles) => styles !== '')
+        .join('\n'),
+      scripts: results.flatMap((result) => result.scripts),
+      extended: results.flatMap((result) =>
+        result.extended.map(({ ast, attribute, directive }) => ({ ast, attribute, directive })),
+      ),
       elements: true,
     };
   }
@@ -246,17 +266,23 @@ export class ContentBlocker implements RequestInterceptor {
     if (page === undefined) {
       return '';
     }
-    return page.loaded.engine.getCosmeticsFilters({
-      ...page.address,
-      classes: [...elements.classes],
-      ids: [...elements.ids],
-      hrefs: [...elements.hrefs],
-      getBaseRules: false,
-      getInjectionRules: false,
-      getExtendedRules: false,
-      getRulesFromHostname: false,
-      getRulesFromDOM: true,
-    }).styles;
+    return [page.loaded.engine, ...this.extraEngines(page.loaded)]
+      .map(
+        (engine) =>
+          engine.getCosmeticsFilters({
+            ...page.address,
+            classes: [...elements.classes],
+            ids: [...elements.ids],
+            hrefs: [...elements.hrefs],
+            getBaseRules: false,
+            getInjectionRules: false,
+            getExtendedRules: false,
+            getRulesFromHostname: false,
+            getRulesFromDOM: true,
+          }).styles,
+      )
+      .filter((styles) => styles !== '')
+      .join('\n');
   }
 
   /**
@@ -293,6 +319,60 @@ export class ContentBlocker implements RequestInterceptor {
     return loaded.popups.match(request).match;
   }
 
+  /**
+   * Loads the engines of the optional lists that are on, so that they apply from the next
+   * request on; a group whose engine has loaded already costs nothing.
+   */
+  async loadExtras(): Promise<void> {
+    const loaded = await this.load();
+    if (loaded === undefined) return;
+    await Promise.all(
+      (this.options.extras?.() ?? []).map((group) => this.loadExtra(loaded, group)),
+    );
+  }
+
+  /**
+   * The engines of the optional lists that are on and have loaded. A group that is on but
+   * not loaded yet starts to load and applies from a later request on, because requests and
+   * frames do not wait for it.
+   */
+  private extraEngines(loaded: LoadedEngine): FiltersEngine[] {
+    const engines: FiltersEngine[] = [];
+    for (const group of this.options.extras?.() ?? []) {
+      const engine = this.loadedExtras.get(group);
+      if (engine === undefined) void this.loadExtra(loaded, group);
+      else if (engine !== null) engines.push(engine);
+    }
+    return engines;
+  }
+
+  private loadExtra(loaded: LoadedEngine, group: ExtraLists): Promise<FiltersEngine | null> {
+    let extra = this.extras.get(group);
+    if (extra === undefined) {
+      extra = readFile(join(this.options.dataDir, `${group}.bin`))
+        .then((bytes) => {
+          const engine = loaded.Engine.deserialize(new Uint8Array(bytes));
+          // The optional engines use the scriptlets and stand-ins of the main engine.
+          engine.resources = loaded.engine.resources;
+          this.options.logger.info('Optional filter lists ready', { group, bytes: bytes.length });
+          return engine;
+        })
+        .catch((error: unknown) => {
+          this.options.logger.warn('Optional filter lists are missing or invalid', {
+            group,
+            error: String(error),
+          });
+          return null;
+        })
+        .then((engine) => {
+          this.loadedExtras.set(group, engine);
+          return engine;
+        });
+      this.extras.set(group, extra);
+    }
+    return extra;
+  }
+
   /** The loaded engine and the parts of an address that cosmetic rules need. */
   private page(
     url: string,
@@ -320,9 +400,11 @@ export class ContentBlocker implements RequestInterceptor {
       const popups =
         popupBytes === undefined ? undefined : Engine.deserialize(new Uint8Array(popupBytes));
       this.options.logger.info('Content blocker ready', { bytes: bytes.length });
-      this.loaded = { engine, popups, Request };
+      const loaded: LoadedEngine = { engine, popups, Engine, Request };
+      this.loaded = loaded;
       this.setStatus('ready');
-      return this.loaded;
+      for (const group of this.options.extras?.() ?? []) void this.loadExtra(loaded, group);
+      return loaded;
     } catch (error) {
       this.options.logger.error(
         'Content blocker data is missing or invalid; nothing is blocked',
@@ -339,6 +421,7 @@ interface LoadedEngine {
   readonly engine: FiltersEngine;
   /** An engine of the popup filters alone, matched against the addresses of popups. */
   readonly popups: FiltersEngine | undefined;
+  readonly Engine: typeof FiltersEngine;
   readonly Request: typeof EngineRequest;
 }
 

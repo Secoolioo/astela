@@ -1,0 +1,2 @@
+! A cookie notice of the fixture pages, hidden when cookie notices are hidden.
+127.0.0.1###fixture-cookie-notice

@@ -10,6 +10,8 @@ The shield next to the menu button shows how many requests the blocker stopped o
 
 If the filter data of the installation is missing or damaged, the blocker blocks nothing: the shield turns red, and the settings page says so. Reinstalling Astela repairs it.
 
+Under [Settings](settings.md) → Privacy, **Hide cookie notices** and **Hide annoyances** add the lists that uBlock Origin offers against cookie notices and against newsletter boxes, chat and social widgets, notifications and other annoyances; both are off by default and apply from the next page you load. **Sites without blocking** lists the sites on which the blocker is off: remove one there, or add one by its name or address.
+
 To turn the blocker off everywhere, open [Settings](settings.md) → Privacy and switch off **Block ads and trackers**. Organizations can set it with the policy `ContentBlockerEnabled`.
 
 The licenses of the lists and of uBlock Origin's scriptlets are in `NOTICE.txt` in the `blocker` folder of the installation.

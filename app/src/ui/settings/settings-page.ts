@@ -27,6 +27,7 @@ export class SettingsPage extends LitElement {
     searchError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
+    siteError: { state: true },
   };
 
   /** Styles of the page, scoped to its shadow root. */
@@ -94,6 +95,7 @@ export class SettingsPage extends LitElement {
       }
       select,
       input[type='url'],
+      input[type='text'],
       button {
         height: 32px;
         padding: 0 var(--space-2);
@@ -117,6 +119,25 @@ export class SettingsPage extends LitElement {
         flex-direction: column;
         align-items: stretch;
       }
+      .sites {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .sites li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-1) 0;
+      }
+      .add-site {
+        display: flex;
+        gap: var(--space-2);
+      }
+      .add-site input {
+        flex: 1;
+      }
       input[role='switch'] {
         width: 16px;
         height: 16px;
@@ -135,6 +156,8 @@ export class SettingsPage extends LitElement {
   declare customSearch: boolean;
   /** Whether the content blocker has no usable filter data. */
   declare blockerFailed: boolean;
+  /** Whether the last site to add was not a site name. */
+  declare siteError: boolean;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -145,6 +168,7 @@ export class SettingsPage extends LitElement {
     this.searchError = false;
     this.customSearch = false;
     this.blockerFailed = false;
+    this.siteError = false;
   }
 
   override connectedCallback(): void {
@@ -197,6 +221,9 @@ export class SettingsPage extends LitElement {
       <h2 id="privacy">${t('settings.privacy')}</h2>
       <section aria-labelledby="privacy">
         ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
+        ${this.renderToggle('contentBlocker.cookieNotices', 'settings.cookieNotices', 'settings.cookieNoticesNote')}
+        ${this.renderToggle('contentBlocker.annoyances', 'settings.annoyances', 'settings.annoyancesNote')}
+        ${this.renderAllowedSites()}
         ${
           this.blockerFailed
             ? html`<p class="row note problem" role="alert">
@@ -265,6 +292,77 @@ export class SettingsPage extends LitElement {
         )}
       </div>
     </div>`;
+  }
+
+  /** The sites on which the content blocker is off, with a way to remove and to add them. */
+  private renderAllowedSites(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('contentBlocker.allowedSites');
+    const sites = Array.isArray(setting?.value)
+      ? setting.value.filter((site): site is string => typeof site === 'string')
+      : [];
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="allowed-sites">${t('settings.allowedSites')}</span>
+        <span class="note">
+          ${setting?.locked === true ? t('settings.managed') : t('settings.allowedSitesNote')}
+        </span>
+      </span>
+      ${
+        sites.length === 0
+          ? html`<span class="note">${t('settings.allowedSitesNone')}</span>`
+          : html`<ul class="sites" aria-labelledby="allowed-sites">
+              ${sites.map(
+                (site) =>
+                  html`<li>
+                    <span>${site}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.allowedSitesRemove', { site })}
+                      @click=${() =>
+                        void this.client?.set(
+                          'contentBlocker.allowedSites',
+                          sites.filter((other) => other !== site),
+                        )}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form class="add-site" @submit=${(event: SubmitEvent) => this.addSite(event, sites)}>
+        <input
+          type="text"
+          name="site"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="example.com"
+          aria-label=${t('settings.allowedSitesAdd')}
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${this.siteError ? html`<span class="error" role="alert">${t('settings.allowedSitesInvalid')}</span>` : nothing}
+    </div>`;
+  }
+
+  /** Adds the site of the form's field to the sites without blocking. */
+  private addSite(event: SubmitEvent, sites: readonly string[]): void {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = form.elements.namedItem('site');
+    if (!(field instanceof HTMLInputElement)) return;
+    const site = hostOf(field.value);
+    this.siteError = site === undefined;
+    if (site === undefined) return;
+    field.value = '';
+    if (!sites.includes(site)) {
+      void this.client?.set('contentBlocker.allowedSites', [...sites, site].toSorted());
+    }
   }
 
   private renderToggle(key: string, label: MessageKey, note: MessageKey): TemplateResult {
@@ -404,4 +502,21 @@ export class SettingsPage extends LitElement {
       this.searchError = !(await this.client.set('search.urlTemplate', input.value.trim()));
     }
   }
+}
+
+/**
+ * The host name of what someone typed as a site, such as `example.com` for
+ * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
+ * @param input - The text of the field.
+ */
+function hostOf(input: string): string | undefined {
+  const text = input.trim().toLowerCase();
+  let host = text;
+  try {
+    host = new URL(text.includes('://') ? text : `http://${text}`).hostname;
+  } catch {
+    return undefined;
+  }
+  host = host.replace(/^www\./, '');
+  return /^[a-z0-9.:[\]-]{1,253}$/.test(host) && host.includes('.') ? host : undefined;
 }

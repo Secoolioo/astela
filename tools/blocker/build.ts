@@ -15,7 +15,13 @@ import { FiltersEngine } from '@ghostery/adblocker';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { filterLists, type FilterList } from './lists.ts';
+import {
+  extraListGroups,
+  extraLists,
+  filterLists,
+  type ExtraListGroup,
+  type FilterList,
+} from './lists.ts';
 import { loadList } from './preprocess.ts';
 import { fetchRedirects } from './redirects.ts';
 import { convertScriptlets, fetchSources, type UboSources } from './scriptlets.ts';
@@ -65,6 +71,8 @@ interface Metadata {
     url: string;
     sha256: string;
     bytes: number;
+    /** The group of an optional list, which has an engine of its own. */
+    group?: ExtraListGroup;
   })[];
   readonly scriptlets: {
     readonly source: string;
@@ -89,7 +97,7 @@ function notice(metadata: Metadata): string {
     'unchanged in substance, separate from its own code.',
     '',
     ...metadata.lists.flatMap((list) => [
-      list.name,
+      list.group === undefined ? list.name : `${list.name} (optional, ${list.group})`,
       `  Source: ${list.url}`,
       `  Home: ${list.homepage}`,
       `  License: ${list.license}`,
@@ -162,13 +170,18 @@ export async function build(options: {
   readonly out: string;
   readonly fixture?: string;
 }): Promise<Metadata> {
-  const lists: { list: FilterList; text: string }[] = [];
+  const lists: { list: FilterList; text: string; group?: ExtraListGroup }[] = [];
   let resources: string;
   let scriptletSource: Metadata['scriptlets'];
   let redirectSource: Metadata['redirects'];
   if (options.fixture === undefined) {
     for (const list of filterLists) {
       lists.push({ list, text: await loadList(list.url, fetchText) });
+    }
+    for (const group of extraListGroups) {
+      for (const list of extraLists[group]) {
+        lists.push({ list, text: await loadList(list.url, fetchText), group });
+      }
     }
     const sources = JSON.parse(readFileSync(sourcesFile, 'utf8')) as UboSources;
     const { files } = await fetchSources(sources, fetchText);
@@ -186,15 +199,26 @@ export async function build(options: {
       count: redirects.length,
     };
   } else {
-    for (const name of readdirSync(options.fixture)
-      .filter((file) => file.endsWith('.txt'))
-      .toSorted()) {
-      const text = readFileSync(join(options.fixture, name), 'utf8');
-      const id = name.replace(/\.txt$/, '');
-      lists.push({
-        list: { id, name: id, url: `fixture:${name}`, homepage: 'fixture', license: 'MPL-2.0' },
-        text,
-      });
+    // The lists of the folder are the default ones; those of its subfolders `cookies` and
+    // `annoyances` belong to these groups.
+    const fixture = options.fixture;
+    for (const group of [undefined, ...extraListGroups]) {
+      const folder = group === undefined ? fixture : join(fixture, group);
+      if (!existsSync(folder)) continue;
+      for (const name of readdirSync(folder)
+        .filter((file) => file.endsWith('.txt'))
+        .toSorted()) {
+        const text = readFileSync(join(folder, name), 'utf8');
+        const id = name.replace(/\.txt$/, '');
+        const list = {
+          id,
+          name: id,
+          url: `fixture:${name}`,
+          homepage: 'fixture',
+          license: 'MPL-2.0',
+        };
+        lists.push(group === undefined ? { list, text } : { list, text, group });
+      }
     }
     const fixtureResources = join(options.fixture, 'resources.json');
     resources = existsSync(fixtureResources)
@@ -204,7 +228,10 @@ export async function build(options: {
     redirectSource = { source: 'fixture', license: 'MPL-2.0', count: 0 };
   }
   resources = markIsolatedScriptlets(resources);
-  const allLists = lists.map((list) => list.text).join('\n');
+  const allLists = lists
+    .filter((list) => list.group === undefined)
+    .map((list) => list.text)
+    .join('\n');
   const engine = FiltersEngine.parse(allLists, {
     enableCompression: true,
     loadCosmeticFilters: true,
@@ -221,7 +248,7 @@ export async function build(options: {
   }
   const metadata: Metadata = {
     builtAt: new Date().toISOString(),
-    lists: lists.map(({ list, text }) => ({
+    lists: lists.map(({ list, text, group }) => ({
       id: list.id,
       name: list.name,
       url: list.url,
@@ -229,6 +256,7 @@ export async function build(options: {
       license: list.license,
       sha256: sha256(text),
       bytes: text.length,
+      ...(group === undefined ? {} : { group }),
     })),
     scriptlets: scriptletSource,
     redirects: redirectSource,
@@ -236,6 +264,23 @@ export async function build(options: {
   mkdirSync(options.out, { recursive: true });
   writeFileSync(join(options.out, 'engine.bin'), engine.serialize());
   writeFileSync(join(options.out, 'popups.bin'), popupEngine.serialize());
+  // Each optional group gets an engine of its own, which shares the resources of the main
+  // engine when the browser loads it. It also carries the exceptions of the unbreak list,
+  // which fix pages that any of uBlock Origin's lists break.
+  const unbreak = lists.find(({ list }) => list.id === 'ublock-unbreak')?.text ?? '';
+  for (const group of extraListGroups) {
+    const text = [
+      ...lists.filter((list) => list.group === group).map((list) => list.text),
+      unbreak,
+    ].join('\n');
+    const extra = FiltersEngine.parse(text, {
+      enableCompression: true,
+      loadCosmeticFilters: true,
+      loadNetworkFilters: true,
+      loadExtendedSelectors: true,
+    });
+    writeFileSync(join(options.out, `${group}.bin`), extra.serialize());
+  }
   writeFileSync(join(options.out, 'filters.json'), `${JSON.stringify(metadata, null, 2)}\n`);
   writeFileSync(join(options.out, 'NOTICE.txt'), notice(metadata));
   return metadata;

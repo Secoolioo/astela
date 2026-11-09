@@ -81,6 +81,30 @@ export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   ),
   default: [],
   scope: 'global',
+  ui: { section: 'privacy', control: 'list', order: 4 },
+});
+
+/** Whether the content blocker also hides cookie notices, with the optional lists for them. */
+export const BlockerCookieNoticesSetting = defineSetting<boolean>({
+  key: 'contentBlocker.cookieNotices',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'ContentBlockerCookieNoticesEnabled', recommended: true },
+  ui: { section: 'privacy', control: 'toggle', order: 2 },
+});
+
+/**
+ * Whether the content blocker also hides annoyances, such as newsletter and chat boxes, with
+ * the optional lists for them.
+ */
+export const BlockerAnnoyancesSetting = defineSetting<boolean>({
+  key: 'contentBlocker.annoyances',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'ContentBlockerAnnoyancesEnabled', recommended: true },
+  ui: { section: 'privacy', control: 'toggle', order: 3 },
 });
 
 /** What the browser shows when it starts: the tabs of the last session, or a new tab page. */
@@ -119,6 +143,8 @@ export const coreSettings = [
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,
+  BlockerCookieNoticesSetting,
+  BlockerAnnoyancesSetting,
   StartupSetting,
   SetupShownSetting,
   BookmarksBarSetting,

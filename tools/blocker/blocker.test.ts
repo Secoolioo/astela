@@ -114,13 +114,28 @@ describe('markIsolatedScriptlets', () => {
   });
 });
 
+/** Whether an engine hides the element with an id on the fixture pages. */
+function hidden(engine: FiltersEngine, id: string): boolean {
+  return engine
+    .getCosmeticsFilters({
+      url: 'http://127.0.0.1:8080/extras.html',
+      hostname: '127.0.0.1',
+      domain: '127.0.0.1',
+    })
+    .styles.includes(`#${id}`);
+}
+
 describe('build', () => {
   it('builds a working engine with notices from fixture lists', async () => {
     const out = mkdtempSync(join(tmpdir(), 'blocker-'));
     try {
       const fixture = resolve(import.meta.dirname, '../../app/tests/e2e/fixtures/blocker');
       const metadata = await build({ out, fixture });
-      assert.equal(metadata.lists.length, 1);
+      // The lists of the subfolders are the optional groups, with engines of their own.
+      assert.deepEqual(
+        metadata.lists.map((list) => list.group),
+        [undefined, 'cookies', 'annoyances'],
+      );
       const engine = FiltersEngine.deserialize(readFileSync(join(out, 'engine.bin')));
       const blocked = (url: string, type: 'script' | 'image'): boolean =>
         engine.match(
@@ -178,7 +193,15 @@ describe('build', () => {
       assert.equal(popup('http://127.0.0.1:8080/second.html'), false);
       // The main engine leaves the popup filter out, so the page itself still loads.
       assert.equal(blocked('http://127.0.0.1:8080/fixture-popup.html', 'script'), false);
+      // The main engine leaves the optional rules to their own engines.
+      const cookies = FiltersEngine.deserialize(readFileSync(join(out, 'cookies.bin')));
+      const annoyances = FiltersEngine.deserialize(readFileSync(join(out, 'annoyances.bin')));
+      assert.equal(hidden(engine, 'fixture-cookie-notice'), false);
+      assert.equal(hidden(cookies, 'fixture-cookie-notice'), true);
+      assert.equal(hidden(annoyances, 'fixture-newsletter'), true);
+      assert.equal(hidden(cookies, 'fixture-newsletter'), false);
       assert.match(readFileSync(join(out, 'NOTICE.txt'), 'utf8'), /License: MPL-2.0/);
+      assert.match(readFileSync(join(out, 'NOTICE.txt'), 'utf8'), /optional, cookies/);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

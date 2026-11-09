@@ -60,6 +60,8 @@ import {
   BookmarksBarSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
+  BlockerAnnoyancesSetting,
+  BlockerCookieNoticesSetting,
   ContentBlockerSetting,
   SearchUrlTemplate,
   SetupShownSetting,
@@ -229,6 +231,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     enabled: (page) => settings.get(ContentBlockerSetting) && blocking(page) !== 'off',
     onBlocked: (contentsId) => windows.countBlocked(contentsId),
     onStatus: () => windows.refreshShells(),
+    extras: () => [
+      ...(settings.get(BlockerCookieNoticesSetting) ? (['cookies'] as const) : []),
+      ...(settings.get(BlockerAnnoyancesSetting) ? (['annoyances'] as const) : []),
+    ],
     logger: logger.child('blocker'),
   });
   pipeline.add(blocker);
@@ -385,6 +391,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   ]);
   settings.onDidChange(({ keys }) => {
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
+    // Optional lists that were turned on load at once, so the next page has them.
+    if (
+      blocker.status === 'ready' &&
+      keys.some(
+        (key) => key === BlockerCookieNoticesSetting.key || key === BlockerAnnoyancesSetting.key,
+      )
+    ) {
+      void blocker.loadExtras();
+    }
   });
   router.handle(OpenBookmarkFolder, async ({ id, from, x, y }, { sender }) => {
     const window = windows.forShell(sender);
