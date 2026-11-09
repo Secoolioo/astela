@@ -6,14 +6,16 @@ import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 export type TabId = string;
 
 /**
- * Why a tab shows no page: the page could not be loaded (`error`) or the process that
- * showed it is gone (`crashed`). `code` is Chromium's name for the cause, such as
- * `ERR_CONNECTION_REFUSED`, and `url` the address of the page.
+ * Why a tab shows no page: the page could not be loaded (`error`), the certificate of its
+ * site is not trusted (`certificate`), or the process that showed it is gone (`crashed`).
+ * `code` is Chromium's name for the cause, such as `ERR_CONNECTION_REFUSED`, `url` the
+ * address of the page, and `proceed` whether the user may continue to it after a warning.
  */
 export interface TabProblem {
-  readonly kind: 'error' | 'crashed';
+  readonly kind: 'error' | 'certificate' | 'crashed';
   readonly code: string;
   readonly url: string;
+  readonly proceed: boolean;
 }
 
 /** The state of one tab. */

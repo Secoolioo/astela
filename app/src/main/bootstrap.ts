@@ -8,6 +8,7 @@ import {
   CloseTab,
   GetShellState,
   OpenBlockerPopover,
+  ProceedUnsafely,
   OpenBookmarkFolder,
   ToggleBookmark,
   OpenMenu,
@@ -75,6 +76,8 @@ import {
   DefaultBrowserSettingEnabled,
 } from '../domain/default-browser/default-browser.ts';
 import { ImportEnabled } from '../domain/import/import.ts';
+import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
+import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
@@ -156,6 +159,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       ...updatePolicies,
       SetupGuideEnabled,
       ImportEnabled,
+      SSLErrorOverrideAllowed,
       DefaultBrowserSettingEnabled,
     ],
     createPolicyProviders(brand, process.platform),
@@ -342,6 +346,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     router,
     logger,
     onContextMenu,
+    certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
     onUnresponsive: (window, tabId, contents) =>
       void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
         askAboutHangingPage(window, tabId, contents),
@@ -386,6 +391,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate);
+  // Certificates that the user accepted after the warning hold for this session.
+  const certificates = new CertificateExceptions(
+    () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+  );
+  certificates.attach(app);
+  router.handle(ProceedUnsafely, ({ tabId }, { sender }) => {
+    windows.forShell(sender)?.proceedUnsafely(tabId, (contents) => certificates.allow(contents));
+    return null;
+  });
   registerNewTabHandlers(router, windows, searchTemplate);
   const shellSettings = new Set([
     BookmarksBarSetting.key,

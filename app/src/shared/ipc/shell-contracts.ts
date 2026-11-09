@@ -8,13 +8,16 @@ const Empty = v.strictObject({});
 const Done = v.null();
 
 /**
- * Why a tab shows no page: it could not be loaded (`error`) or its renderer is gone
- * (`crashed`). `code` is Chromium's name for the cause, such as `ERR_CONNECTION_REFUSED`.
+ * Why a tab shows no page: it could not be loaded (`error`), the certificate of its site is
+ * not trusted (`certificate`), or its renderer is gone (`crashed`). `code` is Chromium's
+ * name for the cause, such as `ERR_CONNECTION_REFUSED`; `proceed` tells whether the user
+ * may continue to the page after the warning.
  */
 export const TabProblem = v.strictObject({
-  kind: v.picklist(['error', 'crashed']),
+  kind: v.picklist(['error', 'certificate', 'crashed']),
   code: v.pipe(v.string(), v.regex(/^[A-Z0-9_]{1,64}$/)),
   url: v.pipe(v.string(), v.maxLength(8192)),
+  proceed: v.boolean(),
 });
 /** Why a tab shows no page. */
 export type TabProblem = v.InferOutput<typeof TabProblem>;
@@ -151,6 +154,14 @@ export const OpenMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Accepts the certificate that a tab's page was refused, for this session, and reloads it. */
+export const ProceedUnsafely = defineRequest({
+  channel: 'tabs.proceedUnsafely',
+  request: v.strictObject({ tabId: TabId }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Opens the content blocker's popover for the active tab at its button. */
 export const OpenBlockerPopover = defineRequest({
   channel: 'shell.openBlockerPopover',
@@ -207,6 +218,7 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   SetShellInsets,
   OpenMenu,
   OpenBlockerPopover,
+  ProceedUnsafely,
   ToggleBookmark,
   OpenBookmarkFolder,
 ];

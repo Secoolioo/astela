@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { FixtureServer, launch, shellState, waitForPage, type Browser } from './harness.ts';
+import { selfSignedCertificate } from './tls.ts';
 
 const server = new FixtureServer();
 
@@ -131,5 +133,40 @@ test('asks whether to wait for a page that does not respond, or to close it', as
     ).toEqual([`${new URL(server.origin).host} isn't responding`]);
   } finally {
     await browser.close();
+  }
+});
+
+test('warns about a certificate that is not trusted and continues only when asked', async () => {
+  const secure = createSecureServer(selfSignedCertificate(), (_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<!doctype html><title>Secure</title><p>Behind the warning</p>');
+  });
+  await new Promise<void>((done) => secure.listen(0, '127.0.0.1', done));
+  const { port } = secure.address() as AddressInfo;
+  const browser = await launch();
+  try {
+    const url = `https://127.0.0.1:${port}/`;
+    await open(browser, url);
+    const problem = browser.shell.getByRole('region', { name: "Your connection isn't private" });
+    await expect(problem).toBeVisible();
+    await expect(problem).toContainText('Error: ERR_CERT_AUTHORITY_INVALID');
+    expect(await pageShown(browser)).toBe(false);
+    const proceed = problem.getByRole('button', { name: `Continue to 127.0.0.1:${port}` });
+    await expect(proceed).toBeHidden();
+    await problem.getByText('Details').click();
+    await proceed.click();
+    await expect(problem).toBeHidden();
+    const page = await waitForPage(browser, (current) => current === url);
+    await expect(page.getByText('Behind the warning')).toBeVisible();
+    // The exception holds for the rest of the session.
+    await open(browser, `${server.origin}/second.html`);
+    await waitForPage(browser, (current) => current.endsWith('/second.html'));
+    await open(browser, `${url}again.html`);
+    await waitForPage(browser, (current) => current === `${url}again.html`);
+    expect(await pageShown(browser)).toBe(true);
+    await expect(problem).toBeHidden();
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => secure.close(() => done()));
   }
 });
