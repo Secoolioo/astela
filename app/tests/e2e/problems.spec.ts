@@ -72,7 +72,11 @@ test('shows a page whose renderer crashed and loads it again', async () => {
   try {
     const url = `${server.origin}/second.html`;
     await open(browser, url);
-    await waitForPage(browser, (current) => current === url);
+    const page = await waitForPage(browser, (current) => current === url);
+    // On Linux, Chromium asks the renderer of the shown page to crash, so the page must have
+    // one: its document has loaded and its view is in the window.
+    await expect.poll(() => page.evaluate(() => document.readyState)).toBe('complete');
+    await expect.poll(() => pageShown(browser)).toBe(true);
     await browser.main.evaluate(({ webContents }, address) => {
       webContents
         .getAllWebContents()
