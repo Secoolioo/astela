@@ -1,7 +1,7 @@
 import type { Session } from 'electron';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
-import type { DataServiceClient } from '../platform/electron/data-service-client.ts';
+import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { WindowManager } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { Bookmarks } from './bookmarks.ts';
@@ -20,7 +20,7 @@ export interface PageDependencies {
   readonly definitions: readonly SettingDefinition<unknown>[];
   /** Session of the browser's own views, whose pages receive changes. */
   readonly internal: Session;
-  readonly data: DataServiceClient;
+  readonly data: DataClient;
   readonly bookmarks: Bookmarks;
   readonly windows: WindowManager;
   /** Whether a policy allows the import from other browsers. */

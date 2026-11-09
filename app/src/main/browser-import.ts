@@ -1,6 +1,6 @@
 import { FindBrowsers, ImportBrowser } from '../shared/ipc/import-contracts.ts';
 import type { Bookmarks } from './bookmarks.ts';
-import type { DataServiceClient } from '../platform/electron/data-service-client.ts';
+import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { WindowManager } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
@@ -16,7 +16,7 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
  */
 export function connectBrowserImport(
   router: IpcRouter,
-  data: DataServiceClient,
+  data: DataClient,
   bookmarks: Bookmarks,
   windows: WindowManager,
   enabled: () => boolean,

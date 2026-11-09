@@ -2,7 +2,7 @@ import { webContents, type Session } from 'electron';
 import { BookmarksChanged } from '../shared/ipc/bookmarks-contracts.ts';
 import { bookmarkRoots } from '../shared/bookmarks.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
-import type { DataServiceClient } from '../platform/electron/data-service-client.ts';
+import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
 /**
@@ -17,7 +17,7 @@ export class Bookmarks {
   private loaded: Promise<void> | undefined;
   /** Whether the bookmarks loaded at least once, so the cache tells which pages have one. */
   private ready = false;
-  private readonly data: DataServiceClient;
+  private readonly data: DataClient;
   private readonly router: IpcRouter;
   private readonly internal: Session;
   private readonly onChange: () => void;
@@ -31,7 +31,7 @@ export class Bookmarks {
    * @param logger - Receives failures.
    */
   constructor(
-    data: DataServiceClient,
+    data: DataClient,
     router: IpcRouter,
     internal: Session,
     onChange: () => void,

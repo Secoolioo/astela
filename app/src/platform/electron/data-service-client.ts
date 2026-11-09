@@ -7,6 +7,9 @@ const failedStartLimit = 3;
 /** How long the service rests after failed starts, in milliseconds. */
 const restMs = 60_000;
 
+/** The calls of the data service, as its users see them. */
+export type DataClient = Pick<DataServiceClient, 'call' | 'dispose'>;
+
 /**
  * Talks to the data service. The service starts with the first call, outside the start-up
  * path, and starts again with the next call if it ever stops. A service that keeps failing,
