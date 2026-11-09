@@ -55,9 +55,13 @@
 html,
 body {
   margin: 0;
-  height: 100%;
-  overflow: hidden;
   background: var(--surface-0);
   color: var(--text-1);
   font: var(--font-size-ui) / 16px var(--font-ui);
+}
+
+/* The browser's own pages scroll like web pages; the shell fills its window instead. */
+html {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }

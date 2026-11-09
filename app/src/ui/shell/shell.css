@@ -1,0 +1,7 @@
+/* The shell fills its window and never scrolls; the page below it does. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
