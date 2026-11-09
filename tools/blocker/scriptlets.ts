@@ -16,6 +16,8 @@ export interface UboSources {
   readonly tag: string;
   readonly license: string;
   readonly files: Readonly<Record<string, string>>;
+  /** Hashes of the replacement resources, see `redirects.ts`. */
+  readonly redirects?: Readonly<Record<string, string>>;
 }
 
 /** A scriptlet as the filter engine expects it in its resources. */

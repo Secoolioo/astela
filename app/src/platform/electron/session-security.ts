@@ -82,7 +82,7 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
           event.preventDefault();
           options.logger.warn('Blocked navigation of an internal view', { url });
         }
-      } else if (/^app:/i.test(url)) {
+      } else if (/^(?:app|astela-resource):/i.test(url)) {
         event.preventDefault();
         options.logger.warn('Blocked navigation of web content to an internal page', { url });
       }

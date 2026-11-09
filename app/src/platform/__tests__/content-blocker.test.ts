@@ -1,5 +1,9 @@
 import { FiltersEngine } from '@ghostery/adblocker';
-import type { OnBeforeRequestListenerDetails, Session } from 'electron';
+import type {
+  OnBeforeRequestListenerDetails,
+  OnHeadersReceivedListenerDetails,
+  Session,
+} from 'electron';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +11,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import { ContentBlocker } from '../blocker/content-blocker.ts';
-import { RequestPipeline, type RequestInterceptor } from '../electron/request-pipeline.ts';
+import {
+  addHeaders,
+  RequestPipeline,
+  type RequestInterceptor,
+} from '../electron/request-pipeline.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -135,7 +143,10 @@ describe('RequestPipeline', () => {
   it('asks the interceptors in order and lets the first decision win', async () => {
     let listener: ((details: unknown, callback: (response: unknown) => void) => void) | undefined;
     const session = {
-      webRequest: { onBeforeRequest: (fn: typeof listener) => (listener = fn) },
+      webRequest: {
+        onBeforeRequest: (fn: typeof listener) => (listener = fn),
+        onHeadersReceived: () => undefined,
+      },
     } as unknown as Session;
     const pipeline = new RequestPipeline();
     const first: RequestInterceptor = { beforeRequest: () => undefined };
@@ -155,5 +166,67 @@ describe('RequestPipeline', () => {
     expect(await new Promise((done) => listener?.({ url: 'https://a.example/' }, done))).toEqual(
       {},
     );
+  });
+});
+
+const response = (url: string, resourceType: string): OnHeadersReceivedListenerDetails =>
+  ({ url, resourceType, responseHeaders: {} }) as unknown as OnHeadersReceivedListenerDetails;
+
+describe('content blocker rewrites', () => {
+  it('serves a stand-in for a redirect filter and removes tracking parameters', async () => {
+    const onBlocked = vi.fn();
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example/tag.js$script,redirect=noop.js\n$removeparam=utm_source\n'),
+      enabled: () => true,
+      onBlocked,
+      logger: logger(),
+    });
+    // These data carry no resources, so the engine names its empty stand-in of the same type.
+    expect(await blocker.beforeRequest(request('https://ads.example/tag.js', 'script'))).toEqual({
+      redirectURL: 'astela-resource://resource/MIME_TYPE_STUB.js',
+    });
+    expect(onBlocked).toHaveBeenCalledWith(3);
+    expect(
+      await blocker.beforeRequest(request('https://cdn.example/a.js?utm_source=x&b=2', 'script')),
+    ).toEqual({ redirectURL: 'https://cdn.example/a.js?b=2' });
+    // A page's own address loses the parameter once the engine is there; the page still loads.
+    expect(
+      await blocker.beforeRequest(request('https://news.example/?utm_source=x', 'mainFrame')),
+    ).toEqual({ redirectURL: 'https://news.example/' });
+    expect(await blocker.beforeRequest(request('https://news.example/', 'mainFrame'))).toBe(
+      undefined,
+    );
+    expect(blocker.resource('MIME_TYPE_STUB.js')?.contentType).toBe('application/javascript');
+  });
+
+  it('adds the policy of a $csp filter to a page, and nothing to other responses', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir("||news.example^$csp=script-src 'none'\n"),
+      enabled: () => true,
+      logger: logger(),
+    });
+    await blocker.load();
+    expect(blocker.headersReceived(response('https://news.example/', 'mainFrame'))).toEqual({
+      'Content-Security-Policy': ["script-src 'none'"],
+    });
+    expect(blocker.headersReceived(response('https://news.example/a.js', 'script'))).toBe(
+      undefined,
+    );
+    expect(blocker.headersReceived(response('https://other.example/', 'mainFrame'))).toBe(
+      undefined,
+    );
+  });
+
+  it('adds header values next to the values of the server', () => {
+    expect(
+      addHeaders(
+        { 'content-security-policy': ['default-src *'], 'x-a': ['1'] },
+        { 'Content-Security-Policy': ["script-src 'none'"], 'X-B': ['2'] },
+      ),
+    ).toEqual({
+      'content-security-policy': ['default-src *', "script-src 'none'"],
+      'x-a': ['1'],
+      'X-B': ['2'],
+    });
   });
 });

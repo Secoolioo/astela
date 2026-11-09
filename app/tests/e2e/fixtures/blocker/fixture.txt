@@ -10,3 +10,9 @@
 127.0.0.1##+js(fixture-argument, 100%)
 127.0.0.1##+js(fixture-isolated)
 127.0.0.1###fixture-hidden
+! A harmless stand-in for a blocked script, a tracking parameter and a content security
+! policy.
+||127.0.0.1^*/fixture-redirect.js$script,redirect=noopjs
+||127.0.0.1^*/fixture-ima.js$script,redirect=fixture-ima.js
+$removeparam=fixture_tracking
+||127.0.0.1^*/csp.html$csp=script-src 'none'

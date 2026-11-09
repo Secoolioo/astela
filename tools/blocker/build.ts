@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join, resolve } from 'node:path';
 import { filterLists, type FilterList } from './lists.ts';
 import { loadList } from './preprocess.ts';
+import { fetchRedirects } from './redirects.ts';
 import { convertScriptlets, fetchSources, type UboSources } from './scriptlets.ts';
 
 const sourcesFile = resolve(import.meta.dirname, 'ubo-sources.json');
@@ -39,6 +40,22 @@ export async function fetchText(url: string): Promise<string> {
   throw new Error(`Could not download ${url}: ${String(lastError)}`);
 }
 
+/** Downloads a file as it is, trying again after network errors; it may be empty. */
+export async function fetchBytes(url: string): Promise<Uint8Array> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await new Promise((done) => setTimeout(done, 2000 * 2 ** (attempt - 1)));
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(`Could not download ${url}: ${String(lastError)}`);
+}
+
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 /** What the data was built from, shipped next to the engine. */
@@ -54,6 +71,12 @@ interface Metadata {
     readonly license: string;
     readonly count: number;
   };
+  /** The replacement resources that `$redirect` filters serve. */
+  readonly redirects: {
+    readonly source: string;
+    readonly license: string;
+    readonly count: number;
+  };
 }
 
 function notice(metadata: Metadata): string {
@@ -61,9 +84,9 @@ function notice(metadata: Metadata): string {
     'Content blocker data',
     '',
     'The serialized filter engine in this folder is built from the filter lists below and',
-    'from the scriptlets of uBlock Origin. Each keeps its own license; the lists and the',
-    'scriptlets are data that Astela distributes unchanged in substance, separate from its',
-    'own code.',
+    'from the scriptlets and replacement resources of uBlock Origin. Each keeps its own',
+    'license; the lists, the scriptlets and the resources are data that Astela distributes',
+    'unchanged in substance, separate from its own code.',
     '',
     ...metadata.lists.flatMap((list) => [
       list.name,
@@ -76,6 +99,9 @@ function notice(metadata: Metadata): string {
     `  License: ${metadata.scriptlets.license}`,
     '  The GNU General Public License applies to the scriptlet source code. Their complete',
     '  source is available at the address above.',
+    '',
+    `Replacement resources: ${metadata.redirects.source}`,
+    `  License: ${metadata.redirects.license}`,
     '',
   ].join('\n');
 }
@@ -114,6 +140,7 @@ export async function build(options: {
   const lists: { list: FilterList; text: string }[] = [];
   let resources: string;
   let scriptletSource: Metadata['scriptlets'];
+  let redirectSource: Metadata['redirects'];
   if (options.fixture === undefined) {
     for (const list of filterLists) {
       lists.push({ list, text: await loadList(list.url, fetchText) });
@@ -121,11 +148,17 @@ export async function build(options: {
     const sources = JSON.parse(readFileSync(sourcesFile, 'utf8')) as UboSources;
     const { files } = await fetchSources(sources, fetchText);
     const scriptlets = await convertScriptlets(files);
-    resources = JSON.stringify({ scriptlets, resources: [] });
+    const { redirects } = await fetchRedirects(sources, fetchBytes);
+    resources = JSON.stringify({ scriptlets, redirects });
     scriptletSource = {
       source: `https://github.com/${sources.repository}/tree/${sources.tag}/src/js/resources`,
       license: sources.license,
       count: scriptlets.length,
+    };
+    redirectSource = {
+      source: `https://github.com/${sources.repository}/tree/${sources.tag}/src/web_accessible_resources`,
+      license: sources.license,
+      count: redirects.length,
     };
   } else {
     for (const name of readdirSync(options.fixture)
@@ -141,8 +174,9 @@ export async function build(options: {
     const fixtureResources = join(options.fixture, 'resources.json');
     resources = existsSync(fixtureResources)
       ? readFileSync(fixtureResources, 'utf8')
-      : JSON.stringify({ scriptlets: [], resources: [] });
+      : JSON.stringify({ scriptlets: [], redirects: [] });
     scriptletSource = { source: 'fixture', license: 'MPL-2.0', count: 0 };
+    redirectSource = { source: 'fixture', license: 'MPL-2.0', count: 0 };
   }
   resources = markIsolatedScriptlets(resources);
   const engine = FiltersEngine.parse(lists.map(({ text }) => text).join('\n'), {
@@ -165,12 +199,18 @@ export async function build(options: {
       bytes: text.length,
     })),
     scriptlets: scriptletSource,
+    redirects: redirectSource,
   };
   mkdirSync(options.out, { recursive: true });
   writeFileSync(join(options.out, 'engine.bin'), engine.serialize());
   writeFileSync(join(options.out, 'filters.json'), `${JSON.stringify(metadata, null, 2)}\n`);
   writeFileSync(join(options.out, 'NOTICE.txt'), notice(metadata));
   return metadata;
+}
+
+/** A record with its keys in order, so recorded hashes diff well. */
+function sorted(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).toSorted(([a], [b]) => a.localeCompare(b)));
 }
 
 async function main(): Promise<void> {
@@ -182,11 +222,14 @@ async function main(): Promise<void> {
   if (args.includes('--update-sources')) {
     const sources = JSON.parse(readFileSync(sourcesFile, 'utf8')) as UboSources;
     const { hashes } = await fetchSources(sources, fetchText, true);
-    const sorted = Object.fromEntries(
-      Object.entries(hashes).toSorted(([a], [b]) => a.localeCompare(b)),
+    const { hashes: redirectHashes } = await fetchRedirects(sources, fetchBytes, true);
+    writeFileSync(
+      sourcesFile,
+      `${JSON.stringify({ ...sources, files: sorted(hashes), redirects: sorted(redirectHashes) }, null, 2)}\n`,
     );
-    writeFileSync(sourcesFile, `${JSON.stringify({ ...sources, files: sorted }, null, 2)}\n`);
-    console.log(`Recorded ${Object.keys(sorted).length} files of ${sources.tag}`);
+    console.log(
+      `Recorded ${Object.keys(hashes).length + Object.keys(redirectHashes).length} files of ${sources.tag}`,
+    );
     return;
   }
   const out = value('--out');

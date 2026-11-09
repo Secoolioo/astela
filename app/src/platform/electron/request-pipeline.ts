@@ -1,10 +1,19 @@
-import type { OnBeforeRequestListenerDetails, Session } from 'electron';
+import type {
+  OnBeforeRequestListenerDetails,
+  OnHeadersReceivedListenerDetails,
+  Session,
+} from 'electron';
 
 /** What an interceptor decides about a request. */
 export interface RequestDecision {
   /** Cancels the request. */
   readonly cancel?: boolean;
+  /** Sends the request to another address instead. */
+  readonly redirectURL?: string;
 }
+
+/** Headers that an interceptor adds to a response. */
+export type HeaderAdditions = Readonly<Record<string, readonly string[]>>;
 
 /** One step of the request pipeline, such as the content blocker. */
 export interface RequestInterceptor {
@@ -15,12 +24,39 @@ export interface RequestInterceptor {
   beforeRequest(
     details: OnBeforeRequestListenerDetails,
   ): RequestDecision | undefined | Promise<RequestDecision | undefined>;
+  /**
+   * Adds headers to a response, such as a content security policy.
+   * @returns The headers to add, or `undefined` for none.
+   */
+  headersReceived?(details: OnHeadersReceivedListenerDetails): HeaderAdditions | undefined;
 }
 
 /**
- * Owns the one `onBeforeRequest` listener that Electron allows per session and asks its
- * interceptors in order; the first decision wins. Requests of the browser's own pages never
- * pass here, because the pipeline only serves web sessions.
+ * The response headers with more values added. A header that exists under another spelling
+ * gets the values under its own name, so no value of the server is lost.
+ * @param headers - The headers of the response.
+ * @param additions - Values to add, by header name.
+ */
+export function addHeaders(
+  headers: Readonly<Record<string, readonly string[]>>,
+  additions: HeaderAdditions,
+): Record<string, string[]> {
+  const result: Record<string, string[]> = Object.fromEntries(
+    Object.entries(headers).map(([name, values]) => [name, [...values]]),
+  );
+  for (const [name, values] of Object.entries(additions)) {
+    const existing = Object.keys(result).find((key) => key.toLowerCase() === name.toLowerCase());
+    const key = existing ?? name;
+    result[key] = [...(result[key] ?? []), ...values];
+  }
+  return result;
+}
+
+/**
+ * Owns the one `onBeforeRequest` and the one `onHeadersReceived` listener that Electron
+ * allows per session and asks its interceptors in order: the first decision about a request
+ * wins, and every interceptor may add response headers. Requests of the browser's own pages
+ * never pass here, because the pipeline only serves web sessions.
  */
 export class RequestPipeline {
   private readonly interceptors: RequestInterceptor[] = [];
@@ -43,6 +79,16 @@ export class RequestPipeline {
         (decision) => callback(decision ?? {}),
         () => callback({}),
       );
+    });
+    session.webRequest.onHeadersReceived((details, callback) => {
+      let headers: Record<string, string[]> | undefined;
+      for (const interceptor of this.interceptors) {
+        const additions = interceptor.headersReceived?.(details);
+        if (additions !== undefined) {
+          headers = addHeaders(headers ?? details.responseHeaders ?? {}, additions);
+        }
+      }
+      callback(headers === undefined ? {} : { responseHeaders: headers });
     });
   }
 
