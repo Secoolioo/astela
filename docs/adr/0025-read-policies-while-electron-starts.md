@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0037](0037-policies-read-without-blocking-on-every-start.md) replaces the synchronous read of a start without a cache.
 
 ## Date
 

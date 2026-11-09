@@ -152,7 +152,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
 
   // Until the sources have been read, policies apply as the last start left them, so the
-  // read runs while Electron starts. Only a start without that state waits for the read.
+  // read runs while Electron starts; the first window waits for it.
   const policies = new PolicyService(
     [
       ...settingPolicies(coreSettings),
@@ -166,9 +166,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
   );
-  const freshPolicies = policies.applyCached()
-    ? policies.refreshAsync()
-    : Promise.resolve(policies.refresh());
+  policies.applyCached();
+  const freshPolicies = policies.refresh();
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -547,7 +546,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The update service failed to start', error));
   });
 
-  const refreshPolicies = (): void => void policies.refreshAsync();
+  const refreshPolicies = (): void => void policies.refresh();
   app.on('browser-window-focus', refreshPolicies);
   const timer = setInterval(refreshPolicies, 15 * 60 * 1000);
   timer.unref();

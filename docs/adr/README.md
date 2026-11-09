@@ -76,3 +76,4 @@ Each rejected option as a bullet point with a short reason.
 | [0034](0034-overlay-view-for-popovers-and-prompts.md)                  | Overlay view for popovers and prompts                   |
 | [0035](0035-optional-lists-for-cookie-notices-and-annoyances.md)       | Optional lists for cookie notices and annoyances        |
 | [0036](0036-problem-pages-drawn-by-the-shell.md)                       | Problem pages drawn by the shell                        |
+| [0037](0037-policies-read-without-blocking-on-every-start.md)          | Policies read without blocking on every start           |

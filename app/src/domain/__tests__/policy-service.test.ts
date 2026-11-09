@@ -24,8 +24,8 @@ const UpdateUrl = definePolicy({ name: 'UpdateURL', schema: v.string(), sensitiv
 class FakeProvider implements PolicyProvider {
   readonly name = 'fake';
   result: PolicyReadResult = { values: [], errors: [] };
-  load(): PolicyReadResult {
-    return this.result;
+  load(): Promise<PolicyReadResult> {
+    return Promise.resolve(this.result);
   }
 }
 
@@ -60,7 +60,7 @@ describe('definePolicy', () => {
 });
 
 describe('PolicyService', () => {
-  it('applies valid mandatory and recommended values and locks settings', () => {
+  it('applies valid mandatory and recommended values and locks settings', async () => {
     const { policies, provider } = service();
     provider.result = {
       values: [
@@ -69,14 +69,14 @@ describe('PolicyService', () => {
       ],
       errors: [],
     };
-    expect(policies.refresh()).toEqual(['UpdatePolicy', 'HomepageLocation']);
+    expect(await policies.refresh()).toEqual(['UpdatePolicy', 'HomepageLocation']);
     expect(policies.getMandatory('UpdatePolicy')?.value).toBe(2);
     expect(policies.getRecommended('HomepageLocation')?.value).toBe('https://intranet.example/');
     expect(policies.isLocked('startup.homepage')).toBe(false);
     expect(policies.definitionForSetting('startup.homepage')).toBe(Homepage);
   });
 
-  it('prefers mandatory over recommended and machine over user', () => {
+  it('prefers mandatory over recommended and machine over user', async () => {
     const { policies, provider } = service();
     provider.result = {
       values: [
@@ -86,13 +86,13 @@ describe('PolicyService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(policies.getMandatory('HomepageLocation')?.value).toBe('https://machine.example/');
     expect(policies.isLocked('startup.homepage')).toBe(true);
     expect(policies.statuses().map((s) => s.state)).toEqual(['applied', 'overridden', 'applied']);
   });
 
-  it('reports unknown, invalid, wrong-level and non-machine sensitive values', () => {
+  it('reports unknown, invalid, wrong-level and non-machine sensitive values', async () => {
     const { policies, provider } = service();
     provider.result = {
       values: [
@@ -103,7 +103,7 @@ describe('PolicyService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(policies.statuses().map((s) => [s.name, s.state])).toEqual([
       ['NoSuchPolicy', 'unknown'],
       ['UpdatePolicy', 'invalid'],
@@ -114,43 +114,43 @@ describe('PolicyService', () => {
     expect(policies.getMandatory('UpdateURL')).toBeUndefined();
   });
 
-  it('accepts registry DWORD 0 and 1 for boolean policies', () => {
+  it('accepts registry DWORD 0 and 1 for boolean policies', async () => {
     const Flag = definePolicy({ name: 'DeveloperToolsAvailability', schema: v.boolean() });
     const provider = new FakeProvider();
     const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 't' });
     const policies = new PolicyService([Flag], [provider], logger);
     provider.result = { values: [value('DeveloperToolsAvailability', 0)], errors: [] };
-    policies.refresh();
+    await policies.refresh();
     expect(policies.getMandatory('DeveloperToolsAvailability')?.value).toBe(false);
     provider.result = { values: [value('DeveloperToolsAvailability', 3)], errors: [] };
-    policies.refresh();
+    await policies.refresh();
     expect(policies.statuses()[0]?.state).toBe('invalid');
   });
 
-  it('notifies only about changed policies', () => {
+  it('notifies only about changed policies', async () => {
     const { policies, provider } = service();
     const listener = vi.fn();
     policies.onDidChange(listener);
     provider.result = { values: [value('UpdatePolicy', 1)], errors: [] };
-    policies.refresh();
-    expect(policies.refresh()).toEqual([]);
+    await policies.refresh();
+    expect(await policies.refresh()).toEqual([]);
     provider.result = { values: [], errors: [] };
-    expect(policies.refresh()).toEqual(['UpdatePolicy']);
+    expect(await policies.refresh()).toEqual(['UpdatePolicy']);
     expect(listener.mock.calls).toEqual([[['UpdatePolicy']], [['UpdatePolicy']]]);
   });
 
-  it('falls back to the cache when sources fail and logs read errors', () => {
+  it('falls back to the cache when sources fail and logs read errors', async () => {
     const stored: RawPolicyValue[] = [value('UpdatePolicy', 0)];
     const write = vi.fn();
     const cache: PolicyCache = { read: () => stored, write };
     const { policies, provider, sink } = service(cache);
     provider.result = { values: [], errors: [{ source: 'registry', message: 'denied' }] };
-    policies.refresh();
+    await policies.refresh();
     expect(policies.getMandatory('UpdatePolicy')?.value).toBe(0);
     expect(policies.readErrors()).toEqual([{ source: 'registry', message: 'denied' }]);
     expect(sink.records.map((r) => r.message)).toContain('Policy source could not be read');
     provider.result = { values: [value('UpdatePolicy', 2)], errors: [] };
-    policies.refresh();
+    await policies.refresh();
     expect(write).toHaveBeenCalledWith([value('UpdatePolicy', 2)]);
     policies.dispose();
   });
@@ -162,7 +162,7 @@ describe('PolicyService', () => {
     expect(policies.applyCached()).toBe(true);
     expect(policies.getMandatory('UpdatePolicy')?.value).toBe(0);
     provider.result = { values: [value('UpdatePolicy', 2)], errors: [] };
-    expect(await policies.refreshAsync()).toEqual(['UpdatePolicy']);
+    expect(await policies.refresh()).toEqual(['UpdatePolicy']);
     expect(policies.getMandatory('UpdatePolicy')?.value).toBe(2);
     expect(write).toHaveBeenCalledWith([value('UpdatePolicy', 2)]);
     expect(service().policies.applyCached()).toBe(false);
@@ -174,19 +174,18 @@ describe('PolicyService', () => {
     const reads: Array<(result: PolicyReadResult) => void> = [];
     const slow: PolicyProvider = {
       name: 'slow',
-      load: () => ({ values: [], errors: [] }),
-      loadAsync: () => new Promise((done) => reads.push(done)),
+      load: () => new Promise((done) => reads.push(done)),
     };
     const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' });
     const policies = new PolicyService([UpdatePolicy, Homepage], [sync, slow], logger);
-    const first = policies.refreshAsync();
-    const second = policies.refreshAsync();
+    const first = policies.refresh();
+    const second = policies.refresh();
     expect(second).toBe(first);
     expect(reads).toHaveLength(1);
     expect(policies.getMandatory('UpdatePolicy')).toBeUndefined();
     reads[0]?.({ values: [value('HomepageLocation', 'https://intranet.example/')], errors: [] });
     expect(await first).toEqual(['UpdatePolicy', 'HomepageLocation']);
-    void policies.refreshAsync();
+    void policies.refresh();
     expect(reads).toHaveLength(2);
     policies.dispose();
   });

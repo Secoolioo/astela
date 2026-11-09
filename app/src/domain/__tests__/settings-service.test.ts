@@ -44,8 +44,8 @@ class MemoryStore implements SettingsStore {
 class FakeProvider implements PolicyProvider {
   readonly name = 'fake';
   result: PolicyReadResult = { values: [], errors: [] };
-  load(): PolicyReadResult {
-    return this.result;
+  load(): Promise<PolicyReadResult> {
+    return Promise.resolve(this.result);
   }
 }
 
@@ -89,7 +89,7 @@ describe('defineSetting', () => {
 });
 
 describe('SettingsService', () => {
-  it('resolves default, recommended, user, workspace and mandatory values in order', () => {
+  it('resolves default, recommended, user, workspace and mandatory values in order', async () => {
     const { settings, provider, policies } = setup();
     expect(settings.inspect(TabPosition)).toEqual({
       key: 'tabs.position',
@@ -110,7 +110,7 @@ describe('SettingsService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(settings.inspect(TabPosition).source).toBe('policy-recommended');
     expect(settings.set(TabPosition, 'left').ok).toBe(true);
     expect(settings.get(TabPosition)).toBe('left');
@@ -131,7 +131,7 @@ describe('SettingsService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(settings.inspect(TabPosition, { workspaceId: 'w1' })).toEqual({
       key: 'tabs.position',
       value: 'top',
@@ -144,7 +144,7 @@ describe('SettingsService', () => {
     });
   });
 
-  it('refuses invalid, locked and wrongly scoped writes', () => {
+  it('refuses invalid, locked and wrongly scoped writes', async () => {
     const { settings, provider, policies } = setup();
     expect(settings.set(TabPosition, 'diagonal')).toEqual({
       ok: false,
@@ -166,14 +166,14 @@ describe('SettingsService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(settings.set(TabPosition, 'left')).toEqual({
       ok: false,
       error: { kind: 'locked-by-policy' },
     });
   });
 
-  it('notifies on writes, resets and policy changes, and persists', () => {
+  it('notifies on writes, resets and policy changes, and persists', async () => {
     const { settings, store, provider, policies } = setup();
     const listener = vi.fn();
     settings.onDidChange(listener);
@@ -192,7 +192,7 @@ describe('SettingsService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     expect(listener.mock.calls).toEqual([
       [{ keys: ['appearance.density'] }],
       [{ keys: ['appearance.density'] }],
@@ -225,7 +225,7 @@ describe('SettingsService', () => {
     expect(store.saved?.rejected).toHaveLength(2);
   });
 
-  it('exports and imports user values', () => {
+  it('exports and imports user values', async () => {
     const { settings, provider, policies } = setup();
     settings.set(TabPosition, 'right');
     settings.set(Density, 'compact');
@@ -243,10 +243,10 @@ describe('SettingsService', () => {
       ],
       errors: [],
     };
-    policies.refresh();
+    await policies.refresh();
     const fresh = setup();
     fresh.provider.result = provider.result;
-    fresh.policies.refresh();
+    await fresh.policies.refresh();
     const report = fresh.settings.importUserSettings({
       ...exported,
       'appearance.density': 'huge',

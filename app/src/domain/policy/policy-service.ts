@@ -103,24 +103,11 @@ export class PolicyService implements Disposable {
   }
 
   /**
-   * Reads all providers synchronously and applies the result.
+   * Reads all providers and applies the result. Calls made while a read is running share it.
    * @returns The names of policies whose effective value changed.
    */
-  refresh(): readonly string[] {
-    return this.merge(this.providers.map((provider) => provider.load()));
-  }
-
-  /**
-   * Reads all providers without blocking and applies the result. Calls made while a read
-   * is running share it.
-   * @returns The names of policies whose effective value changed.
-   */
-  refreshAsync(): Promise<readonly string[]> {
-    this.reading ??= Promise.all(
-      this.providers.map((provider) =>
-        provider.loadAsync === undefined ? Promise.resolve(provider.load()) : provider.loadAsync(),
-      ),
-    )
+  refresh(): Promise<readonly string[]> {
+    this.reading ??= Promise.all(this.providers.map((provider) => provider.load()))
       .then((results) => this.merge(results))
       .finally(() => {
         this.reading = undefined;
