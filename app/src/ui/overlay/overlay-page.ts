@@ -27,14 +27,44 @@ interface Login {
   readonly secure: boolean;
 }
 
-type Content = Shield | Login;
+/** A site that asks for permissions. */
+interface Permission {
+  readonly kind: 'permission';
+  readonly site: string;
+  readonly permissions: readonly (
+    'camera' | 'microphone' | 'location' | 'notifications' | 'clipboard'
+  )[];
+}
+
+/** A site that wants to see a screen or a window, and what it can choose from. */
+interface Screen {
+  readonly kind: 'screen';
+  readonly site: string;
+  readonly sources: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly screen: boolean;
+    readonly thumbnail: string;
+  }[];
+}
+
+type Content = Shield | Login | Permission | Screen;
+
+/** What the prompt says that a site wants, for each permission. */
+const wants = {
+  camera: 'overlay.permission.camera',
+  microphone: 'overlay.permission.microphone',
+  location: 'overlay.permission.location',
+  notifications: 'overlay.permission.notifications',
+  clipboard: 'overlay.permission.clipboard',
+} as const satisfies Record<Permission['permissions'][number], string>;
 
 // The browser process checks every message against its contract before it sends it.
 const isContent = (value: unknown): value is Content =>
   typeof value === 'object' &&
   value !== null &&
   'kind' in value &&
-  (value.kind === 'shield' || value.kind === 'login');
+  ['shield', 'login', 'permission', 'screen'].includes(String(value.kind));
 
 /** Width of a popover, and its distance to the window's edges and to its button. */
 const width = 288;
@@ -46,7 +76,7 @@ const gap = 4;
  * next to the popover or Escape closes it; the browser process runs shortcuts.
  */
 export class OverlayPage extends LitElement {
-  static override properties = { content: { state: true } };
+  static override properties = { content: { state: true }, chosen: { state: true } };
 
   /** Styles of the page, scoped to its shadow root. */
   static override styles = css`
@@ -178,9 +208,69 @@ export class OverlayPage extends LitElement {
     .buttons .primary {
       border-color: var(--accent);
     }
+    .dialog ul {
+      margin: 0 0 var(--space-2);
+      padding: 0;
+      list-style: none;
+    }
+    .dialog li {
+      padding: 2px 0;
+    }
+    .buttons button:disabled {
+      opacity: 0.5;
+    }
+    /* A question takes the focus itself; its buttons show the ring once they have it. */
+    .dialog:focus-visible {
+      outline: none;
+    }
+    .dialog.wide {
+      width: 640px;
+    }
+    .sources {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+      gap: var(--space-2);
+      max-height: 50vh;
+      margin: var(--space-2) 0 0;
+      padding: 2px;
+      overflow-y: auto;
+    }
+    .sources h3 {
+      grid-column: 1 / -1;
+      margin: var(--space-2) 0 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .source {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0;
+      padding: var(--space-1);
+      text-align: start;
+    }
+    .source[aria-pressed='true'] {
+      border-color: var(--accent);
+      outline: 1px solid var(--accent);
+    }
+    .source img,
+    .source .blank {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+      border-radius: var(--radius-1);
+      background: var(--surface-0);
+    }
+    .source span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   `;
 
   declare content: Content | null;
+  /** The screen or window chosen in the picker. */
+  declare chosen: string | undefined;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private stopListening: (() => void) | undefined;
@@ -188,6 +278,7 @@ export class OverlayPage extends LitElement {
   constructor() {
     super();
     this.content = null;
+    this.chosen = undefined;
   }
 
   override connectedCallback(): void {
@@ -215,9 +306,16 @@ export class OverlayPage extends LitElement {
     this.content = isContent(content) ? content : null;
     if (this.content === null) return;
     if (this.content.kind === 'shield') this.place(this.content.anchor);
-    // What opens takes the focus, so the keyboard reaches its first field or switch.
+    if (this.content.kind === 'screen') this.chosen = undefined;
+    // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
+    // question gets it itself, not on a button, so a key meant for the page decides nothing.
     if (before !== this.content.kind) {
-      void this.updateComplete.then(() => this.renderRoot.querySelector('input')?.focus());
+      void this.updateComplete.then(() =>
+        (
+          this.renderRoot.querySelector<HTMLElement>('input, .source') ??
+          this.renderRoot.querySelector<HTMLElement>('[role="dialog"]')
+        )?.focus(),
+      );
     }
   }
 
@@ -235,6 +333,8 @@ export class OverlayPage extends LitElement {
     const content = this.content;
     if (content === null) return nothing;
     if (content.kind === 'login') return this.renderLogin(content);
+    if (content.kind === 'permission') return this.renderPermission(content);
+    if (content.kind === 'screen') return this.renderScreens(content);
     return html`<div class="backdrop" @click=${this.close}></div>
       <section role="dialog" aria-label=${this.t('shell.blocker')}>
         <p class="site">${content.site}</p>
@@ -292,6 +392,76 @@ export class OverlayPage extends LitElement {
           <button type="submit" class="primary">${this.t('overlay.signIn')}</button>
         </div>
       </form>`;
+  }
+
+  /** The question of a site for permissions: it stays open until it is answered or closed. */
+  private renderPermission(question: Permission): TemplateResult {
+    return html`<div class="backdrop"></div>
+      <section class="dialog" role="dialog" tabindex="-1" aria-labelledby="permission-title">
+        <h2 id="permission-title">${this.t('overlay.permissionTitle', { site: question.site })}</h2>
+        <ul>
+          ${question.permissions.map((name) => html`<li>${this.t(wants[name])}</li>`)}
+        </ul>
+        <p class="note">${this.t('overlay.permissionNote')}</p>
+        <div class="buttons">
+          <button type="button" @click=${() => this.answer(false)}>
+            ${this.t('overlay.block')}
+          </button>
+          <button type="button" class="primary" @click=${() => this.answer(true)}>
+            ${this.t('overlay.allow')}
+          </button>
+        </div>
+      </section>`;
+  }
+
+  /** The screens and windows that a site may see, as pictures with their names. */
+  private renderScreens(picker: Screen): TemplateResult {
+    const group = (screens: boolean): TemplateResult | typeof nothing => {
+      const sources = picker.sources.filter((source) => source.screen === screens);
+      if (sources.length === 0) return nothing;
+      return html`<h3>${this.t(screens ? 'overlay.shareScreens' : 'overlay.shareWindows')}</h3>
+        ${sources.map(
+          (source) =>
+            html`<button
+              type="button"
+              class="source"
+              aria-pressed=${String(this.chosen === source.id)}
+              @click=${() => (this.chosen = source.id)}
+              @dblclick=${() => this.share(source.id)}
+            >
+              ${
+                source.thumbnail === ''
+                  ? html`<span class="blank"></span>`
+                  : html`<img src=${source.thumbnail} alt="" />`
+              }
+              <span>${source.name}</span>
+            </button>`,
+        )}`;
+    };
+    return html`<div class="backdrop"></div>
+      <section class="dialog wide" role="dialog" aria-labelledby="share-title">
+        <h2 id="share-title">${this.t('overlay.shareTitle', { site: picker.site })}</h2>
+        <div class="sources">${group(true)} ${group(false)}</div>
+        <div class="buttons">
+          <button type="button" @click=${this.close}>${this.t('overlay.cancel')}</button>
+          <button
+            type="button"
+            class="primary"
+            ?disabled=${this.chosen === undefined}
+            @click=${() => this.chosen !== undefined && this.share(this.chosen)}
+          >
+            ${this.t('overlay.share')}
+          </button>
+        </div>
+      </section>`;
+  }
+
+  private answer(allow: boolean): void {
+    void this.bridge?.invoke('overlay.answerPermission', { allow });
+  }
+
+  private share(id: string): void {
+    void this.bridge?.invoke('overlay.shareScreen', { id });
   }
 
   private readonly signIn = (event: SubmitEvent): void => {

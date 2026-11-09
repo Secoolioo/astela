@@ -1,58 +1,72 @@
-import type { App, Session, WebContents } from 'electron';
+import type {
+  App,
+  DisplayMediaRequestHandlerHandlerRequest,
+  PermissionCheckHandlerHandlerDetails,
+  Session,
+  Streams,
+  WebContents,
+} from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../../domain/navigation/new-tab.ts';
 import { originOf } from './ipc-gate.ts';
 
-/** Permissions that are never granted, not even after a prompt. */
-const blockedPermissions = new Set([
-  'local-network',
-  'loopback-network',
-  'local-fonts',
-  'window-management',
-  'idle-detection',
-  'sensors',
-]);
+/** Decides about the permissions of the pages of a session, asking the user where needed. */
+export interface PermissionHandler {
+  /**
+   * Answers a request of a page.
+   * @param contents - The page.
+   * @param permission - Electron's name of the permission.
+   * @param mediaTypes - For `media`, the devices that the page wants.
+   */
+  request(
+    contents: WebContents,
+    permission: string,
+    mediaTypes: readonly string[],
+  ): Promise<boolean>;
+  /** Whether a page has a permission already, for checks such as `Notification.permission`. */
+  check(
+    contents: WebContents | null,
+    permission: string,
+    requestingOrigin: string,
+    details: PermissionCheckHandlerHandlerDetails,
+  ): boolean;
+  /** Answers a page that wants to share the screen or a window. */
+  shareScreen(
+    request: DisplayMediaRequestHandlerHandlerRequest,
+    callback: (streams: Streams | null) => void,
+  ): void;
+}
 
 /**
- * Permissions that are granted without asking, as in other browsers: a page may show an
- * element in full screen after a click, and Escape leaves it.
- */
-const harmlessPermissions = new Set(['fullscreen']);
-
-/**
- * Decides about a permission request. Until the permission prompt exists, every request is
- * denied. Electron grants everything by default, so this handler must be installed on
- * every session.
- */
-export type PermissionDecider = (permission: string, requestingUrl: string) => boolean;
-
-/** Denies every permission. */
-export const denyAllPermissions: PermissionDecider = () => false;
-
-/**
- * Hardens a session: permission requests and checks go through the decider, device
- * access is denied and spellchecking is switched off on Windows and Linux, because it
- * would download dictionaries from a third-party server.
+ * Hardens a session: permission requests and checks go to the handler, or are refused
+ * without one, as for the browser's own pages; device access is denied and spellchecking is
+ * switched off on Windows and Linux, because it would download dictionaries from a
+ * third-party server. Electron grants everything by default, so this runs on every session.
  * @param session - Any session.
- * @param decide - Permission decisions; blocked permissions are refused before it is asked.
+ * @param permissions - Decides about the permissions of web pages.
  */
-export function hardenSession(
-  session: Session,
-  decide: PermissionDecider = denyAllPermissions,
-): void {
-  session.setPermissionRequestHandler((_contents, permission, callback, details) => {
-    callback(
-      harmlessPermissions.has(permission) ||
-        (!blockedPermissions.has(permission) && decide(permission, details.requestingUrl)),
-    );
+export function hardenSession(session: Session, permissions?: PermissionHandler): void {
+  session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permissions === undefined) {
+      callback(false);
+      return;
+    }
+    const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
+    permissions.request(contents, permission, mediaTypes).then(callback, () => callback(false));
   });
   session.setPermissionCheckHandler(
-    (_contents, permission, requestingOrigin) =>
-      harmlessPermissions.has(permission) ||
-      (!blockedPermissions.has(permission) && decide(permission, requestingOrigin)),
+    (contents, permission, requestingOrigin, details) =>
+      permissions?.check(contents, permission, requestingOrigin, details) ?? false,
   );
   session.setDevicePermissionHandler(() => false);
-  session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+  session.setDisplayMediaRequestHandler(
+    (request, callback) => {
+      if (permissions === undefined) callback(null);
+      else permissions.shareScreen(request, callback);
+    },
+    // macOS 15 and later show their own picker, which needs no access to the whole screen.
+    { useSystemPicker: true },
+  );
   if (process.platform !== 'darwin') {
     session.setSpellCheckerEnabled(false);
     session.setSpellCheckerDictionaryDownloadURL('https://0.0.0.0/');

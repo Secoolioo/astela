@@ -131,6 +131,22 @@ export class SettingsPage extends LitElement {
         gap: var(--space-2);
         padding: var(--space-1) 0;
       }
+      .permissions li {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .permissions .site {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .permission {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .permission > span {
+        flex: 1;
+      }
       .add-site {
         display: flex;
         gap: var(--space-2);
@@ -223,7 +239,7 @@ export class SettingsPage extends LitElement {
         ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
         ${this.renderToggle('contentBlocker.cookieNotices', 'settings.cookieNotices', 'settings.cookieNoticesNote')}
         ${this.renderToggle('contentBlocker.annoyances', 'settings.annoyances', 'settings.annoyancesNote')}
-        ${this.renderAllowedSites()}
+        ${this.renderAllowedSites()} ${this.renderSitePermissions()}
         ${
           this.blockerFailed
             ? html`<p class="row note problem" role="alert">
@@ -345,6 +361,70 @@ export class SettingsPage extends LitElement {
         <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
       </form>
       ${this.siteError ? html`<span class="error" role="alert">${t('settings.allowedSitesInvalid')}</span>` : nothing}
+    </div>`;
+  }
+
+  /** What sites may use, by site, with a way to change and to remove each decision. */
+  private renderSitePermissions(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('permissions.sites');
+    const sites = decisionsOf(setting?.value);
+    const disabled = setting?.locked !== false;
+    const origins = Object.keys(sites).toSorted();
+    const save = (next: Decisions): void => void this.client?.set('permissions.sites', next);
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="site-permissions">${t('settings.sitePermissions')}</span>
+        <span class="note">
+          ${setting?.locked === true ? t('settings.managed') : t('settings.sitePermissionsNote')}
+        </span>
+      </span>
+      ${
+        origins.length === 0
+          ? html`<span class="note">${t('settings.sitePermissionsNone')}</span>`
+          : html`<ul class="sites permissions" aria-labelledby="site-permissions">
+              ${origins.map(
+                (origin) =>
+                  html`<li>
+                    <span class="site">${origin}</span>
+                    ${permissionNames.map((name) => {
+                      const decision = sites[origin]?.[name];
+                      if (decision === undefined) return nothing;
+                      const label = t(permissionLabels[name]);
+                      const params = { permission: label, site: origin };
+                      return html`<span class="permission">
+                        <span>${label}</span>
+                        <select
+                          aria-label=${t('settings.permissionFor', params)}
+                          ?disabled=${disabled}
+                          @change=${(event: Event) => {
+                            const value =
+                              event.target instanceof HTMLSelectElement ? event.target.value : '';
+                            if (value === 'allow' || value === 'block') {
+                              save({ ...sites, [origin]: { ...sites[origin], [name]: value } });
+                            }
+                          }}
+                        >
+                          <option value="allow" ?selected=${decision === 'allow'}>
+                            ${t('settings.permissionAllow')}
+                          </option>
+                          <option value="block" ?selected=${decision === 'block'}>
+                            ${t('settings.permissionBlock')}
+                          </option>
+                        </select>
+                        <button
+                          ?disabled=${disabled}
+                          aria-label=${t('settings.permissionRemove', params)}
+                          @click=${() => save(withoutDecision(sites, origin, name))}
+                        >
+                          ${t('settings.remove')}
+                        </button>
+                      </span>`;
+                    })}
+                  </li>`,
+              )}
+            </ul>`
+      }
     </div>`;
   }
 
@@ -509,6 +589,51 @@ export class SettingsPage extends LitElement {
  * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
  * @param input - The text of the field.
  */
+/** The permissions that sites ask for, and their names on the page. */
+const permissionLabels = {
+  camera: 'settings.permission.camera',
+  microphone: 'settings.permission.microphone',
+  location: 'settings.permission.location',
+  notifications: 'settings.permission.notifications',
+  clipboard: 'settings.permission.clipboard',
+} as const satisfies Record<string, MessageKey>;
+
+type PermissionName = keyof typeof permissionLabels;
+
+const permissionNames: readonly PermissionName[] = [
+  'camera',
+  'microphone',
+  'location',
+  'notifications',
+  'clipboard',
+];
+
+/** What the user decided for each site, by origin. */
+type Decisions = Readonly<Record<string, Partial<Record<PermissionName, 'allow' | 'block'>>>>;
+
+/** The decisions in the value of the setting `permissions.sites`, which main checked. */
+function decisionsOf(value: unknown): Decisions {
+  if (typeof value !== 'object' || value === null) return {};
+  const sites: Record<string, Partial<Record<PermissionName, 'allow' | 'block'>>> = {};
+  for (const [origin, decisions] of Object.entries(value)) {
+    if (typeof decisions !== 'object' || decisions === null) continue;
+    const kept: Partial<Record<PermissionName, 'allow' | 'block'>> = {};
+    for (const name of permissionNames) {
+      const decision: unknown = Reflect.get(decisions, name);
+      if (decision === 'allow' || decision === 'block') kept[name] = decision;
+    }
+    sites[origin] = kept;
+  }
+  return sites;
+}
+
+/** The decisions without one of a site; a site without decisions leaves the list. */
+function withoutDecision(sites: Decisions, origin: string, name: PermissionName): Decisions {
+  const { [name]: _removed, ...rest } = sites[origin] ?? {};
+  const { [origin]: _site, ...others } = sites;
+  return Object.keys(rest).length === 0 ? others : { ...others, [origin]: rest };
+}
+
 function hostOf(input: string): string | undefined {
   const text = input.trim().toLowerCase();
   let host = text;

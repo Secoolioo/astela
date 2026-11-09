@@ -143,22 +143,6 @@ test('keeps web content away from internal APIs and pages', async () => {
   expect(page.url()).toBe(`${server.origin}/probe.html`);
 });
 
-test('denies permissions by default', async () => {
-  await navigate(`${server.origin}/index.html`);
-  const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));
-  expect(await page.evaluate(() => Notification.requestPermission())).toBe('denied');
-  const geolocation = await page.evaluate(
-    () =>
-      new Promise((done) =>
-        navigator.geolocation.getCurrentPosition(
-          () => done('granted'),
-          (e) => done(e.code),
-        ),
-      ),
-  );
-  expect(geolocation).toBe(1);
-});
-
 test('opens new windows from pages as tabs', async () => {
   await navigate(`${server.origin}/index.html`);
   const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));

@@ -70,6 +70,7 @@ import {
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
+  SitePermissionsSetting,
   TabStripPositionSetting,
   coreSettings,
 } from './core-settings.ts';
@@ -85,6 +86,8 @@ import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
+import type { PermissionPrompts } from './permission-prompt.ts';
+import { sitePermissions } from './site-permissions.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
 import { checkBoot } from './boot.ts';
 import { windowBackground } from './window-background.ts';
@@ -247,6 +250,25 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger: logger.child('blocker'),
   });
   pipeline.add(blocker);
+  // Web pages ask before they use the camera, the microphone, the location and the like; the
+  // question loads with the first one.
+  let prompts: Promise<PermissionPrompts> | undefined;
+  const loadPrompts = (): Promise<PermissionPrompts> => {
+    prompts ??= import('./permission-prompt.ts').then(({ permissionPrompts }) =>
+      permissionPrompts(overlayOptions, router, logger),
+    );
+    return prompts;
+  };
+  const webPermissions = sitePermissions({
+    sites: () => settings.get(SitePermissionsSetting),
+    save: (sites) => {
+      const result = settings.set(SitePermissionsSetting, sites);
+      if (!result.ok) logger.warn('A permission was not saved', { error: result.error.kind });
+    },
+    windowOf: (contents) => windows.forTab(contents),
+    prompts: loadPrompts,
+    logger,
+  });
   const webSessions = new Set<Session>();
   const addFramePreload = connectBlockerFrames(
     blocker,
@@ -258,7 +280,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       webSessions.add(s);
       protocolHandler.refuse(s);
       serveResources(s, (name) => blocker.resource(name));
-      hardenSession(s);
+      hardenSession(s, webPermissions);
       pipeline.attach(s);
       addFramePreload(s);
     }

@@ -28,6 +28,7 @@ Every change applies at once, in every window, and is kept when the browser rest
 - **Block ads and trackers:** turns the [content blocker](content-blocker.md) on or off. It is on by default.
 - **Hide cookie notices** and **Hide annoyances:** add the lists of EasyList and uBlock Origin against cookie notices, or against newsletter boxes, chat and social widgets, notifications and other annoyances. Both are off by default.
 - **Sites without blocking:** the sites on which the content blocker is off, each with the button **Remove**. Type a site's name or address in the field below the list and choose **Add** to add one.
+- **Site permissions:** what each site may use after you answered its question, such as the camera or notifications. Change an answer between **Allowed** and **Blocked**, or choose **Remove**, and the site asks again. See [Site permissions](site-permissions.md).
 
 ## Default browser
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture permissions</title>
+  </head>
+  <body>
+    <button id="share" onclick="share()">Share the screen</button>
+    <p id="result"></p>
+    <script>
+      // Sharing the screen needs a click, so the button starts it and shows how it ended.
+      function share() {
+        const result = document.getElementById('result');
+        result.textContent = '';
+        navigator.mediaDevices.getDisplayMedia({ video: true }).then(
+          (stream) => (result.textContent = `video tracks: ${stream.getVideoTracks().length}`),
+          (error) => (result.textContent = error.name),
+        );
+      }
+    </script>
+  </body>
+</html>
