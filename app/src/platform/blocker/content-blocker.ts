@@ -342,11 +342,30 @@ interface LoadedEngine {
   readonly Request: typeof EngineRequest;
 }
 
-/** The page a request belongs to; a frame that is gone falls back to the referrer. */
+/**
+ * The page a request belongs to. The first requests of a new page can arrive before the
+ * browser process knows that the page is there: then the request's frame is still the page
+ * before it, or has no address, and so has the tab. A request of the top document names
+ * that document as its referrer, so the referrer decides for it; a request of an embedded
+ * frame belongs to the top page, which is there by then.
+ */
 function pageUrl(details: OnBeforeRequestListenerDetails): string {
+  let top: string | undefined;
+  let fromTop = true;
   try {
-    return details.frame?.top?.url ?? details.webContents?.getURL() ?? details.referrer;
+    top = details.frame?.top?.url;
+    fromTop =
+      details.frame === null || details.frame === undefined || details.frame.parent === null;
   } catch {
+    // A frame that is gone has no address.
+  }
+  if ((fromTop || top === undefined || top === '') && details.referrer !== '') {
     return details.referrer;
+  }
+  if (top !== undefined && top !== '') return top;
+  try {
+    return details.webContents?.getURL() ?? '';
+  } catch {
+    return '';
   }
 }
