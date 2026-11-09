@@ -66,13 +66,8 @@ import {
   TabStripPositionSetting,
   coreSettings,
 } from './core-settings.ts';
-import { connectSetupGuide } from './setup-guide.ts';
 import { AppearanceController } from './appearance.ts';
-import { connectSettingsPage } from './settings-page.ts';
-import { connectHistoryPage } from './history-page.ts';
-import { Bookmarks, connectBookmarksPage } from './bookmarks.ts';
-import { connectBrowserImport } from './browser-import.ts';
-import { connectDefaultBrowser } from './default-browser.ts';
+import { Bookmarks } from './bookmarks.ts';
 import {
   canBeDefaultBrowser,
   DefaultBrowserSettingEnabled,
@@ -335,11 +330,39 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     bookmarksBar: () => (settings.get(BookmarksBarSetting) ? bookmarks.barItems() : null),
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
+    // The handlers of the other internal pages load with the first of them, before it loads.
+    prepareInternalPage: (page) => (page === 'newtab' ? undefined : connectPages()),
     gate,
     router,
     logger,
     onContextMenu,
   });
+  // Not asked for yet, loading, or `true` once the handlers are there.
+  let pages: Promise<void> | true | undefined;
+  const connectPages = (): Promise<void> | undefined => {
+    if (pages === true) return undefined;
+    pages ??= import('./page-handlers.ts')
+      .then(({ connectPages: connect }) => {
+        connect({
+          router,
+          settings,
+          definitions: coreSettings,
+          internal,
+          data,
+          bookmarks,
+          windows,
+          importAllowed: () => policies.mandatoryValue(ImportEnabled) !== false,
+          defaultBrowserAllowed: () =>
+            policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
+          canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
+        });
+        pages = true;
+      })
+      .catch((error: unknown) =>
+        logger.error('The handlers of internal pages did not load', error),
+      );
+    return pages;
+  };
   guardWebContents(app, {
     // Every view of the internal session is the browser's own: the shell and internal pages.
     isInternal: (contents) => contents.session === internal,
@@ -348,22 +371,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
   registerShellHandlers(router, windows, searchTemplate);
   registerNewTabHandlers(router, windows, searchTemplate);
-  connectSettingsPage(router, settings, coreSettings, internal);
-  connectHistoryPage(router, data, windows);
-  connectBookmarksPage(router, data, bookmarks, windows);
-  connectBrowserImport(
-    router,
-    data,
-    bookmarks,
-    windows,
-    () => policies.mandatoryValue(ImportEnabled) !== false,
-  );
-  connectDefaultBrowser(
-    router,
-    () => policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
-    canBeDefaultBrowser(boot.installType),
-  );
-  connectSetupGuide(router, windows);
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     TabStripPositionSetting.key,
