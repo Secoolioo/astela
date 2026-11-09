@@ -1,3 +1,8 @@
+import {
+  handlePseudoDirective,
+  querySelectorAll,
+  type AST,
+} from '@ghostery/adblocker-extended-selectors';
 import { ipcRenderer, webFrame } from 'electron';
 
 /**
@@ -8,10 +13,18 @@ import { ipcRenderer, webFrame } from 'electron';
  * The script exposes nothing to the page.
  */
 
+/** A procedural rule: the elements of its selector are hidden or changed by its directive. */
+interface ExtendedRule {
+  readonly ast: AST;
+  readonly attribute?: string;
+  readonly directive?: AST;
+}
+
 /** Rules that apply when a frame starts. */
 interface FrameRules {
   readonly styles: string;
   readonly scripts: readonly string[];
+  readonly extended: readonly ExtendedRule[];
   /** Whether rules for the page's elements may apply, so the frame should report them. */
   readonly elements: boolean;
 }
@@ -23,6 +36,8 @@ const isFrameRules = (value: unknown): value is FrameRules =>
   typeof value.styles === 'string' &&
   'scripts' in value &&
   Array.isArray(value.scripts) &&
+  'extended' in value &&
+  Array.isArray(value.extended) &&
   'elements' in value &&
   typeof value.elements === 'boolean';
 
@@ -54,8 +69,61 @@ if (isFrameRules(rules)) {
       void webFrame.executeJavaScript(code);
     }
   }
+  if (rules.extended.length > 0) {
+    applyExtended(rules.extended);
+  }
   if (rules.elements) {
     reportElements();
+  }
+}
+
+/**
+ * Applies procedural rules, such as `:has-text()`, once the document exists and again when
+ * it changes, at most every 100 ms: elements of a hiding rule get the attribute that the
+ * style sheet hides, and other rules run their directive, such as removing the element.
+ * Each rule handles an element once, so its own changes do not start it again.
+ * @param extended - The procedural rules of the frame's address.
+ */
+function applyExtended(extended: readonly ExtendedRule[]): void {
+  const handled = extended.map(() => new WeakSet<Element>());
+  const run = (): void => {
+    extended.forEach((rule, index) => {
+      const seen = handled[index];
+      try {
+        for (const element of querySelectorAll(document.documentElement, rule.ast)) {
+          if (seen === undefined || seen.has(element)) continue;
+          seen.add(element);
+          if (rule.directive !== undefined) handlePseudoDirective(element, rule.directive);
+          else if (rule.attribute !== undefined) element.setAttribute(rule.attribute, '');
+        }
+      } catch {
+        // A rule that the evaluator cannot handle changes nothing.
+      }
+    });
+  };
+  let scheduled = false;
+  const schedule = (): void => {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(() => {
+      scheduled = false;
+      run();
+    }, 100);
+  };
+  const start = (): void => {
+    run();
+    new MutationObserver(schedule).observe(document, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'id'],
+    });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
   }
 }
 

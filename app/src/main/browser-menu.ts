@@ -1,4 +1,4 @@
-import { app, Menu } from 'electron';
+import { app, dialog, Menu } from 'electron';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
@@ -90,6 +90,20 @@ export function popupBlockerMenu(
     { label: i18n.t('menu.blockerSettings'), click: () => window.execute('settings.open') },
   ]);
   menu.popup({ window: window.window, x: position.x, y: position.y });
+}
+
+/**
+ * Tells that an exception of the content blocker could not be saved.
+ * @param window - The window whose blocker menu was used.
+ * @param managed - Whether a policy manages the exceptions.
+ */
+export function showBlockerSaveError(window: BrowserWindowController, managed: boolean): void {
+  const i18n = translatorFor(app.getLocale(), process.platform);
+  void dialog.showMessageBox(window.window, {
+    type: 'warning',
+    message: i18n.t('menu.blockerSaveFailed'),
+    detail: i18n.t(managed ? 'menu.blockerManaged' : 'menu.blockerListFull'),
+  });
 }
 
 /**

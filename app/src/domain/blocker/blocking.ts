@@ -15,6 +15,16 @@ export function siteOf(url: string): string | undefined {
 }
 
 /**
+ * The exception that covers a host: the entry for the host itself or for a domain it
+ * belongs to, so an exception for `example.com` also covers `www.example.com`.
+ * @param host - The page's host name.
+ * @param allowedSites - Sites on which the blocker is off.
+ */
+export function exceptionFor(host: string, allowedSites: readonly string[]): string | undefined {
+  return allowedSites.find((site) => host === site || host.endsWith(`.${site}`));
+}
+
+/**
  * Tells whether the content blocker works on a page.
  * @param url - The page's address.
  * @param enabled - Whether the blocker is on at all.
@@ -29,17 +39,24 @@ export function blockingFor(
   if (site === undefined) {
     return 'none';
   }
-  return enabled && !allowedSites.includes(site) ? 'on' : 'off';
+  return enabled && exceptionFor(site, allowedSites) === undefined ? 'on' : 'off';
 }
 
 /**
- * Turns the exception for a site on or off.
+ * Turns blocking on a page's site off, for the whole registrable domain, or back on by
+ * removing the exception that covers the host.
  * @param allowedSites - Sites on which the blocker is off.
- * @param site - The site to change.
+ * @param host - The page's host name.
+ * @param domain - The registrable domain of the host, such as `example.co.uk`.
  * @returns The new list, sorted.
  */
-export function toggleSite(allowedSites: readonly string[], site: string): string[] {
-  return allowedSites.includes(site)
-    ? allowedSites.filter((other) => other !== site)
-    : [...allowedSites, site].toSorted();
+export function toggleSite(
+  allowedSites: readonly string[],
+  host: string,
+  domain: string = host,
+): string[] {
+  const existing = exceptionFor(host, allowedSites);
+  return existing === undefined
+    ? [...allowedSites, domain].toSorted()
+    : allowedSites.filter((site) => site !== existing);
 }

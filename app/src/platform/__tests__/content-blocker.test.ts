@@ -25,10 +25,16 @@ afterEach(() => {
 const logger = (): SinkLogger =>
   new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' });
 
-function dataDir(filters: string): string {
+function dataDir(filters: string, popups?: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'blocker-'));
   dirs.push(dir);
-  writeFileSync(join(dir, 'engine.bin'), FiltersEngine.parse(filters).serialize());
+  writeFileSync(
+    join(dir, 'engine.bin'),
+    FiltersEngine.parse(filters, { loadExtendedSelectors: true }).serialize(),
+  );
+  if (popups !== undefined) {
+    writeFileSync(join(dir, 'popups.bin'), FiltersEngine.parse(popups).serialize());
+  }
   return dir;
 }
 
@@ -116,6 +122,7 @@ describe('ContentBlocker cosmetics', () => {
     expect(blocker.frameRules('https://news.example/')).toEqual({
       styles: '',
       scripts: [],
+      extended: [],
       elements: false,
     });
     const loading = blocker.load();
@@ -136,6 +143,22 @@ describe('ContentBlocker cosmetics', () => {
     expect(blocker.elementRules('https://other.example/', 'https://other.example/', report)).toBe(
       '',
     );
+  });
+});
+
+describe('ContentBlocker procedural rules', () => {
+  it('gives frames the procedural rules of their address', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('news.example##.promo:has-text(Sponsored)\nnews.example##.box:remove()\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    await blocker.load();
+    const { extended } = blocker.frameRules('https://news.example/a');
+    expect(extended).toHaveLength(2);
+    expect(extended.some((rule) => typeof rule.attribute === 'string')).toBe(true);
+    expect(extended.some((rule) => rule.directive !== undefined)).toBe(true);
+    expect(blocker.frameRules('https://other.example/').extended).toEqual([]);
   });
 });
 
@@ -228,5 +251,48 @@ describe('content blocker rewrites', () => {
       'x-a': ['1'],
       'X-B': ['2'],
     });
+  });
+});
+
+describe('content blocker popups and domains', () => {
+  it('blocks the popups that the popup filters name, except on allowed sites', async () => {
+    let allowed = false;
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n', '||popunder.example^\n'),
+      enabled: (url) => !(allowed && url.startsWith('https://news.example/')),
+      logger: logger(),
+    });
+    // Nothing is known before the engine has loaded.
+    expect(blocker.blocksPopup('https://popunder.example/', 'https://news.example/')).toBe(false);
+    await blocker.load();
+    expect(blocker.blocksPopup('https://popunder.example/x', 'https://news.example/')).toBe(true);
+    expect(blocker.blocksPopup('https://shop.example/', 'https://news.example/')).toBe(false);
+    expect(blocker.blocksPopup('app://settings/', 'https://news.example/')).toBe(false);
+    allowed = true;
+    expect(blocker.blocksPopup('https://popunder.example/x', 'https://news.example/')).toBe(false);
+  });
+
+  it('blocks no popups when the data has no popup filters', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||popunder.example^$popup\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    await blocker.load();
+    expect(blocker.blocksPopup('https://popunder.example/', 'https://news.example/')).toBe(false);
+  });
+
+  it('finds the registrable domain of a page once the engine has loaded', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    expect(blocker.domainOf('https://www.example.co.uk/a')).toBe(undefined);
+    await blocker.load();
+    expect(blocker.domainOf('https://www.example.co.uk/a')).toBe('example.co.uk');
+    expect(blocker.domainOf('https://news.example.com/')).toBe('example.com');
+    expect(blocker.domainOf('http://127.0.0.1:8080/page.html')).toBe('127.0.0.1');
+    expect(blocker.domainOf('app://settings/')).toBe(undefined);
   });
 });

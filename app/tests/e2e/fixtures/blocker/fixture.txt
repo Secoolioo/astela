@@ -16,3 +16,7 @@
 ||127.0.0.1^*/fixture-ima.js$script,redirect=fixture-ima.js
 $removeparam=fixture_tracking
 ||127.0.0.1^*/csp.html$csp=script-src 'none'
+! Procedural rules, and a popup that the lists block.
+127.0.0.1##.fixture-promo:has-text(Sponsored)
+127.0.0.1##.fixture-remove:remove()
+||127.0.0.1^*/fixture-popup.html$popup

@@ -72,7 +72,7 @@ export const ContentBlockerSetting = defineSetting<boolean>({
   ui: { section: 'privacy', control: 'toggle', order: 1 },
 });
 
-/** Sites, by host name, on which the content blocker is off. */
+/** Sites, by host name or domain, on which the content blocker is off; a domain covers its hosts. */
 export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   key: 'contentBlocker.allowedSites',
   schema: v.pipe(

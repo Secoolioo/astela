@@ -41,6 +41,9 @@ export default defineConfig({
     build: {
       // Sandboxed preloads cannot load other files, so each one bundles what it imports.
       isolatedEntries: true,
+      // The frame preload runs in every web frame and bundles the evaluator of procedural
+      // filters; minified, it parses faster.
+      minify: true,
       outDir: 'out/preload',
       rollupOptions: {
         input: {

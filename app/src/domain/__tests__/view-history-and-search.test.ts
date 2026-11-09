@@ -70,5 +70,10 @@ describe('content blocker sites', () => {
     expect(blockingFor('app://newtab/', true, [])).toBe('none');
     expect(toggleSite(['b.example'], 'a.example')).toEqual(['a.example', 'b.example']);
     expect(toggleSite(['a.example', 'b.example'], 'a.example')).toEqual(['b.example']);
+    // An exception covers the registrable domain, so every subdomain of it.
+    expect(toggleSite([], 'www.news.example', 'news.example')).toEqual(['news.example']);
+    expect(blockingFor('https://cdn.news.example/', true, ['news.example'])).toBe('off');
+    expect(blockingFor('https://othernews.example/', true, ['news.example'])).toBe('on');
+    expect(toggleSite(['news.example'], 'www.news.example', 'news.example')).toEqual([]);
   });
 });

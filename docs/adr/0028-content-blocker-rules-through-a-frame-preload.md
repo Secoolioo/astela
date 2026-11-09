@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. [ADR 0031](0031-scriptlets-in-their-own-scope-and-world.md) refines how scriptlets run and how hiding rules are inserted.
+Accepted. [ADR 0031](0031-scriptlets-in-their-own-scope-and-world.md) refines how scriptlets run and how hiding rules are inserted. [ADR 0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md) adds the procedural rules.
 
 ## Date
 
@@ -20,7 +20,7 @@ Network rules cannot remove what a page draws from its own domain, and many filt
 - **One synchronous call per frame:** when a frame starts, the preload sends `blocker.frame` with `sendSync` and receives the hiding rules of the frame's address as a style sheet and its scriptlets. It inserts the style sheet with `webFrame.insertCSS` and runs the scriptlets with `webFrame.executeJavaScript` in the page's world. This is the only synchronous IPC in Astela; before the engine has loaded, the answer is empty and nothing waits.
 - **Rules for the page's elements:** after the document is parsed, and for elements added later, the preload reports classes, ids and link targets once each through `blocker.elements` (`invoke`) and inserts the generic hiding rules that match them.
 - **Validation:** both channels answer only frames of web sessions, read the frame's address from the frame itself instead of the message, and accept at most 1,000 short strings per list. They return only rules from the filter lists, and nothing when the blocker is off.
-- **Extended selectors** (procedural rules such as `:has-text`) are not applied yet.
+- **Extended selectors** (procedural rules such as `:has-text`) were not applied at first; [ADR 0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md) adds them.
 
 This record is an exception to ADR 0007 for these two channels.
 
@@ -34,7 +34,7 @@ Positive:
 Negative:
 
 - Each web frame start waits for one synchronous message, well under a millisecond in the spike.
-- Procedural rules of the lists have no effect until extended selectors are supported.
+- Procedural rules of the lists had no effect until [ADR 0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md).
 
 ## Alternatives considered
 
