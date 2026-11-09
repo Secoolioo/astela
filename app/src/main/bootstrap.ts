@@ -391,6 +391,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate);
+  const overlayOptions = {
+    url: 'app://overlay/',
+    preload: layout.pagePreload,
+    partition: internalPartition,
+    appearanceArgument: () => appearance.argument,
+    gate,
+    router,
+  };
+  // Sites and proxies that ask for a user name and password ask in the tab's window.
+  app.on('login', (event, contents, details, info, callback) => {
+    const window = contents === null ? undefined : windows.forTab(contents);
+    if (window === undefined) return;
+    event.preventDefault();
+    void import('./login-prompt.ts').then(({ askForLogin }) =>
+      askForLogin(window, details, info, callback, overlayOptions, router),
+    );
+  });
   // Certificates that the user accepted after the warning hold for this session.
   const certificates = new CertificateExceptions(
     () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
@@ -443,14 +460,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     openShieldPopover(window, anchor, {
       windows,
       router,
-      overlay: {
-        url: 'app://overlay/',
-        preload: layout.pagePreload,
-        partition: internalPartition,
-        appearanceArgument: () => appearance.argument,
-        gate,
-        router,
-      },
+      overlay: overlayOptions,
       settings,
       blocker,
       blocking,

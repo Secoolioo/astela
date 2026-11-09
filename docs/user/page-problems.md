@@ -8,4 +8,6 @@ If the certificate of a site is not trusted, for example because it was issued f
 
 If the process that showed a page stops, for example because it ran out of memory, the tab says that the page crashed. **Reload** shows the page again. Other tabs keep their pages.
 
+If a site or a proxy asks for a user name and password, Astela asks for them in a small window above the page and names the site and the area it gives. If the connection is not encrypted, it says so, because others could read what you send. **Sign in** sends them; **Cancel** or Escape shows the page as the site sends it without signing in.
+
 If a page stops responding, for example because a script runs without end, Astela asks whether to wait for it or to close the page. When the page responds again, the question goes away by itself.

@@ -6,16 +6,15 @@ import type {
   WindowManager,
 } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
-import { WindowOverlay, type OverlayOptions } from '../platform/electron/overlay.ts';
+import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
 import type { OverlayAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
-  CloseOverlay,
-  GetOverlay,
   OpenBlockerSettings,
   ToggleSiteBlocking,
   type OverlayContent,
 } from '../shared/ipc/overlay-contracts.ts';
 import { BlockerAllowedSitesSetting, ContentBlockerSetting } from './core-settings.ts';
+import { existingOverlay, overlayBySender, overlayOf, track, windowOfOverlay } from './overlays.ts';
 
 /** What the content blocker's popover needs from the browser process. */
 export interface ShieldPopoverDependencies {
@@ -28,8 +27,6 @@ export interface ShieldPopoverDependencies {
   readonly blocking: (url: string) => Blocking;
 }
 
-const overlays = new WeakMap<BrowserWindowController, WindowOverlay>();
-const bySender = new Map<number, WindowOverlay>();
 let dependencies: ShieldPopoverDependencies | undefined;
 
 /**
@@ -44,35 +41,21 @@ export function openShieldPopover(
   anchor: OverlayAnchor,
   deps: ShieldPopoverDependencies,
 ): void {
+  const overlay = overlayOf(window, deps.overlay, deps.router);
   if (dependencies === undefined) connect(deps);
   const content = shieldOf(deps, window, anchor);
   if (content === undefined) return;
-  let overlay = overlays.get(window);
-  if (overlay === undefined) {
-    overlay = new WindowOverlay(window, deps.overlay);
-    overlays.set(window, overlay);
-  }
   overlay.open(content);
-  const contents = overlay.contents;
-  if (contents !== undefined && !bySender.has(contents.id)) {
-    const id = contents.id;
-    bySender.set(id, overlay);
-    window.window.once('closed', () => bySender.delete(id));
-  }
+  track(window, overlay);
 }
 
 function connect(deps: ShieldPopoverDependencies): void {
   dependencies = deps;
   const { router, windows } = deps;
   const windowOf = (overlay: WindowOverlay): BrowserWindowController | undefined =>
-    windows.all.find((window) => overlays.get(window) === overlay);
-  router.handle(GetOverlay, (_request, { sender }) => bySender.get(sender.id)?.content ?? null);
-  router.handle(CloseOverlay, (_request, { sender }) => {
-    bySender.get(sender.id)?.close();
-    return null;
-  });
+    windowOfOverlay(windows.all, overlay);
   router.handle(ToggleSiteBlocking, (_request, { sender }) => {
-    const overlay = bySender.get(sender.id);
+    const overlay = overlayBySender(sender.id);
     const window = overlay === undefined ? undefined : windowOf(overlay);
     if (window !== undefined && overlay?.content?.kind === 'shield') {
       toggle(deps, window);
@@ -81,7 +64,7 @@ function connect(deps: ShieldPopoverDependencies): void {
     return null;
   });
   router.handle(OpenBlockerSettings, (_request, { sender }) => {
-    const overlay = bySender.get(sender.id);
+    const overlay = overlayBySender(sender.id);
     const window = overlay === undefined ? undefined : windowOf(overlay);
     overlay?.close();
     window?.execute('settings.open');
@@ -93,7 +76,7 @@ function connect(deps: ShieldPopoverDependencies): void {
     timer ??= setTimeout(() => {
       timer = undefined;
       for (const window of windows.all) {
-        const overlay = overlays.get(window);
+        const overlay = existingOverlay(window);
         if (overlay?.content?.kind === 'shield') refresh(window, overlay);
       }
     }, 50);
@@ -147,7 +130,7 @@ function toggle(deps: ShieldPopoverDependencies, window: BrowserWindowController
 /** Shows the current state of the active tab in an open popover, or closes it. */
 function refresh(window: BrowserWindowController, overlay: WindowOverlay): void {
   const shown = overlay.content;
-  if (shown === null || dependencies === undefined) return;
+  if (shown?.kind !== 'shield' || dependencies === undefined) return;
   const next = shieldOf(dependencies, window, shown.anchor);
   if (next === undefined) overlay.close();
   else if (JSON.stringify(next) !== JSON.stringify(shown)) overlay.update(next);
