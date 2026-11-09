@@ -161,15 +161,20 @@ test('lets a page show an element in full screen, over the whole window', async 
       });
     const before = await pageBounds();
     expect(before?.y).toBeGreaterThan(0);
-    // The window learns of the change before the page does, and the other way round.
+    const windowFullScreen = (): Promise<boolean | undefined> =>
+      browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isFullScreen());
+    // The window learns of the change before the page does, and the other way round; the
+    // window takes the whole screen while the page shows an element in full screen.
     const enter = async (): Promise<void> => {
       await page.getByRole('button', { name: 'Full screen' }).click();
       await expect.poll(async () => (await pageBounds())?.y).toBe(0);
       await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('player');
+      await expect.poll(windowFullScreen).toBe(true);
     };
     const left = async (): Promise<void> => {
       await expect.poll(async () => (await pageBounds())?.y).toBe(before?.y);
       await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+      await expect.poll(windowFullScreen).toBe(false);
     };
     await enter();
     // Escape ends it, as the page's own controls do.
@@ -228,9 +233,12 @@ test('opens and closes the developer tools of a page', async () => {
     const url = `${server.origin}/find.html`;
     await open(browser, url);
     const opened = (): Promise<unknown> => withContents(browser, url, 'devToolsOpened');
-    await pressInPage(browser, 'F12');
+    // F12 elsewhere, Command+Option+I on macOS.
+    const toggle = (): Promise<void> =>
+      mac ? pressInPage(browser, 'I', ['primary', 'alt']) : pressInPage(browser, 'F12');
+    await toggle();
     await expect.poll(opened).toBe(true);
-    await pressInPage(browser, 'F12');
+    await toggle();
     await expect.poll(opened).toBe(false);
   } finally {
     await browser.close();

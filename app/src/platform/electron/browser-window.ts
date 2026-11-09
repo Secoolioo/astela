@@ -165,6 +165,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private lastQuery = '';
   /** Whether the visible page shows an element in full screen, which covers the shell. */
   private pageFullScreen = false;
+  /** Whether a page put the window in full screen, which the window leaves with the page. */
+  private pageMadeFullScreen = false;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
@@ -678,6 +680,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               // Lets the content blocker's frame preload run in iframes; Node stays off.
               nodeIntegrationInSubFrames: true,
               spellcheck: false,
+              // The window takes the screen for a page in full screen itself, so the page
+              // leaves full screen at once and never waits for the window's animation.
+              disableHtmlFullscreenWindowResize: true,
             }
           : {
               preload: this.options.pagePreload,
@@ -770,13 +775,22 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       contents.on('zoom-changed', (_event, direction) =>
         this.zoom(id, direction === 'in' ? 1 : -1),
       );
-      // A video or another element in full screen covers the whole window.
+      // A video or another element in full screen covers the whole window, which takes the
+      // whole screen until the page leaves full screen, unless it was in full screen before.
       contents.on('enter-html-full-screen', () => {
         this.pageFullScreen = true;
+        if (!this.window.isFullScreen()) {
+          this.pageMadeFullScreen = true;
+          this.window.setFullScreen(true);
+        }
         this.layout();
       });
       contents.on('leave-html-full-screen', () => {
         this.pageFullScreen = false;
+        if (this.pageMadeFullScreen) {
+          this.pageMadeFullScreen = false;
+          this.window.setFullScreen(false);
+        }
         this.layout();
       });
     }
