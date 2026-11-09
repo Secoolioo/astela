@@ -18,6 +18,11 @@ export type DatabaseApi = Pick<
   | 'removeBookmark'
   | 'removeBookmarkUrl'
   | 'importBookmarks'
+  | 'addDownload'
+  | 'updateDownload'
+  | 'downloads'
+  | 'interruptDownloads'
+  | 'removeDownloads'
 >;
 
 /** The calls that the import from other browsers answers. */
@@ -44,6 +49,11 @@ const databaseMethods: readonly string[] = [
   'removeBookmark',
   'removeBookmarkUrl',
   'importBookmarks',
+  'addDownload',
+  'updateDownload',
+  'downloads',
+  'interruptDownloads',
+  'removeDownloads',
 ] satisfies readonly (keyof DatabaseApi)[];
 
 const importMethods: readonly string[] = [

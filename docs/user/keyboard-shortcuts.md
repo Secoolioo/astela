@@ -18,6 +18,7 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 | Reload                         | `F5` or `Ctrl+R`                                |
 | Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
 | Open the history               | `Ctrl+H`                                        |
+| Open the downloads             | `Ctrl+J`                                        |
 | Bookmark the page              | `Ctrl+D`                                        |
 | Open the bookmarks             | `Ctrl+Shift+O`                                  |
 | Show or hide the bookmarks bar | `Ctrl+Shift+B`                                  |
@@ -51,6 +52,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Go to the address bar          | `Command+L`                                                           |
 | Open the settings              | `Command+,`                                                           |
 | Open the history               | `Command+Y`                                                           |
+| Open the downloads             | `Command+Option+L`                                                    |
 | Bookmark the page              | `Command+D`                                                           |
 | Open the bookmarks             | `Command+Shift+O`                                                     |
 | Show or hide the bookmarks bar | `Command+Shift+B`                                                     |

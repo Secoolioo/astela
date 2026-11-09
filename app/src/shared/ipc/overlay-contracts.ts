@@ -66,10 +66,33 @@ const ScreenPicker = v.strictObject({
   ),
 });
 
+/**
+ * The list of downloads at its button, newest first: each one's name, where it stands, its
+ * bytes, whether it is paused and whether its file is still there.
+ */
+const DownloadsPanel = v.strictObject({
+  kind: v.literal('downloads'),
+  anchor: OverlayAnchor,
+  items: v.pipe(
+    v.array(
+      v.strictObject({
+        id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+        name: v.pipe(v.string(), v.maxLength(1000)),
+        state: v.picklist(['progressing', 'completed', 'cancelled', 'interrupted']),
+        received: v.pipe(v.number(), v.minValue(0)),
+        total: v.pipe(v.number(), v.minValue(0)),
+        paused: v.boolean(),
+        exists: v.boolean(),
+      }),
+    ),
+    v.maxLength(100),
+  ),
+});
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
 export const OverlayContent = v.nullable(
-  v.union([ShieldPopover, LoginPrompt, PermissionPrompt, ScreenPicker]),
+  v.union([ShieldPopover, LoginPrompt, PermissionPrompt, ScreenPicker, DownloadsPanel]),
 );
 
 /** The content of an open overlay. */
@@ -137,6 +160,25 @@ export const AnswerPermission = defineRequest({
 export const ShareScreen = defineRequest({
   channel: 'overlay.shareScreen',
   request: v.strictObject({ id: v.pipe(v.string(), v.maxLength(200)) }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Pauses, resumes, cancels, opens, shows, retries or removes a download of the list. */
+export const DownloadAction = defineRequest({
+  channel: 'overlay.download',
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    action: v.picklist(['pause', 'resume', 'cancel', 'open', 'folder', 'retry', 'remove']),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Opens the folder that downloads go to. */
+export const OpenDownloadsFolder = defineRequest({
+  channel: 'overlay.openDownloadsFolder',
+  request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',
 });

@@ -48,7 +48,25 @@ interface Screen {
   }[];
 }
 
-type Content = Shield | Login | Permission | Screen;
+/** A download of the list, as the browser process sends it. */
+interface DownloadItem {
+  readonly id: number;
+  readonly name: string;
+  readonly state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
+  readonly received: number;
+  readonly total: number;
+  readonly paused: boolean;
+  readonly exists: boolean;
+}
+
+/** The list of downloads at its button. */
+interface DownloadsList {
+  readonly kind: 'downloads';
+  readonly anchor: Shield['anchor'];
+  readonly items: readonly DownloadItem[];
+}
+
+type Content = Shield | Login | Permission | Screen | DownloadsList;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -64,10 +82,36 @@ const isContent = (value: unknown): value is Content =>
   typeof value === 'object' &&
   value !== null &&
   'kind' in value &&
-  ['shield', 'login', 'permission', 'screen'].includes(String(value.kind));
+  ['shield', 'login', 'permission', 'screen', 'downloads'].includes(String(value.kind));
 
 /** Width of a popover, and its distance to the window's edges and to its button. */
 const width = 288;
+/** Width of the list of downloads, whose names need room. */
+const listWidth = 360;
+
+/** What the buttons of a download do. */
+type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'folder' | 'retry' | 'remove';
+
+/**
+ * A number of bytes in the units that people read, such as `12.3 MB`.
+ * @param bytes - The bytes.
+ * @param language - The language of the page.
+ */
+function sizeText(bytes: number, language: string | undefined): string {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return new Intl.NumberFormat(language, {
+    style: 'unit',
+    unit: units[unit],
+    unitDisplay: 'short',
+    maximumFractionDigits: unit === 0 ? 0 : 1,
+  }).format(value);
+}
 const margin = 8;
 const gap = 4;
 
@@ -94,7 +138,7 @@ export class OverlayPage extends LitElement {
       position: fixed;
       left: var(--left);
       top: var(--top);
-      width: ${width}px;
+      width: var(--width, ${width}px);
       box-sizing: border-box;
       padding: var(--space-3);
       border: 1px solid var(--border-1);
@@ -103,6 +147,7 @@ export class OverlayPage extends LitElement {
     }
     .site {
       margin: 0;
+      font-size: inherit;
       font-weight: 600;
       overflow-wrap: anywhere;
     }
@@ -223,6 +268,40 @@ export class OverlayPage extends LitElement {
     .dialog:focus-visible {
       outline: none;
     }
+    .downloads {
+      max-height: 60vh;
+      margin: var(--space-2) 0 0;
+      padding: 0;
+      overflow-y: auto;
+      list-style: none;
+    }
+    .downloads li {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: var(--space-2) 0;
+      border-top: 1px solid var(--border-1);
+    }
+    .downloads .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .downloads progress {
+      width: 100%;
+      height: 4px;
+      accent-color: var(--accent);
+    }
+    .downloads .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+    .downloads .actions button {
+      width: auto;
+      margin: 0;
+      padding: 2px var(--space-2);
+    }
     .dialog.wide {
       width: 640px;
     }
@@ -306,6 +385,7 @@ export class OverlayPage extends LitElement {
     this.content = isContent(content) ? content : null;
     if (this.content === null) return;
     if (this.content.kind === 'shield') this.place(this.content.anchor);
+    if (this.content.kind === 'downloads') this.place(this.content.anchor, listWidth);
     if (this.content.kind === 'screen') this.chosen = undefined;
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
@@ -320,12 +400,13 @@ export class OverlayPage extends LitElement {
   }
 
   /** Puts the popover below its button, its right edge at the button's, inside the window. */
-  private place(anchor: Shield['anchor']): void {
+  private place(anchor: Shield['anchor'], popover = width): void {
     const left = Math.min(
-      Math.max(margin, anchor.x + anchor.width - width),
-      Math.max(margin, innerWidth - width - margin),
+      Math.max(margin, anchor.x + anchor.width - popover),
+      Math.max(margin, innerWidth - popover - margin),
     );
     this.style.setProperty('--left', `${left}px`);
+    this.style.setProperty('--width', `${popover}px`);
     this.style.setProperty('--top', `${anchor.y + anchor.height + gap}px`);
   }
 
@@ -335,6 +416,7 @@ export class OverlayPage extends LitElement {
     if (content.kind === 'login') return this.renderLogin(content);
     if (content.kind === 'permission') return this.renderPermission(content);
     if (content.kind === 'screen') return this.renderScreens(content);
+    if (content.kind === 'downloads') return this.renderDownloads(content);
     return html`<div class="backdrop" @click=${this.close}></div>
       <section role="dialog" aria-label=${this.t('shell.blocker')}>
         <p class="site">${content.site}</p>
@@ -455,6 +537,93 @@ export class OverlayPage extends LitElement {
         </div>
       </section>`;
   }
+
+  /** The list of downloads, newest first, with what each one allows. */
+  private renderDownloads(list: DownloadsList): TemplateResult {
+    return html`<div class="backdrop" @click=${this.close}></div>
+      <section role="dialog" aria-labelledby="downloads-title">
+        <h2 id="downloads-title" class="site">${this.t('overlay.downloads')}</h2>
+        ${
+          list.items.length === 0
+            ? html`<p class="note">${this.t('overlay.downloadsNone')}</p>`
+            : html`<ul class="downloads">
+                ${list.items.map((item) => this.renderDownload(item))}
+              </ul>`
+        }
+        <button type="button" @click=${this.openDownloadsFolder}>
+          ${this.t('overlay.downloadsFolder')}
+        </button>
+      </section>`;
+  }
+
+  private renderDownload(item: DownloadItem): TemplateResult {
+    const running = item.state === 'progressing';
+    const action = (name: DownloadAction, label: Parameters<Translator['t']>[0]) =>
+      html`<button
+        type="button"
+        aria-label=${this.t('overlay.downloadActionFor', { action: this.t(label), name: item.name })}
+        @click=${() => void this.bridge?.invoke('overlay.download', { id: item.id, action: name })}
+      >
+        ${this.t(label)}
+      </button>`;
+    return html`<li>
+      <span class="name" title=${item.name}>${item.name}</span>
+      <span class="note">${this.downloadStatus(item)}</span>
+      ${
+        running
+          ? html`<progress
+              max=${item.total > 0 ? item.total : nothing}
+              value=${item.total > 0 ? item.received : nothing}
+            ></progress>`
+          : nothing
+      }
+      <span class="actions">
+        ${
+          running
+            ? html`${
+                item.paused
+                  ? action('resume', 'overlay.downloadResume')
+                  : action('pause', 'overlay.downloadPause')
+              }
+              ${action('cancel', 'overlay.downloadCancel')}`
+            : html`${
+                item.state === 'completed' && item.exists
+                  ? html`${action('open', 'overlay.downloadOpen')}
+                    ${action('folder', 'overlay.downloadShow')}`
+                  : item.state === 'completed'
+                    ? nothing
+                    : action('retry', 'overlay.downloadRetry')
+              }
+              ${action('remove', 'overlay.downloadRemove')}`
+        }
+      </span>
+    </li>`;
+  }
+
+  /** Where a download stands, in words and bytes. */
+  private downloadStatus(item: DownloadItem): string {
+    const language = this.i18n?.language;
+    const received = sizeText(item.received, language);
+    const progress =
+      item.total > 0
+        ? this.t('overlay.downloadProgress', { received, total: sizeText(item.total, language) })
+        : received;
+    if (item.state === 'progressing') {
+      return item.paused ? `${this.t('overlay.downloadPaused')}, ${progress}` : progress;
+    }
+    if (item.state === 'completed') {
+      return item.exists
+        ? sizeText(Math.max(item.total, item.received), language)
+        : this.t('overlay.downloadDeleted');
+    }
+    return this.t(
+      item.state === 'cancelled' ? 'overlay.downloadCanceled' : 'overlay.downloadFailed',
+    );
+  }
+
+  private readonly openDownloadsFolder = (): void => {
+    void this.bridge?.invoke('overlay.openDownloadsFolder', {});
+  };
 
   private answer(allow: boolean): void {
     void this.bridge?.invoke('overlay.answerPermission', { allow });

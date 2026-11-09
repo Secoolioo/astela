@@ -83,6 +83,22 @@ export class AppShell extends LitElement {
       font-size: 12px;
       text-align: end;
     }
+    .downloads {
+      position: relative;
+    }
+    /* The progress of the running downloads, around the downloads icon. */
+    .downloads .ring {
+      position: absolute;
+      inset: 2px;
+      width: auto;
+      height: auto;
+      transform: rotate(-90deg);
+    }
+    .downloads .ring circle {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 2;
+    }
     .zoom {
       height: 24px;
       padding: 0 var(--space-2);
@@ -358,6 +374,8 @@ export class AppShell extends LitElement {
   /** The active tab that the shell last handled focus for. */
   private focusedTabId: string | undefined;
   private findFocusPending = false;
+  /** Whether the list of downloads opens at its button once the button is there. */
+  private downloadsPending = false;
   /** The insets last sent to the browser. */
   private reportedInsets = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
@@ -365,7 +383,14 @@ export class AppShell extends LitElement {
 
   constructor() {
     super();
-    this.state = { tabs: [], activeTabId: null, tabStrip: 'top', bookmarksBar: null, find: null };
+    this.state = {
+      tabs: [],
+      activeTabId: null,
+      tabStrip: 'top',
+      bookmarksBar: null,
+      find: null,
+      downloads: null,
+    };
     this.editing = undefined;
   }
 
@@ -378,9 +403,11 @@ export class AppShell extends LitElement {
     }
     this.unsubscribers.push(
       bridge.on('shell.stateChanged', (state) => (this.state = state)),
-      bridge.on('shell.command', (command) =>
-        command === 'find.focus' ? this.focusFind() : this.focusAddress(),
-      ),
+      bridge.on('shell.command', (command) => {
+        if (command === 'find.focus') this.focusFind();
+        else if (command === 'downloads.open') this.openDownloadsAtButton();
+        else this.focusAddress();
+      }),
     );
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
     this.resizeObserver = new ResizeObserver(() => {
@@ -416,6 +443,7 @@ export class AppShell extends LitElement {
       this.reportInsets();
       this.layoutBookmarksBar();
       this.takeFindFocus();
+      this.takeDownloadsOpening();
     }
     if (changed.has('state') && this.active === undefined) {
       this.editing = undefined;
@@ -555,6 +583,7 @@ export class AppShell extends LitElement {
                 }
               </button>`
         }
+        ${this.renderDownloadsButton()}
         <button
           class="icon"
           title=${t('shell.menu')}
@@ -716,6 +745,64 @@ export class AppShell extends LitElement {
   };
 
   /** Opens the browser menu below the button. */
+  /** The downloads button, once the browser downloaded something, with the progress around it. */
+  private renderDownloadsButton(): TemplateResult | typeof nothing {
+    const downloads = this.state.downloads;
+    if (downloads === null) return nothing;
+    const label =
+      downloads.active === 0
+        ? this.tp('shell.downloads')
+        : this.tp('shell.downloadsActive', { count: String(downloads.active) });
+    // The ring fills with the progress; while a size is unknown, it shows a quarter.
+    const ring = downloads.active === 0 ? 0 : (downloads.progress ?? 0.25);
+    return html`<button
+      class="icon downloads"
+      title=${label}
+      aria-label=${label}
+      aria-haspopup="dialog"
+      @click=${(event: MouseEvent) => this.openDownloads(event.currentTarget)}
+    >
+      ${icons.download}
+      ${
+        downloads.active === 0
+          ? nothing
+          : html`<svg class="ring" viewBox="0 0 24 24" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                pathLength="100"
+                stroke-dasharray="${Math.round(ring * 100)} 100"
+              />
+            </svg>`
+      }
+    </button>`;
+  }
+
+  /** Opens the list of downloads at the button, once the shortcut showed the button. */
+  private openDownloadsAtButton(): void {
+    this.downloadsPending = true;
+    this.takeDownloadsOpening();
+  }
+
+  private takeDownloadsOpening(): void {
+    const button = this.renderRoot.querySelector('.downloads');
+    if (!this.downloadsPending || button === null) return;
+    this.downloadsPending = false;
+    this.openDownloads(button);
+  }
+
+  private openDownloads(button: EventTarget | null): void {
+    if (!(button instanceof HTMLElement)) return;
+    const rect = button.getBoundingClientRect();
+    void this.bridge?.invoke('shell.openDownloads', {
+      x: Math.max(0, Math.round(rect.left)),
+      y: Math.max(0, Math.round(rect.top)),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    });
+  }
+
   private readonly openMenu = (event: MouseEvent): void => {
     const button = event.currentTarget;
     if (button instanceof HTMLElement) {
@@ -999,6 +1086,11 @@ const icons = {
   more: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="m6 17 5-5-5-5" />
     <path d="m13 17 5-5-5-5" />
+  </svg>`,
+  download: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 4v11" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M5 19h14" />
   </svg>`,
   menu: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="5" r="1" />
