@@ -167,7 +167,29 @@ The third beta brings two features forward from later milestones: the content bl
 - **Content blocker:** on by default and switchable per site, with the filter lists that uBlock Origin enables by default, except Peter Lowe's list, and its scriptlets.
 - **Bookmarks bar and default browser:** the bookmarks bar below the toolbar; links from other apps open in a new tab, and the browser can become the default browser.
 
-Saved passwords, autofill and the import of passwords follow in `0.1.0-beta.4`.
+#### `0.1.0-beta.4` to `0.1.0-beta.7`
+
+A full test of `0.1.0-beta.3` on real websites found pages that the content blocker breaks, internal pages that do not scroll, no error pages, and missing basics such as find in page, zoom and downloads. The next four betas turn the base into a browser for every day, in this order:
+
+- **`0.1.0-beta.4`, working basics:**
+  - **Content blocker:** scriptlets that run in their own scope and world; the replacement resources of uBlock Origin for `$redirect`; `$removeparam`, `$csp`, procedural cosmetic filters and `$popup`; exceptions per registrable domain; a visible status; a shield popover; a list of exceptions; and a choice of filter lists.
+  - **Pages:** internal pages that scroll; error, certificate and crash pages; a sign-in dialog for HTTP authentication.
+  - **Page tools:** find in page; zoom per site; full screen, also for videos; developer tools; printing; saving pages; viewing the source; PDF documents.
+  - **Permissions and downloads:** permission prompts and site permissions; downloads with a panel.
+  - **Windows:** popups that keep their opener, new and private windows, remembered window positions, and a fuller browser menu.
+- **`0.1.0-beta.5`, customization:**
+  - **Settings:** a settings page generated from the settings schema, with search, deep links, export, import and reset.
+  - **Look and layout:** a density that scales spacing, radii and text; UI and web fonts; layout presets with an integrated title bar; themes with an editor.
+  - **Browser parts:** a customizable toolbar and new tab page; search engines with keywords and bangs; editable keyboard shortcuts.
+  - **Startup, data and network:** startup and home pages, default zoom, the download folder, clearing browsing data, HTTPS-First, DNS over HTTPS and blocking third-party cookies.
+- **`0.1.0-beta.6`, a calm, modern look:**
+  - **Tokens:** motion, radius, type and elevation tokens, with no motion when the system asks for reduced motion.
+  - **Tabs:** animated tabs with favicons, pinned tabs and a tab menu.
+  - **Address bar:** a new address bar with site information and suggestions from history, bookmarks and open tabs.
+  - **Menus and controls:** browser menus and popovers in an overlay; switches and segmented controls; a refined dark mode.
+- **`0.1.0-beta.7`, more:** a command palette, tab search, sleeping tabs, split view, tab groups, workspaces, a reader view, a picture-in-picture button and an exact session restore with the back and forward history of each tab.
+
+Saved passwords, autofill and the import of passwords follow in `0.1.0-beta.8`.
 
 ### 5. Release `0.1.0`
 
