@@ -591,8 +591,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
         this.setProblem(id, { kind: 'error', code: name, url: failed });
       });
+      // Electron reports only the process of the page itself, and the tab has nothing to show
+      // once it ended, however it ended: with the sandbox of Linux, a renderer that crashed can
+      // count as one that exited cleanly.
       contents.on('render-process-gone', (_event, details) => {
-        if (details.reason === 'clean-exit') return;
+        if (this.window.isDestroyed() || contents.isDestroyed()) return;
         const code = details.reason.toUpperCase().replaceAll('-', '_');
         this.setProblem(id, { kind: 'crashed', code, url: contents.getURL() });
       });
