@@ -143,10 +143,12 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
           ?.click();
       }, newWindow);
       await expect.poll(() => windowCount(browser)).toBe(3);
-      // The first window goes to a place of its own, which the next start restores.
+      // The first window goes to a place of its own, which the next start restores. It fits
+      // the smallest screen of the test machines, 1024 × 768 with the menu bar and the Dock
+      // of macOS, because a larger window is fitted to its screen.
       await browser.main.evaluate(({ BaseWindow }) => {
         const first = BaseWindow.getAllWindows().find((window) => window.id === 1);
-        first?.setBounds({ x: 40, y: 50, width: 900, height: 700 });
+        first?.setBounds({ x: 40, y: 60, width: 800, height: 500 });
       });
     } finally {
       await browser.close({ keepProfile: true });
@@ -157,7 +159,7 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
       const bounds = await again.main.evaluate(({ BaseWindow }) =>
         BaseWindow.getAllWindows().map((window) => window.getBounds()),
       );
-      expect(bounds).toContainEqual({ x: 40, y: 50, width: 900, height: 700 });
+      expect(bounds).toContainEqual({ x: 40, y: 60, width: 800, height: 500 });
     } finally {
       await again.close();
     }
