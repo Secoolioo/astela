@@ -55,6 +55,8 @@ export interface WebContentsGuardOptions {
   readonly isInternal: (contents: WebContents) => boolean;
   /** Opens a URL that a page wanted to open in a new window as a new tab instead. */
   readonly openInTab: (url: string, opener: WebContents) => void;
+  /** Tells whether a popup that a page opens is blocked, such as by the content blocker. */
+  readonly blocksPopup?: (url: string, opener: WebContents) => boolean;
   readonly logger: Logger;
 }
 
@@ -71,7 +73,11 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event) => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
-      if (!options.isInternal(contents) && mayOpenInNewTab(url)) {
+      if (
+        !options.isInternal(contents) &&
+        mayOpenInNewTab(url) &&
+        options.blocksPopup?.(url, contents) !== true
+      ) {
         options.openInTab(url, contents);
       }
       return { action: 'deny' };

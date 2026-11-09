@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { build, isolatedScriptletMark, markIsolatedScriptlets } from './build.ts';
+import { build, isolatedScriptletMark, markIsolatedScriptlets, popupFilters } from './build.ts';
 import { contentTypeOf } from './redirects.ts';
 import { applyConditions, evaluateCondition, loadList } from './preprocess.ts';
 import { fetchSources, relativeImports, type UboSources } from './scriptlets.ts';
@@ -156,6 +156,28 @@ describe('build', () => {
         cosmetics.scripts.filter((script) => script.includes(isolatedScriptletMark)).length,
         1,
       );
+      // Procedural rules reach the page as extended rules.
+      const extended = engine.getCosmeticsFilters({
+        url: 'http://127.0.0.1:8080/procedural.html',
+        hostname: '127.0.0.1',
+        domain: '127.0.0.1',
+        getExtendedRules: true,
+      }).extended;
+      assert.equal(extended.length, 2);
+      // Popup filters form an engine of their own, asked with the popup as the document.
+      const popups = FiltersEngine.deserialize(readFileSync(join(out, 'popups.bin')));
+      const popup = (url: string): boolean =>
+        popups.match(
+          Request.fromRawDetails({
+            url,
+            sourceUrl: 'http://127.0.0.1:8080/popup.html',
+            type: 'main_frame',
+          }),
+        ).match;
+      assert.equal(popup('http://127.0.0.1:8080/fixture-popup.html'), true);
+      assert.equal(popup('http://127.0.0.1:8080/second.html'), false);
+      // The main engine leaves the popup filter out, so the page itself still loads.
+      assert.equal(blocked('http://127.0.0.1:8080/fixture-popup.html', 'script'), false);
       assert.match(readFileSync(join(out, 'NOTICE.txt'), 'utf8'), /License: MPL-2.0/);
     } finally {
       rmSync(out, { recursive: true, force: true });
@@ -169,5 +191,23 @@ describe('contentTypeOf', () => {
     assert.equal(contentTypeOf('1x1.gif'), 'image/gif;base64');
     assert.equal(contentTypeOf('noop-0.1s.mp3'), 'audio/mp3;base64');
     assert.equal(contentTypeOf('empty'), 'text/plain');
+  });
+});
+
+describe('popupFilters', () => {
+  it('keeps the network filters for popups without their popup option', () => {
+    assert.deepEqual(
+      popupFilters(
+        [
+          '! comment',
+          '||ads.example^$popup',
+          '||track.example^$popup,third-party',
+          '||other.example^$script',
+          'example.com##.ad',
+          '@@||good.example^$popup',
+        ].join('\n'),
+      ),
+      ['||ads.example^', '||track.example^$third-party', '@@||good.example^'],
+    );
   });
 });

@@ -28,7 +28,13 @@ import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { linksFromArguments } from '../domain/navigation/links.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
-import { blockingFor, siteOf, toggleSite, type Blocking } from '../domain/blocker/blocking.ts';
+import {
+  blockingFor,
+  exceptionFor,
+  siteOf,
+  toggleSite,
+  type Blocking,
+} from '../domain/blocker/blocking.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
@@ -367,6 +373,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     // Every view of the internal session is the browser's own: the shell and internal pages.
     isInternal: (contents) => contents.session === internal,
     openInTab: openFromPage,
+    // Popups that the filter lists name do not open, and count as blocked on their page.
+    blocksPopup: (url, opener) => {
+      const blocked = blocker.blocksPopup(url, opener.getURL());
+      if (blocked) windows.countBlocked(opener.id);
+      return blocked;
+    },
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate);
@@ -404,19 +416,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     if (window === undefined || tab === undefined || site === undefined) {
       return null;
     }
-    const { popupBlockerMenu } = await import('./browser-menu.ts');
+    const { popupBlockerMenu, showBlockerSaveError } = await import('./browser-menu.ts');
+    const allowed = settings.get(BlockerAllowedSitesSetting);
+    // An exception covers the whole registrable domain, such as example.co.uk.
+    const domain = blocker.domainOf(tab.url) ?? site;
     popupBlockerMenu(window, position, {
-      site,
+      site: exceptionFor(site, allowed) ?? domain,
       blocked: tab.blocked,
       on: blocking(tab.url) !== 'off',
       failed: blocker.status === 'failed',
       available: settings.get(ContentBlockerSetting),
       toggle: () => {
-        settings.set(
+        const saved = settings.set(
           BlockerAllowedSitesSetting,
-          toggleSite(settings.get(BlockerAllowedSitesSetting), site),
+          toggleSite(settings.get(BlockerAllowedSitesSetting), site, domain),
         );
-        window.tabs.run(tab.id, 'reload');
+        if (saved.ok) window.tabs.run(tab.id, 'reload');
+        else showBlockerSaveError(window, saved.error.kind === 'locked-by-policy');
       },
     });
     return null;

@@ -246,3 +246,105 @@ test('serves stand-ins for redirected scripts, removes tracking parameters and a
     await browser.close();
   }
 });
+
+test('applies procedural rules and blocks popups that the lists name', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/procedural.html`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.endsWith('/procedural.html'));
+    const display = (id: string): Promise<string> =>
+      page.evaluate((element) => {
+        const found = document.getElementById(element);
+        return found === null ? 'removed' : getComputedStyle(found).display;
+      }, id);
+    await expect.poll(() => display('sponsored')).toBe('none');
+    await expect.poll(() => display('late')).toBe('none');
+    expect(await display('news')).toBe('block');
+    expect(await display('removed')).toBe('removed');
+
+    await address.fill(`${server.origin}/popup.html`);
+    await address.press('Enter');
+    const opener = await waitForPage(browser, (url) => url.endsWith('/popup.html'));
+    await opener.locator('#blocked').click();
+    await opener.locator('#allowed').click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/popup.html`, `${server.origin}/second.html`]);
+    expect((await shellState(browser.shell)).tabs[0]?.blocked).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('turns the blocker off for a whole domain, its other hosts included', async () => {
+  const browser = await launch();
+  try {
+    await browser.main.evaluate(({ Menu }) => {
+      const recorded: Electron.Menu[] = [];
+      Object.assign(globalThis, { recordedMenus: recorded });
+      Menu.prototype.popup = function popup(this: Electron.Menu) {
+        recorded.push(this);
+      };
+    });
+    // Hosts under localhost reach the fixture server, and news.localhost is their domain.
+    const port = new URL(server.origin).port;
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const open = async (url: string): Promise<Page> => {
+      await address.fill(url);
+      await address.press('Enter');
+      return waitForPage(browser, (current) => current === url);
+    };
+    await open(`http://www.news.localhost:${port}/blocker.html`);
+    await browser.shell.getByRole('button', { name: 'Content blocker: 1 blocked' }).click();
+    const lastMenu = (): Promise<string | undefined> =>
+      browser.main.evaluate(() =>
+        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
+          .at(-1)
+          ?.items[2]?.label.replaceAll('&', ''),
+      );
+    await expect
+      .poll(lastMenu)
+      .toBe(
+        process.platform === 'darwin'
+          ? 'Block Ads on news.localhost'
+          : 'Block ads on news.localhost',
+      );
+    await browser.main.evaluate(() => {
+      (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
+        .at(-1)
+        ?.items[2]?.click();
+    });
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
+    ).toBeVisible();
+    // Another host of the same domain is covered by the exception, another site is not.
+    const other = await open(`http://shop.news.localhost:${port}/blocker.html`);
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        other.evaluate(() => (window as unknown as { fixtureAdLoaded?: boolean }).fixtureAdLoaded),
+      )
+      .toBe(true);
+    await open(`${server.origin}/blocker.html`);
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' }),
+    ).toBeVisible();
+    // The menu of a covered host offers to remove the exception of the domain.
+    await open(`http://www.news.localhost:${port}/blocker.html`);
+    await browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }).click();
+    await expect
+      .poll(lastMenu)
+      .toBe(
+        process.platform === 'darwin'
+          ? 'Block Ads on news.localhost'
+          : 'Block ads on news.localhost',
+      );
+  } finally {
+    await browser.close();
+  }
+});

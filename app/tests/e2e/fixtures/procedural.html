@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture procedural</title>
+  </head>
+  <body>
+    <div class="fixture-promo" id="sponsored">Sponsored</div>
+    <div class="fixture-promo" id="news">News</div>
+    <div class="fixture-remove" id="removed">Removed</div>
+    <script>
+      // An element that appears later is handled as well.
+      setTimeout(() => {
+        const late = document.createElement('div');
+        late.className = 'fixture-promo';
+        late.id = 'late';
+        late.textContent = 'Sponsored later';
+        document.body.append(late);
+      }, 300);
+    </script>
+  </body>
+</html>

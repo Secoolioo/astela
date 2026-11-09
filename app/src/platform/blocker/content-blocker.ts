@@ -26,12 +26,27 @@ const requestTypes: Readonly<Record<string, RequestType>> = {
   other: 'other',
 };
 
+/**
+ * A procedural rule, such as `:has-text()`: the frame finds its elements itself, then marks
+ * them with the attribute that the style sheet hides, or runs the directive on them.
+ */
+export interface ExtendedRule {
+  /** The selector of the elements, parsed. */
+  readonly ast: unknown;
+  /** The attribute that hides an element, for hiding rules. */
+  readonly attribute?: string | undefined;
+  /** What to do with an element, such as removing it, for the other rules. */
+  readonly directive?: unknown;
+}
+
 /** The rules for a frame that starts. */
 export interface FrameRules {
   /** Element hiding rules of the frame's address, as a style sheet. */
   readonly styles: string;
   /** Scriptlets that run in the page's world before its own scripts. */
   readonly scripts: readonly string[];
+  /** Procedural rules of the frame's address. */
+  readonly extended: readonly ExtendedRule[];
   /** Whether the frame should report its elements for the generic hiding rules. */
   readonly elements: boolean;
 }
@@ -43,7 +58,7 @@ export interface FrameElements {
   readonly hrefs: readonly string[];
 }
 
-const noRules: FrameRules = { styles: '', scripts: [], elements: false };
+const noRules: FrameRules = { styles: '', scripts: [], extended: [], elements: false };
 
 /** Where the content blocker is: not loaded yet, loading, working, or without usable data. */
 export type BlockerStatus = 'idle' | 'loading' | 'ready' | 'failed';
@@ -207,12 +222,17 @@ export class ContentBlocker implements RequestInterceptor {
     if (page === undefined) {
       return noRules;
     }
-    const { styles, scripts } = page.loaded.engine.getCosmeticsFilters({
+    const { styles, scripts, extended } = page.loaded.engine.getCosmeticsFilters({
       ...page.address,
       getRulesFromDOM: false,
-      getExtendedRules: false,
+      getExtendedRules: true,
     });
-    return { styles, scripts, elements: true };
+    return {
+      styles,
+      scripts,
+      extended: extended.map(({ ast, attribute, directive }) => ({ ast, attribute, directive })),
+      elements: true,
+    };
   }
 
   /**
@@ -239,6 +259,40 @@ export class ContentBlocker implements RequestInterceptor {
     }).styles;
   }
 
+  /**
+   * The registrable domain of a page, such as `example.co.uk` for `www.example.co.uk`;
+   * `undefined` before the filter engine has loaded or for anything but http and https.
+   * @param url - The page's address.
+   */
+  domainOf(url: string): string | undefined {
+    if (this.loaded === undefined || !/^https?:/i.test(url)) return undefined;
+    const { domain, hostname } = this.loaded.Request.fromRawDetails({ url });
+    return domain === '' ? hostname : domain;
+  }
+
+  /**
+   * Whether a popup that a page opens is one that the filter lists block.
+   * @param url - The address the popup would show.
+   * @param openerUrl - The address of the page that opens it.
+   */
+  blocksPopup(url: string, openerUrl: string): boolean {
+    const loaded = this.loaded;
+    if (
+      loaded?.popups === undefined ||
+      !/^https?:/i.test(url) ||
+      !/^https?:/i.test(openerUrl) ||
+      !this.options.enabled(openerUrl)
+    ) {
+      return false;
+    }
+    const request = loaded.Request.fromRawDetails({
+      url,
+      sourceUrl: openerUrl,
+      type: 'main_frame',
+    });
+    return loaded.popups.match(request).match;
+  }
+
   /** The loaded engine and the parts of an address that cosmetic rules need. */
   private page(
     url: string,
@@ -256,13 +310,17 @@ export class ContentBlocker implements RequestInterceptor {
 
   private async read(): Promise<LoadedEngine | undefined> {
     try {
-      const [{ FiltersEngine: Engine, Request }, bytes] = await Promise.all([
+      const [{ FiltersEngine: Engine, Request }, bytes, popupBytes] = await Promise.all([
         import('@ghostery/adblocker'),
         readFile(join(this.options.dataDir, 'engine.bin')),
+        // The filters with `$popup`, which the engine itself does not support; optional.
+        readFile(join(this.options.dataDir, 'popups.bin')).catch(() => undefined),
       ]);
       const engine = Engine.deserialize(new Uint8Array(bytes));
+      const popups =
+        popupBytes === undefined ? undefined : Engine.deserialize(new Uint8Array(popupBytes));
       this.options.logger.info('Content blocker ready', { bytes: bytes.length });
-      this.loaded = { engine, Request };
+      this.loaded = { engine, popups, Request };
       this.setStatus('ready');
       return this.loaded;
     } catch (error) {
@@ -279,6 +337,8 @@ export class ContentBlocker implements RequestInterceptor {
 /** The engine and the request class of the library, loaded together. */
 interface LoadedEngine {
   readonly engine: FiltersEngine;
+  /** An engine of the popup filters alone, matched against the addresses of popups. */
+  readonly popups: FiltersEngine | undefined;
   readonly Request: typeof EngineRequest;
 }
 

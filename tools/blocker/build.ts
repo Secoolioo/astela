@@ -132,6 +132,31 @@ export function markIsolatedScriptlets(resources: string): string {
   return JSON.stringify(parsed);
 }
 
+/**
+ * The network filters that apply to popups, rewritten without their `popup` option. The
+ * filter engine drops `$popup` filters, so they become an engine of their own that the
+ * browser asks when a page opens a popup.
+ * @param text - The text of the filter lists.
+ */
+export function popupFilters(text: string): string[] {
+  const filters: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    // Comments, list headers and cosmetic rules are not network filters.
+    if (line === '' || line.startsWith('!') || line.startsWith('[') || line.includes('#')) {
+      continue;
+    }
+    const separator = line.lastIndexOf('$');
+    if (separator <= 0) continue;
+    const options = line.slice(separator + 1).split(',');
+    if (!options.includes('popup')) continue;
+    const rest = options.filter((option) => option !== 'popup');
+    const pattern = line.slice(0, separator);
+    filters.push(rest.length === 0 ? pattern : `${pattern}$${rest.join(',')}`);
+  }
+  return filters;
+}
+
 /** Builds the engine from lists and scriptlets and writes the data folder. */
 export async function build(options: {
   readonly out: string;
@@ -179,9 +204,16 @@ export async function build(options: {
     redirectSource = { source: 'fixture', license: 'MPL-2.0', count: 0 };
   }
   resources = markIsolatedScriptlets(resources);
-  const engine = FiltersEngine.parse(lists.map(({ text }) => text).join('\n'), {
+  const allLists = lists.map((list) => list.text).join('\n');
+  const engine = FiltersEngine.parse(allLists, {
     enableCompression: true,
     loadCosmeticFilters: true,
+    loadNetworkFilters: true,
+    loadExtendedSelectors: true,
+  });
+  const popupEngine = FiltersEngine.parse(popupFilters(allLists).join('\n'), {
+    enableCompression: true,
+    loadCosmeticFilters: false,
     loadNetworkFilters: true,
   });
   if (!engine.updateResources(resources, sha256(resources))) {
@@ -203,6 +235,7 @@ export async function build(options: {
   };
   mkdirSync(options.out, { recursive: true });
   writeFileSync(join(options.out, 'engine.bin'), engine.serialize());
+  writeFileSync(join(options.out, 'popups.bin'), popupEngine.serialize());
   writeFileSync(join(options.out, 'filters.json'), `${JSON.stringify(metadata, null, 2)}\n`);
   writeFileSync(join(options.out, 'NOTICE.txt'), notice(metadata));
   return metadata;
