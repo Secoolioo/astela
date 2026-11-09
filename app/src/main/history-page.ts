@@ -4,7 +4,7 @@ import {
   ListHistory,
   OpenFromHistory,
 } from '../shared/ipc/history-contracts.ts';
-import type { DataServiceClient } from '../platform/electron/data-service-client.ts';
+import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { WindowManager } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
@@ -17,7 +17,7 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
  */
 export function connectHistoryPage(
   router: IpcRouter,
-  data: DataServiceClient,
+  data: DataClient,
   windows: WindowManager,
 ): void {
   router.handle(ListHistory, async ({ query, before }) => {

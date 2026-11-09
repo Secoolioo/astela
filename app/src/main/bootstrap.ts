@@ -75,7 +75,7 @@ import {
   coreSettings,
 } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
-import { Bookmarks } from './bookmarks.ts';
+import type { Bookmarks } from './bookmarks.ts';
 import {
   canBeDefaultBrowser,
   DefaultBrowserSettingEnabled,
@@ -84,7 +84,7 @@ import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
-import { DataServiceClient } from '../platform/electron/data-service-client.ts';
+import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
 import type { PermissionPrompts } from './permission-prompt.ts';
 import { sitePermissions } from './site-permissions.ts';
@@ -220,11 +220,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
   hardenSession(internal);
-  const data = new DataServiceClient(
-    layout.dataService,
-    join(userData, 'profile.db'),
-    logger.child('data'),
-  );
+  // The data service, and the code that talks to it, start with the first call.
+  let dataClient: Promise<DataServiceClient> | undefined;
+  let startedClient: DataServiceClient | undefined;
+  const data: DataClient = {
+    call: (method, ...params) => {
+      dataClient ??= import('../platform/electron/data-service-client.ts').then(
+        ({ DataServiceClient: Client }) =>
+          (startedClient = new Client(
+            layout.dataService,
+            join(userData, 'profile.db'),
+            logger.child('data'),
+          )),
+      );
+      return dataClient.then((client) => client.call(method, ...params));
+    },
+    dispose: () => startedClient?.dispose(),
+  };
   // Every request of web content passes the request pipeline; the content blocker is its
   // first step. Its engine loads with the first web page.
   const pipeline = new RequestPipeline();
@@ -337,14 +349,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The context menu failed', error));
   };
 
-  // The star in the address bar shows whether a page has a bookmark.
-  const bookmarks = new Bookmarks(
-    data,
-    router,
-    internal,
-    () => windows.refreshShells(),
-    logger.child('bookmarks'),
-  );
+  // The star in the address bar shows whether a page has a bookmark; the bookmarks load with
+  // the first web page that a tab shows, or with the bookmarks bar.
+  let bookmarks: Bookmarks | undefined;
+  let bookmarksLoaded: Promise<Bookmarks> | undefined;
+  const loadBookmarks = (): Promise<Bookmarks> => {
+    bookmarksLoaded ??= import('./bookmarks.ts').then(
+      ({ Bookmarks: List }) =>
+        (bookmarks = new List(
+          data,
+          router,
+          internal,
+          () => windows.refreshShells(),
+          logger.child('bookmarks'),
+        )),
+    );
+    return bookmarksLoaded;
+  };
   const appearance = new AppearanceController(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
@@ -368,10 +389,20 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         : data.call('addVisit', url, title);
       call.catch((error: unknown) => logger.warn('History not saved', { error: String(error) }));
     },
-    isBookmarked: (url) => bookmarks.has(url),
-    toggleBookmark: (url, title) => bookmarks.toggle(url, title),
+    // The first web page loads the bookmarks; until they are there, no page has one.
+    isBookmarked: (url) => {
+      if (bookmarks !== undefined) return bookmarks.has(url);
+      if (/^https?:/i.test(url)) void loadBookmarks().then((list) => list.has(url));
+      return false;
+    },
+    toggleBookmark: (url, title) => void loadBookmarks().then((list) => list.toggle(url, title)),
     // The bookmarks bar loads the bookmarks only while it shows.
-    bookmarksBar: () => (settings.get(BookmarksBarSetting) ? bookmarks.barItems() : null),
+    bookmarksBar: () => {
+      if (!settings.get(BookmarksBarSetting)) return null;
+      if (bookmarks !== undefined) return bookmarks.barItems();
+      void loadBookmarks().then((list) => list.barItems());
+      return [];
+    },
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
     // The handlers of the other internal pages load with the first of them, before it loads.
@@ -407,15 +438,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   let pages: Promise<void> | true | undefined;
   const connectPages = (): Promise<void> | undefined => {
     if (pages === true) return undefined;
-    pages ??= import('./page-handlers.ts')
-      .then(({ connectPages: connect }) => {
+    pages ??= Promise.all([import('./page-handlers.ts'), loadBookmarks()])
+      .then(([{ connectPages: connect }, list]) => {
         connect({
           router,
           settings,
           definitions: coreSettings,
           internal,
           data,
-          bookmarks,
+          bookmarks: list,
           windows,
           importAllowed: () => policies.mandatoryValue(ImportEnabled) !== false,
           defaultBrowserAllowed: () =>
@@ -495,7 +526,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       window,
       { x, y },
       { id, from },
-      (folder) => bookmarks.contents(folder),
+      (folder) => bookmarks?.contents(folder) ?? [],
       (url, newTab) => {
         const active = window.tabs.active;
         if (newTab || active === undefined) window.tabs.open(url);
