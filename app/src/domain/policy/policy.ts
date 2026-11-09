@@ -52,10 +52,11 @@ export interface PolicyReadResult {
 export interface PolicyProvider {
   /** Name for diagnostics, such as `windows-registry`. */
   readonly name: string;
-  /** Reads all policy values. Must not throw; problems are returned as errors. */
-  load(): PolicyReadResult;
-  /** Reads like {@link load} without blocking the caller. Must not reject. */
-  loadAsync?(): Promise<PolicyReadResult>;
+  /**
+   * Reads all policy values without blocking the caller. Must not reject; problems are
+   * returned as errors.
+   */
+  load(): Promise<PolicyReadResult>;
 }
 
 /** Token for the list of {@link PolicyProvider}s of the current platform. */

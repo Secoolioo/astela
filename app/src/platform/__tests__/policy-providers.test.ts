@@ -171,14 +171,14 @@ const encodeUtf16 = (text: string): Uint8Array => {
 };
 
 describe('WindowsRegistryPolicyProvider', () => {
-  it('exports both hives, decodes UTF-16 and cleans up', () => {
+  it('exports both hives, decodes UTF-16 and cleans up', async () => {
     const io = new FakeIo();
     io.outputs[`reg export HKLM\\${root}`] = {
       status: 0,
       stdout: '',
       writes: encodeUtf16(registryExport),
     };
-    const result = new WindowsRegistryPolicyProvider(io, root).load();
+    const result = await new WindowsRegistryPolicyProvider(io, root).load();
     expect(io.commands).toEqual([
       `reg export HKLM\\${root} /tmp/policies-HKLM.reg /y`,
       `reg export HKCU\\${root} /tmp/policies-HKCU.reg /y`,
@@ -187,15 +187,15 @@ describe('WindowsRegistryPolicyProvider', () => {
     expect(io.files.size).toBe(0);
   });
 
-  it('reports a missing export file', () => {
+  it('reports a missing export file', async () => {
     const io = new FakeIo();
     io.outputs['reg export HKLM'] = { status: 0, stdout: '' };
-    expect(new WindowsRegistryPolicyProvider(io, root).load().errors).toEqual([
+    expect((await new WindowsRegistryPolicyProvider(io, root).load()).errors).toEqual([
       { source: 'HKLM', message: 'The registry export was not written' },
     ]);
   });
 
-  it('reads asynchronously with the same result', async () => {
+  it('exports both hives at once and reads the same each time', async () => {
     const io = new FakeIo();
     io.outputs[`reg export HKLM\\${root}`] = {
       status: 0,
@@ -204,9 +204,9 @@ describe('WindowsRegistryPolicyProvider', () => {
     };
     io.outputs[`reg export HKCU\\${root}`] = { status: 0, stdout: '' };
     const provider = new WindowsRegistryPolicyProvider(io, root);
-    const result = await provider.loadAsync();
+    const result = await provider.load();
     expect(io.commands).toHaveLength(2);
-    expect(result).toEqual(provider.load());
+    expect(await provider.load()).toEqual(result);
     expect(result.errors.at(-1)).toEqual({
       source: 'HKCU',
       message: 'The registry export was not written',
@@ -216,7 +216,7 @@ describe('WindowsRegistryPolicyProvider', () => {
 });
 
 describe('MacManagedPreferencesPolicyProvider', () => {
-  it('reads machine and user profiles through plutil', () => {
+  it('reads machine and user profiles through plutil', async () => {
     const io = new FakeIo();
     const machine = '/Library/Managed Preferences/io.github.secoolioo.astela.plist';
     const user = '/Library/Managed Preferences/ana/io.github.secoolioo.astela.plist';
@@ -230,7 +230,7 @@ describe('MacManagedPreferencesPolicyProvider', () => {
       status: 0,
       stdout: '<plist><array/></plist>',
     };
-    const result = new MacManagedPreferencesPolicyProvider(
+    const result = await new MacManagedPreferencesPolicyProvider(
       io,
       'io.github.secoolioo.astela',
       'ana',
@@ -243,7 +243,7 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     ]);
   });
 
-  it('reports plutil failures and malformed output', () => {
+  it('reports plutil failures and malformed output', async () => {
     const io = new FakeIo();
     const machine = '/Library/Managed Preferences/b.plist';
     const user = '/Library/Managed Preferences/u/b.plist';
@@ -251,14 +251,14 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     io.files.set(user, new Uint8Array([1]));
     io.outputs[`plutil -convert xml1 -o - ${machine}`] = { status: 1, stdout: '' };
     io.outputs[`plutil -convert xml1 -o - ${user}`] = { status: 0, stdout: 'garbage' };
-    const errors = new MacManagedPreferencesPolicyProvider(io, 'b', 'u').load().errors;
+    const { errors } = await new MacManagedPreferencesPolicyProvider(io, 'b', 'u').load();
     expect(errors.map((e) => e.message)).toEqual([
       'plutil could not read the file',
       'PlistError: Missing <plist> element',
     ]);
   });
 
-  it('reads asynchronously with the same result and skips missing profiles', async () => {
+  it('reads the same each time and skips missing profiles', async () => {
     const io = new FakeIo();
     const machine = '/Library/Managed Preferences/b.plist';
     io.files.set(machine, new Uint8Array([1]));
@@ -267,9 +267,9 @@ describe('MacManagedPreferencesPolicyProvider', () => {
       stdout: '<plist><dict><key>UpdatePolicy</key><integer>2</integer></dict></plist>',
     };
     const provider = new MacManagedPreferencesPolicyProvider(io, 'b', 'u');
-    const result = await provider.loadAsync();
+    const result = await provider.load();
     expect(io.commands).toEqual([`plutil -convert xml1 -o - ${machine}`]);
-    expect(result).toEqual(provider.load());
+    expect(await provider.load()).toEqual(result);
     expect(result.values.map((v) => [v.name, v.value, v.scope])).toEqual([
       ['UpdatePolicy', 2, 'machine'],
     ]);
@@ -277,7 +277,7 @@ describe('MacManagedPreferencesPolicyProvider', () => {
 });
 
 describe('LinuxJsonPolicyProvider', () => {
-  it('merges files alphabetically per level and reports invalid files', () => {
+  it('merges files alphabetically per level and reports invalid files', async () => {
     const io = new FakeIo();
     const put = (path: string, text: string): void =>
       void io.files.set(path, new TextEncoder().encode(text));
@@ -287,7 +287,7 @@ describe('LinuxJsonPolicyProvider', () => {
     put('/etc/astela/policies/managed/40-list.json', '[1]');
     put('/etc/astela/policies/managed/readme.txt', 'ignored');
     put('/etc/astela/policies/recommended/a.json', '{"TabStripPosition": "left"}');
-    const result = new LinuxJsonPolicyProvider(io, '/etc/astela/policies').load();
+    const result = await new LinuxJsonPolicyProvider(io, '/etc/astela/policies').load();
     expect(result.values.map((v) => [v.name, v.value, v.level])).toEqual([
       ['UpdatePolicy', 2, 'mandatory'],
       ['URLBlocklist', ['a'], 'mandatory'],
@@ -327,10 +327,6 @@ describe('Node adapters', () => {
     expect(nodePolicyIo.listDir(join(dir, 'missing'))).toBeUndefined();
     expect(nodePolicyIo.listDir(dir)).toEqual([]);
     expect(nodePolicyIo.tempFile('x')).toContain(`${process.pid}-x`);
-    expect(nodePolicyIo.run(process.execPath, ['-e', 'process.stdout.write("hi")'])).toEqual({
-      status: 0,
-      stdout: 'hi',
-    });
     nodePolicyIo.remove(join(dir, 'missing'));
   });
 

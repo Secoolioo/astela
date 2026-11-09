@@ -1,4 +1,4 @@
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
@@ -10,8 +10,7 @@ import type {
   RawPolicyValue,
 } from '../../domain/policy/policy.ts';
 import type { PolicyCache } from '../../domain/policy/policy-service.ts';
-import { parsePlist } from './plist.ts';
-import { parseRegistryExport, registryPolicies } from './registry-export.ts';
+import type * as RegistryExport from './registry-export.ts';
 
 /** The outcome of a program that a policy provider ran. */
 export interface RunResult {
@@ -21,8 +20,6 @@ export interface RunResult {
 
 /** System access used by the policy providers; replaced by fakes in tests. */
 export interface PolicyIo {
-  /** Runs a program and waits for it. */
-  run(command: string, args: readonly string[]): RunResult;
   /** Runs a program without blocking. Never rejects. */
   runAsync(command: string, args: readonly string[]): Promise<RunResult>;
   /** Reads a file, or returns `undefined` if it does not exist. */
@@ -37,10 +34,6 @@ export interface PolicyIo {
 
 /** {@link PolicyIo} backed by Node.js. */
 export const nodePolicyIo: PolicyIo = {
-  run(command, args) {
-    const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-    return { status: result.status, stdout: result.stdout ?? '' };
-  },
   runAsync(command, args) {
     return new Promise((done) => {
       execFile(
@@ -99,28 +92,19 @@ export class WindowsRegistryPolicyProvider implements PolicyProvider {
     this.root = root;
   }
 
-  load(): PolicyReadResult {
-    return combine(
-      hives.map(([hive, scope]) => {
-        const file = this.io.tempFile(`policies-${hive}.reg`);
-        try {
-          return this.read(hive, scope, file, this.io.run('reg', this.exportArgs(hive, file)));
-        } finally {
-          this.io.remove(file);
-        }
-      }),
-    );
-  }
-
-  /** Exports both hives at the same time instead of one after the other. */
-  async loadAsync(): Promise<PolicyReadResult> {
+  /**
+   * Exports both hives at the same time instead of one after the other. The parser of
+   * registry exports loads with the first read, so other systems never load it.
+   */
+  async load(): Promise<PolicyReadResult> {
+    const parser = await import('./registry-export.ts');
     return combine(
       await Promise.all(
         hives.map(async ([hive, scope]) => {
           const file = this.io.tempFile(`policies-${hive}.reg`);
           try {
             const run = await this.io.runAsync('reg', this.exportArgs(hive, file));
-            return this.read(hive, scope, file, run);
+            return this.read(parser, hive, scope, file, run);
           } finally {
             this.io.remove(file);
           }
@@ -133,7 +117,13 @@ export class WindowsRegistryPolicyProvider implements PolicyProvider {
     return ['export', `${hive}\\${this.root}`, file, '/y'];
   }
 
-  private read(hive: string, scope: PolicyScope, file: string, run: RunResult): PolicyReadResult {
+  private read(
+    parser: typeof RegistryExport,
+    hive: string,
+    scope: PolicyScope,
+    file: string,
+    run: RunResult,
+  ): PolicyReadResult {
     // Exit code 1 means that the key does not exist, which is the normal case.
     if (run.status !== 0) {
       return { values: [], errors: [] };
@@ -146,7 +136,7 @@ export class WindowsRegistryPolicyProvider implements PolicyProvider {
       };
     }
     const text = new TextDecoder('utf-16le').decode(bytes);
-    return registryPolicies(parseRegistryExport(text), this.root, scope);
+    return parser.registryPolicies(parser.parseRegistryExport(text), this.root, scope);
   }
 }
 
@@ -179,20 +169,18 @@ export class MacManagedPreferencesPolicyProvider implements PolicyProvider {
     this.userName = userName;
   }
 
-  load(): PolicyReadResult {
-    return combine(
-      this.files().map(([path, scope]) =>
-        this.read(path, scope, this.io.run('plutil', plutilArgs(path))),
-      ),
-    );
-  }
-
-  /** Converts both files at the same time. */
-  async loadAsync(): Promise<PolicyReadResult> {
+  /**
+   * Converts both files at the same time. The parser of property lists loads with the first
+   * file, so other systems never load it.
+   */
+  async load(): Promise<PolicyReadResult> {
+    const files = this.files();
+    if (files.length === 0) return { values: [], errors: [] };
+    const { parsePlist } = await import('./plist.ts');
     return combine(
       await Promise.all(
-        this.files().map(async ([path, scope]) =>
-          this.read(path, scope, await this.io.runAsync('plutil', plutilArgs(path))),
+        files.map(async ([path, scope]) =>
+          this.read(parsePlist, path, scope, await this.io.runAsync('plutil', plutilArgs(path))),
         ),
       ),
     );
@@ -207,7 +195,12 @@ export class MacManagedPreferencesPolicyProvider implements PolicyProvider {
     return files.filter(([path]) => this.io.readFile(path) !== undefined);
   }
 
-  private read(path: string, scope: PolicyScope, run: RunResult): PolicyReadResult {
+  private read(
+    parsePlist: (xml: string) => unknown,
+    path: string,
+    scope: PolicyScope,
+    run: RunResult,
+  ): PolicyReadResult {
     if (run.status !== 0) {
       return { values: [], errors: [{ source: path, message: 'plutil could not read the file' }] };
     }
@@ -264,7 +257,11 @@ export class LinuxJsonPolicyProvider implements PolicyProvider {
     this.directory = directory;
   }
 
-  load(): PolicyReadResult {
+  load(): Promise<PolicyReadResult> {
+    return Promise.resolve(this.read());
+  }
+
+  private read(): PolicyReadResult {
     const values: RawPolicyValue[] = [];
     const errors: PolicyReadError[] = [];
     for (const [folder, level] of [
