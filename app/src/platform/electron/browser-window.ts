@@ -781,7 +781,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.pageFullScreen = true;
         if (!this.window.isFullScreen()) {
           this.pageMadeFullScreen = true;
-          this.window.setFullScreen(true);
+          this.setPageFullScreen(true);
         }
         this.layout();
       });
@@ -789,7 +789,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.pageFullScreen = false;
         if (this.pageMadeFullScreen) {
           this.pageMadeFullScreen = false;
-          this.window.setFullScreen(false);
+          this.setPageFullScreen(false);
         }
         this.layout();
       });
@@ -808,6 +808,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     contents.on('before-input-event', (event, input) => this.intercept(event, input));
     this.forwardContextMenu(view, id);
     return { view, page, registration };
+  }
+
+  /**
+   * Puts the window in full screen for a page, or takes it out again. On macOS, the window
+   * covers the screen without the animation into a space of its own: while that animation
+   * runs, Electron keeps the page in full screen, also after it left.
+   */
+  private setPageFullScreen(on: boolean): void {
+    if (process.platform === 'darwin') this.window.setSimpleFullScreen(on);
+    else this.window.setFullScreen(on);
   }
 
   /** Reports the state of a tab's view, unless the view was replaced meanwhile. */

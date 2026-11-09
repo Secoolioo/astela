@@ -161,8 +161,14 @@ test('lets a page show an element in full screen, over the whole window', async 
       });
     const before = await pageBounds();
     expect(before?.y).toBeGreaterThan(0);
+    // On macOS, the window covers the screen without a space of its own.
     const windowFullScreen = (): Promise<boolean | undefined> =>
-      browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isFullScreen());
+      browser.main.evaluate(({ BaseWindow }) => {
+        const window = BaseWindow.getAllWindows()[0];
+        return process.platform === 'darwin'
+          ? window?.isSimpleFullScreen()
+          : window?.isFullScreen();
+      });
     // The window learns of the change before the page does, and the other way round; the
     // window takes the whole screen while the page shows an element in full screen.
     const enter = async (): Promise<void> => {
