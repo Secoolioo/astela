@@ -73,6 +73,41 @@ describe('ContentBlocker', () => {
     expect(await blocker.beforeRequest(request('data:text/plain,x', 'image'))).toBe(undefined);
   });
 
+  it('judges the first requests of a new page by that page, not by the one before it', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n'),
+      // The blocker is off on the page before, which the tab still reports.
+      enabled: (page) => !page.startsWith('https://allowed.example/'),
+      logger: logger(),
+    });
+    const early = {
+      ...request('https://ads.example/a.js', 'script'),
+      webContents: { getURL: () => 'https://allowed.example/' },
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(early)).toEqual({ cancel: true });
+    const unknown = {
+      ...early,
+      frame: { top: { url: '' } },
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(unknown)).toEqual({ cancel: true });
+    // The top frame can still be the page before, until the browser knows the new one.
+    const stale = {
+      ...early,
+      frame: { parent: null, top: { url: 'https://allowed.example/' } },
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(stale)).toEqual({ cancel: true });
+    // A request of an embedded frame belongs to the top page, whatever frame made it.
+    const embedded = {
+      ...early,
+      referrer: 'https://widget.example/',
+      frame: { parent: {}, top: { url: 'https://allowed.example/' } },
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(embedded)).toBe(undefined);
+    // Without a referrer, the tab's address is all there is.
+    const noReferrer = { ...early, referrer: '' };
+    expect(await blocker.beforeRequest(noReferrer)).toBe(undefined);
+  });
+
   it('loads the engine with the first web page, not before', async () => {
     const blocker = new ContentBlocker({
       dataDir: dataDir('||ads.example^\n'),
