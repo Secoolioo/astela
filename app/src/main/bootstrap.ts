@@ -7,7 +7,7 @@ import {
   ActivateTab,
   CloseTab,
   GetShellState,
-  OpenBlockerMenu,
+  OpenBlockerPopover,
   OpenBookmarkFolder,
   ToggleBookmark,
   OpenMenu,
@@ -28,13 +28,7 @@ import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { linksFromArguments } from '../domain/navigation/links.ts';
 import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl } from '../shared/search-engines.ts';
-import {
-  blockingFor,
-  exceptionFor,
-  siteOf,
-  toggleSite,
-  type Blocking,
-} from '../domain/blocker/blocking.ts';
+import { blockingFor, type Blocking } from '../domain/blocker/blocking.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
@@ -207,7 +201,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const lifecycle = new Lifecycle(logger, clock, {});
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
-    new Set(['shell', 'sandbox-help', ...tabPages]),
+    new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
   );
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
@@ -409,31 +403,24 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     );
     return null;
   });
-  router.handle(OpenBlockerMenu, async (position, { sender }) => {
+  router.handle(OpenBlockerPopover, async (anchor, { sender }) => {
     const window = windows.forShell(sender);
-    const tab = window?.tabs.active;
-    const site = siteOf(tab?.url ?? '');
-    if (window === undefined || tab === undefined || site === undefined) {
-      return null;
-    }
-    const { popupBlockerMenu, showBlockerSaveError } = await import('./browser-menu.ts');
-    const allowed = settings.get(BlockerAllowedSitesSetting);
-    // An exception covers the whole registrable domain, such as example.co.uk.
-    const domain = blocker.domainOf(tab.url) ?? site;
-    popupBlockerMenu(window, position, {
-      site: exceptionFor(site, allowed) ?? domain,
-      blocked: tab.blocked,
-      on: blocking(tab.url) !== 'off',
-      failed: blocker.status === 'failed',
-      available: settings.get(ContentBlockerSetting),
-      toggle: () => {
-        const saved = settings.set(
-          BlockerAllowedSitesSetting,
-          toggleSite(settings.get(BlockerAllowedSitesSetting), site, domain),
-        );
-        if (saved.ok) window.tabs.run(tab.id, 'reload');
-        else showBlockerSaveError(window, saved.error.kind === 'locked-by-policy');
+    if (window === undefined) return null;
+    const { openShieldPopover } = await import('./shield-popover.ts');
+    openShieldPopover(window, anchor, {
+      windows,
+      router,
+      overlay: {
+        url: 'app://overlay/',
+        preload: layout.pagePreload,
+        partition: internalPartition,
+        appearanceArgument: () => appearance.argument,
+        gate,
+        router,
       },
+      settings,
+      blocker,
+      blocking,
     });
     return null;
   });

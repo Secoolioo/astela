@@ -12,7 +12,7 @@ export const shellChannels = [
   'tabs.action',
   'shell.setInsets',
   'shell.openMenu',
-  'shell.openBlockerMenu',
+  'shell.openBlockerPopover',
   'shell.toggleBookmark',
   'shell.openBookmarkFolder',
 ] as const;

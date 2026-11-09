@@ -73,3 +73,4 @@ Each rejected option as a bullet point with a short reason.
 | [0031](0031-scriptlets-in-their-own-scope-and-world.md)                | Scriptlets in their own scope and world                 |
 | [0032](0032-replacement-resources-over-a-scheme-of-their-own.md)       | Replacement resources over a scheme of their own        |
 | [0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md) | Procedural and popup filters, and exceptions per domain |
+| [0034](0034-overlay-view-for-popovers-and-prompts.md)                  | Overlay view for popovers and prompts                   |

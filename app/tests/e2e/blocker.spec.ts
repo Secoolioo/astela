@@ -5,6 +5,7 @@ import {
   packageWithoutBlockerData,
   shellState,
   waitForPage,
+  type Browser,
 } from './harness.ts';
 
 const server = new FixtureServer();
@@ -87,54 +88,29 @@ test('switches the blocker off from the settings page', async () => {
 test('counts blocked requests and switches the blocker off for one site', async () => {
   const browser = await launch();
   try {
-    await browser.main.evaluate(({ Menu }) => {
-      const recorded: Electron.Menu[] = [];
-      Object.assign(globalThis, { recordedMenus: recorded });
-      Menu.prototype.popup = function popup(this: Electron.Menu) {
-        recorded.push(this);
-      };
-    });
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await address.fill(`${server.origin}/blocker.html`);
     await address.press('Enter');
     const page = await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
-    const shield = browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' });
-    await expect(shield).toBeVisible();
-    await shield.click();
-    const items = (): Promise<string[] | undefined> =>
-      browser.main.evaluate(() =>
-        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-          .at(-1)
-          ?.items.map((item) => (item.type === 'separator' ? '-' : item.label.replaceAll('&', ''))),
-      );
-    await expect
-      .poll(items)
-      .toEqual(
-        process.platform === 'darwin'
-          ? [
-              'Blocked on This Page: 2',
-              '-',
-              'Block Ads on 127.0.0.1',
-              '-',
-              'Content Blocker Settings…',
-            ]
-          : [
-              'Blocked on this page: 2',
-              '-',
-              'Block ads on 127.0.0.1',
-              '-',
-              'Content blocker settings',
-            ],
-      );
-    await browser.main.evaluate(() => {
-      const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(
-        -1,
-      );
-      menu?.items[2]?.click();
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    const popover = overlay.getByRole('dialog', { name: 'Content blocker' });
+    await expect(popover).toContainText('127.0.0.1');
+    await expect(popover.locator('strong')).toHaveText('2');
+    await expect(popover).toContainText('blocked on this page');
+    // The popover counts along when the page loads more that the lists block.
+    await page.evaluate(() => {
+      const script = document.createElement('script');
+      script.src = 'fixture-ad.js?again';
+      document.head.append(script);
     });
+    await expect(popover.locator('strong')).toHaveText('3');
+    const blockHere = popover.getByRole('switch', { name: 'Block ads on 127.0.0.1' });
+    await expect(blockHere).toBeChecked();
+    await blockHere.click();
     await expect(
       browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
     ).toBeVisible();
+    await expect(blockHere).not.toBeChecked();
     // The page reloads, so asking it can fail until the new page is there.
     await expect
       .poll(() =>
@@ -143,6 +119,10 @@ test('counts blocked requests and switches the blocker off for one site', async 
           .catch(() => undefined),
       )
       .toBe(true);
+    // The popover's way to the settings opens them and closes the popover.
+    await popover.getByRole('button', { name: 'Content blocker settings' }).click();
+    await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    await expect.poll(() => overlayShown(browser)).toBe(false);
   } finally {
     await browser.close();
   }
@@ -282,13 +262,6 @@ test('applies procedural rules and blocks popups that the lists name', async () 
 test('turns the blocker off for a whole domain, its other hosts included', async () => {
   const browser = await launch();
   try {
-    await browser.main.evaluate(({ Menu }) => {
-      const recorded: Electron.Menu[] = [];
-      Object.assign(globalThis, { recordedMenus: recorded });
-      Menu.prototype.popup = function popup(this: Electron.Menu) {
-        recorded.push(this);
-      };
-    });
     // Hosts under localhost reach the fixture server, and news.localhost is their domain.
     const port = new URL(server.origin).port;
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
@@ -298,28 +271,13 @@ test('turns the blocker off for a whole domain, its other hosts included', async
       return waitForPage(browser, (current) => current === url);
     };
     await open(`http://www.news.localhost:${port}/blocker.html`);
-    await browser.shell.getByRole('button', { name: 'Content blocker: 1 blocked' }).click();
-    const lastMenu = (): Promise<string | undefined> =>
-      browser.main.evaluate(() =>
-        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-          .at(-1)
-          ?.items[2]?.label.replaceAll('&', ''),
-      );
-    await expect
-      .poll(lastMenu)
-      .toBe(
-        process.platform === 'darwin'
-          ? 'Block Ads on news.localhost'
-          : 'Block ads on news.localhost',
-      );
-    await browser.main.evaluate(() => {
-      (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-        .at(-1)
-        ?.items[2]?.click();
-    });
+    const overlay = await openShield(browser, 'Content blocker: 1 blocked');
+    await overlay.getByRole('switch', { name: 'Block ads on news.localhost' }).click();
     await expect(
       browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
     ).toBeVisible();
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayShown(browser)).toBe(false);
     // Another host of the same domain is covered by the exception, another site is not.
     const other = await open(`http://shop.news.localhost:${port}/blocker.html`);
     await expect(
@@ -334,17 +292,52 @@ test('turns the blocker off for a whole domain, its other hosts included', async
     await expect(
       browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' }),
     ).toBeVisible();
-    // The menu of a covered host offers to remove the exception of the domain.
+    // The popover of a covered host offers to remove the exception of the domain.
     await open(`http://www.news.localhost:${port}/blocker.html`);
-    await browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }).click();
-    await expect
-      .poll(lastMenu)
-      .toBe(
-        process.platform === 'darwin'
-          ? 'Block Ads on news.localhost'
-          : 'Block ads on news.localhost',
-      );
+    await openShield(browser, 'Content blocker: off on this site');
+    await expect(
+      overlay.getByRole('switch', { name: 'Block ads on news.localhost' }),
+    ).not.toBeChecked();
   } finally {
     await browser.close();
   }
 });
+
+test('closes the popover with Escape or a click next to it and gives the page the focus', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    // The popover takes the focus, so the keyboard reaches its switch.
+    await expect(overlay.getByRole('switch')).toBeFocused();
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayShown(browser)).toBe(false);
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+    await openShield(browser, 'Content blocker: 2 blocked');
+    await expect.poll(() => overlayShown(browser)).toBe(true);
+    // A click next to the popover closes it and reaches nothing below.
+    await overlay.mouse.click(40, 400);
+    await expect.poll(() => overlayShown(browser)).toBe(false);
+    expect((await shellState(browser.shell)).tabs).toHaveLength(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+/** Clicks the shield button and returns the page of the overlay that opens. */
+async function openShield(browser: Browser, name: string): Promise<Page> {
+  await browser.shell.getByRole('button', { name }).click();
+  const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+  await expect(overlay.getByRole('dialog', { name: 'Content blocker' })).toBeVisible();
+  return overlay;
+}
+
+/** Whether the overlay is part of the window: the shell, the tab and the overlay. */
+function overlayShown(browser: Browser): Promise<boolean> {
+  return browser.main.evaluate(
+    ({ BaseWindow }) => (BaseWindow.getAllWindows()[0]?.contentView.children.length ?? 0) > 2,
+  );
+}

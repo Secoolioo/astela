@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { tabStripPositions } from '../layout.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
+import { OverlayAnchor } from './overlay-anchor.ts';
 
 const TabId = v.pipe(v.string(), v.regex(/^t[0-9a-z]{1,12}$/));
 const Empty = v.strictObject({});
@@ -136,13 +137,10 @@ export const OpenMenu = defineRequest({
   capability: 'shell',
 });
 
-/** Opens the content blocker's menu for the active tab below its button. */
-export const OpenBlockerMenu = defineRequest({
-  channel: 'shell.openBlockerMenu',
-  request: v.strictObject({
-    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-  }),
+/** Opens the content blocker's popover for the active tab at its button. */
+export const OpenBlockerPopover = defineRequest({
+  channel: 'shell.openBlockerPopover',
+  request: OverlayAnchor,
   response: Done,
   capability: 'shell',
 });
@@ -194,7 +192,7 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   TabAction,
   SetShellInsets,
   OpenMenu,
-  OpenBlockerMenu,
+  OpenBlockerPopover,
   ToggleBookmark,
   OpenBookmarkFolder,
 ];

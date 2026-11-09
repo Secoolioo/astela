@@ -6,12 +6,12 @@ Astela's user interface runs in sandboxed renderers, and its logic runs in the b
 
 ## Participants
 
-| View type                    | Loaded from                                                                                                     | Preload              | Capability                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------- |
-| Shell view, one per window   | `app://shell`                                                                                                   | `preload/shell.ts`   | `shell`                                   |
-| Overlay view, created lazily | an `app://` page                                                                                                | `preload/overlay.ts` | `overlay`                                 |
-| Internal pages               | `app://settings`, `app://history`, `app://downloads`, `app://theme-editor`, `app://diagnostics`, `app://newtab` | `preload/page.ts`    | one per page, for example `page:settings` |
-| Web tabs                     | the web                                                                                                         | none                 | none                                      |
+| View type                    | Loaded from                                                                                                     | Preload                                    | Capability                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| Shell view, one per window   | `app://shell`                                                                                                   | `preload/shell.ts`                         | `shell`                                   |
+| Overlay view, created lazily | `app://overlay`                                                                                                 | `preload/page.ts` with the scope `overlay` | `overlay`                                 |
+| Internal pages               | `app://settings`, `app://history`, `app://downloads`, `app://theme-editor`, `app://diagnostics`, `app://newtab` | `preload/page.ts`                          | one per page, for example `page:settings` |
+| Web tabs                     | the web                                                                                                         | none                                       | none                                      |
 
 The `data-service` utility process does not use renderer IPC. It talks to the browser process over a `MessagePort` (see [data.md](data.md)). [overview.md](overview.md) describes the process model as a whole.
 
@@ -64,7 +64,7 @@ flowchart LR
 
 ## Preload bridges
 
-- **One preload per view type:** `shell.ts`, `overlay.ts` and `page.ts` in `app/src/preload/`. Each exposes only `invoke(channel, payload)` and `subscribe(event)`, and only for the channels its view may use. No renderer gets a generic `ipcRenderer`.
+- **One preload per view type:** `shell.ts` and `page.ts` in `app/src/preload/`; the overlay uses `page.ts` with its own scope. Each exposes only `invoke(channel, payload)` and `subscribe(event)`, and only for the channels its view may use. No renderer gets a generic `ipcRenderer`.
 - **Isolation:** the shell, the overlay and the internal pages run sandboxed, with `contextIsolation` and without Node integration.
 - **Size:** the preload has a budget of 20 KB (see [performance.md](performance.md)).
 - **Web tabs** get no preload and no bridge. Feature scripts, such as the reader view, run only on demand in an isolated world. The one planned exception is the content blocker (M2), which uses its own frame preload for cosmetic filtering.
@@ -97,6 +97,7 @@ Implemented for the shell and the internal pages:
 - **Settings page:** the capability `page:settings` with `settings.getAll`, `settings.set` and the event `settings.changed` (`app/src/shared/ipc/settings-contracts.ts`). The page bridge offers `on` for the events of the page's own scope; the browser process sends an event only to views that have its capability.
 - **Web frames:** only the content blocker's frame preload talks to the browser process, with `blocker.frame` (synchronous, once per frame) and `blocker.elements`; both answer only frames of web sessions, with filter rules for the frame's own address ([ADR 0028](../adr/0028-content-blocker-rules-through-a-frame-preload.md)).
 - **Appearance:** every view of the browser's own UI has the capability `appearance`; its preload, not the page, receives `appearance.changed` with the style sheet of design tokens.
+- **Overlay:** the capability `overlay` with `overlay.get` and the event `overlay.changed` for what it shows, `overlay.close`, and the content blocker's `overlay.toggleSiteBlocking` and `overlay.openBlockerSettings` (`app/src/shared/ipc/overlay-contracts.ts`, [ADR 0034](../adr/0034-overlay-view-for-popovers-and-prompts.md)).
 - **New tab page:** the capability `page:newtab` with `newtab.getState`, which names the search engine, and `newtab.navigate`, which opens a search or an address in the page's own tab (`app/src/shared/ipc/newtab-contracts.ts`).
 
-Not implemented yet: the overlay bridge, property-based tests of every contract, and the typed client generated from the contracts.
+Not implemented yet: property-based tests of every contract and the typed client generated from the contracts.

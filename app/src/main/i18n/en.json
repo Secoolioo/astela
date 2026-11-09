@@ -16,13 +16,9 @@
   "contextMenu.reload": "&Reload",
   "menu.newTab": "New &tab",
   "menu.settings": "&Settings",
-  "menu.blockedCount": "Blocked on this page: {count}",
-  "menu.blockerFailed": "Not working: the filter data is missing",
   "menu.blockerSaveFailed": "The change was not saved",
   "menu.blockerManaged": "Your organization manages the content blocker.",
   "menu.blockerListFull": "The list of sites without blocking is full.",
-  "menu.blockOnSite": "&Block ads on {site}",
-  "menu.blockerSettings": "Content blocker &settings",
   "menu.history": "&History",
   "menu.bookmarks": "&Bookmarks",
   "menu.emptyFolder": "(empty)"

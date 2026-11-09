@@ -1,0 +1,8 @@
+/* The overlay lies above the window and shows only its popover; the rest stays see-through. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  scrollbar-gutter: auto;
+}
