@@ -346,11 +346,14 @@ test('hides cookie notices and annoyances once their lists are on in the setting
     page = await open(extras);
     await expect.poll(() => displayOf(page, 'fixture-cookie-notice')).toBe('none');
     expect(await displayOf(page, 'fixture-newsletter')).toBe('block');
+    // The script at the end of the page has run, or was blocked, once the page has loaded.
+    await loaded(page);
     expect(await page.evaluate(() => Reflect.get(window, 'fixtureAnnoyanceLoaded'))).toBe(true);
     settings = await open('app://settings');
     await settings.getByRole('switch', { name: 'Hide annoyances' }).check();
     page = await open(extras);
     await expect.poll(() => displayOf(page, 'fixture-newsletter')).toBe('none');
+    await loaded(page);
     expect(await page.evaluate(() => Reflect.get(window, 'fixtureAnnoyanceLoaded'))).toBe(
       undefined,
     );
@@ -400,6 +403,11 @@ test('lists the sites without blocking in the settings, to remove and to add the
     await browser.close();
   }
 });
+
+/** Waits until a page has loaded, with its scripts and images. */
+async function loaded(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => document.readyState)).toBe('complete');
+}
 
 /** The display of an element of a page, or `missing` when the page has no such element. */
 function displayOf(page: Page, id: string): Promise<string> {
