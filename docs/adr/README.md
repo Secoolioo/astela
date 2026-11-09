@@ -79,3 +79,4 @@ Each rejected option as a bullet point with a short reason.
 | [0037](0037-policies-read-without-blocking-on-every-start.md)          | Policies read without blocking on every start           |
 | [0038](0038-site-permissions-asked-in-the-overlay.md)                  | Site permissions asked in the overlay                   |
 | [0039](0039-downloads-without-a-question-and-a-list-in-the-profile.md) | Downloads without a question, and a list in the profile |
+| [0040](0040-tabs-and-popups-that-keep-their-opener.md)                 | Tabs and popups that keep their opener                  |

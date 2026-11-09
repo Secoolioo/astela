@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools from 0.1.0-beta.4.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new windows from 0.1.0-beta.4.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. Shortcuts cannot be changed yet; a shortcut editor is planned for 0.1.0, see the [roadmap](../roadmap.md).
 
@@ -9,6 +9,7 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 | Action                         | Shortcut                                        |
 | ------------------------------ | ----------------------------------------------- |
 | New tab                        | `Ctrl+T`                                        |
+| New window                     | `Ctrl+N`                                        |
 | Close the tab                  | `Ctrl+W` or `Ctrl+F4`                           |
 | Reopen the last closed tab     | `Ctrl+Shift+T`                                  |
 | Next tab                       | `Ctrl+Tab` or `Ctrl+Page Down`                  |
@@ -42,6 +43,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Action                         | Shortcut                                                              |
 | ------------------------------ | --------------------------------------------------------------------- |
 | New tab                        | `Command+T`                                                           |
+| New window                     | `Command+N`                                                           |
 | Close the tab                  | `Command+W`                                                           |
 | Reopen the last closed tab     | `Command+Shift+T`                                                     |
 | Next tab                       | `Control+Tab`, `Command+Option+Right Arrow` or `Command+Shift+]`      |

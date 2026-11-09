@@ -75,6 +75,31 @@ describe('session', () => {
     expect(sessionWindow([tab('app://setup/')], 0)).toBeUndefined();
   });
 
+  it('keeps where each window was, and drops a place that cannot be read', () => {
+    const bounds = { x: 10, y: 20, width: 1200, height: 800 };
+    expect(sessionWindow([tab('https://a.example/')], 0, { bounds, maximized: true })).toEqual({
+      tabs: [tab('https://a.example/')],
+      active: 0,
+      bounds,
+      maximized: true,
+    });
+    expect(
+      parseSession({
+        version: 1,
+        windows: [
+          { tabs: [tab('https://a.example/')], active: 0, bounds, maximized: false },
+          { tabs: [tab('https://b.example/')], active: 0, bounds: { x: 'a' }, maximized: 1 },
+        ],
+      }),
+    ).toEqual({
+      version: 1,
+      windows: [
+        { tabs: [tab('https://a.example/')], active: 0, bounds, maximized: false },
+        { tabs: [tab('https://b.example/')], active: 0 },
+      ],
+    });
+  });
+
   it('rejects broken or empty sessions', () => {
     expect(parseSession(undefined)).toBeUndefined();
     expect(parseSession({ version: 2, windows: [] })).toBeUndefined();

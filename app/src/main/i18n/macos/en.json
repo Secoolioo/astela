@@ -36,5 +36,17 @@
   "dialog.pageUnresponsiveDetail": "You can wait for it, or close the page.",
   "dialog.wait": "Wait",
   "dialog.closePage": "Close Page",
-  "dialog.webPage": "Web Page"
+  "dialog.webPage": "Web Page",
+  "menu.newWindow": "New Window",
+  "menu.downloads": "Downloads",
+  "menu.zoom": "Zoom",
+  "menu.find": "Find…",
+  "menu.print": "Print…",
+  "menu.savePage": "Save Page As…",
+  "menu.moreTools": "More Tools",
+  "menu.about": "About Astela",
+  "menu.quit": "Quit Astela",
+  "menu.exit": "Quit Astela",
+  "menu.file": "File",
+  "dialog.about": "{name} {version}"
 }

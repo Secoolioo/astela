@@ -103,6 +103,8 @@ export class TabService implements Disposable {
   private readonly changeEmitter = new Emitter<void>();
   private readonly views: TabViewPort;
   private readonly blankUrl: string;
+  /** Called instead of opening a new tab when the last tab closes, such as by a popup. */
+  private readonly onLastClosed: (() => void) | undefined;
 
   /** Fires after any tab or the active tab changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
@@ -110,10 +112,12 @@ export class TabService implements Disposable {
   /**
    * @param views - Creates and controls the web views.
    * @param blankUrl - URL of a new, empty tab.
+   * @param onLastClosed - Called instead of opening a new tab when the last tab closes.
    */
-  constructor(views: TabViewPort, blankUrl: string) {
+  constructor(views: TabViewPort, blankUrl: string, onLastClosed?: () => void) {
     this.views = views;
     this.blankUrl = blankUrl;
+    this.onLastClosed = onLastClosed;
   }
 
   /** All tabs in display order. */
@@ -193,7 +197,11 @@ export class TabService implements Disposable {
       this.activeId = undefined;
       const next = this.tabs[index] ?? this.tabs[index - 1];
       if (next === undefined) {
-        this.open();
+        if (this.onLastClosed === undefined) this.open();
+        else {
+          this.changeEmitter.fire();
+          this.onLastClosed();
+        }
         return;
       }
       this.activate(next.id);

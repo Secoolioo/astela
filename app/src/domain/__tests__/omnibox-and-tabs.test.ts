@@ -120,6 +120,15 @@ describe('TabService', () => {
     expect(tabs.active?.url).toBe('about:blank');
   });
 
+  it('lets a popup close with its last tab instead of opening a new one', () => {
+    let closed = 0;
+    const tabs = new TabService(new FakeViews(), 'about:blank', () => (closed += 1));
+    const a = tabs.open('https://a.example/');
+    tabs.close(a);
+    expect(tabs.all).toHaveLength(0);
+    expect(closed).toBe(1);
+  });
+
   it('closes inactive tabs without changing the active one', () => {
     const tabs = new TabService(new FakeViews(), 'about:blank');
     const a = tabs.open('https://a.example/');

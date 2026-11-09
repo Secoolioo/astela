@@ -20,7 +20,7 @@ Every item in this section is designed to be covered by an automated test.
 
 ### Navigation and window guards
 
-- `setWindowOpenHandler` will open new tabs instead of free-floating windows.
+- `setWindowOpenHandler` lets pages open only tabs and popup windows of the browser, never free-floating windows.
 - The shell, the overlay and internal pages must never navigate away from `app://`; `will-navigate` and `will-redirect` guards enforce this.
 - Web tabs can neither navigate to, embed nor load `app://` pages.
 - `shell.openExternal` is limited to allowlisted schemes and requires confirmation.
@@ -196,7 +196,7 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 
 - Every view runs sandboxed with context isolation and without Node integration; tabs have no preload.
 - Web sessions ask before a site uses the camera, the microphone, the location, notifications or the clipboard, and share a screen or a window only after the user picked it; the sessions of the browser's own pages refuse every permission, and every session denies device access.
-- `<webview>` is never attached; pages cannot open free windows, and their requests become tabs. A tab that a page opens, by script or from its context menu, can only load an http or https URL.
+- `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
 - All `app://` pages carry the strict Content Security Policy with Trusted Types.
 - Client certificates are never selected automatically.

@@ -15,34 +15,71 @@ export function popupBrowserMenu(
 ): void {
   const i18n = translatorFor(app.getLocale(), process.platform);
   const mac = process.platform === 'darwin';
+  const key = (macKey: string, otherKey: string): string => (mac ? macKey : otherKey);
+  const item = (
+    label: Parameters<typeof i18n.t>[0],
+    command: WindowCommand,
+    accelerator?: string,
+  ): Electron.MenuItemConstructorOptions => ({
+    label: i18n.t(label),
+    ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
+    click: () => window.execute(command),
+  });
   const menu = Menu.buildFromTemplate([
-    {
-      label: i18n.t('menu.newTab'),
-      accelerator: mac ? 'Cmd+T' : 'Ctrl+T',
-      registerAccelerator: false,
-      click: () => window.execute('tab.new'),
-    },
+    item('menu.newTab', 'tab.new', key('Cmd+T', 'Ctrl+T')),
+    item('menu.newWindow', 'window.new', key('Cmd+N', 'Ctrl+N')),
+    { type: 'separator' },
+    item('menu.history', 'history.open', key('Cmd+Y', 'Ctrl+H')),
+    item('menu.downloads', 'downloads.open', key('Alt+Cmd+L', 'Ctrl+J')),
+    item('menu.bookmarks', 'bookmarks.open', key('Shift+Cmd+O', 'Ctrl+Shift+O')),
     { type: 'separator' },
     {
-      label: i18n.t('menu.history'),
-      accelerator: mac ? 'Cmd+Y' : 'Ctrl+H',
-      registerAccelerator: false,
-      click: () => window.execute('history.open'),
+      label: i18n.t('menu.zoom'),
+      submenu: [
+        item('menu.zoomIn', 'zoom.in', key('Cmd+Plus', 'Ctrl+Plus')),
+        item('menu.zoomOut', 'zoom.out', key('Cmd+-', 'Ctrl+-')),
+        item('menu.actualSize', 'zoom.reset', key('Cmd+0', 'Ctrl+0')),
+        { type: 'separator' },
+        item('menu.fullScreen', 'window.fullscreen', key('Ctrl+Cmd+F', 'F11')),
+      ],
     },
+    item('menu.find', 'find.open', key('Cmd+F', 'Ctrl+F')),
+    item('menu.print', 'page.print', key('Cmd+P', 'Ctrl+P')),
+    item('menu.savePage', 'page.save', key('Cmd+S', 'Ctrl+S')),
     {
-      label: i18n.t('menu.bookmarks'),
-      accelerator: mac ? 'Shift+Cmd+O' : 'Ctrl+Shift+O',
-      registerAccelerator: false,
-      click: () => window.execute('bookmarks.open'),
+      label: i18n.t('menu.moreTools'),
+      submenu: [
+        item('menu.viewSource', 'page.source', key('Alt+Cmd+U', 'Ctrl+U')),
+        item('menu.developerTools', 'devtools.toggle', key('Alt+Cmd+I', 'F12')),
+      ],
     },
     { type: 'separator' },
+    item('menu.settings', 'settings.open', mac ? 'Cmd+,' : undefined),
+    { label: i18n.t('menu.about'), click: () => showAbout(window) },
     {
-      label: i18n.t('menu.settings'),
-      ...(mac ? { accelerator: 'Cmd+,', registerAccelerator: false } : {}),
-      click: () => window.execute('settings.open'),
+      label: i18n.t(process.platform === 'win32' ? 'menu.exit' : 'menu.quit'),
+      ...(mac ? { accelerator: 'Cmd+Q', registerAccelerator: false } : {}),
+      click: () => app.quit(),
     },
   ]);
   menu.popup({ window: window.window, x: position.x, y: position.y });
+}
+
+/**
+ * Tells the version of the browser and of what it is built on.
+ * @param window - The window whose menu asked.
+ */
+function showAbout(window: BrowserWindowController): void {
+  const i18n = translatorFor(app.getLocale(), process.platform);
+  void dialog.showMessageBox(window.window, {
+    type: 'info',
+    message: i18n.t('dialog.about', { name: app.getName(), version: app.getVersion() }),
+    detail: [
+      `Electron ${process.versions.electron}`,
+      `Chromium ${process.versions.chrome}`,
+      `Node.js ${process.versions.node}`,
+    ].join('\n'),
+  });
 }
 
 /**
@@ -100,10 +137,23 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
         { role: 'quit' },
       ],
     },
+    {
+      label: i18n.t('menu.file'),
+      submenu: [
+        command('menu.newTab', 'Cmd+T', 'tab.new'),
+        command('menu.newWindow', 'Cmd+N', 'window.new'),
+        { type: 'separator' },
+        command('menu.savePage', 'Cmd+S', 'page.save'),
+        command('menu.print', 'Cmd+P', 'page.print'),
+      ],
+    },
     { role: 'editMenu' },
     {
       label: i18n.t('menu.view'),
       submenu: [
+        command('menu.find', 'Cmd+F', 'find.open'),
+        command('menu.downloads', 'Alt+Cmd+L', 'downloads.open'),
+        { type: 'separator' },
         command('menu.reload', 'Cmd+R', 'page.reload'),
         command('menu.reloadHard', 'Shift+Cmd+R', 'page.reloadHard'),
         { type: 'separator' },

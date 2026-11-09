@@ -1,7 +1,15 @@
 import * as v from 'valibot';
 import { tabPageOf } from '../../shared/internal-pages.ts';
 
-/** The tabs of the open windows, as the session keeps them across starts. */
+/** Where a window was on the screens. */
+const Bounds = v.object({
+  x: v.pipe(v.number(), v.integer()),
+  y: v.pipe(v.number(), v.integer()),
+  width: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  height: v.pipe(v.number(), v.integer(), v.minValue(1)),
+});
+
+/** The tabs of the open windows, and where the windows were, as the session keeps them. */
 export const SessionSnapshot = v.object({
   version: v.literal(1),
   windows: v.array(
@@ -13,11 +21,13 @@ export const SessionSnapshot = v.object({
         }),
       ),
       active: v.pipe(v.number(), v.integer(), v.minValue(0)),
+      bounds: v.optional(Bounds),
+      maximized: v.optional(v.boolean()),
     }),
   ),
 });
 
-/** The tabs of the open windows, as the session keeps them across starts. */
+/** The tabs of the open windows, and where the windows were, as the session keeps them. */
 export type SessionSnapshot = v.InferOutput<typeof SessionSnapshot>;
 
 /** The longest title and address a session keeps; longer titles are cut, longer addresses dropped. */
@@ -46,11 +56,13 @@ type SessionTab = SessionWindow['tabs'][number];
  * titles are cut to their limit, and the active tab moves with the tabs that stay.
  * @param tabs - The window's tabs, in order; `undefined` for a tab that could not be read.
  * @param active - Index of the active tab among them, or -1.
+ * @param place - Where the window is, as far as it is known.
  * @returns The window, or `undefined` when no tab is left.
  */
 export function sessionWindow(
   tabs: readonly (SessionTab | undefined)[],
   active: number,
+  place: Pick<SessionWindow, 'bounds' | 'maximized'> = {},
 ): SessionWindow | undefined {
   const kept: SessionTab[] = [];
   let keptActive = 0;
@@ -59,11 +71,23 @@ export function sessionWindow(
     if (index === active) keptActive = kept.length;
     kept.push({ url: tab.url, title: tab.title.slice(0, titleLimit) });
   });
-  return kept.length === 0 ? undefined : { tabs: kept, active: keptActive };
+  if (kept.length === 0) return undefined;
+  const bounds = place.bounds === undefined ? undefined : v.safeParse(Bounds, place.bounds);
+  return {
+    tabs: kept,
+    active: keptActive,
+    ...(bounds?.success === true ? { bounds: bounds.output } : {}),
+    ...(place.maximized === undefined ? {} : { maximized: place.maximized }),
+  };
 }
 
 const StoredSession = v.object({ version: v.literal(1), windows: v.array(v.unknown()) });
-const StoredWindow = v.object({ tabs: v.array(v.unknown()), active: v.number() });
+const StoredWindow = v.object({
+  tabs: v.array(v.unknown()),
+  active: v.number(),
+  bounds: v.optional(v.unknown()),
+  maximized: v.optional(v.unknown()),
+});
 const StoredTab = v.object({ url: v.string(), title: v.string() });
 
 /**
@@ -86,7 +110,12 @@ export function parseSession(data: unknown): SessionSnapshot | undefined {
       const parsed = v.safeParse(StoredTab, tab);
       return parsed.success ? parsed.output : undefined;
     });
-    const kept = sessionWindow(tabs, window.output.active);
+    // A window whose place cannot be read opens where the system puts it.
+    const { bounds, maximized } = window.output;
+    const kept = sessionWindow(tabs, window.output.active, {
+      ...(v.is(Bounds, bounds) ? { bounds } : {}),
+      ...(typeof maximized === 'boolean' ? { maximized } : {}),
+    });
     return kept === undefined ? [] : [kept];
   });
   return windows.length === 0 ? undefined : { version: 1, windows };
