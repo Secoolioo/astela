@@ -5,7 +5,8 @@ import { BootGuard, type BootDecision } from '../domain/updates/boot-guard.ts';
 import type { InstallType } from '../domain/updates/update-service.ts';
 import { JsonBootStateStore } from '../platform/updates/boot-state.ts';
 import { detectInstallType } from '../platform/updates/install-type.ts';
-import { rollbackFor, updaterDirectory, type Rollback } from '../platform/updates/rollback.ts';
+import type { RollbackOptions } from '../platform/updates/rollback.ts';
+import { updaterDirectory } from '../platform/updates/updater-directory.ts';
 import { brand } from '../shared/brand.ts';
 
 declare const BUILD_TEST_BOOT_FAILURE: boolean;
@@ -15,8 +16,8 @@ export interface BootCheck {
   readonly guard: BootGuard;
   readonly decision: BootDecision;
   readonly installType: InstallType;
-  /** Keeps and restores the previous version, where the installation type allows it. */
-  readonly rollback: Rollback | undefined;
+  /** Where the rollback keeps the previous version; its code loads when it is needed. */
+  readonly rollback: RollbackOptions;
 }
 
 /**
@@ -25,7 +26,7 @@ export interface BootCheck {
  * @param logger - Logger.
  * @returns The check, or `undefined` when this process must exit for a rollback.
  */
-export function checkBoot(logger: Logger): BootCheck | undefined {
+export async function checkBoot(logger: Logger): Promise<BootCheck | undefined> {
   const installType = detectInstallType({
     platform: process.platform,
     packaged: app.isPackaged,
@@ -35,14 +36,17 @@ export function checkBoot(logger: Logger): BootCheck | undefined {
   });
   const directory = join(updaterDirectory(brand.slug, process.env, process.platform), 'rollback');
   const guard = new BootGuard(new JsonBootStateStore(join(directory, 'boot-state.json')));
-  const rollback = rollbackFor(installType, { directory, appImage: process.env['APPIMAGE'] });
+  const rollback = { directory, appImage: process.env['APPIMAGE'] };
   const decision = guard.beginBoot(app.getVersion());
   if (decision.kind === 'rollback') {
     logger.error('The update failed to start; restoring the previous version', undefined, {
       failed: decision.failed,
       previous: decision.previous,
     });
-    if (rollback?.restore(process.argv.slice(1)) === true) return undefined;
+    const { rollbackFor } = await import('../platform/updates/rollback.ts');
+    if (rollbackFor(installType, rollback)?.restore(process.argv.slice(1)) === true) {
+      return undefined;
+    }
     logger.error('The previous version could not be restored');
   } else if (decision.kind === 'trial') {
     logger.warn('First starts of an update', { attempt: decision.attempt });

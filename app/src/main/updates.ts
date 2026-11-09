@@ -22,7 +22,7 @@ import { parseVersion } from '../domain/updates/version.ts';
 import { Ed25519Verifier } from '../platform/updates/ed25519-verifier.ts';
 import { JsonFeedStateStore } from '../platform/updates/feed-state.ts';
 import { updateFormat } from '../platform/updates/install-type.ts';
-import type { PackageDownloader } from '../platform/updates/rollback.ts';
+import type { PackageDownloader, Rollback } from '../platform/updates/rollback.ts';
 import { NetFeedFetcher } from '../platform/updates/net-feed-fetcher.ts';
 import { brand } from '../shared/brand.ts';
 import type { BootCheck } from './boot.ts';
@@ -46,7 +46,7 @@ export interface UpdateDependencies {
  */
 export function createUpdateService(deps: UpdateDependencies): UpdateService {
   const { policies, clock, logger, boot } = deps;
-  const { installType, guard, rollback } = boot;
+  const { installType, guard } = boot;
   const currentVersion = app.getVersion();
   const isPrerelease = (parseVersion(currentVersion)?.prerelease.length ?? 0) > 0;
   const mirror = policies.mandatoryValue(UpdateURL);
@@ -95,8 +95,15 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
     }
     return { sha512: artifact.sha512, chunks: response.body };
   };
+  // The rollback loads with the first update; it keeps the running version even when the
+  // download of what it needs failed.
+  let rollback: Rollback | undefined;
   const hooks: UpdateHooks = {
-    afterDownload: async () => rollback?.prepare(currentVersion, download),
+    afterDownload: async () => {
+      const { rollbackFor } = await import('../platform/updates/rollback.ts');
+      rollback ??= rollbackFor(installType, boot.rollback);
+      await rollback?.prepare(currentVersion, download);
+    },
     beforeInstall: (version) => {
       rollback?.keep();
       guard.prepareUpdate(currentVersion, version);

@@ -13,7 +13,6 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { InstallType } from '../../domain/updates/update-service.ts';
 
@@ -47,27 +46,6 @@ export type PackageDownloader = (version: string) => Promise<{
   readonly sha512: string;
   readonly chunks: AsyncIterable<Uint8Array>;
 }>;
-
-/**
- * The per-user folder for update state, next to electron-updater's cache. It belongs to the
- * installation, not to a profile.
- * @param slug - Product slug.
- * @param env - Environment variables.
- * @param platform - The operating system.
- */
-export function updaterDirectory(
-  slug: string,
-  env: Readonly<Record<string, string | undefined>>,
-  platform: NodeJS.Platform,
-): string {
-  const base =
-    platform === 'win32'
-      ? (env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'))
-      : platform === 'darwin'
-        ? join(homedir(), 'Library', 'Caches')
-        : (env['XDG_CACHE_HOME'] ?? join(homedir(), '.cache'));
-  return join(base, `${slug}-updater`);
-}
 
 /** An AppImage keeps a copy of itself and swaps it back. */
 export class AppImageRollback implements Rollback {
@@ -186,16 +164,19 @@ export class NsisRollback implements Rollback {
   }
 }
 
+/** Where rollback files live, and the running AppImage, if any. */
+export interface RollbackOptions {
+  readonly directory: string;
+  readonly appImage: string | undefined;
+}
+
 /**
  * Picks the rollback for an installation type; other types are updated by IT or the
  * package manager, or have no automatic rollback yet.
  * @param type - The installation type.
  * @param options - Where rollback files live and the running AppImage, if any.
  */
-export function rollbackFor(
-  type: InstallType,
-  options: { readonly directory: string; readonly appImage: string | undefined },
-): Rollback | undefined {
+export function rollbackFor(type: InstallType, options: RollbackOptions): Rollback | undefined {
   if (type === 'appimage' && options.appImage !== undefined) {
     return new AppImageRollback(options.appImage, options.directory);
   }
