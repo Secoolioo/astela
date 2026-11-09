@@ -431,8 +431,8 @@ export class AppShell extends LitElement {
                 data-state=${active.blocking}
                 title=${this.blockerLabel(active)}
                 aria-label=${this.blockerLabel(active)}
-                aria-haspopup="menu"
-                @click=${this.openBlockerMenu}
+                aria-haspopup="dialog"
+                @click=${this.openBlockerPopover}
               >
                 ${
                   active.blocking === 'on'
@@ -596,14 +596,16 @@ export class AppShell extends LitElement {
     return this.i18n?.t(key, params) ?? 'shell.blocker';
   }
 
-  /** Opens the content blocker's menu below its button. */
-  private readonly openBlockerMenu = (event: MouseEvent): void => {
+  /** Opens the content blocker's popover at its button. */
+  private readonly openBlockerPopover = (event: MouseEvent): void => {
     const button = event.currentTarget;
     if (button instanceof HTMLElement) {
       const rect = button.getBoundingClientRect();
-      void this.bridge?.invoke('shell.openBlockerMenu', {
-        x: Math.round(rect.left),
-        y: Math.round(rect.bottom),
+      void this.bridge?.invoke('shell.openBlockerPopover', {
+        x: Math.max(0, Math.round(rect.left)),
+        y: Math.max(0, Math.round(rect.top)),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
       });
     }
   };

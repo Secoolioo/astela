@@ -66,6 +66,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           shell: resolve(import.meta.dirname, 'src/ui/shell/index.html'),
+          overlay: resolve(import.meta.dirname, 'src/ui/overlay/index.html'),
           'sandbox-help': resolve(import.meta.dirname, 'src/ui/sandbox-help/index.html'),
           newtab: resolve(import.meta.dirname, 'src/ui/newtab/index.html'),
           settings: resolve(import.meta.dirname, 'src/ui/settings/index.html'),

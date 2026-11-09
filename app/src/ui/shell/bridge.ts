@@ -4,7 +4,7 @@ import type {
   CloseTab,
   GetShellState,
   NavigateTab,
-  OpenBlockerMenu,
+  OpenBlockerPopover,
   OpenMenu,
   OpenTab,
   ReopenClosedTab,
@@ -25,7 +25,7 @@ interface Requests {
   'tabs.action': typeof TabAction;
   'shell.setInsets': typeof SetShellInsets;
   'shell.openMenu': typeof OpenMenu;
-  'shell.openBlockerMenu': typeof OpenBlockerMenu;
+  'shell.openBlockerPopover': typeof OpenBlockerPopover;
   'shell.toggleBookmark': typeof ToggleBookmark;
   'shell.openBookmarkFolder': typeof OpenBookmarkFolder;
 }

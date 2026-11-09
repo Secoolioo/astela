@@ -1,6 +1,6 @@
 # Architecture overview
 
-> **Status:** this page describes the target architecture of Astela. Windows with tabs, the browser's own pages, the data service and the content blocker exist; the overlay view, workspaces and tab groups are still design. See [implementation status](#implementation-status).
+> **Status:** this page describes the target architecture of Astela. Windows with tabs, the browser's own pages, the data service, the content blocker and the overlay view exist; workspaces and tab groups are still design. See [implementation status](#implementation-status).
 
 Astela is a desktop browser for Windows, macOS and Linux. It embeds Chromium through upstream Electron and is written in TypeScript. The browser process acts as a small kernel. Every feature is a module, every module beyond the core can be switched off, and a module that is off is never loaded. The [principles](principles.md) explain why the architecture looks the way it does.
 
@@ -416,6 +416,7 @@ The first browser window works end to end:
 - **Data service:** a utility process owns `profile.db` with the history and the bookmarks and runs the import from other browsers; it starts with the first data access: the first web page, the bookmarks bar, the history or bookmarks page, or the list of other browsers in the settings and the setup guide. See [data storage](data.md) and [ADR 0029](../adr/0029-import-from-other-browsers-in-the-data-service.md).
 - **Session:** the windows and tabs are kept in `session.json` and restored at the next start; restored tabs get their view when they are first shown.
 - **Content blocker:** one request pipeline per web session blocks requests with the filter engine, and a frame preload applies element hiding rules and scriptlets in every frame ([ADR 0027](../adr/0027-blocker-with-the-default-lists-of-ublock-origin.md), [ADR 0028](../adr/0028-content-blocker-rules-through-a-frame-preload.md)).
+- **Overlay:** a transparent view above the tabs shows popovers, so far the content blocker's; it is part of the window only while it is open ([ADR 0034](../adr/0034-overlay-view-for-popovers-and-prompts.md)).
 - **Links from other apps:** links on the command line, from a second start and from `open-url` events open in tabs; the Windows installer registers the browser for web links ([ADR 0030](../adr/0030-default-browser-and-links-from-other-apps.md)).
 
 Not implemented yet: the overlay view, workspaces, tab groups and drag and drop.

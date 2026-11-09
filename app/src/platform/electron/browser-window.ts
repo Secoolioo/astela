@@ -94,6 +94,12 @@ export interface BrowserWindowOptions {
   readonly prepareInternalPage?: (page: TabPage) => Promise<void> | undefined;
 }
 
+/** What a window needs of its overlay. */
+export interface OverlayHandle {
+  /** Closes the overlay and gives the focus back to the page or the shell. */
+  close(): void;
+}
+
 /** The view that shows a tab, and what belongs to it. */
 interface TabEntry {
   view: WebContentsView;
@@ -119,6 +125,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly shell: WebContentsView;
   readonly tabs: TabService;
   private readonly entries = new Map<TabId, TabEntry>();
+  /** The overlay while it shows something; a change of the visible tab closes it. */
+  overlay: OverlayHandle | undefined;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
@@ -269,17 +277,26 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (view === undefined || view === this.visible) {
       return;
     }
+    this.overlay?.close();
     if (this.visible !== undefined) {
       this.window.contentView.removeChildView(this.visible);
     }
     this.visible = view;
     this.window.contentView.addChildView(view);
     this.layout();
-    // On the new tab page, typing goes to the address bar, which the shell focuses.
-    if (entry?.page === 'newtab') {
+    this.focusContent();
+  }
+
+  /**
+   * Focuses the visible tab, or the shell for the new tab page, where typing goes to the
+   * address bar.
+   */
+  focusContent(): void {
+    const entry = [...this.entries.values()].find((candidate) => candidate.view === this.visible);
+    if (entry === undefined || entry.page === 'newtab') {
       this.shell.webContents.focus();
     } else {
-      view.webContents.focus();
+      entry.view.webContents.focus();
     }
   }
 
@@ -602,6 +619,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const focused = old.webContents.isFocused();
     Object.assign(entry, this.createView(id, url), { requested: url });
     if (this.visible === old && !this.window.isDestroyed()) {
+      this.overlay?.close();
       this.window.contentView.removeChildView(old);
       this.window.contentView.addChildView(entry.view);
       this.visible = entry.view;
