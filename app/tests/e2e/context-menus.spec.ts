@@ -37,6 +37,7 @@ const en =
         back: 'Back',
         forward: 'Forward',
         reload: 'Reload',
+        inspect: 'Inspect',
       }
     : {
         openLink: 'Open link in new &tab',
@@ -54,6 +55,7 @@ const en =
         back: '&Back',
         forward: '&Forward',
         reload: '&Reload',
+        inspect: 'I&nspect',
       };
 
 /** A context menu as the browser built it; `-` stands for a separator. */
@@ -136,13 +138,14 @@ async function choose(label: string): Promise<void> {
 }
 
 /**
- * Checks the items of a menu. On macOS, a right-click on text or a link also selects the
- * word or the link under the pointer, as everywhere on that system, so the menu may end
- * with the items for that selection.
+ * Checks the items of a menu of a page, which ends with Inspect. On macOS, a right-click on
+ * text or a link also selects the word or the link under the pointer, as everywhere on that
+ * system, so the menu may have the items for that selection before Inspect.
  */
-function expectItems(shown: ShownMenu, expected: readonly string[]): void {
-  const items = process.platform === 'darwin' ? shown.items.slice(0, expected.length) : shown.items;
-  expect(items).toEqual(expected);
+function expectItems(shown: ShownMenu, expected: readonly string[], inspect = en.inspect): void {
+  expect(shown.items.slice(-2)).toEqual(['-', inspect]);
+  const items = shown.items.slice(0, -2);
+  expect(process.platform === 'darwin' ? items.slice(0, expected.length) : items).toEqual(expected);
 }
 
 function clipboardText(): Promise<string> {
@@ -191,7 +194,7 @@ test('copies a selection and searches for it in a new tab', async () => {
     getSelection()?.addRange(range);
   });
   await page.click('#text', { button: 'right' });
-  expect((await menu(1)).items).toEqual([en.copy, en.search]);
+  expect((await menu(1)).items).toEqual([en.copy, en.search, '-', en.inspect]);
   await choose(en.copy);
   await expect.poll(clipboardText).toBe('Fixture menus');
   await choose(en.search);
@@ -264,6 +267,7 @@ test('edits text in the clicked field of a page or of the address bar', async ()
       input.selectionEnd,
       input.value.length,
     ]);
+  // The browser's own address bar has no Inspect item.
   await address.click({ button: 'right' });
   expect((await menu(2)).items).toEqual(editItems);
   await page.evaluate(() =>
@@ -282,12 +286,32 @@ test('offers history items on the page and goes back', async () => {
   const page = await open('menus.html');
   await page.click('#blank', { button: 'right' });
   expect(await menu(1)).toEqual({
-    items: [en.back, en.forward, en.reload],
+    items: [en.back, en.forward, en.reload, '-', en.inspect],
     disabled: [en.forward],
     options: { sourceType: 'mouse' },
   });
   await choose(en.back);
   await expect.poll(async () => (await tabUrls()).active).toBe(`${server.origin}/index.html`);
+});
+
+test('inspects the clicked element in the developer tools', async () => {
+  await start();
+  const page = await open('menus.html');
+  await page.click('#blank', { button: 'right' });
+  await menu(1);
+  await choose(en.inspect);
+  await expect
+    .poll(() =>
+      browser.main.evaluate(
+        ({ webContents }, url) =>
+          webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL() === url)
+            ?.isDevToolsOpened(),
+        `${server.origin}/menus.html`,
+      ),
+    )
+    .toBe(true);
 });
 
 test('opens a menu from the keyboard where Chromium places it', async () => {
@@ -341,7 +365,17 @@ test('follows the language of the system', async () => {
   const page = await open('menus.html');
   await page.click('#link', { button: 'right' });
   // German has no title case, so its texts are the same on every system.
-  expectItems(await menu(1), ['Link in neuem &Tab öffnen', '&Link-Adresse kopieren']);
+  expectItems(
+    await menu(1),
+    ['Link in neuem &Tab öffnen', '&Link-Adresse kopieren'],
+    'Untersu&chen',
+  );
   await page.click('#blank', { button: 'right' });
-  expect((await menu(2)).items).toEqual(['&Zurück', '&Vorwärts', '&Neu laden']);
+  expect((await menu(2)).items).toEqual([
+    '&Zurück',
+    '&Vorwärts',
+    '&Neu laden',
+    '-',
+    'Untersu&chen',
+  ]);
 });

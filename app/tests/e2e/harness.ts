@@ -6,7 +6,7 @@ import {
   type TestInfo,
 } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import {
   existsSync,
   linkSync,
@@ -41,6 +41,7 @@ function contentType(file: string): string {
   if (file.endsWith('.js')) return 'text/javascript';
   if (file.endsWith('.gif')) return 'image/gif';
   if (file.endsWith('.png')) return 'image/png';
+  if (file.endsWith('.pdf')) return 'application/pdf';
   return 'text/html; charset=utf-8';
 }
 
@@ -48,10 +49,13 @@ function contentType(file: string): string {
 export class FixtureServer {
   private server: Server | undefined;
   origin = '';
+  /** The requests the server got, newest last, with their headers. */
+  readonly requests: { readonly path: string; readonly headers: IncomingHttpHeaders }[] = [];
 
   /** Starts the server on a random port of 127.0.0.1. */
   async start(): Promise<void> {
     this.server = createServer((request, response) => {
+      this.requests.push({ path: request.url ?? '/', headers: request.headers });
       const name =
         new URL(request.url ?? '/', 'http://x').pathname.replace(/^\//, '') || 'index.html';
       try {

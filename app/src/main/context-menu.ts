@@ -17,6 +17,8 @@ export interface ContextMenuDependencies {
    * that a page opens.
    */
   readonly openTab: (url: string, opener: WebContents, activate: boolean) => void;
+  /** Whether the developer tools may open, which the policies decide. */
+  readonly developerTools: () => boolean;
   readonly logger: Logger;
 }
 
@@ -44,6 +46,7 @@ export async function popupContextMenu(
       canGoForward: history?.canGoForward() ?? false,
       canCopyImage: params.frame?.processId === contents.mainFrame.processId,
       searchTemplate,
+      canInspect: tabId !== undefined && deps.developerTools(),
     },
     contextMenuLabels(app.getLocale(), process.platform),
     process.platform,
@@ -125,6 +128,11 @@ function run(
       if (tabId !== undefined && window.tabs.all.some((tab) => tab.id === tabId)) {
         window.tabs.run(tabId, action.command);
       }
+      break;
+    case 'inspect':
+      // In a window of their own, as F12 opens them, so the page keeps its size.
+      if (!contents.isDevToolsOpened()) contents.openDevTools({ mode: 'detach' });
+      contents.inspectElement(params.x, params.y);
       break;
   }
 }

@@ -14,6 +14,7 @@
   "contextMenu.back": "&Zurück",
   "contextMenu.forward": "&Vorwärts",
   "contextMenu.reload": "&Neu laden",
+  "contextMenu.inspect": "Untersu&chen",
   "menu.newTab": "Neuer &Tab",
   "menu.settings": "&Einstellungen",
   "menu.blockerSaveFailed": "Die Änderung wurde nicht gespeichert",
@@ -22,8 +23,18 @@
   "menu.history": "&Verlauf",
   "menu.bookmarks": "&Lesezeichen",
   "menu.emptyFolder": "(leer)",
+  "menu.view": "&Darstellung",
+  "menu.reload": "Seite &neu laden",
+  "menu.reloadHard": "Ohne &Cache neu laden",
+  "menu.actualSize": "&Originalgröße",
+  "menu.zoomIn": "&Vergrößern",
+  "menu.zoomOut": "Ver&kleinern",
+  "menu.fullScreen": "&Vollbild",
+  "menu.viewSource": "&Quelltext anzeigen",
+  "menu.developerTools": "&Entwicklertools",
   "dialog.pageUnresponsive": "{site} reagiert nicht",
   "dialog.pageUnresponsiveDetail": "Du kannst warten oder die Seite schließen.",
   "dialog.wait": "Warten",
-  "dialog.closePage": "Seite schließen"
+  "dialog.closePage": "Seite schließen",
+  "dialog.webPage": "Webseite"
 }

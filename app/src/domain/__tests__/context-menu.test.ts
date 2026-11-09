@@ -24,6 +24,7 @@ const labels: ContextMenuLabels = {
   back: 'Back',
   forward: 'Forward',
   reload: 'Reload',
+  inspect: 'Inspect',
   searchFor: (engine, query) => `Search ${engine} for “${query}”`,
 };
 
@@ -67,6 +68,7 @@ function menu(
       canGoForward: false,
       canCopyImage: true,
       searchTemplate: template,
+      canInspect: false,
       ...input,
       params: { ...nothing, ...params },
     },
@@ -328,6 +330,27 @@ describe('buildContextMenu', () => {
       '---',
     ]);
     expect(actionOf(entries, 'they&&re')).toEqual({ kind: 'replaceMisspelling', word: 'they&re' });
+  });
+
+  it('ends every page menu with Inspect while the developer tools may open', () => {
+    expect(render(menu({}, { canInspect: true }))).toEqual([
+      'Back [off]',
+      'Forward [off]',
+      'Reload',
+      '---',
+      'Inspect',
+    ]);
+    expect(render(menu({ linkURL: 'https://example.com/' }, { canInspect: true }))).toEqual([
+      'Open link in new tab',
+      'Copy link address',
+      '---',
+      'Inspect',
+    ]);
+    expect(actionOf(menu({}, { canInspect: true }), 'Inspect')).toEqual({ kind: 'inspect' });
+    expect(render(menu({}, { canInspect: false }))).not.toContain('Inspect');
+    expect(render(menu(textField, { surface: 'shell', canInspect: true }))).not.toContain(
+      'Inspect',
+    );
   });
 
   it('gives the shell nothing but the text field commands', () => {

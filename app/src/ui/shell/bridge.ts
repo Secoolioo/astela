@@ -6,6 +6,9 @@ import type {
   NavigateTab,
   OpenBlockerPopover,
   ProceedUnsafely,
+  FindInPage,
+  StopFinding,
+  ResetZoom,
   OpenMenu,
   OpenTab,
   ReopenClosedTab,
@@ -28,13 +31,16 @@ interface Requests {
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerPopover': typeof OpenBlockerPopover;
   'tabs.proceedUnsafely': typeof ProceedUnsafely;
+  'tabs.find': typeof FindInPage;
+  'tabs.stopFind': typeof StopFinding;
+  'tabs.resetZoom': typeof ResetZoom;
   'shell.toggleBookmark': typeof ToggleBookmark;
   'shell.openBookmarkFolder': typeof OpenBookmarkFolder;
 }
 
 interface Events {
   'shell.stateChanged': ShellState;
-  'shell.command': 'omnibox.focus';
+  'shell.command': 'omnibox.focus' | 'find.focus';
 }
 
 /** The API that the shell's preload script exposes. */

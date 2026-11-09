@@ -51,6 +51,8 @@ export interface ContextMenuInput {
   readonly canCopyImage: boolean;
   /** Search URL with `%s` for the query: the `search.urlTemplate` setting. */
   readonly searchTemplate: string;
+  /** Whether the developer tools may open for the page, which the policies decide. */
+  readonly canInspect: boolean;
 }
 
 /** The texts of the menu items in the user's language. */
@@ -69,6 +71,7 @@ export interface ContextMenuLabels {
   readonly back: string;
   readonly forward: string;
   readonly reload: string;
+  readonly inspect: string;
   /**
    * The text of the item that searches for the selection.
    * @param engine - Host name of the search engine, such as `duckduckgo.com`.
@@ -82,7 +85,8 @@ export type EditCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAl
 
 /**
  * What a menu item does. `openTab` opens a URL in a new tab next to the page, in the
- * background unless `activate` is set; `copyImage` copies the image that was clicked.
+ * background unless `activate` is set; `copyImage` copies the image that was clicked, and
+ * `inspect` opens the developer tools at the clicked element.
  */
 export type ContextMenuAction =
   | { readonly kind: 'openTab'; readonly url: string; readonly activate: boolean }
@@ -90,7 +94,8 @@ export type ContextMenuAction =
   | { readonly kind: 'copyImage' }
   | { readonly kind: 'edit'; readonly command: EditCommand }
   | { readonly kind: 'replaceMisspelling'; readonly word: string }
-  | { readonly kind: 'navigate'; readonly command: 'back' | 'forward' | 'reload' };
+  | { readonly kind: 'navigate'; readonly command: 'back' | 'forward' | 'reload' }
+  | { readonly kind: 'inspect' };
 
 /** One item of the menu. */
 export interface ContextMenuItem {
@@ -120,8 +125,9 @@ const separator: ContextMenuEntry = { type: 'separator' };
 /**
  * Describes the context menu for a click, for Electron to show as a native menu. The groups
  * follow Chromium's menus: link, image, text field with spelling suggestions first, then
- * the selection. A page where nothing specific was clicked gets the history items; the
- * shell gets the text field items only.
+ * the selection. A page where nothing specific was clicked gets the history items, and every
+ * page menu ends with Inspect while the developer tools may open; the shell gets the text
+ * field items only.
  * @param input - What was clicked and where.
  * @param labels - The texts in the user's language.
  * @param platform - `process.platform`. Windows and Linux show the shortcuts of the editing
@@ -148,6 +154,9 @@ export function buildContextMenu(
   const filled = groups.filter((group) => group.length > 0);
   if (page && filled.length === 0) {
     filled.push(historyItems(input, labels));
+  }
+  if (page && input.canInspect) {
+    filled.push([item(labels.inspect, { kind: 'inspect' })]);
   }
   const entries: ContextMenuEntry[] = [];
   for (const group of filled) {

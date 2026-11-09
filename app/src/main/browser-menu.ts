@@ -1,5 +1,6 @@
 import { app, dialog, Menu } from 'electron';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
+import type { WindowCommand } from '../platform/electron/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
 /**
@@ -59,11 +60,24 @@ export function showBlockerSaveError(window: BrowserWindowController, managed: b
 }
 
 /**
- * The menu bar of macOS, with the browser's settings in the application menu.
- * @param openSettings - Opens the settings page in the frontmost window.
+ * The menu bar of macOS, with the browser's settings in the application menu and the tools
+ * of the page in the View menu. Its items run the commands of the window, as the keys do, so
+ * they act on the page and not on the browser's own views, and the policies apply.
+ * @param run - Runs a command in the frontmost window.
  */
-export function macMenuBar(openSettings: () => void): Menu {
+export function macMenuBar(run: (command: WindowCommand) => void): Menu {
   const i18n = translatorFor(app.getLocale(), process.platform);
+  // The window handles the keys itself, also while a page has the focus.
+  const command = (
+    label: Parameters<typeof i18n.t>[0],
+    accelerator: string,
+    name: WindowCommand,
+  ): Electron.MenuItemConstructorOptions => ({
+    label: i18n.t(label),
+    accelerator,
+    registerAccelerator: false,
+    click: () => run(name),
+  });
   return Menu.buildFromTemplate([
     {
       role: 'appMenu',
@@ -74,7 +88,7 @@ export function macMenuBar(openSettings: () => void): Menu {
           label: i18n.t('menu.settings'),
           accelerator: 'Cmd+,',
           registerAccelerator: false,
-          click: openSettings,
+          click: () => run('settings.open'),
         },
         { type: 'separator' },
         { role: 'services' },
@@ -87,7 +101,22 @@ export function macMenuBar(openSettings: () => void): Menu {
       ],
     },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      label: i18n.t('menu.view'),
+      submenu: [
+        command('menu.reload', 'Cmd+R', 'page.reload'),
+        command('menu.reloadHard', 'Shift+Cmd+R', 'page.reloadHard'),
+        { type: 'separator' },
+        command('menu.actualSize', 'Cmd+0', 'zoom.reset'),
+        command('menu.zoomIn', 'Cmd+Plus', 'zoom.in'),
+        command('menu.zoomOut', 'Cmd+-', 'zoom.out'),
+        { type: 'separator' },
+        command('menu.fullScreen', 'Ctrl+Cmd+F', 'window.fullscreen'),
+        { type: 'separator' },
+        command('menu.viewSource', 'Alt+Cmd+U', 'page.source'),
+        command('menu.developerTools', 'Alt+Cmd+I', 'devtools.toggle'),
+      ],
+    },
     { role: 'windowMenu' },
   ]);
 }

@@ -15,7 +15,19 @@ export type WindowCommand =
   | 'history.open'
   | 'bookmark.toggle'
   | 'bookmarks.open'
-  | 'bookmarks.toggleBar';
+  | 'bookmarks.toggleBar'
+  | 'find.open'
+  | 'find.next'
+  | 'find.previous'
+  | 'zoom.in'
+  | 'zoom.out'
+  | 'zoom.reset'
+  | 'window.fullscreen'
+  | 'page.reloadHard'
+  | 'page.print'
+  | 'page.save'
+  | 'page.source'
+  | 'devtools.toggle';
 
 // The tables write a key press as `Modifiers+Key`: the modifiers in the order Ctrl, Alt,
 // Shift, Cmd (the meta key: Command on macOS, Windows or Super elsewhere), then the key as
@@ -38,8 +50,7 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Alt+Cmd+ArrowLeft', 'tab.previous'],
   ['Shift+Cmd+[', 'tab.previous'],
   ['Cmd+R', 'page.reload'],
-  // Other browsers reload without the cache here; there is no such command yet.
-  ['Shift+Cmd+R', 'page.reload'],
+  ['Shift+Cmd+R', 'page.reloadHard'],
   ['Cmd+[', 'page.back'],
   ['Cmd+]', 'page.forward'],
   ['Cmd+L', 'omnibox.focus'],
@@ -48,6 +59,19 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Cmd+D', 'bookmark.toggle'],
   ['Shift+Cmd+O', 'bookmarks.open'],
   ['Shift+Cmd+B', 'bookmarks.toggleBar'],
+  ['Cmd+F', 'find.open'],
+  ['Cmd+G', 'find.next'],
+  ['Shift+Cmd+G', 'find.previous'],
+  ['Cmd+=', 'zoom.in'],
+  ['Cmd++', 'zoom.in'],
+  ['Shift+Cmd++', 'zoom.in'],
+  ['Cmd+-', 'zoom.out'],
+  ['Cmd+0', 'zoom.reset'],
+  ['Ctrl+Cmd+F', 'window.fullscreen'],
+  ['Cmd+P', 'page.print'],
+  ['Cmd+S', 'page.save'],
+  ['Alt+Cmd+U', 'page.source'],
+  ['Alt+Cmd+I', 'devtools.toggle'],
 ]);
 
 /**
@@ -66,10 +90,9 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+PageUp', 'tab.previous'],
   ['F5', 'page.reload'],
   ['Ctrl+R', 'page.reload'],
-  // Other browsers reload without the cache here; there is no such command yet.
-  ['Ctrl+F5', 'page.reload'],
-  ['Shift+F5', 'page.reload'],
-  ['Ctrl+Shift+R', 'page.reload'],
+  ['Ctrl+F5', 'page.reloadHard'],
+  ['Shift+F5', 'page.reloadHard'],
+  ['Ctrl+Shift+R', 'page.reloadHard'],
   ['Alt+ArrowLeft', 'page.back'],
   ['BrowserBack', 'page.back'],
   ['Alt+ArrowRight', 'page.forward'],
@@ -81,6 +104,22 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+D', 'bookmark.toggle'],
   ['Ctrl+Shift+O', 'bookmarks.open'],
   ['Ctrl+Shift+B', 'bookmarks.toggleBar'],
+  ['Ctrl+F', 'find.open'],
+  ['F3', 'find.next'],
+  ['Ctrl+G', 'find.next'],
+  ['Shift+F3', 'find.previous'],
+  ['Ctrl+Shift+G', 'find.previous'],
+  ['Ctrl+=', 'zoom.in'],
+  ['Ctrl++', 'zoom.in'],
+  ['Ctrl+Shift++', 'zoom.in'],
+  ['Ctrl+-', 'zoom.out'],
+  ['Ctrl+0', 'zoom.reset'],
+  ['F11', 'window.fullscreen'],
+  ['Ctrl+P', 'page.print'],
+  ['Ctrl+S', 'page.save'],
+  ['Ctrl+U', 'page.source'],
+  ['F12', 'devtools.toggle'],
+  ['Ctrl+Shift+I', 'devtools.toggle'],
 ]);
 
 /**

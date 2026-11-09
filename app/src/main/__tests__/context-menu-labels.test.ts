@@ -55,6 +55,8 @@ function texts(click: Partial<ContextMenuParams>, locale: string, platform: stri
       canGoForward: true,
       canCopyImage: true,
       searchTemplate: 'https://search.example/?q=%s',
+      // With Inspect, whose access key must not clash with the others either.
+      canInspect: true,
     },
     contextMenuLabels(locale, platform),
     platform,
@@ -105,6 +107,7 @@ describe('contextMenuLabels', () => {
       'Copy Image Address',
       'Copy',
       'Search search.example for “text”',
+      'Inspect',
     ]);
     expect(texts(textField, 'en-US', 'darwin')).toEqual([
       'Undo',
@@ -114,8 +117,9 @@ describe('contextMenuLabels', () => {
       'Paste',
       'Select All',
       'Search search.example for “text”',
+      'Inspect',
     ]);
-    expect(texts({}, 'en-US', 'darwin')).toEqual(['Back', 'Forward', 'Reload']);
+    expect(texts({}, 'en-US', 'darwin')).toEqual(['Back', 'Forward', 'Reload', 'Inspect']);
   });
 
   it('keeps the German texts on macOS, which hides their access keys itself', () => {
