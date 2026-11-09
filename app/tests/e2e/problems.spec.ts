@@ -73,16 +73,24 @@ test('shows a page whose renderer crashed and loads it again', async () => {
     const url = `${server.origin}/second.html`;
     await open(browser, url);
     const page = await waitForPage(browser, (current) => current === url);
-    // On Linux, Chromium asks the renderer of the shown page to crash, so the page must have
-    // one: its document has loaded and its view is in the window.
     await expect.poll(() => page.evaluate(() => document.readyState)).toBe('complete');
     await expect.poll(() => pageShown(browser)).toBe(true);
+    // Electron's own way ends the renderer on Windows and macOS, but makes it crash on Linux,
+    // where the crash handler of the system can keep the process alive while it saves a dump.
+    // So the test ends the process of the page at once, the same way on every system.
     await browser.main.evaluate(({ webContents }, address) => {
-      webContents
+      const contents = webContents
         .getAllWebContents()
-        .find((contents) => contents.getURL() === address)
-        ?.forcefullyCrashRenderer();
+        .find((candidate) => candidate.getURL() === address);
+      if (contents === undefined) throw new Error(`No page shows ${address}`);
+      contents.once('render-process-gone', (_event, details) => {
+        Object.assign(globalThis, { pageGone: details.reason });
+      });
+      process.kill(contents.getOSProcessId(), 'SIGKILL');
     }, url);
+    await expect
+      .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'pageGone')))
+      .toBeDefined();
     const problem = browser.shell.getByRole('region', { name: 'This page crashed' });
     await expect(problem).toBeVisible();
     expect(await pageShown(browser)).toBe(false);
