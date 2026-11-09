@@ -1,4 +1,10 @@
-import { chromium, test, type Browser as CdpBrowser, type Page } from '@playwright/test';
+import {
+  chromium,
+  test,
+  type Browser as CdpBrowser,
+  type Page,
+  type TestInfo,
+} from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import {
@@ -259,8 +265,7 @@ export async function launch(
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
-      // After a failed test, the job log shows what the browser showed.
-      if (testFailed()) await printState(main, shell, profile);
+      await reportState(main, shell, profile);
       await main.evaluate(({ app }) => {
         setTimeout(() => app.quit(), 0);
       });
@@ -284,22 +289,21 @@ export async function launch(
   };
 }
 
-/** Whether the running test has failed; false outside of a test. */
-function testFailed(): boolean {
-  try {
-    const info = test.info();
-    return info.status !== info.expectedStatus;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Prints what the browser showed when a test failed: the shell's state and address bar,
- * every web contents, and the end of the browser's log. Traces stay with the CI run, while
- * the job log is always at hand.
+ * Records what the browser showed at the end of a test: the shell's state and address bar,
+ * every web contents, and the end of the browser's log. The record goes with the files of the
+ * test, which CI keeps when a test fails: a failed expectation fails the test only after the
+ * test closed its browser. A test that has failed by now, such as by its time limit, also
+ * prints the record to the job log.
  */
-async function printState(main: MainProcess, shell: Page, profile: string): Promise<void> {
+async function reportState(main: MainProcess, shell: Page, profile: string): Promise<void> {
+  let info: TestInfo;
+  try {
+    info = test.info();
+  } catch {
+    return;
+  }
+  let report: string;
   try {
     const state = await shellState(shell);
     const address = await shell.evaluate(() => {
@@ -317,23 +321,30 @@ async function printState(main: MainProcess, shell: Page, profile: string): Prom
         focused: contents.isFocused(),
       })),
     );
-    process.stdout.write(
-      `Browser after the failure: ${JSON.stringify({ state, address, views })}\n`,
-    );
+    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views })}\n`;
   } catch (error) {
-    process.stdout.write(`Browser state not available: ${String(error)}\n`);
+    report = `Browser state not available: ${String(error)}\n`;
   }
-  printLog(profile);
+  report += logTail(profile);
+  if (info.status !== info.expectedStatus) process.stdout.write(report);
+  // A test can start the browser more than once.
+  const count = info.attachments.filter((attachment) => attachment.name === 'browser').length;
+  const file = info.outputPath(count === 0 ? 'browser.txt' : `browser-${String(count + 1)}.txt`);
+  writeFileSync(file, report);
+  await info.attach('browser', { path: file, contentType: 'text/plain' });
+}
+
+/** The end of the browser's log, or nothing when it has none. */
+function logTail(profile: string): string {
+  const log = join(profile, 'data', 'logs', 'main.log');
+  return existsSync(log)
+    ? `End of the browser log:\n${readFileSync(log, 'utf8').split('\n').slice(-40).join('\n')}\n`
+    : '';
 }
 
 /** Prints the end of the browser's log to the job log. */
 function printLog(profile: string): void {
-  const log = join(profile, 'data', 'logs', 'main.log');
-  if (existsSync(log)) {
-    process.stdout.write(
-      `End of the browser log:\n${readFileSync(log, 'utf8').split('\n').slice(-40).join('\n')}\n`,
-    );
-  }
+  process.stdout.write(logTail(profile));
 }
 
 /**
