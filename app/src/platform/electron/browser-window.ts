@@ -87,6 +87,11 @@ export interface BrowserWindowOptions {
   readonly logger: Logger;
   /** Shows the context menu of a view; without it, views have none. */
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
+  /**
+   * Gets the browser process ready for an internal page before the page loads, such as by
+   * loading the handlers of its channels; `undefined` when it is ready already.
+   */
+  readonly prepareInternalPage?: (page: TabPage) => Promise<void> | undefined;
 }
 
 /** The view that shows a tab, and what belongs to it. */
@@ -114,6 +119,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly shell: WebContentsView;
   readonly tabs: TabService;
   private readonly entries = new Map<TabId, TabEntry>();
+  /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
+  private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
   private readonly lazyTabs = new Map<TabId, string>();
   private visible: WebContentsView | undefined;
@@ -635,6 +642,23 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   private loadInto(contents: WebContents, url: string): void {
+    const page = tabPageOf(url);
+    const preparing = page === undefined ? undefined : this.options.prepareInternalPage?.(page);
+    if (preparing === undefined) {
+      this.waiting.delete(contents);
+      this.startLoad(contents, url);
+      return;
+    }
+    // A later load of the same view wins over this one while it waits.
+    this.waiting.set(contents, url);
+    void preparing.then(() => {
+      if (this.waiting.get(contents) !== url || contents.isDestroyed()) return;
+      this.waiting.delete(contents);
+      this.startLoad(contents, url);
+    });
+  }
+
+  private startLoad(contents: WebContents, url: string): void {
     contents.loadURL(url).catch((error: unknown) => {
       // Aborted loads (a new navigation started) are normal.
       if (!String(error).includes('ERR_ABORTED')) {
