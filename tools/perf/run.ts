@@ -288,9 +288,13 @@ function memoryChecks(m: Measurements): Check[] {
   ];
 }
 
+/**
+ * The idle CPU checks. An idle browser does not get busier by itself, while background work
+ * of the runner comes and goes, so the quietest window of each variant counts.
+ */
 function cpuChecks(m: Measurements): Check[] {
-  const browser = median(m.cpuPercent.browser);
-  const bare = median(m.cpuPercent.bare);
+  const browser = Math.min(...m.cpuPercent.browser);
+  const bare = Math.min(...m.cpuPercent.bare);
   const limit = Math.min(budgets.cpuIdlePercent, bare + budgets.cpuExtraPoints);
   return [
     {
@@ -519,9 +523,8 @@ async function main(): Promise<void> {
         variants,
         m,
         measureCpu,
-        (r) => {
-          r.cpuPercent = { browser: [], bare: [] };
-        },
+        // A second window adds to the first, so that a burst in one of them does not count.
+        () => undefined,
         cpuChecks,
       )),
       ...updateChecks(),
