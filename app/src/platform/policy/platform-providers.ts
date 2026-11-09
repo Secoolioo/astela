@@ -1,18 +1,13 @@
 import { userInfo } from 'node:os';
 import type { Brand } from '../../shared/brand.ts';
 import type { PolicyProvider } from '../../domain/policy/policy.ts';
-import {
-  LinuxJsonPolicyProvider,
-  MacManagedPreferencesPolicyProvider,
-  WindowsRegistryPolicyProvider,
-  nodePolicyIo,
-  type PolicyIo,
-} from './policy-providers.ts';
+import type * as Providers from './policy-providers.ts';
 
 /**
  * Creates the policy providers of the current platform. Paths follow the enterprise
  * design: `SOFTWARE\Policies\<Product>` on Windows, managed preferences of the bundle id
- * on macOS and `/etc/<slug>/policies` on Linux.
+ * on macOS and `/etc/<slug>/policies` on Linux. The code that reads the sources loads with
+ * the first read, which runs while Electron starts, so it stays out of the start path.
  * @param brand - Product names and identifiers.
  * @param platform - `process.platform`.
  * @param io - System access; defaults to Node.js.
@@ -20,15 +15,62 @@ import {
 export function createPolicyProviders(
   brand: Brand,
   platform: NodeJS.Platform,
-  io: PolicyIo = nodePolicyIo,
+  io?: Providers.PolicyIo,
 ): PolicyProvider[] {
   if (platform === 'win32') {
-    return [new WindowsRegistryPolicyProvider(io, `SOFTWARE\\Policies\\${brand.productName}`)];
+    return [
+      onDemand(
+        'windows-registry',
+        (module) =>
+          new module.WindowsRegistryPolicyProvider(
+            io ?? module.nodePolicyIo,
+            `SOFTWARE\\Policies\\${brand.productName}`,
+          ),
+      ),
+    ];
   }
   if (platform === 'darwin') {
-    return [new MacManagedPreferencesPolicyProvider(io, brand.appId, safeUserName())];
+    return [
+      onDemand(
+        'macos-managed-preferences',
+        (module) =>
+          new module.MacManagedPreferencesPolicyProvider(
+            io ?? module.nodePolicyIo,
+            brand.appId,
+            safeUserName(),
+          ),
+      ),
+    ];
   }
-  return [new LinuxJsonPolicyProvider(io, `/etc/${brand.slug}/policies`)];
+  return [
+    onDemand(
+      'linux-json',
+      (module) =>
+        new module.LinuxJsonPolicyProvider(
+          io ?? module.nodePolicyIo,
+          `/etc/${brand.slug}/policies`,
+        ),
+    ),
+  ];
+}
+
+/**
+ * A provider that loads the reading code with its first read.
+ * @param name - The name of the provider that `create` returns.
+ * @param create - Creates the provider from the loaded module.
+ */
+function onDemand(
+  name: string,
+  create: (module: typeof Providers) => PolicyProvider,
+): PolicyProvider {
+  let provider: Promise<PolicyProvider> | undefined;
+  return {
+    name,
+    async load() {
+      provider ??= import('./policy-providers.ts').then(create);
+      return (await provider).load();
+    },
+  };
 }
 
 function safeUserName(): string {

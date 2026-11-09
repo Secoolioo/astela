@@ -61,7 +61,7 @@ import { RotatingFileLogSink } from '../platform/node/file-log-sink.ts';
 import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
 import { JsonFileSessionStore } from '../platform/node/session-store.ts';
 import { SystemClock } from '../platform/node/system-clock.ts';
-import { JsonFilePolicyCache } from '../platform/policy/policy-providers.ts';
+import { JsonFilePolicyCache } from '../platform/policy/policy-cache.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
   BookmarksBarSetting,
@@ -411,7 +411,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     );
     return bookmarksLoaded;
   };
-  const appearance = new AppearanceController(settings, router, internal, () =>
+  const appearance = await AppearanceController.create(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
   const windows = new WindowManager({

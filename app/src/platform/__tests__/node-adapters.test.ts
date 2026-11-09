@@ -185,6 +185,25 @@ describe('createPolicyProviders', () => {
     ]);
     expect(createPolicyProviders(brand, 'linux').map((p) => p.name)).toEqual(['linux-json']);
   });
+
+  it('loads the reading code with the first read', async () => {
+    const files = new Map([['/etc/astela/policies/managed/a.json', '{"HomepageLocation":"x"}']]);
+    const [provider] = createPolicyProviders(brand, 'linux', {
+      runAsync: () => Promise.resolve({ status: 0, stdout: '' }),
+      readFile: (path) => {
+        const text = files.get(path);
+        return text === undefined ? undefined : new TextEncoder().encode(text);
+      },
+      listDir: (path) => (path.endsWith('/managed') ? ['a.json'] : undefined),
+      tempFile: (name) => name,
+      remove: () => undefined,
+    });
+    const read = await provider?.load();
+    expect(read?.values.map((value) => [value.name, value.value, value.level])).toEqual([
+      ['HomepageLocation', 'x', 'mandatory'],
+    ]);
+    expect(read?.errors).toEqual([]);
+  });
 });
 
 describe('JsonFileSessionStore', () => {
