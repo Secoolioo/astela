@@ -331,3 +331,32 @@ describe('content blocker popups and domains', () => {
     expect(blocker.domainOf('app://settings/')).toBe(undefined);
   });
 });
+
+describe('content blocker optional lists', () => {
+  it('adds the engines of the optional lists that are on, and only those', async () => {
+    const dir = dataDir('||ads.example^\n');
+    writeFileSync(
+      join(dir, 'cookies.bin'),
+      FiltersEngine.parse('||cmp.example^\nnews.example###cookie-notice\n').serialize(),
+    );
+    let extras: ('cookies' | 'annoyances')[] = [];
+    const blocker = new ContentBlocker({
+      dataDir: dir,
+      enabled: () => true,
+      extras: () => extras,
+      logger: logger(),
+    });
+    await blocker.load();
+    const consent = request('https://cmp.example/banner.js', 'script');
+    expect(await blocker.beforeRequest(consent)).toBe(undefined);
+    expect(blocker.frameRules('https://news.example/').styles).not.toContain('#cookie-notice');
+    extras = ['cookies', 'annoyances'];
+    // The engine of a group that was just turned on loads; data without it changes nothing.
+    await blocker.loadExtras();
+    expect(await blocker.beforeRequest(consent)).toEqual({ cancel: true });
+    expect(blocker.frameRules('https://news.example/').styles).toContain('#cookie-notice');
+    expect(blocker.frameRules('https://news.example/').styles).toContain('display: none');
+    extras = [];
+    expect(await blocker.beforeRequest(consent)).toBe(undefined);
+  });
+});

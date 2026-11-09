@@ -327,6 +327,88 @@ test('closes the popover with Escape or a click next to it and gives the page th
   }
 });
 
+test('hides cookie notices and annoyances once their lists are on in the settings', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const open = async (url: string): Promise<Page> => {
+      await address.fill(url);
+      await address.press('Enter');
+      return waitForPage(browser, (current) => current.startsWith(url));
+    };
+    const extras = `${server.origin}/extras.html`;
+    let page = await open(extras);
+    expect(await displayOf(page, 'fixture-cookie-notice')).toBe('block');
+    expect(await displayOf(page, 'fixture-newsletter')).toBe('block');
+    // Going between a web page and the settings replaces the tab's view, and its page.
+    let settings = await open('app://settings');
+    await settings.getByRole('switch', { name: 'Hide cookie notices' }).check();
+    page = await open(extras);
+    await expect.poll(() => displayOf(page, 'fixture-cookie-notice')).toBe('none');
+    expect(await displayOf(page, 'fixture-newsletter')).toBe('block');
+    expect(await page.evaluate(() => Reflect.get(window, 'fixtureAnnoyanceLoaded'))).toBe(true);
+    settings = await open('app://settings');
+    await settings.getByRole('switch', { name: 'Hide annoyances' }).check();
+    page = await open(extras);
+    await expect.poll(() => displayOf(page, 'fixture-newsletter')).toBe('none');
+    expect(await page.evaluate(() => Reflect.get(window, 'fixtureAnnoyanceLoaded'))).toBe(
+      undefined,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lists the sites without blocking in the settings, to remove and to add them', async () => {
+  const browser = await launch([], {
+    settings: { 'contentBlocker.allowedSites': ['news.localhost'] },
+  });
+  try {
+    const port = new URL(server.origin).port;
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const open = async (url: string): Promise<Page> => {
+      await address.fill(url);
+      await address.press('Enter');
+      return waitForPage(browser, (current) => current.startsWith(url));
+    };
+    let settings = await open('app://settings');
+    let sites = settings.getByRole('list', { name: 'Sites without blocking' });
+    await expect(sites.getByRole('listitem')).toHaveText(['news.localhost Remove']);
+    await settings.getByRole('button', { name: 'Remove news.localhost' }).click();
+    await expect(settings.getByText('None', { exact: true })).toBeVisible();
+    await open(`http://www.news.localhost:${port}/blocker.html`);
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: 1 blocked' }),
+    ).toBeVisible();
+    // A site can be typed with its address; what is no site name is refused.
+    settings = await open('app://settings');
+    sites = settings.getByRole('list', { name: 'Sites without blocking' });
+    const field = settings.getByRole('textbox', { name: 'Site to add' });
+    await field.fill('not a site');
+    await field.press('Enter');
+    await expect(settings.getByRole('alert')).toHaveText(
+      'Enter the name of a site, such as example.com.',
+    );
+    await field.fill(`http://127.0.0.1:${port}/blocker.html`);
+    await field.press('Enter');
+    await expect(sites.getByRole('listitem')).toHaveText(['127.0.0.1 Remove']);
+    await open(`${server.origin}/blocker.html`);
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
+    ).toBeVisible();
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The display of an element of a page, or `missing` when the page has no such element. */
+function displayOf(page: Page, id: string): Promise<string> {
+  return page.evaluate((element) => {
+    const found = document.getElementById(element);
+    return found === null ? 'missing' : getComputedStyle(found).display;
+  }, id);
+}
+
 /** Clicks the shield button and returns the page of the overlay that opens. */
 async function openShield(browser: Browser, name: string): Promise<Page> {
   await browser.shell.getByRole('button', { name }).click();
