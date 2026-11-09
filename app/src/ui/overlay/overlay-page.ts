@@ -18,9 +18,23 @@ interface Shield {
   readonly failed: boolean;
 }
 
+/** A site, or a proxy, that asks for a user name and password. */
+interface Login {
+  readonly kind: 'login';
+  readonly host: string;
+  readonly realm: string;
+  readonly proxy: boolean;
+  readonly secure: boolean;
+}
+
+type Content = Shield | Login;
+
 // The browser process checks every message against its contract before it sends it.
-const isShield = (value: unknown): value is Shield =>
-  typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'shield';
+const isContent = (value: unknown): value is Content =>
+  typeof value === 'object' &&
+  value !== null &&
+  'kind' in value &&
+  (value.kind === 'shield' || value.kind === 'login');
 
 /** Width of a popover, and its distance to the window's edges and to its button. */
 const width = 288;
@@ -113,9 +127,60 @@ export class OverlayPage extends LitElement {
       outline: 2px solid var(--focus-ring);
       outline-offset: 1px;
     }
+    .dialog {
+      position: fixed;
+      top: 96px;
+      left: 50%;
+      width: 360px;
+      max-width: calc(100% - 16px);
+      box-sizing: border-box;
+      transform: translateX(-50%);
+      padding: var(--space-3);
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-2);
+      background: var(--surface-1);
+    }
+    .dialog h2 {
+      margin: 0 0 var(--space-2);
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .dialog p {
+      margin: 0 0 var(--space-2);
+      overflow-wrap: anywhere;
+    }
+    .dialog label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: var(--space-2);
+    }
+    .dialog input {
+      height: 32px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-1);
+      background: var(--surface-0);
+      color: inherit;
+      font: inherit;
+    }
+    .buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-2);
+      margin-top: var(--space-3);
+    }
+    .buttons button {
+      width: auto;
+      margin: 0;
+      text-align: center;
+    }
+    .buttons .primary {
+      border-color: var(--accent);
+    }
   `;
 
-  declare content: Shield | null;
+  declare content: Content | null;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private stopListening: (() => void) | undefined;
@@ -146,13 +211,14 @@ export class OverlayPage extends LitElement {
   };
 
   private show(content: unknown): void {
-    const opened = this.content === null;
-    this.content = isShield(content) ? content : null;
+    const before = this.content?.kind;
+    this.content = isContent(content) ? content : null;
     if (this.content === null) return;
-    this.place(this.content.anchor);
-    // A popover that opens takes the focus, so the keyboard reaches its switch.
-    if (opened)
+    if (this.content.kind === 'shield') this.place(this.content.anchor);
+    // What opens takes the focus, so the keyboard reaches its first field or switch.
+    if (before !== this.content.kind) {
       void this.updateComplete.then(() => this.renderRoot.querySelector('input')?.focus());
+    }
   }
 
   /** Puts the popover below its button, its right edge at the button's, inside the window. */
@@ -168,6 +234,7 @@ export class OverlayPage extends LitElement {
   override render(): TemplateResult | typeof nothing {
     const content = this.content;
     if (content === null) return nothing;
+    if (content.kind === 'login') return this.renderLogin(content);
     return html`<div class="backdrop" @click=${this.close}></div>
       <section role="dialog" aria-label=${this.t('shell.blocker')}>
         <p class="site">${content.site}</p>
@@ -198,6 +265,49 @@ export class OverlayPage extends LitElement {
         </button>
       </section>`;
   }
+
+  /** The sign-in prompt: it stays open until the user signs in or cancels. */
+  private renderLogin(login: Login): TemplateResult {
+    const site = { site: login.host };
+    return html`<div class="backdrop"></div>
+      <form class="dialog" role="dialog" aria-labelledby="login-title" @submit=${this.signIn}>
+        <h2 id="login-title">${this.t('overlay.signInTitle')}</h2>
+        <p>${this.t(login.proxy ? 'overlay.signInProxy' : 'overlay.signInSite', site)}</p>
+        ${
+          login.realm === ''
+            ? nothing
+            : html`<p class="note">${this.t('overlay.signInRealm', { realm: login.realm })}</p>`
+        }
+        ${login.secure ? nothing : html`<p class="note problem">${this.t('overlay.signInInsecure')}</p>`}
+        <label>
+          <span>${this.t('overlay.username')}</span>
+          <input name="username" autocomplete="username" spellcheck="false" maxlength="1024" />
+        </label>
+        <label>
+          <span>${this.t('overlay.password')}</span>
+          <input name="password" type="password" autocomplete="current-password" maxlength="1024" />
+        </label>
+        <div class="buttons">
+          <button type="button" @click=${this.close}>${this.t('overlay.cancel')}</button>
+          <button type="submit" class="primary">${this.t('overlay.signIn')}</button>
+        </div>
+      </form>`;
+  }
+
+  private readonly signIn = (event: SubmitEvent): void => {
+    // The page cannot submit forms; the browser process gets the values instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const value = (name: string): string => {
+      const field = form.elements.namedItem(name);
+      return field instanceof HTMLInputElement ? field.value : '';
+    };
+    void this.bridge?.invoke('overlay.signIn', {
+      username: value('username'),
+      password: value('password'),
+    });
+  };
 
   private readonly close = (): void => {
     void this.bridge?.invoke('overlay.close', {});

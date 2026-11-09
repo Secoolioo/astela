@@ -29,6 +29,8 @@ export interface OverlayOptions {
 export class WindowOverlay implements OverlayHandle {
   private view: WebContentsView | undefined;
   private shown: OverlayContent | null = null;
+  /** Called once when what the overlay shows closes or is replaced. */
+  private onClose: (() => void) | undefined;
   private readonly window: BrowserWindowController;
   private readonly options: OverlayOptions;
 
@@ -54,8 +56,12 @@ export class WindowOverlay implements OverlayHandle {
   /**
    * Shows content above the window's tabs, or replaces what it shows.
    * @param content - What to show.
+   * @param onClose - Called once when the content closes or is replaced, such as to cancel
+   *   what it asked for.
    */
-  open(content: OverlayContent): void {
+  open(content: OverlayContent, onClose?: () => void): void {
+    this.settle();
+    this.onClose = onClose;
     const view = (this.view ??= this.create());
     const base = this.window.window;
     const { width, height } = base.getContentBounds();
@@ -82,6 +88,7 @@ export class WindowOverlay implements OverlayHandle {
   close(): void {
     if (this.shown === null) return;
     this.shown = null;
+    this.settle();
     if (this.window.overlay === this) this.window.overlay = undefined;
     const view = this.view;
     if (view !== undefined && !this.window.window.isDestroyed()) {
@@ -89,6 +96,12 @@ export class WindowOverlay implements OverlayHandle {
       this.options.router.publish(OverlayChanged, view.webContents, null);
       this.window.focusContent();
     }
+  }
+
+  private settle(): void {
+    const onClose = this.onClose;
+    this.onClose = undefined;
+    onClose?.();
   }
 
   private create(): WebContentsView {

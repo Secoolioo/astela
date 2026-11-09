@@ -17,7 +17,7 @@ Web content lies in views above the shell, so nothing that the shell draws can c
 - **One overlay per window:** a `WebContentsView` with a transparent background shows the page `app://overlay` from the session of the browser's own views, sandboxed and with context isolation. It is made with the first popover of the window. It uses the preload of the internal pages with the scope `overlay`, so its page reaches only the channels of the capability `overlay`.
 - **Only while open:** the view is part of the window only while it shows something and covers the whole window then. The page draws the popover at the rectangle that the shell reports for its button and leaves the rest see-through.
 - **Closing:** a click next to the popover, Escape, a shortcut of the browser, a change of the window's size and a change of the visible tab close it; a shortcut runs after it closed. The focus then goes back to the page, or to the shell for the new tab page.
-- **Content:** the browser process sends what the overlay shows over `overlay.changed` and answers `overlay.get` for a page that just loaded. Each kind of content has its own schema in `overlay-contracts.ts`; the first is the content blocker's popover. The code of the overlay loads with the first popover, not at the start.
+- **Content:** the browser process sends what the overlay shows over `overlay.changed` and answers `overlay.get` for a page that just loaded. Each kind of content has its own schema in `overlay-contracts.ts`: the content blocker's popover, and the prompt for the user name and password that a site or a proxy asks for, which a click next to it does not close and whose closing cancels the request. The code of the overlay loads with the first popover, not at the start.
 
 ## Consequences
 

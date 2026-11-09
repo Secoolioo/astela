@@ -170,3 +170,42 @@ test('warns about a certificate that is not trusted and continues only when aske
     await new Promise<void>((done) => secure.close(() => done()));
   }
 });
+
+test('asks for the user name and password that a site wants, and signs in', async () => {
+  const guarded = createServer((request, response) => {
+    const expected = `Basic ${Buffer.from('tester:secret').toString('base64')}`;
+    response.setHeader('Content-Type', 'text/html');
+    if (request.headers.authorization === expected) {
+      response.end('<!doctype html><title>Members</title><p>Signed in as tester</p>');
+      return;
+    }
+    response.statusCode = 401;
+    response.setHeader('WWW-Authenticate', 'Basic realm="Fixture members"');
+    response.end('<!doctype html><title>Members</title><p>Not signed in</p>');
+  });
+  await new Promise<void>((done) => guarded.listen(0, '127.0.0.1', done));
+  const { port } = guarded.address() as AddressInfo;
+  const browser = await launch();
+  try {
+    const url = `http://127.0.0.1:${port}/members.html`;
+    await open(browser, url);
+    const overlay = await waitForPage(browser, (current) => current.startsWith('app://overlay'));
+    const prompt = overlay.getByRole('dialog', { name: 'Sign in' });
+    await expect(prompt).toContainText(`127.0.0.1:${port} asks for a user name and password.`);
+    await expect(prompt).toContainText('Area: Fixture members');
+    await expect(prompt).toContainText('The connection is not encrypted');
+    // Canceling leaves the page as the site sends it without signing in.
+    await prompt.getByRole('button', { name: 'Cancel' }).click();
+    const page = await waitForPage(browser, (current) => current === url);
+    await expect(page.getByText('Not signed in')).toBeVisible();
+    // The reload waits for the sign-in, so the shell's button starts it.
+    await browser.shell.getByRole('button', { name: 'Reload' }).click();
+    await prompt.getByRole('textbox', { name: 'User name' }).fill('tester');
+    await prompt.getByLabel('Password').fill('secret');
+    await prompt.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('Signed in as tester')).toBeVisible();
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => guarded.close(() => done()));
+  }
+});
