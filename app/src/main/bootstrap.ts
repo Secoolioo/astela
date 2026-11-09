@@ -180,7 +180,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     return;
   }
   // After the lock, so a second start of a running browser is not counted as a start.
-  const boot = checkBoot(logger);
+  const boot = await checkBoot(logger);
   if (boot === undefined) {
     app.exit(0);
     return;

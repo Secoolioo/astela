@@ -7,12 +7,8 @@ import { JsonBootStateStore } from '../updates/boot-state.ts';
 import { Ed25519Verifier } from '../updates/ed25519-verifier.ts';
 import { JsonFeedStateStore } from '../updates/feed-state.ts';
 import { detectInstallType, updateFormat, type InstallFacts } from '../updates/install-type.ts';
-import {
-  AppImageRollback,
-  NsisRollback,
-  rollbackFor,
-  updaterDirectory,
-} from '../updates/rollback.ts';
+import { AppImageRollback, NsisRollback, rollbackFor } from '../updates/rollback.ts';
+import { updaterDirectory } from '../updates/updater-directory.ts';
 
 const keyPair = (): { publicPem: string; sign: (data: string) => string } => {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
