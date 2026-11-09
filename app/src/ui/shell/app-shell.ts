@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
-import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
+import type { BarItem, ShellState, TabProblem, TabView } from '../../shared/ipc/shell-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
 
@@ -46,6 +46,40 @@ export class AppShell extends LitElement {
     }
     .content {
       grid-area: content;
+      overflow: auto;
+    }
+    /* What a tab shows when it could not load its page or lost it. */
+    .problem {
+      max-width: 520px;
+      margin: 15vh auto 0;
+      padding: 0 var(--space-3);
+    }
+    .problem h1 {
+      margin: 0 0 var(--space-2);
+      font-size: 20px;
+      line-height: 28px;
+      font-weight: 600;
+    }
+    .problem p {
+      margin: 0 0 var(--space-2);
+      color: var(--text-2);
+      overflow-wrap: anywhere;
+    }
+    .problem .code {
+      font-size: 12px;
+    }
+    .problem button {
+      margin-top: var(--space-2);
+      height: 32px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-1);
+      background: var(--surface-2);
+      color: var(--text-1);
+      font: inherit;
+    }
+    .problem button:hover {
+      background: var(--surface-hover);
     }
     /* The bookmarks bar belongs to the toolbar: the line below the toolbar moves below it. */
     nav:has(+ .bookmarks) {
@@ -461,7 +495,7 @@ export class AppShell extends LitElement {
         </button>
       </nav>
       ${this.renderBookmarksBar(t)}
-      <div class="content"></div>
+      <div class="content">${active?.problem ? this.renderProblem(active.problem) : nothing}</div>
     `;
   }
 
@@ -630,6 +664,29 @@ export class AppShell extends LitElement {
     void this.bridge?.invoke('tabs.close', { tabId });
   }
 
+  /** What the active tab shows when it has no page: why, and the way to load it again. */
+  private renderProblem(problem: TabProblem): TemplateResult {
+    const site = hostOf(problem.url);
+    const crashed = problem.kind === 'crashed';
+    return html`<section class="problem" aria-labelledby="problem-title">
+      <h1 id="problem-title">
+        ${this.tp(crashed ? 'problem.crashedTitle' : 'problem.errorTitle')}
+      </h1>
+      <p>${this.tp(crashed ? 'problem.crashed' : problemMessage(problem.code), { site })}</p>
+      <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
+      <button @click=${() => this.action('reload')}>
+        ${this.tp(crashed ? 'problem.reload' : 'problem.retry')}
+      </button>
+    </section>`;
+  }
+
+  private tp(
+    key: Parameters<Translator['t']>[0],
+    params?: Readonly<Record<string, string>>,
+  ): string {
+    return this.i18n?.t(key, params) ?? key;
+  }
+
   private action(action: 'back' | 'forward' | 'reload' | 'stop'): void {
     const tabId = this.state.activeTabId;
     if (tabId !== null) {
@@ -752,3 +809,36 @@ const icons = {
     <circle cx="12" cy="19" r="1" />
   </svg>`,
 };
+
+/**
+ * The text that tells why a page could not be loaded, by Chromium's name for the cause.
+ * @param code - Such as `ERR_CONNECTION_REFUSED`.
+ */
+function problemMessage(code: string): Parameters<Translator['t']>[0] {
+  switch (code) {
+    case 'ERR_INTERNET_DISCONNECTED':
+      return 'problem.offline';
+    case 'ERR_NAME_NOT_RESOLVED':
+    case 'ERR_NAME_RESOLUTION_FAILED':
+      return 'problem.notFound';
+    case 'ERR_CONNECTION_REFUSED':
+      return 'problem.refused';
+    case 'ERR_CONNECTION_TIMED_OUT':
+    case 'ERR_TIMED_OUT':
+      return 'problem.timedOut';
+    case 'ERR_CONNECTION_RESET':
+    case 'ERR_CONNECTION_CLOSED':
+      return 'problem.interrupted';
+    default:
+      return 'problem.failed';
+  }
+}
+
+/** The host of an address, or the address itself when it has none. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}

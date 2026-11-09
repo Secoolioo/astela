@@ -8,9 +8,22 @@ const Empty = v.strictObject({});
 const Done = v.null();
 
 /**
+ * Why a tab shows no page: it could not be loaded (`error`) or its renderer is gone
+ * (`crashed`). `code` is Chromium's name for the cause, such as `ERR_CONNECTION_REFUSED`.
+ */
+export const TabProblem = v.strictObject({
+  kind: v.picklist(['error', 'crashed']),
+  code: v.pipe(v.string(), v.regex(/^[A-Z0-9_]{1,64}$/)),
+  url: v.pipe(v.string(), v.maxLength(8192)),
+});
+/** Why a tab shows no page. */
+export type TabProblem = v.InferOutput<typeof TabProblem>;
+
+/**
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
- * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark.
+ * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
+ * `problem` why the tab shows no page, which the shell then shows in its place.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -22,6 +35,7 @@ export const TabView = v.strictObject({
   blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
   blocking: v.picklist(['on', 'off', 'none', 'failed']),
   bookmarked: v.boolean(),
+  problem: v.nullable(TabProblem),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

@@ -17,7 +17,12 @@ import {
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
 import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
-import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
+import {
+  TabService,
+  type TabId,
+  type TabProblem,
+  type TabViewPort,
+} from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
@@ -87,6 +92,12 @@ export interface BrowserWindowOptions {
   readonly logger: Logger;
   /** Shows the context menu of a view; without it, views have none. */
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
+  /** Asks what to do about a web page that stopped responding to input. */
+  readonly onUnresponsive?: (
+    window: BrowserWindowController,
+    tabId: TabId,
+    contents: WebContents,
+  ) => void;
   /**
    * Gets the browser process ready for an internal page before the page loads, such as by
    * loading the handlers of its channels; `undefined` when it is ready already.
@@ -195,17 +206,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** The current shell state, as sent to the shell. */
   state(): ShellState {
     return {
-      tabs: this.tabs.all.map(({ id, title, url, loading, canGoBack, canGoForward, blocked }) => ({
-        id,
-        title,
-        url,
-        loading,
-        canGoBack,
-        canGoForward,
-        blocked,
-        blocking: this.options.blocking(url),
-        bookmarked: this.options.isBookmarked?.(url) ?? false,
-      })),
+      tabs: this.tabs.all.map(
+        ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem }) => ({
+          id,
+          title,
+          url,
+          loading,
+          canGoBack,
+          canGoForward,
+          blocked,
+          blocking: this.options.blocking(url),
+          bookmarked: this.options.isBookmarked?.(url) ?? false,
+          problem,
+        }),
+      ),
       activeTabId: this.tabs.active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
@@ -283,8 +297,28 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     this.visible = view;
     this.window.contentView.addChildView(view);
+    view.setVisible(this.problemOf(id) === null);
     this.layout();
     this.focusContent();
+  }
+
+  /** Why a tab shows no page, or `null` when it shows one. */
+  private problemOf(id: TabId): TabProblem | null {
+    return this.tabs.all.find((tab) => tab.id === id)?.problem ?? null;
+  }
+
+  /**
+   * Records why a tab shows no page, or that it shows one again. While a tab has a problem,
+   * its view is hidden and the shell shows the problem in its place.
+   */
+  private setProblem(id: TabId, problem: TabProblem | null): void {
+    if (problem === null && this.problemOf(id) === null) return;
+    this.tabs.update(id, { problem });
+    const view = this.entries.get(id)?.view;
+    if (view !== undefined && view === this.visible && !this.window.isDestroyed()) {
+      view.setVisible(problem === null);
+      this.focusContent();
+    }
   }
 
   /**
@@ -292,8 +326,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * address bar.
    */
   focusContent(): void {
-    const entry = [...this.entries.values()].find((candidate) => candidate.view === this.visible);
-    if (entry === undefined || entry.page === 'newtab') {
+    const id = [...this.entries].find(([, candidate]) => candidate.view === this.visible)?.[0];
+    const entry = id === undefined ? undefined : this.entries.get(id);
+    // The shell shows the new tab page's address bar and the problems of pages.
+    if (entry === undefined || entry.page === 'newtab' || this.problemOf(id ?? '') !== null) {
       this.shell.webContents.focus();
     } else {
       entry.view.webContents.focus();
@@ -547,6 +583,25 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         if (/^https?:/i.test(address)) this.options.onVisit?.(address, title, true);
       });
     }
+    if (page === undefined) {
+      // A page that could not be loaded, or whose renderer is gone, shows the shell's page
+      // for it instead of an empty one. A load that a new navigation stopped is no error.
+      contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
+        if (!isMainFrame || code === -3) return;
+        const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
+        this.setProblem(id, { kind: 'error', code: name, url: failed });
+      });
+      // Electron reports only the process of the page itself, and the tab has nothing to show
+      // once it ended, however it ended: with the sandbox of Linux, a renderer that crashed can
+      // count as one that exited cleanly.
+      contents.on('render-process-gone', (_event, details) => {
+        if (this.window.isDestroyed() || contents.isDestroyed()) return;
+        const code = details.reason.toUpperCase().replaceAll('-', '_');
+        this.setProblem(id, { kind: 'crashed', code, url: contents.getURL() });
+      });
+      contents.on('did-navigate', () => this.setProblem(id, null));
+      contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));
+    }
     // The count of blocked requests belongs to one page.
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
@@ -617,6 +672,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const old = entry.view;
     const oldRegistration = entry.registration;
     const focused = old.webContents.isFocused();
+    // The new view shows its own page, not the problem of the old one.
+    if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
     Object.assign(entry, this.createView(id, url), { requested: url });
     if (this.visible === old && !this.window.isDestroyed()) {
       this.overlay?.close();
