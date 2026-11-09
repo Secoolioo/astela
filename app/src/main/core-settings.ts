@@ -6,6 +6,7 @@ import {
   type ColorMode,
   type Density,
 } from '../domain/appearance/appearance.ts';
+import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
 import { tabStripPositions, type TabStripPosition } from '../shared/layout.ts';
 
@@ -121,6 +122,36 @@ export const SiteZoomSetting = defineSetting<Record<string, number>>({
   scope: 'global',
 });
 
+const PermissionDecision = v.exactOptional(v.picklist(['allow', 'block']));
+
+/**
+ * What sites may use after the user answered their question, by origin, such as
+ * `{"https://meet.example": {"camera": "allow", "notifications": "block"}}`.
+ */
+export const SitePermissionsSetting = defineSetting<SitePermissions>({
+  key: 'permissions.sites',
+  schema: v.pipe(
+    v.record(
+      v.pipe(
+        v.string(),
+        v.maxLength(300),
+        v.regex(/^https?:\/\/[a-z0-9.[\]:-]+$/i, 'Must be the origin of a web page'),
+      ),
+      v.strictObject({
+        camera: PermissionDecision,
+        microphone: PermissionDecision,
+        location: PermissionDecision,
+        notifications: PermissionDecision,
+        clipboard: PermissionDecision,
+      }),
+    ),
+    v.check((sites) => Object.keys(sites).length <= maxSites, 'Too many sites'),
+  ),
+  default: {},
+  scope: 'global',
+  ui: { section: 'privacy', control: 'list', order: 5 },
+});
+
 /** What the browser shows when it starts: the tabs of the last session, or a new tab page. */
 export const StartupSetting = defineSetting<'restore' | 'newtab'>({
   key: 'startup.page',
@@ -160,6 +191,7 @@ export const coreSettings = [
   BlockerCookieNoticesSetting,
   BlockerAnnoyancesSetting,
   SiteZoomSetting,
+  SitePermissionsSetting,
   StartupSetting,
   SetupShownSetting,
   BookmarksBarSetting,

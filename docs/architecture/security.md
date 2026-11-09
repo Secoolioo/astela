@@ -31,11 +31,11 @@ All `app://` pages use a strict Content Security Policy and Trusted Types. Valid
 
 ### Permission handlers
 
-Electron grants every permission by default (as of October 2026). Astela will therefore install request, check and device permission handlers on **every** session, including sessions created later (`session-created`):
+Electron grants every permission by default (as of October 2026). Astela therefore installs request, check and device permission handlers on **every** session, including sessions created later (`session-created`):
 
-- Default deny, with a prompt per origin; the decision will be stored.
-- `local-network`, `loopback-network`, `local-fonts`, `window-management`, `idle-detection` and `sensors` are blocked by default.
-- Camera, microphone, location and notifications are denied unless the user consents.
+- The camera, the microphone, the location, notifications and reading the clipboard are asked for per origin in the overlay, and the answer is stored ([ADR 0038](../adr/0038-site-permissions-asked-in-the-overlay.md)). Without an answer, the request is refused.
+- Full screen, pointer lock and writing to the clipboard are granted; sharing the screen asks with a picker for every request.
+- Everything else, such as `local-network`, `loopback-network`, `local-fonts`, `window-management`, `idle-detection` and `sensors`, is refused, and the browser's own pages get no permissions.
 
 The permission handlers, the navigation and window guards and the `app://` registration belong to the kernel, not to an optional module. They cannot be disabled and will stay in effect with every optional module turned off and in safe mode. Tests will check that a permission stays denied with the `permissions` module disabled and that a web tab cannot open `app://settings`. See [modules](modules.md) for the kernel and module boundaries.
 
@@ -195,7 +195,7 @@ The [roadmap](../roadmap.md) lists the milestones.
 The security baseline is implemented in `app/src/platform/electron/` and `app/electron-builder.config.mjs` and checked by end-to-end and package smoke tests:
 
 - Every view runs sandboxed with context isolation and without Node integration; tabs have no preload.
-- Every session denies permission requests, permission checks, device access and screen capture by default.
+- Web sessions ask before a site uses the camera, the microphone, the location, notifications or the clipboard, and share a screen or a window only after the user picked it; the sessions of the browser's own pages refuse every permission, and every session denies device access.
 - `<webview>` is never attached; pages cannot open free windows, and their requests become tabs. A tab that a page opens, by script or from its context menu, can only load an http or https URL.
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
 - All `app://` pages carry the strict Content Security Policy with Trusted Types.
@@ -205,4 +205,4 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 - Every package sets the fuses listed above; the package smoke test reads them back from the installed binary.
 - The [content blocker](../user/content-blocker.md) cancels requests of web pages that the default lists of uBlock Origin name, including the Badware risks list and the Online Malicious URL Blocklist ([ADR 0027](../adr/0027-blocker-with-the-default-lists-of-ublock-origin.md)). Its data is built in CI from the lists and from scriptlet sources whose hashes are recorded in the repository, and ships with the package; the browser downloads no lists. A frame preload hides elements, applies procedural rules and runs scriptlets in every web frame ([ADR 0028](../adr/0028-content-blocker-rules-through-a-frame-preload.md), [ADR 0033](../adr/0033-procedural-and-popup-filters-and-exceptions-per-domain.md)), and popups that the lists name do not open. The shield in the toolbar counts the blocked requests of the page and turns the blocker off for a site's registrable domain (`contentBlocker.allowedSites`); the decision for a request depends on the site of the page it belongs to.
 
-Not implemented yet: the permission prompt and site list, the certificate error page, HTTPS-First, DNS over HTTPS, the warning page for malware and phishing sites, extended selectors of the content blocker, the signed filter feed, and the web platform API inventory in CI.
+Not implemented yet: HTTPS-First, DNS over HTTPS, the warning page for malware and phishing sites, the signed filter feed, and the web platform API inventory in CI.

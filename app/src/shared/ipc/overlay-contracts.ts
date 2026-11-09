@@ -30,9 +30,47 @@ const LoginPrompt = v.strictObject({
   secure: v.boolean(),
 });
 
+/** A site that asks for permissions: its host, with the port if it has one, and what it wants. */
+const PermissionPrompt = v.strictObject({
+  kind: v.literal('permission'),
+  site: v.pipe(v.string(), v.maxLength(300)),
+  permissions: v.pipe(
+    v.array(v.picklist(['camera', 'microphone', 'location', 'notifications', 'clipboard'])),
+    v.minLength(1),
+    v.maxLength(5),
+  ),
+});
+
+/**
+ * A site that wants to see a screen or a window, and the screens and windows to choose from:
+ * their names, and small pictures of them as JPEG data URLs, empty when the system has none.
+ */
+const ScreenPicker = v.strictObject({
+  kind: v.literal('screen'),
+  site: v.pipe(v.string(), v.maxLength(300)),
+  sources: v.pipe(
+    v.array(
+      v.strictObject({
+        id: v.pipe(v.string(), v.maxLength(200)),
+        name: v.pipe(v.string(), v.maxLength(500)),
+        screen: v.boolean(),
+        thumbnail: v.pipe(
+          v.string(),
+          v.maxLength(400_000),
+          v.regex(/^(?:data:image\/jpeg;base64,[A-Za-z0-9+/=]*)?$/),
+        ),
+      }),
+    ),
+    v.minLength(1),
+    v.maxLength(100),
+  ),
+});
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
-export const OverlayContent = v.nullable(v.union([ShieldPopover, LoginPrompt]));
+export const OverlayContent = v.nullable(
+  v.union([ShieldPopover, LoginPrompt, PermissionPrompt, ScreenPicker]),
+);
 
 /** The content of an open overlay. */
 export type OverlayContent = NonNullable<v.InferOutput<typeof OverlayContent>>;
@@ -83,6 +121,22 @@ export const SignIn = defineRequest({
     username: v.pipe(v.string(), v.maxLength(1024)),
     password: v.pipe(v.string(), v.maxLength(1024)),
   }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Answers the question of a site for permissions; the answer is kept for the site. */
+export const AnswerPermission = defineRequest({
+  channel: 'overlay.answerPermission',
+  request: v.strictObject({ allow: v.boolean() }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Lets the site that asked see the chosen screen or window. */
+export const ShareScreen = defineRequest({
+  channel: 'overlay.shareScreen',
+  request: v.strictObject({ id: v.pipe(v.string(), v.maxLength(200)) }),
   response: v.null(),
   capability: 'overlay',
 });
