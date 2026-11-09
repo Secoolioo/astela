@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { DownloadEntry, DownloadState } from '../../domain/downloads/downloads.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 
 /** A page in the history, with its most recent visit. */
@@ -83,13 +84,34 @@ const migrations: readonly string[] = [
   // The folder of an import names the browser profile it came from, so a later import of
   // that profile replaces it whatever its title.
   `ALTER TABLE bookmarks ADD COLUMN source TEXT;`,
+  // The list of downloads keeps where each file went and how far it got.
+  `CREATE TABLE downloads (
+     id INTEGER PRIMARY KEY,
+     url TEXT NOT NULL,
+     path TEXT NOT NULL,
+     total INTEGER NOT NULL DEFAULT 0,
+     received INTEGER NOT NULL DEFAULT 0,
+     state TEXT NOT NULL,
+     started INTEGER NOT NULL
+   );`,
+];
+
+/** Most downloads that the list keeps; older ones leave it. */
+const maxDownloads = 1000;
+
+const downloadStates: readonly DownloadState[] = [
+  'progressing',
+  'completed',
+  'cancelled',
+  'interrupted',
 ];
 
 /** The schema version that this build writes. */
 export const profileSchemaVersion = migrations.length;
 
 /**
- * The profile database `profile.db`: history with full-text search and bookmarks. It runs
+ * The profile database `profile.db`: history with full-text search, bookmarks and the list
+ * of downloads. It runs
  * in the data service process, never in the browser process, because SQLite calls block.
  * Schema changes run as numbered migrations; before one runs on an existing database, a
  * copy is written next to it with `VACUUM INTO`. A database from a newer version is opened
@@ -395,6 +417,87 @@ export class ProfileDatabase {
         'The profile database belongs to a newer version of the browser and is read-only',
       );
     }
+  }
+
+  /**
+   * Adds a download to the list, which keeps the most recent ones.
+   * @param url - The address it comes from.
+   * @param path - The file it is saved to.
+   * @param total - Its size in bytes, or 0 while unknown.
+   * @returns Its id.
+   */
+  addDownload(url: string, path: string, total: number): number {
+    this.writable();
+    let id = 0;
+    this.transaction(() => {
+      const result = this.db
+        .prepare(
+          "INSERT INTO downloads(url, path, total, state, started) VALUES (?, ?, ?, 'progressing', ?)",
+        )
+        .run(url, path, total, this.clock());
+      id = Number(result.lastInsertRowid);
+      this.db
+        .prepare(
+          'DELETE FROM downloads WHERE id NOT IN (SELECT id FROM downloads ORDER BY id DESC LIMIT ?)',
+        )
+        .run(maxDownloads);
+    });
+    return id;
+  }
+
+  /**
+   * Records how far a download got and where it stands.
+   * @param id - The download.
+   * @param received - The bytes received.
+   * @param total - Its size in bytes, or 0 while unknown.
+   * @param state - Where it stands.
+   */
+  updateDownload(id: number, received: number, total: number, state: DownloadState): void {
+    this.writable();
+    this.db
+      .prepare('UPDATE downloads SET received = ?, total = ?, state = ? WHERE id = ?')
+      .run(received, total, state, id);
+  }
+
+  /**
+   * The most recent downloads, newest first. Downloads that were still running when the
+   * browser stopped are interrupted.
+   * @param limit - Most downloads to return.
+   */
+  downloads(limit = 100): DownloadEntry[] {
+    return this.db
+      .prepare('SELECT * FROM downloads ORDER BY id DESC LIMIT ?')
+      .all(limit)
+      .map((row) => {
+        const state = downloadStates.find((known) => known === row['state']) ?? 'interrupted';
+        return {
+          id: Number(row['id']),
+          url: String(row['url']),
+          path: String(row['path']),
+          total: Number(row['total']),
+          received: Number(row['received']),
+          state,
+          started: Number(row['started']),
+        };
+      });
+  }
+
+  /** Marks the downloads that were still running when the browser stopped as interrupted. */
+  interruptDownloads(): void {
+    this.writable();
+    this.db.prepare("UPDATE downloads SET state = 'interrupted' WHERE state = 'progressing'").run();
+  }
+
+  /**
+   * Removes downloads from the list; their files stay.
+   * @param ids - The downloads.
+   */
+  removeDownloads(ids: readonly number[]): void {
+    this.writable();
+    const remove = this.db.prepare('DELETE FROM downloads WHERE id = ?');
+    this.transaction(() => {
+      for (const id of ids) remove.run(id);
+    });
   }
 
   /** Closes the database. */

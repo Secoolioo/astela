@@ -1,5 +1,6 @@
-import { app, Menu, session, type Session } from 'electron';
-import { join } from 'node:path';
+import { app, Menu, session, type DownloadItem, type Session } from 'electron';
+import { existsSync, mkdirSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
 import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
@@ -8,6 +9,8 @@ import {
   CloseTab,
   GetShellState,
   OpenBlockerPopover,
+  OpenDownloads,
+  ShellCommand,
   ProceedUnsafely,
   FindInPage,
   StopFinding,
@@ -86,6 +89,8 @@ import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
+import { freeName } from '../domain/downloads/downloads.ts';
+import type { Downloads } from './downloads.ts';
 import type { PermissionPrompts } from './permission-prompt.ts';
 import { sitePermissions } from './site-permissions.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
@@ -281,6 +286,45 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     prompts: loadPrompts,
     logger,
   });
+  // Downloads go to the downloads folder without a question, under a name that is free there,
+  // also from downloads that still run; the list and its panel load with the first download.
+  let downloads: Downloads | undefined;
+  let downloadsLoaded: Promise<Downloads> | undefined;
+  const loadDownloads = (): Promise<Downloads> => {
+    downloadsLoaded ??= import('./downloads.ts').then(({ Downloads: List }) => {
+      downloads = new List({
+        data,
+        windows,
+        webSession: () => session.fromPartition(webPartition),
+        overlay: overlayOptions,
+        router,
+        logger: logger.child('downloads'),
+      });
+      return downloads;
+    });
+    return downloadsLoaded;
+  };
+  const reservedPaths = new Set<string>();
+  const saveDownload = (item: DownloadItem): void => {
+    const folder = app.getPath('downloads');
+    const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
+      const path = join(folder, candidate);
+      return reservedPaths.has(path) || existsSync(path);
+    });
+    const path = join(folder, name);
+    try {
+      mkdirSync(folder, { recursive: true });
+    } catch (error: unknown) {
+      logger.warn('The downloads folder could not be made', { error: String(error) });
+    }
+    reservedPaths.add(path);
+    item.once('done', () => reservedPaths.delete(path));
+    item.setSavePath(path);
+    loadDownloads().then(
+      (list) => list.track(item),
+      (error: unknown) => logger.error('The list of downloads failed', error),
+    );
+  };
   const webSessions = new Set<Session>();
   const addFramePreload = connectBlockerFrames(
     blocker,
@@ -293,6 +337,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       protocolHandler.refuse(s);
       serveResources(s, (name) => blocker.resource(name));
       hardenSession(s, webPermissions);
+      s.on('will-download', (_event, item) => saveDownload(item));
       pipeline.attach(s);
       addFramePreload(s);
     }
@@ -405,6 +450,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
+    downloads: () => downloads?.summary() ?? null,
+    // The shortcut shows the downloads button first; the shell opens the list at it.
+    showDownloads: (window) =>
+      void loadDownloads().then((list) => {
+        list.reveal();
+        window.refreshShell();
+        router.publish(ShellCommand, window.shellContents, 'downloads.open');
+      }),
     // The handlers of the other internal pages load with the first of them, before it loads.
     prepareInternalPage: (page) => (page === 'newtab' ? undefined : connectPages()),
     gate,
@@ -473,6 +526,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate);
+  router.handle(OpenDownloads, (anchor, { sender }) => {
+    const window = windows.forShell(sender);
+    if (window !== undefined) void loadDownloads().then((list) => list.open(window, anchor));
+    return null;
+  });
   const overlayOptions = {
     url: 'app://overlay/',
     preload: layout.pagePreload,

@@ -171,6 +171,55 @@ describe('ProfileDatabase bookmarks', () => {
   });
 });
 
+describe('ProfileDatabase downloads', () => {
+  it('lists downloads newest first, records their progress and removes them', () => {
+    let now = 1000;
+    const db = new ProfileDatabase(':memory:', () => (now += 1));
+    const report = db.addDownload('https://a.example/report.pdf', '/d/report.pdf', 200);
+    const image = db.addDownload('https://a.example/image.png', '/d/image.png', 0);
+    db.updateDownload(report, 200, 200, 'completed');
+    db.updateDownload(image, 50, 0, 'progressing');
+    expect(db.downloads()).toEqual([
+      {
+        id: image,
+        url: 'https://a.example/image.png',
+        path: '/d/image.png',
+        total: 0,
+        received: 50,
+        state: 'progressing',
+        started: 1002,
+      },
+      {
+        id: report,
+        url: 'https://a.example/report.pdf',
+        path: '/d/report.pdf',
+        total: 200,
+        received: 200,
+        state: 'completed',
+        started: 1001,
+      },
+    ]);
+    // A download that was running when the browser stopped did not finish.
+    db.interruptDownloads();
+    expect(db.downloads().map((entry) => entry.state)).toEqual(['interrupted', 'completed']);
+    db.removeDownloads([report]);
+    expect(db.downloads().map((entry) => entry.id)).toEqual([image]);
+    expect(db.downloads(0)).toEqual([]);
+    db.close();
+  });
+
+  it('keeps the most recent thousand downloads', () => {
+    const db = new ProfileDatabase(':memory:');
+    let last = 0;
+    for (let n = 0; n < 1005; n += 1) last = db.addDownload(`https://a.example/${n}`, `/d/${n}`, 1);
+    const kept = db.downloads(2000);
+    expect(kept).toHaveLength(1000);
+    expect(kept[0]?.id).toBe(last);
+    expect(kept.at(-1)?.url).toBe('https://a.example/5');
+    db.close();
+  });
+});
+
 describe('ProfileDatabase migrations', () => {
   it('migrates a database, keeps a copy of older versions and opens newer ones read-only', () => {
     const path = tempDb();
@@ -197,7 +246,10 @@ describe('ProfileDatabase migrations', () => {
     const path = tempDb();
     new ProfileDatabase(path).close();
     const raw = new DatabaseSync(path);
-    raw.exec('ALTER TABLE bookmarks DROP COLUMN source; PRAGMA user_version = 1');
+    // The first version had neither the source of folders nor the list of downloads.
+    raw.exec(
+      'ALTER TABLE bookmarks DROP COLUMN source; DROP TABLE downloads; PRAGMA user_version = 1',
+    );
     raw.close();
     const db = new ProfileDatabase(path);
     expect(db.importBookmarks('Imported', [{ title: 'A', url: 'https://a.example/' }], 'x')).toBe(
@@ -205,6 +257,19 @@ describe('ProfileDatabase migrations', () => {
     );
     db.close();
     expect(existsSync(`${path}.v1.bak`)).toBe(true);
+  });
+
+  it('adds the list of downloads to a database of the second version', () => {
+    const path = tempDb();
+    new ProfileDatabase(path).close();
+    const raw = new DatabaseSync(path);
+    raw.exec('DROP TABLE downloads; PRAGMA user_version = 2');
+    raw.close();
+    const db = new ProfileDatabase(path);
+    const id = db.addDownload('https://a.example/a.zip', '/d/a.zip', 10);
+    expect(db.downloads().map((entry) => entry.id)).toEqual([id]);
+    db.close();
+    expect(existsSync(`${path}.v2.bak`)).toBe(true);
   });
 });
 

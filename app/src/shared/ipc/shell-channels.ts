@@ -13,6 +13,7 @@ export const shellChannels = [
   'shell.setInsets',
   'shell.openMenu',
   'shell.openBlockerPopover',
+  'shell.openDownloads',
   'tabs.proceedUnsafely',
   'tabs.find',
   'tabs.stopFind',

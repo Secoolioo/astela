@@ -5,6 +5,7 @@ import type {
   GetShellState,
   NavigateTab,
   OpenBlockerPopover,
+  OpenDownloads,
   ProceedUnsafely,
   FindInPage,
   StopFinding,
@@ -30,6 +31,7 @@ interface Requests {
   'shell.setInsets': typeof SetShellInsets;
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerPopover': typeof OpenBlockerPopover;
+  'shell.openDownloads': typeof OpenDownloads;
   'tabs.proceedUnsafely': typeof ProceedUnsafely;
   'tabs.find': typeof FindInPage;
   'tabs.stopFind': typeof StopFinding;
@@ -40,7 +42,7 @@ interface Requests {
 
 interface Events {
   'shell.stateChanged': ShellState;
-  'shell.command': 'omnibox.focus' | 'find.focus';
+  'shell.command': 'omnibox.focus' | 'find.focus' | 'downloads.open';
 }
 
 /** The API that the shell's preload script exposes. */

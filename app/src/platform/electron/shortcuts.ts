@@ -13,6 +13,7 @@ export type WindowCommand =
   | 'omnibox.focus'
   | 'settings.open'
   | 'history.open'
+  | 'downloads.open'
   | 'bookmark.toggle'
   | 'bookmarks.open'
   | 'bookmarks.toggleBar'
@@ -56,6 +57,7 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Cmd+L', 'omnibox.focus'],
   ['Cmd+,', 'settings.open'],
   ['Cmd+Y', 'history.open'],
+  ['Alt+Cmd+L', 'downloads.open'],
   ['Cmd+D', 'bookmark.toggle'],
   ['Shift+Cmd+O', 'bookmarks.open'],
   ['Shift+Cmd+B', 'bookmarks.toggleBar'],
@@ -101,6 +103,7 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Alt+D', 'omnibox.focus'],
   ['F6', 'omnibox.focus'],
   ['Ctrl+H', 'history.open'],
+  ['Ctrl+J', 'downloads.open'],
   ['Ctrl+D', 'bookmark.toggle'],
   ['Ctrl+Shift+O', 'bookmarks.open'],
   ['Ctrl+Shift+B', 'bookmarks.toggleBar'],

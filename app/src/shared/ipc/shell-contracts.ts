@@ -64,9 +64,18 @@ export const FindState = v.strictObject({
 export type FindState = v.InferOutput<typeof FindState>;
 
 /**
+ * The downloads button: how many downloads run and how much of them is done, from 0 to 1,
+ * or `null` while a size is unknown. The button shows once the browser downloaded something.
+ */
+const DownloadsSummary = v.strictObject({
+  active: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  progress: v.nullable(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
+});
+
+/**
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
- * `bookmarksBar` is `null` while the bookmarks bar is hidden, and `find` while the find bar
- * is closed.
+ * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
+ * closed, and `downloads` until the browser downloaded something.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -74,6 +83,7 @@ export const ShellState = v.strictObject({
   tabStrip: v.picklist(tabStripPositions),
   bookmarksBar: v.nullable(v.array(BarItem)),
   find: v.nullable(FindState),
+  downloads: v.nullable(DownloadsSummary),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -204,6 +214,14 @@ export const ProceedUnsafely = defineRequest({
   capability: 'shell',
 });
 
+/** Opens the list of downloads at its button. */
+export const OpenDownloads = defineRequest({
+  channel: 'shell.openDownloads',
+  request: OverlayAnchor,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Opens the content blocker's popover for the active tab at its button. */
 export const OpenBlockerPopover = defineRequest({
   channel: 'shell.openBlockerPopover',
@@ -244,7 +262,7 @@ export const ShellStateChanged = defineEvent({
 /** Asks the shell to run a UI command, such as focusing the address bar after a shortcut. */
 export const ShellCommand = defineEvent({
   channel: 'shell.command',
-  payload: v.picklist(['omnibox.focus', 'find.focus']),
+  payload: v.picklist(['omnibox.focus', 'find.focus', 'downloads.open']),
   capability: 'shell',
 });
 
@@ -260,6 +278,7 @@ export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   SetShellInsets,
   OpenMenu,
   OpenBlockerPopover,
+  OpenDownloads,
   ProceedUnsafely,
   FindInPage,
   StopFinding,

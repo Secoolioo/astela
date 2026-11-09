@@ -88,6 +88,10 @@ export interface BrowserWindowOptions {
   readonly bookmarksBar?: () => BarItem[] | null;
   /** Shows or hides the bookmarks bar. */
   readonly toggleBookmarksBar?: () => void;
+  /** How the downloads button looks, or `null` while it is hidden. */
+  readonly downloads?: () => ShellState['downloads'];
+  /** Shows the list of downloads of a window, at its button. */
+  readonly showDownloads?: (window: BrowserWindowController) => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -254,6 +258,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       tabStrip: this.options.tabStripPosition(),
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
       find: this.finding,
+      downloads: this.options.downloads?.() ?? null,
     };
   }
 
@@ -512,6 +517,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'bookmarks.toggleBar':
         this.options.toggleBookmarksBar?.();
+        break;
+      case 'downloads.open':
+        this.options.showDownloads?.(this);
         break;
       case 'bookmark.toggle':
         // Only web pages get bookmarks; the browser's own pages have their own commands.
