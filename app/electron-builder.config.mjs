@@ -34,8 +34,8 @@ const packageScripts = {
 };
 // The public key of the package repositories, once the repository owner has created it.
 const repoKey = new URL('build/keys/linux-repo.pub.asc', import.meta.url);
-// The data of the content blocker, built by tools/blocker/build.ts before packaging. Without
-// it, the package works and blocks nothing.
+// The data of the content blocker, built by tools/blocker/build.ts before packaging; the
+// package scripts build it when it is missing. A package without it says so in its shield.
 const blockerData = new URL('build/blocker/engine.bin', import.meta.url);
 
 /** @type {import('electron-builder').Configuration} */

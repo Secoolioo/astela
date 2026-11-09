@@ -26,6 +26,7 @@ export class SettingsPage extends LitElement {
     revision: { state: true },
     searchError: { state: true },
     customSearch: { state: true },
+    blockerFailed: { state: true },
   };
 
   /** Styles of the page, scoped to its shadow root. */
@@ -83,6 +84,9 @@ export class SettingsPage extends LitElement {
         font-size: 12px;
         line-height: 16px;
       }
+      .problem {
+        color: var(--danger);
+      }
       .error {
         color: var(--danger);
         font-size: 12px;
@@ -129,6 +133,8 @@ export class SettingsPage extends LitElement {
   declare revision: number;
   declare searchError: boolean;
   declare customSearch: boolean;
+  /** Whether the content blocker has no usable filter data. */
+  declare blockerFailed: boolean;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -138,6 +144,7 @@ export class SettingsPage extends LitElement {
     this.revision = 0;
     this.searchError = false;
     this.customSearch = false;
+    this.blockerFailed = false;
   }
 
   override connectedCallback(): void {
@@ -150,6 +157,15 @@ export class SettingsPage extends LitElement {
       this.customSearch = this.engineId() === 'custom';
       document.documentElement.dataset['ready'] = 'true';
     });
+    void this.bridge
+      .invoke('settings.getBlockerStatus', {})
+      .then((result) => {
+        this.blockerFailed =
+          typeof result === 'object' &&
+          result !== null &&
+          Reflect.get(result, 'status') === 'failed';
+      })
+      .catch(() => undefined);
   }
 
   override disconnectedCallback(): void {
@@ -181,6 +197,13 @@ export class SettingsPage extends LitElement {
       <h2 id="privacy">${t('settings.privacy')}</h2>
       <section aria-labelledby="privacy">
         ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
+        ${
+          this.blockerFailed
+            ? html`<p class="row note problem" role="alert">
+                ${t('settings.contentBlockerFailed')}
+              </p>`
+            : nothing
+        }
       </section>
       <h2 id="default-browser">${t('defaultBrowser.title')}</h2>
       <section aria-labelledby="default-browser">

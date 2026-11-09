@@ -3,3 +3,10 @@
 ||127.0.0.1^*/fixture-tracker.gif
 ##.fixture-ad
 127.0.0.1##+js(fixture-mark)
+! Scriptlets that share a helper, take an argument with a percent sign, or run in an
+! isolated world, and a hiding rule that the page's own style sheet fights.
+127.0.0.1##+js(fixture-shared-a)
+127.0.0.1##+js(fixture-shared-b)
+127.0.0.1##+js(fixture-argument, 100%)
+127.0.0.1##+js(fixture-isolated)
+127.0.0.1###fixture-hidden

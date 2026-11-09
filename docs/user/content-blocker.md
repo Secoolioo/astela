@@ -8,6 +8,8 @@ Blocked requests never leave your computer. A page you open yourself is always l
 
 The shield next to the menu button shows how many requests the blocker stopped on the current page. Click it to open its menu, which shows that number too. To turn the blocker off for the page's site, for example when a site does not work with it, choose **Block ads on** followed by the site's name, so that it is no longer checked; the page reloads, and the shield turns gray and crossed out. Choose the item again to turn blocking back on for the site. **Content blocker settings** in the same menu opens the settings.
 
+If the filter data of the installation is missing or damaged, the blocker blocks nothing: the shield turns red, and the settings page says so. Reinstalling Astela repairs it.
+
 To turn the blocker off everywhere, open [Settings](settings.md) → Privacy and switch off **Block ads and trackers**. Organizations can set it with the policy `ContentBlockerEnabled`.
 
 The licenses of the lists and of uBlock Origin's scriptlets are in `NOTICE.txt` in the `blocker` folder of the installation.

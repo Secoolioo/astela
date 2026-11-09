@@ -1,10 +1,22 @@
 import { chromium, test, type Browser as CdpBrowser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import type * as Electron from 'electron';
 import type { ShellState } from '../../src/shared/ipc/shell-contracts.ts';
 
@@ -183,6 +195,8 @@ export async function launch(
     readonly profile?: string;
     /** Environment variables for the browser, such as another home folder. */
     readonly env?: Readonly<Record<string, string>>;
+    /** Another packaged browser to start, such as {@link packageWithoutBlockerData}. */
+    readonly app?: string;
   } = {},
 ): Promise<Browser> {
   const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
@@ -211,7 +225,7 @@ export async function launch(
   ];
   // Switches go first: after --, the browser takes every argument as a link.
   if (process.platform === 'linux' && process.getuid?.() === 0) args.unshift('--no-sandbox');
-  const packaged = process.env['E2E_APP'];
+  const packaged = options.app ?? process.env['E2E_APP'];
   const electronPath = createRequire(join(appDir, 'package.json'))('electron') as string;
   const spawnOptions = {
     stdio: ['ignore', 'inherit', 'pipe'] as ['ignore', 'inherit', 'pipe'],
@@ -423,4 +437,38 @@ export async function startAgain(
       }, 30_000);
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * A copy of the test package without the content blocker's filter data, for a test of a
+ * browser whose blocker has nothing to load. The copy is made of hard links, so it is quick
+ * and leaves the package itself as it is; it lies next to the package, because hard links
+ * cannot reach another drive.
+ * @returns The browser executable in the copy, and a function that removes the copy.
+ */
+export function packageWithoutBlockerData(): { app: string; remove: () => void } {
+  const packaged = process.env['E2E_APP'];
+  if (packaged === undefined) throw new Error('E2E_APP must point to a packaged test build');
+  // On macOS, the executable is inside the app bundle, in Contents/MacOS.
+  const root = process.platform === 'darwin' ? resolve(packaged, '../../..') : dirname(packaged);
+  const copy = mkdtempSync(join(dirname(root), 'e2e-package-'));
+  const target = join(copy, relative(dirname(root), root));
+  const link = (from: string, to: string): void => {
+    const stat = lstatSync(from);
+    if (stat.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
+    else if (stat.isDirectory()) {
+      mkdirSync(to);
+      for (const entry of readdirSync(from)) link(join(from, entry), join(to, entry));
+    } else linkSync(from, to);
+  };
+  link(root, target);
+  const resources =
+    process.platform === 'darwin'
+      ? join(target, 'Contents', 'Resources')
+      : join(target, 'resources');
+  rmSync(join(resources, 'blocker'), { recursive: true, force: true });
+  return {
+    app: join(target, relative(root, packaged)),
+    remove: () => rmSync(copy, { recursive: true, force: true }),
+  };
 }

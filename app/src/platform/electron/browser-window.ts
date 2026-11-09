@@ -20,6 +20,7 @@ import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/i
 import { TabService, type TabId, type TabViewPort } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
+import type { Blocking } from '../../domain/blocker/blocking.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
@@ -70,7 +71,7 @@ export interface BrowserWindowOptions {
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
-  readonly blocking: (url: string) => 'on' | 'off' | 'none';
+  readonly blocking: (url: string) => Blocking;
   /** Called when a tab shows a web page, and again when its title changes. */
   readonly onVisit?: (url: string, title: string, titleOnly: boolean) => void;
   /** Whether a page has a bookmark, for the star in the address bar. */

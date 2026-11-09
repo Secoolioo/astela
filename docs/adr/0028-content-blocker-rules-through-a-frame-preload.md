@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0031](0031-scriptlets-in-their-own-scope-and-world.md) refines how scriptlets run and how hiding rules are inserted.
 
 ## Date
 

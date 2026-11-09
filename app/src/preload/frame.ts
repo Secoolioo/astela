@@ -26,13 +26,33 @@ const isFrameRules = (value: unknown): value is FrameRules =>
   'elements' in value &&
   typeof value.elements === 'boolean';
 
+/** Marks a scriptlet that runs in an isolated world; tools/blocker/build.ts adds it. */
+const isolatedMark = '/*astela:isolated-world*/';
+/** The isolated world of such scriptlets; the preload itself runs in Electron's world 999. */
+const scriptletWorld = 1001;
+
+/**
+ * Wraps a scriptlet in a scope of its own: scriptlets bring their helpers as declarations,
+ * and two scriptlets with the same helper would collide in the page's global scope. A
+ * failing scriptlet leaves a warning in the console instead of an error.
+ * @param script - The scriptlet with its helpers.
+ */
+function scoped(script: string): string {
+  return `(() => { try {\n${script}\n} catch (error) { console.warn('[astela scriptlet]', error); } })();`;
+}
+
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');
 if (isFrameRules(rules)) {
-  if (rules.styles !== '') {
-    void webFrame.insertCSS(rules.styles);
-  }
+  // A user style sheet: its !important rules beat the page's own.
+  if (rules.styles !== '') webFrame.insertCSS(rules.styles, { cssOrigin: 'user' });
   for (const script of rules.scripts) {
-    if (typeof script === 'string') void webFrame.executeJavaScript(script);
+    if (typeof script !== 'string') continue;
+    const code = scoped(script);
+    if (script.includes(isolatedMark)) {
+      void webFrame.executeJavaScriptInIsolatedWorld(scriptletWorld, [{ code }]);
+    } else {
+      void webFrame.executeJavaScript(code);
+    }
   }
   if (rules.elements) {
     reportElements();
@@ -77,7 +97,9 @@ function reportElements(): void {
     }
     if (report.classes.length + report.ids.length + report.hrefs.length > 0) {
       void ipcRenderer.invoke('blocker.elements', report).then((styles: unknown) => {
-        if (typeof styles === 'string' && styles !== '') void webFrame.insertCSS(styles);
+        if (typeof styles === 'string' && styles !== '') {
+          webFrame.insertCSS(styles, { cssOrigin: 'user' });
+        }
       });
     }
   };

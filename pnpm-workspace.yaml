@@ -22,6 +22,7 @@ packageExtensions:
 virtualStoreDirMaxLength: 60
 
 patchedDependencies:
+  '@ghostery/adblocker@2.20.3': patches/@ghostery__adblocker@2.20.3.patch
   app-builder-lib@26.18.0: patches/app-builder-lib@26.18.0.patch
 
 # pnpm installs only versions published at least a day ago. An Electron security patch has

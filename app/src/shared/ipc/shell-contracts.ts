@@ -19,7 +19,7 @@ export const TabView = v.strictObject({
   canGoBack: v.boolean(),
   canGoForward: v.boolean(),
   blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
-  blocking: v.picklist(['on', 'off', 'none']),
+  blocking: v.picklist(['on', 'off', 'none', 'failed']),
   bookmarked: v.boolean(),
 });
 /** One tab as the shell displays it. */

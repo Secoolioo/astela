@@ -1,5 +1,8 @@
-/** Whether the content blocker works on a page: `none` for pages it never touches. */
-export type Blocking = 'on' | 'off' | 'none';
+/**
+ * Whether the content blocker works on a page: `none` for pages it never touches, and
+ * `failed` where it should block but has no usable filter data.
+ */
+export type Blocking = 'on' | 'off' | 'none' | 'failed';
 
 /**
  * The site of a web page, by host name, as the content blocker's exceptions name it.

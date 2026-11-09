@@ -7,6 +7,46 @@
       "dependencies": [],
       "executionWorld": "MAIN",
       "requiresTrust": false
+    },
+    {
+      "name": "fixture-shared.fn",
+      "aliases": [],
+      "body": "class FixtureShared { static mark(name) { window[name] = 'ran'; } }",
+      "dependencies": [],
+      "executionWorld": "MAIN",
+      "requiresTrust": false
+    },
+    {
+      "name": "fixture-shared-a.js",
+      "aliases": ["fixture-shared-a"],
+      "body": "function fixtureSharedA() { FixtureShared.mark('fixtureSharedA'); }",
+      "dependencies": ["fixture-shared.fn"],
+      "executionWorld": "MAIN",
+      "requiresTrust": false
+    },
+    {
+      "name": "fixture-shared-b.js",
+      "aliases": ["fixture-shared-b"],
+      "body": "function fixtureSharedB() { FixtureShared.mark('fixtureSharedB'); }",
+      "dependencies": ["fixture-shared.fn"],
+      "executionWorld": "MAIN",
+      "requiresTrust": false
+    },
+    {
+      "name": "fixture-argument.js",
+      "aliases": ["fixture-argument"],
+      "body": "function fixtureArgument(value) { window.fixtureArgument = value; }",
+      "dependencies": [],
+      "executionWorld": "MAIN",
+      "requiresTrust": false
+    },
+    {
+      "name": "fixture-isolated.js",
+      "aliases": ["fixture-isolated"],
+      "body": "function fixtureIsolated() { document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.world = typeof window.fixtureMainWorldMarker; }); }",
+      "dependencies": [],
+      "executionWorld": "ISOLATED",
+      "requiresTrust": false
     }
   ],
   "resources": []
