@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { build, isolatedScriptletMark, markIsolatedScriptlets } from './build.ts';
+import { contentTypeOf } from './redirects.ts';
 import { applyConditions, evaluateCondition, loadList } from './preprocess.ts';
 import { fetchSources, relativeImports, type UboSources } from './scriptlets.ts';
 
@@ -128,6 +129,19 @@ describe('build', () => {
       assert.equal(blocked('http://127.0.0.1:8080/fixture-ad.js', 'script'), true);
       assert.equal(blocked('http://127.0.0.1:8080/fixture-tracker.gif', 'image'), true);
       assert.equal(blocked('http://127.0.0.1:8080/app.js', 'script'), false);
+      // A redirect filter names its stand-in, which the data carries.
+      const redirected = engine.match(
+        Request.fromRawDetails({
+          url: 'http://127.0.0.1:8080/fixture-redirect.js',
+          sourceUrl: 'http://127.0.0.1:8080/page.html',
+          type: 'script',
+        }),
+      );
+      assert.equal(redirected.redirect?.filename, 'noop.js');
+      assert.equal(
+        engine.resources.getResource('fixture-ima.js').contentType,
+        'application/javascript',
+      );
       // Generic element rules apply to the classes that a page reports from its document.
       const cosmetics = engine.getCosmeticsFilters({
         url: 'http://127.0.0.1:8080/page.html',
@@ -146,5 +160,14 @@ describe('build', () => {
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
+  });
+});
+
+describe('contentTypeOf', () => {
+  it('keeps scripts usable for +js() and binary files as Base64', () => {
+    assert.equal(contentTypeOf('noop.js'), 'application/javascript');
+    assert.equal(contentTypeOf('1x1.gif'), 'image/gif;base64');
+    assert.equal(contentTypeOf('noop-0.1s.mp3'), 'audio/mp3;base64');
+    assert.equal(contentTypeOf('empty'), 'text/plain');
   });
 });

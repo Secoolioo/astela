@@ -1,9 +1,14 @@
 import type { FiltersEngine, Request as EngineRequest, RequestType } from '@ghostery/adblocker';
-import type { OnBeforeRequestListenerDetails } from 'electron';
+import type { OnBeforeRequestListenerDetails, OnHeadersReceivedListenerDetails } from 'electron';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import type { RequestDecision, RequestInterceptor } from '../electron/request-pipeline.ts';
+import type {
+  HeaderAdditions,
+  RequestDecision,
+  RequestInterceptor,
+} from '../electron/request-pipeline.ts';
+import { resourceUrl, type ReplacementResource } from './resource-protocol.ts';
 
 /** Electron's resource types and the request types of the filter engine. */
 const requestTypes: Readonly<Record<string, RequestType>> = {
@@ -104,9 +109,22 @@ export class ContentBlocker implements RequestInterceptor {
     details: OnBeforeRequestListenerDetails,
   ): Promise<RequestDecision | undefined> {
     if (details.resourceType === 'mainFrame') {
-      // A page that starts loading loads the engine, so its frames find their rules.
-      if (this.options.enabled(details.url) && /^https?:/i.test(details.url)) void this.load();
-      return undefined;
+      if (!this.options.enabled(details.url) || !/^https?:/i.test(details.url)) return undefined;
+      // A page that starts loading loads the engine, so its frames find their rules. A page
+      // is never blocked, but tracking parameters leave its address once the engine is there.
+      if (this.loaded === undefined) {
+        void this.load();
+        return undefined;
+      }
+      const page = this.loaded.Request.fromRawDetails({
+        url: details.url,
+        sourceUrl: details.url,
+        type: 'main_frame',
+      });
+      const rewritten = this.loaded.engine.match(page).rewrite?.url;
+      return rewritten === undefined || rewritten === details.url
+        ? undefined
+        : { redirectURL: rewritten };
     }
     const type = requestTypes[details.resourceType];
     const sourceUrl = pageUrl(details);
@@ -126,14 +144,56 @@ export class ContentBlocker implements RequestInterceptor {
       sourceUrl,
       type,
     });
-    const { match } = loaded.engine.match(request);
-    if (!match) {
-      return undefined;
+    const result = loaded.engine.match(request);
+    if (!result.match) {
+      // Tracking parameters leave the address of a request that is not blocked.
+      const rewritten = result.rewrite?.url;
+      return rewritten === undefined || rewritten === details.url
+        ? undefined
+        : { redirectURL: rewritten };
     }
     if (details.webContentsId !== undefined) {
       this.options.onBlocked?.(details.webContentsId);
     }
-    return { cancel: true };
+    // A harmless stand-in keeps pages working that wait for the file they asked for.
+    return result.redirect === undefined
+      ? { cancel: true }
+      : { redirectURL: resourceUrl(result.redirect.filename) };
+  }
+
+  /**
+   * Adds the content security policy that `$csp` filters set for a page.
+   * @param details - The response of a page.
+   */
+  headersReceived(details: OnHeadersReceivedListenerDetails): HeaderAdditions | undefined {
+    const loaded = this.loaded;
+    if (
+      details.resourceType !== 'mainFrame' ||
+      loaded === undefined ||
+      !/^https?:/i.test(details.url) ||
+      !this.options.enabled(details.url)
+    ) {
+      return undefined;
+    }
+    const directives = loaded.engine.getCSPDirectives(
+      loaded.Request.fromRawDetails({
+        url: details.url,
+        sourceUrl: details.url,
+        type: 'main_frame',
+      }),
+    );
+    return directives === undefined ? undefined : { 'Content-Security-Policy': [directives] };
+  }
+
+  /**
+   * A replacement resource of the filter data by its file name, for the resource scheme.
+   * @param name - The file name.
+   */
+  resource(name: string): ReplacementResource | undefined {
+    const resource = this.loaded?.engine.resources.getResource(name);
+    return resource === undefined
+      ? undefined
+      : { body: resource.body, contentType: resource.contentType };
   }
 
   /**

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0032](0032-replacement-resources-over-a-scheme-of-their-own.md) adds the replacement resources, `$removeparam` and `$csp`.
 
 ## Date
 
