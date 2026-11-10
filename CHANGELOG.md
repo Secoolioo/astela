@@ -2,6 +2,39 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
+## [0.1.0-beta.4] - 2026-11-10
+
+The fourth beta fixes what a test of 0.1.0-beta.3 on real websites found and adds the basics of a browser for every day. Sites that the content blocker broke, such as YouTube, load again; the browser's own pages scroll; pages that cannot load say why; and find in page, zoom, full screen, the developer tools, printing, site permissions, downloads, popups and private windows work as in other browsers. Installed copies of 0.1.0-beta.3 receive it as an update.
+
+### Fixes
+
+- Content blocker: sites whose pages stayed empty or broke with the blocker on, such as YouTube, load again. Each scriptlet runs in its own scope and in the world it was written for, with its arguments as the filter lists give them, and element hiding rules apply as user style sheets, which pages cannot override. The first requests of a page count for that page, not for the page before it.
+- Content blocker status: when its filter data is missing or cannot be read, the shield in the address bar and the settings page say that the blocker does not work, instead of showing it as active.
+- The browser's own pages, such as the settings, the history and the bookmarks, scroll when they are taller than the window.
+- Policies are read again whenever a window gets the focus, as the guide for administrators says, not only every 15 minutes.
+- The menu bar of macOS shows all of its menus in German on German systems, and with no window open, New Window and New Tab open one window.
+
+### Security
+
+- On Windows, the browser starts the registry tool of the system by its full path, so that a file of the same name in the working directory, such as one that a site saved in the downloads folder, never runs.
+
+### Features
+
+- Content blocker: serves the replacement resources of uBlock Origin for `$redirect` filters, applies `$removeparam`, `$csp`, procedural element hiding filters such as `:has-text()` and `:remove()`, and `$popup` filters, and turns it off for a whole site, such as every subdomain of `example.com`, while each site of a hosting platform such as `github.io` stays a site of its own. The shield opens a popover with the number of blocked requests, a switch for the site and a reload button. The settings list the sites without blocking and offer two optional lists, against cookie notices and against annoyances.
+- Problem pages: a page that cannot load shows the reason and Try again; a page whose process crashed offers Reload; the browser asks whether to wait for a page that stops responding. A certificate that is not trusted shows a warning, and only Continue anyway opens the site, for the rest of the session. A site or proxy that wants a user name and password asks in a dialog.
+- Page tools: find in page (`Ctrl+F`, `F3` and `Shift+F3`), zoom per site (`Ctrl+Plus`, `Ctrl+-`, `Ctrl+0`, and on Windows and Linux Ctrl with the mouse wheel, shown in the address bar and in every tab of the site), full screen (`F11`, and videos in full screen), reload without the cache, printing, saving pages, the page source and the developer tools (`F12`, and Inspect in the context menu), and PDF documents in the tab. macOS uses the usual Command shortcuts.
+- Site permissions: sites ask before they use the camera, the microphone, the location, notifications or the clipboard, and share a screen or a window only after you picked it. The question takes clicks a moment after it shows, so a double click answers no question by accident, and only the tab in front asks. The answers are kept per site, and the settings list them, to change or remove.
+- Downloads: files are saved in the downloads folder without a question, under a free name; on macOS they carry the mark of files from the internet, so the system checks them before they open. A button in the toolbar shows their progress and opens the list, where downloads can be paused, resumed, canceled, opened, shown in their folder, tried again or removed; `Ctrl+J` (`Command+Option+L` on macOS) opens it.
+- Windows and popups: pages that a script opens keep their opener, so sign-in and payment popups work; a popup with a size gets a window of its own. A middle click opens a link in the background, a click with Shift in a new window. Pages that a page opened stay open when it closes. `Ctrl+N` opens a new window, and windows open where they were at the last start, fitted to their screen.
+- Private windows: `Ctrl+Shift+N` (`Command+Shift+N` on macOS) opens a dark private window that keeps no history and no session; its cookies and site data stay in memory and are deleted when the last private window closes.
+- Browser menu: new windows and private windows, the downloads, the zoom, find, print, save, the source and the developer tools, About and Quit; macOS gets a File menu.
+- Policies: `SSLErrorOverrideAllowed`, `DeveloperToolsAvailability`, `PrivateModeAvailability`, `ContentBlockerCookieNoticesEnabled` and `ContentBlockerAnnoyancesEnabled`.
+
+### Performance
+
+- More code loads when it is first needed, such as the handlers of the browser's own pages, the code of the filter engine, the policy readers of each system, the rollback, the bookmarks, the color solver for a custom accent and the code that shuts the browser down, so the start stays within its budget with the new features.
+- The browser's own pages, such as the shell and the new tab page, load in the renderer that their view started instead of in a second one, and the policies are read only once while the first window opens, so the window is ready sooner, on Windows in particular.
+
 ## [0.1.0-beta.3] - 2026-11-01
 
 The third beta makes the browser usable for everyday testing: a setup guide, a new tab page, settings, a content blocker, history, bookmarks, the restore of the last session and the import from other browsers. Installed copies of 0.1.0-beta.2 receive it as an update, and the setup guide opens once after the update.
