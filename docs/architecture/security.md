@@ -27,7 +27,9 @@ Every item in this section is designed to be covered by an automated test.
 
 ### Content Security Policy
 
-All `app://` pages use a strict Content Security Policy and Trusted Types. Validation code stays CSP-safe because the schema library does not use `eval` or `new Function`.
+All `app://` pages use a strict Content Security Policy and Trusted Types, and every file is sent with `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin`. Validation code stays CSP-safe because the schema library does not use `eval` or `new Function`.
+
+The pages are sent without a `Cross-Origin-Opener-Policy`. That policy keeps a page apart from the windows that open it and that it opens, and the browser's own pages have none: they cannot open windows, and web pages can neither open nor navigate to them. With the policy, a page cannot load in the renderer that its view started with its empty first document, so every view of the browser started a second renderer before its page could run (see [performance](performance.md#mandatory-techniques)).
 
 ### Permission handlers
 

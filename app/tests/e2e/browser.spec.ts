@@ -127,6 +127,44 @@ test("follows the mouse's back and forward buttons over the page and the toolbar
   await expect.poll(async () => (await activeTab()).title).toBe('Fixture second');
 });
 
+test('starts one renderer for the shell and one for the new tab page of a new window', async () => {
+  // Notes every renderer that starts while the window opens. A page that cannot load in the
+  // renderer of its view's empty first document makes Chromium start a second one for it.
+  await browser.main.evaluate(({ app }) => {
+    const before = new Set(app.getAppMetrics().map((process) => process.pid));
+    const renderers = new Set<number>();
+    const timer = setInterval(() => {
+      for (const { pid, type } of app.getAppMetrics()) {
+        if (type === 'Tab' && !before.has(pid)) renderers.add(pid);
+      }
+    }, 5);
+    Reflect.set(globalThis, 'newRenderers', { renderers, timer });
+  });
+  await pressNative(browser, 'N', ['primary']);
+  await expect
+    .poll(() =>
+      browser.main.evaluate(
+        ({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .filter(
+              (contents) =>
+                !contents.isLoading() && /^app:\/\/(shell|newtab)\//.test(contents.getURL()),
+            ).length,
+      ),
+    )
+    .toBe(4);
+  const started = await browser.main.evaluate(() => {
+    const { renderers, timer } = Reflect.get(globalThis, 'newRenderers') as {
+      renderers: Set<number>;
+      timer: NodeJS.Timeout;
+    };
+    clearInterval(timer);
+    return renderers.size;
+  });
+  expect(started).toBe(2);
+});
+
 test('keeps web content away from internal APIs and pages', async () => {
   await navigate(`${server.origin}/probe.html`);
   const page = await waitForPage(browser, (url) => url.endsWith('/probe.html'));
