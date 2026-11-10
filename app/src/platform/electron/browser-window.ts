@@ -575,6 +575,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     switch (command) {
       case 'tab.new':
         this.tabs.open();
+        // The shell learns of the new tab before its address bar takes the focus, so that the
+        // keys typed right away go to the new tab and not to the tab that was active.
+        this.publishNow();
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
         break;
@@ -1111,10 +1114,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   private schedulePublish(): void {
     // Coalesce bursts of tab events into one message per frame.
-    this.publishTimer ??= setTimeout(() => {
-      this.publishTimer = undefined;
-      this.options.router.publish(ShellStateChanged, this.shell.webContents, this.state());
-    }, 16);
+    this.publishTimer ??= setTimeout(() => this.publishNow(), 16);
+  }
+
+  /** Sends the shell its state at once, instead of with the next frame. */
+  private publishNow(): void {
+    clearTimeout(this.publishTimer);
+    this.publishTimer = undefined;
+    this.options.router.publish(ShellStateChanged, this.shell.webContents, this.state());
   }
 }
 
