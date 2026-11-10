@@ -41,7 +41,10 @@ export async function runPageCommand(
         filters: [{ name: i18n.t('dialog.webPage'), extensions: ['html', 'htm'] }],
       });
       if (!canceled && filePath !== undefined && !contents.isDestroyed()) {
-        await contents.savePage(filePath, 'HTMLComplete');
+        // Saving fails when the page changes meanwhile, such as when it loads again.
+        await contents.savePage(filePath, 'HTMLComplete').catch((error: unknown) => {
+          deps.logger.warn('The page was not saved', { error: String(error) });
+        });
       }
       break;
     }
