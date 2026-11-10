@@ -176,6 +176,9 @@ interface TabEntry {
   readonly history: ViewHistory;
 }
 
+/** How long a window that just opened takes to set itself up on Linux, in milliseconds. */
+const settleTime = 1000;
+
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
  * tab. Tab views are created when a tab opens and destroyed when it closes; only the
@@ -212,6 +215,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
   private readonly subscriptions = new DisposableStore();
   private publishTimer: NodeJS.Timeout | undefined;
+  private hidesUntilClosed = false;
   private readonly options: BrowserWindowOptions;
 
   /** @param options - Environment of the window. */
@@ -261,8 +265,30 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.shell.webContents.once('did-finish-load', () => this.layout());
     this.window.on('resize', () => this.layout());
     this.window.on('closed', () => this.dispose());
+    // Electron on Linux can crash when a window closes while it still sets itself up after it
+    // opened. A window that closes within its first second hides at once and closes when that
+    // second is over; the browser quits without closing its windows this way.
+    if (process.platform === 'linux') {
+      const opened = performance.now();
+      this.window.on('close', (event) => {
+        if (this.hidesUntilClosed) return;
+        const rest = settleTime - (performance.now() - opened);
+        if (rest <= 0) return;
+        event.preventDefault();
+        this.hidesUntilClosed = true;
+        this.window.hide();
+        setTimeout(() => {
+          if (!this.window.isDestroyed()) this.window.close();
+        }, rest);
+      });
+    }
     void this.shell.webContents.loadURL(options.shellUrl);
     this.layout();
+  }
+
+  /** Whether the window closes: a window that closes right after it opened hides first. */
+  get closing(): boolean {
+    return this.hidesUntilClosed;
   }
 
   /** The shell's `WebContents`. */
@@ -1244,9 +1270,10 @@ export class WindowManager implements Disposable {
     return controller;
   }
 
-  /** The window that had the focus last, or else the newest window. */
+  /** The open window that had the focus last, or else the newest open window. */
   get lastUsed(): BrowserWindowController | undefined {
-    return this.focusOrder.at(-1) ?? [...this.windows].at(-1);
+    const open = (window: BrowserWindowController): boolean => !window.closing;
+    return this.focusOrder.findLast(open) ?? [...this.windows].findLast(open);
   }
 
   /**
@@ -1256,7 +1283,7 @@ export class WindowManager implements Disposable {
    */
   lastUsedOf(privateWindow: boolean): BrowserWindowController | undefined {
     const matches = (window: BrowserWindowController): boolean =>
-      window.isPrivate === privateWindow && !window.popup;
+      window.isPrivate === privateWindow && !window.popup && !window.closing;
     return this.focusOrder.findLast(matches) ?? [...this.windows].findLast(matches);
   }
 
