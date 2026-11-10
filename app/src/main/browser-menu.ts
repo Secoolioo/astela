@@ -8,10 +8,12 @@ import { translatorFor } from './i18n/i18n.ts';
  * window handles them itself, also while a page has the focus.
  * @param window - The window whose menu button was clicked.
  * @param position - Where the menu opens, in the window's coordinates.
+ * @param options - Whether people may open private windows.
  */
 export function popupBrowserMenu(
   window: BrowserWindowController,
   position: { readonly x: number; readonly y: number },
+  options: { readonly privateWindows: boolean },
 ): void {
   const i18n = translatorFor(app.getLocale(), process.platform);
   const mac = process.platform === 'darwin';
@@ -28,6 +30,9 @@ export function popupBrowserMenu(
   const menu = Menu.buildFromTemplate([
     item('menu.newTab', 'tab.new', key('Cmd+T', 'Ctrl+T')),
     item('menu.newWindow', 'window.new', key('Cmd+N', 'Ctrl+N')),
+    ...(options.privateWindows
+      ? [item('menu.newPrivateWindow', 'window.newPrivate', key('Shift+Cmd+N', 'Ctrl+Shift+N'))]
+      : []),
     { type: 'separator' },
     item('menu.history', 'history.open', key('Cmd+Y', 'Ctrl+H')),
     item('menu.downloads', 'downloads.open', key('Alt+Cmd+L', 'Ctrl+J')),
@@ -142,6 +147,7 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
       submenu: [
         command('menu.newTab', 'Cmd+T', 'tab.new'),
         command('menu.newWindow', 'Cmd+N', 'window.new'),
+        command('menu.newPrivateWindow', 'Shift+Cmd+N', 'window.newPrivate'),
         { type: 'separator' },
         command('menu.savePage', 'Cmd+S', 'page.save'),
         command('menu.print', 'Cmd+P', 'page.print'),

@@ -14,3 +14,16 @@
 - A popup that a page opens with a size, such as a sign-in or payment window, gets a window of its own. It stays connected to the page that opened it, so it can send its result back and close itself when it is done. Popups are not restored at the next start.
 
 The content blocker keeps popups that its filter lists name from opening; see [Content blocker](content-blocker.md).
+
+## Private windows
+
+`Ctrl+Shift+N` (`Command+Shift+N` on macOS), or New private window in the menu, opens a private window. It is dark and shows **Private** in the toolbar.
+
+- Pages you open in a private window are not kept in the history, and private windows are not restored at the next start.
+- Cookies and other site data of private windows stay in memory, apart from those of regular windows. Astela deletes them when you close the last private window; the next private window starts empty.
+- Sites ask again before they use the camera, notifications and the like, and Astela forgets the answers when the last private window closes. Changes to the zoom of a site are not kept.
+- Files you download stay in your downloads folder. The list of downloads shows them only in private windows, and downloads that still run when you close the last private window are canceled.
+- Bookmarks you add and settings you change in a private window are kept.
+- Links, popups and tabs that a page of a private window opens stay private.
+
+A private window does not make you anonymous: the sites you visit, your network and your organization can still see what you load. Your organization can turn private windows off; see the policy `PrivateModeAvailability` in the [enterprise guide](../architecture/enterprise.md).

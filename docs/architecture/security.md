@@ -197,6 +197,7 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 - Every view runs sandboxed with context isolation and without Node integration; tabs have no preload.
 - Web sessions ask before a site uses the camera, the microphone, the location, notifications or the clipboard, and share a screen or a window only after the user picked it; the sessions of the browser's own pages refuse every permission, and every session denies device access.
 - `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
+- Private windows load web pages in a session in memory of their own, with the same guards, pipeline and content blocker; its data is deleted after the last private window closed ([ADR 0041](../adr/0041-private-windows-with-a-session-in-memory.md)).
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
 - All `app://` pages carry the strict Content Security Policy with Trusted Types.
 - Client certificates are never selected automatically.

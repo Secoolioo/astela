@@ -105,6 +105,7 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
         ? [
             'New Tab',
             'New Window',
+            'New Private Window',
             '-',
             'History',
             'Downloads',
@@ -123,6 +124,7 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
         : [
             'New &tab',
             'New &window',
+            'New pr&ivate window',
             '-',
             '&History',
             '&Downloads',

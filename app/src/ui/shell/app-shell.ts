@@ -99,6 +99,19 @@ export class AppShell extends LitElement {
       stroke: var(--accent);
       stroke-width: 2;
     }
+    /* Tells a private window apart; its colors come from tokens.css. */
+    .private {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      height: 24px;
+      padding: 0 var(--space-2);
+      border-radius: var(--radius-1);
+      background: var(--surface-2);
+      color: var(--text-1);
+      font-size: 12px;
+      white-space: nowrap;
+    }
     .zoom {
       height: 24px;
       padding: 0 var(--space-2);
@@ -390,6 +403,7 @@ export class AppShell extends LitElement {
       bookmarksBar: null,
       find: null,
       downloads: null,
+      private: false,
     };
     this.editing = undefined;
   }
@@ -584,6 +598,13 @@ export class AppShell extends LitElement {
               </button>`
         }
         ${this.renderDownloadsButton()}
+        ${
+          this.state.private
+            ? html`<span class="private" title=${t('shell.privateHint')}
+                >${icons.private}<span>${t('shell.private')}</span></span
+              >`
+            : nothing
+        }
         <button
           class="icon"
           title=${t('shell.menu')}
@@ -1044,6 +1065,13 @@ const icons = {
   up: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>`,
   down: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>`,
   plus: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>`,
+  private: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M2 12a5 5 0 0 0 5 5 8 8 0 0 1 5 2 8 8 0 0 1 5-2 5 5 0 0 0 5-5V7h-5a8 8 0 0 0-5 2 8 8 0 0 0-5-2H2Z"
+    />
+    <path d="M6 11c1.5 0 3 .5 3 2-2 0-3 0-3-2Z" />
+    <path d="M18 11c-1.5 0-3 .5-3 2 2 0 3 0 3-2Z" />
+  </svg>`,
   close: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
   back: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7M19 12H5" /></svg>`,
   forward: html`<svg viewBox="0 0 24 24" aria-hidden="true">

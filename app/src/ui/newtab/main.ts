@@ -5,6 +5,12 @@ document.documentElement.lang = i18n.language;
 document.title = i18n.t('newtab.title');
 const form = document.getElementById('search');
 const query = document.getElementById('query');
+// In a private window, the page tells what the window keeps.
+const note = document.getElementById('private');
+if (note !== null && document.documentElement.hasAttribute('data-private')) {
+  note.textContent = i18n.t('newtab.private');
+  note.hidden = false;
+}
 
 if (form instanceof HTMLFormElement && query instanceof HTMLInputElement) {
   query.placeholder = i18n.t('newtab.placeholder');
