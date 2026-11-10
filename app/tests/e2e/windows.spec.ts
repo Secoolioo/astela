@@ -79,14 +79,17 @@ test('opens one window from the menu bar of macOS when no window is open', async
     await expect.poll(() => windowCount(browser)).toBe(0);
     await clickMenuBar(browser, 'File', 'New Tab');
     await expect.poll(() => windowCount(browser)).toBe(1);
+    // The new tab page needs a renderer of its own, whose start can take seconds on a busy machine.
     await expect
-      .poll(() =>
-        browser.main.evaluate(
-          ({ webContents }) =>
-            webContents
-              .getAllWebContents()
-              .filter((contents) => contents.getURL() === 'app://newtab/').length,
-        ),
+      .poll(
+        () =>
+          browser.main.evaluate(
+            ({ webContents }) =>
+              webContents
+                .getAllWebContents()
+                .filter((contents) => contents.getURL() === 'app://newtab/').length,
+          ),
+        { timeout: 15_000 },
       )
       .toBe(1);
   } finally {
@@ -269,6 +272,42 @@ test('forgets a window that closed, also when its focus arrives after it closed'
     await expect
       .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
       .toEqual(['app://newtab/', link]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('hides a window that closes right after it opened, and closes it a moment later', async () => {
+  test.skip(process.platform !== 'linux', 'Only Electron on Linux crashes on such windows');
+  const browser = await launch();
+  try {
+    const first = await browser.main.evaluate(({ BaseWindow }) =>
+      BaseWindow.getAllWindows().map((window) => window.id),
+    );
+    for (let round = 0; round < 3; round++) {
+      await pressNative(browser, 'N', ['primary']);
+      await expect.poll(() => windowCount(browser)).toBe(2);
+      // The new window closes at once: it hides and closes after its first second.
+      const closed = await browser.main.evaluate(({ BaseWindow }, ids) => {
+        const window = BaseWindow.getAllWindows().find((candidate) => !ids.includes(candidate.id));
+        if (window === undefined) throw new Error('The new window is missing');
+        window.close();
+        const destroyed = window.isDestroyed();
+        return { destroyed, visible: !destroyed && window.isVisible() };
+      }, first);
+      expect(closed).toEqual({ destroyed: false, visible: false });
+      if (round === 0) {
+        // A link from another app goes to the window that stays, not to the one that hides.
+        const link = `${server.origin}/second.html`;
+        await browser.main.evaluate(({ app }, url) => {
+          app.emit('second-instance', {}, [process.execPath, '--', url], process.cwd(), {});
+        }, link);
+        await expect
+          .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+          .toEqual(['app://newtab/', link]);
+      }
+      await expect.poll(() => windowCount(browser)).toBe(1);
+    }
   } finally {
     await browser.close();
   }

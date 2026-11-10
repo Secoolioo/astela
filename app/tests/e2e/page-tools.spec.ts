@@ -52,7 +52,14 @@ async function pressInPage(
 
 /** What the tests do with the web contents of a page in the browser process. */
 type ContentsTask =
-  'zoomIn' | 'mockPrint' | 'pageText' | 'devToolsOpened' | 'pdfViewer' | 'loading' | 'failSave';
+  | 'zoomIn'
+  | 'mockPrint'
+  | 'pageText'
+  | 'devToolsOpened'
+  | 'pdfViewer'
+  | 'loading'
+  | 'failSave'
+  | 'recordFind';
 
 /**
  * Works with the web contents of the page at a URL in the browser process.
@@ -81,6 +88,15 @@ function withContents(browser: Browser, url: string, task: ContentsTask): Promis
       } else if (wanted === 'failSave') {
         // As when the page changes while it is saved, such as when it loads again.
         contents.savePage = () => Promise.reject(new Error('Failed to save the page.'));
+      } else if (wanted === 'recordFind') {
+        // What the browser asks of Chromium's search in the page.
+        const finds: unknown[] = [];
+        Reflect.set(globalThis, 'finds', finds);
+        const find = contents.findInPage.bind(contents);
+        contents.findInPage = (text, options) => {
+          finds.push({ text, ...options });
+          return find(text, options);
+        };
       } else {
         // Chromium's PDF viewer is an extension frame inside the tab's page.
         return contents.mainFrame.framesInSubtree.some((frame) =>
@@ -124,6 +140,31 @@ test('finds text in the page and steps through the matches', async () => {
     await pressInPage(browser, 'F', ['primary']);
     await expect(field).toHaveValue('pie');
     await expect(find).toContainText('1 of 1');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('starts a new search for new text and goes on with it for the next match', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/find.html`;
+    await open(browser, url);
+    await withContents(browser, url, 'recordFind');
+    await pressInPage(browser, 'F', ['primary']);
+    const find = browser.shell.getByRole('search', { name: 'Find in page' });
+    const field = find.getByRole('searchbox', { name: 'Find in page' });
+    await expect(field).toBeFocused();
+    await field.fill('apple');
+    await expect(find).toContainText('1 of 3');
+    await field.press('Enter');
+    await expect(find).toContainText('2 of 3');
+    // Electron's findNext begins a new search; a step that began one would start from the top
+    // again when the search of the text was not done yet.
+    expect(await browser.main.evaluate(() => Reflect.get(globalThis, 'finds'))).toEqual([
+      { text: 'apple', forward: true, findNext: true },
+      { text: 'apple', forward: true, findNext: false },
+    ]);
   } finally {
     await browser.close();
   }
