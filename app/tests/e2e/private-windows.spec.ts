@@ -179,8 +179,9 @@ test('lists the downloads of a private window only there and keeps their files',
     const page = await openIn(browser, shell, '/private');
     await page.getByRole('link', { name: 'Report' }).click();
     const file = join(folder, 'private-report.txt');
-    await expect.poll(() => existsSync(file)).toBe(true);
-    await expect.poll(async () => (await shellState(shell)).downloads).not.toBeNull();
+    // The download finishes first: a private window that closes ends its unfinished downloads.
+    await expect.poll(async () => (await shellState(shell)).downloads?.active).toBe(0);
+    expect(existsSync(file)).toBe(true);
     expect((await shellState(browser.shell)).downloads).toBeNull();
     // The file stays after the window closed, and the next private window lists nothing.
     await closeOthers(browser);
