@@ -1,17 +1,39 @@
 /*
- * Design tokens: the only source of colors, spacing, radii and motion. Themes override
+ * Design tokens: the only source of colors, spacing, sizes, radii and motion. Themes override
  * these custom properties and nothing else. Radii are 4 px for controls and 6 px for larger
- * surfaces; sizes follow a 4 px grid (docs/architecture/design-system.md).
+ * surfaces; sizes follow a 4 px grid (docs/architecture/design-system.md). The values here are
+ * those of the normal density and the medium text size; the browser sets the others
+ * (domain/appearance/appearance.ts).
  */
 :root {
   color-scheme: light dark;
-  --font-ui:
+  --font-system:
     'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
     Cantarell, Ubuntu, sans-serif;
+  --font-ui: var(--font-system);
+  --font-size-tiny: 11px;
+  --font-size-small: 12px;
   --font-size-ui: 13px;
+  --font-size-large: 14px;
+  --font-size-larger: 16px;
+  --font-size-title: 20px;
+  --font-size-display: 28px;
+  --line-height-ui: 16px;
+  --line-height-large: 20px;
+  --line-height-larger: 24px;
+  --line-height-title: 28px;
+  --line-height-display: 36px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --control-small: 24px;
+  --control-height: 28px;
+  --control-large: 32px;
+  --row-height: 48px;
   --radius-1: 4px;
   --radius-2: 6px;
   --toolbar-height: 40px;
@@ -72,7 +94,7 @@ body {
   margin: 0;
   background: var(--surface-0);
   color: var(--text-1);
-  font: var(--font-size-ui) / 16px var(--font-ui);
+  font: var(--font-size-ui) / var(--line-height-ui) var(--font-ui);
 }
 
 /* The browser's own pages scroll like web pages; the shell fills its window instead. */

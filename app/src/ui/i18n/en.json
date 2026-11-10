@@ -274,5 +274,16 @@
   "settings.language.keywords": "locale translation interface",
   "settings.restartNote": "Takes effect after a restart",
   "settings.restartNeeded": "Some changes take effect after a restart.",
-  "settings.restartNow": "Restart now"
+  "settings.restartNow": "Restart now",
+  "settings.textSize": "Text size",
+  "settings.textSize.small": "Small",
+  "settings.textSize.medium": "Medium",
+  "settings.textSize.large": "Large",
+  "settings.textSize.larger": "Larger",
+  "settings.textSize.keywords": "font size bigger smaller zoom readable",
+  "settings.font": "Font of the browser",
+  "settings.fontNote": "The name of a font on this computer, such as Inter. Empty uses the font of the system.",
+  "settings.fontSystem": "Font of the system",
+  "settings.fontInvalid": "Use letters, digits, spaces, dots, hyphens and underscores only.",
+  "settings.font.keywords": "typeface family typography"
 }

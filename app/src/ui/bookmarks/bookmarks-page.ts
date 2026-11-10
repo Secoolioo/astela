@@ -46,18 +46,18 @@ export class BookmarksPage extends LitElement {
       box-sizing: border-box;
       max-width: 760px;
       margin: 0 auto;
-      padding: var(--space-3) var(--space-3) 48px;
+      padding: var(--space-3) var(--space-3) var(--space-7);
     }
     h1 {
-      margin: 24px 0 16px;
-      font-size: 20px;
-      line-height: 28px;
+      margin: var(--space-5) 0 var(--space-4);
+      font-size: var(--font-size-title);
+      line-height: var(--line-height-title);
       font-weight: 600;
     }
     input,
     select {
       box-sizing: border-box;
-      height: 32px;
+      height: var(--control-large);
       padding: 0 var(--space-2);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -67,21 +67,21 @@ export class BookmarksPage extends LitElement {
     }
     input[type='search'] {
       width: 100%;
-      height: 36px;
-      margin-bottom: 16px;
+      height: calc(var(--control-large) + 4px);
+      margin-bottom: var(--space-4);
       padding: 0 var(--space-3);
     }
     .head {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      margin: 16px 0 4px;
+      margin: var(--space-4) 0 var(--space-1);
     }
     h2 {
       flex: 1;
       margin: 0;
-      font-size: 12px;
-      line-height: 16px;
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-ui);
       font-weight: 600;
       color: var(--text-2);
     }
@@ -106,7 +106,7 @@ export class BookmarksPage extends LitElement {
       display: flex;
       align-items: center;
       gap: var(--space-1);
-      min-height: 36px;
+      min-height: calc(var(--control-height) + 8px);
       padding: 0 var(--space-1) 0 var(--space-3);
     }
     .open {
@@ -150,7 +150,7 @@ export class BookmarksPage extends LitElement {
       transform: rotate(90deg);
     }
     button {
-      height: 28px;
+      height: var(--control-height);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -172,7 +172,7 @@ export class BookmarksPage extends LitElement {
       background: none;
     }
     .tool {
-      width: 28px;
+      width: var(--control-height);
       padding: 0;
       border-color: transparent;
       background: transparent;

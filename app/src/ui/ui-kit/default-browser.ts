@@ -24,7 +24,7 @@ export class DefaultBrowser extends LitElement {
       display: flex;
       align-items: center;
       gap: var(--space-3);
-      min-height: 48px;
+      min-height: var(--row-height);
       padding: var(--space-2) var(--space-3);
       box-sizing: border-box;
     }
@@ -37,7 +37,7 @@ export class DefaultBrowser extends LitElement {
       color: var(--text-2);
     }
     button {
-      height: 28px;
+      height: var(--control-height);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
