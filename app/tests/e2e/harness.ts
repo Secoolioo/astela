@@ -170,6 +170,8 @@ export interface Browser {
   readonly shell: Page;
   readonly process: ChildProcess;
   readonly profile: string;
+  /** The address of the browser's DevTools. */
+  readonly devtools: string;
   /** Quits the browser; the profile is removed unless it is kept for another start. */
   close(options?: { readonly keepProfile?: boolean }): Promise<void>;
 }
@@ -256,7 +258,13 @@ export async function launch(
   const [inspectorMatch, devtoolsMatch] = await Promise.all([inspector, devtools]);
   for (let i = 0; !existsSync(report); i += 1) {
     if (i > 300 || child.exitCode !== null) {
-      await reportFailedStart(child, undefined, profile, 'The shell did not become ready');
+      await reportFailedStart(
+        child,
+        undefined,
+        profile,
+        devtoolsMatch[1] ?? '',
+        'The shell did not become ready',
+      );
       throw new Error('The shell did not become ready');
     }
     await new Promise((done) => setTimeout(done, 100));
@@ -275,7 +283,7 @@ export async function launch(
     shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
     await shell.waitForSelector('app-shell');
   } catch (error) {
-    await reportFailedStart(child, main, profile, String(error));
+    await reportFailedStart(child, main, profile, devtoolsMatch[1] ?? '', String(error));
     throw error;
   }
   return {
@@ -284,6 +292,7 @@ export async function launch(
     shell,
     process: child,
     profile,
+    devtools: devtoolsMatch[1] ?? '',
     async close(closeOptions: { readonly keepProfile?: boolean } = {}): Promise<void> {
       // The browser saves its state before it quits, so wait for the process to exit.
       const exited =
@@ -397,16 +406,24 @@ async function reportFailedStart(
   child: ChildProcess,
   main: MainProcess | undefined,
   profile: string,
+  devtools: string,
   reason: string,
 ): Promise<void> {
   let report = `The browser started, but the harness could not use it: ${reason}\n`;
+  let pages: readonly number[] = [];
   if (main !== undefined) {
     report += await within(processReport(main), answerTime, 'The browser process').then(
-      (known) => `Browser process: ${JSON.stringify(known)}\n`,
+      (known) => {
+        pages = known.processes.filter((entry) => entry.type === 'Tab').map((entry) => entry.pid);
+        return `Browser process: ${JSON.stringify(known)}\n`;
+      },
       (failure: unknown) => `Browser process not available: ${String(failure)}\n`,
     );
   }
-  report += threadStacks(child.pid, profile);
+  report += await pageReport(devtools);
+  report += threadStacks(child.pid, profile, 'the browser process');
+  // A page that does not answer holds up the connection; its process shows where it waits.
+  for (const pid of pages) report += threadStacks(pid, profile, `the page process ${String(pid)}`);
   report += logTail(profile);
   process.stdout.write(report);
   main?.close();
@@ -448,23 +465,87 @@ function runTool(command: string, args: readonly string[]): string {
  * @param pid - The process.
  * @param profile - A folder for the tool's output.
  */
-function threadStacks(pid: number | undefined, profile: string): string {
+function threadStacks(pid: number | undefined, profile: string, name: string): string {
   if (pid === undefined) return '';
   if (process.platform === 'darwin') {
-    const file = join(profile, 'sample.txt');
+    const file = join(profile, `sample-${String(pid)}.txt`);
     runTool('sample', [String(pid), '3', '-mayDie', '-file', file]);
     const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
     return text === ''
-      ? 'No sample of the browser process\n'
-      : `Sample of the browser process:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
+      ? `No sample of ${name}\n`
+      : `Sample of ${name}:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
   }
   if (process.platform === 'linux') {
     const text = runTool('gdb', ['-p', String(pid), '-batch', '-ex', 'thread apply all bt 40']);
     return text === ''
-      ? 'No call stacks of the browser process\n'
-      : `Call stacks of the browser process:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
+      ? `No call stacks of ${name}\n`
+      : `Call stacks of ${name}:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
   }
   return '';
+}
+
+/** A page that the browser's DevTools list. */
+interface DevToolsPage {
+  readonly type: string;
+  readonly url: string;
+  readonly webSocketDebuggerUrl?: string;
+}
+
+/**
+ * The pages that the browser's DevTools list, each with whether it answers a script. The
+ * harness connects only once every page answers, so this names the page that holds it up.
+ * @param devtools - The address of the browser's DevTools.
+ */
+export async function pageReport(devtools: string): Promise<string> {
+  try {
+    const { host } = new URL(devtools);
+    const response = await within(fetch(`http://${host}/json/list`), pageTime, 'DevTools');
+    const pages = (await response.json()) as readonly DevToolsPage[];
+    const lines = await Promise.all(
+      pages.map(
+        async (page) =>
+          `${page.type} ${page.url}: ${
+            page.webSocketDebuggerUrl === undefined
+              ? 'no debugger address'
+              : await pageAnswer(page.webSocketDebuggerUrl)
+          }`,
+      ),
+    );
+    return `Pages of the browser:\n${lines.join('\n')}\n`;
+  } catch (error) {
+    return `Pages of the browser not available: ${String(error)}\n`;
+  }
+}
+
+/** How long the record waits for DevTools and for each page. */
+const pageTime = 5000;
+
+/**
+ * Asks a page for its address and the state of its document.
+ * @param address - The debugger address of the page.
+ */
+function pageAnswer(address: string): Promise<string> {
+  return new Promise((done) => {
+    const socket = new WebSocket(address);
+    const finish = (answer: string): void => {
+      clearTimeout(timer);
+      socket.close();
+      done(answer);
+    };
+    const timer = setTimeout(() => {
+      finish(`does not answer within ${String(pageTime / 1000)} seconds`);
+    }, pageTime);
+    socket.addEventListener('open', () => {
+      const expression = 'location.href + " " + document.readyState';
+      socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression } }));
+    });
+    socket.addEventListener('message', (event) => {
+      finish(`answers ${String(event.data).slice(0, 300)}`);
+    });
+    socket.addEventListener('error', () => {
+      finish('cannot be reached');
+    });
+  });
 }
 
 /** How long the end of a test waits for an answer of the shell or the browser process. */
@@ -497,11 +578,22 @@ async function within<T>(answer: Promise<T>, ms: number, who: string): Promise<T
   }
 }
 
+/** What {@link processReport} finds. */
+interface ProcessReport {
+  readonly windows: readonly unknown[];
+  readonly views: readonly unknown[];
+  readonly processes: readonly {
+    readonly pid: number;
+    readonly type: string;
+    readonly cpu: number;
+  }[];
+}
+
 /**
  * What the browser process knows when the shell does not answer: its windows, its views and
  * its processes with the processor time that each one uses.
  */
-function processReport(main: MainProcess): Promise<unknown> {
+function processReport(main: MainProcess): Promise<ProcessReport> {
   return main.evaluate(({ app, BaseWindow, webContents }) => ({
     windows: BaseWindow.getAllWindows().map((window) => ({
       id: window.id,
