@@ -7,7 +7,7 @@ import {
   type ContextMenuLabels,
   type ContextMenuParams,
 } from '../context-menu/context-menu.ts';
-import { mayOpenInNewTab } from '../navigation/new-tab.ts';
+import { mayOpenInNewTab, mayOpenWindow } from '../navigation/new-tab.ts';
 
 const labels: ContextMenuLabels = {
   openLinkInNewTab: 'Open link in new tab',
@@ -124,6 +124,17 @@ describe('mayOpenInNewTab', () => {
     '',
   ])('never lets pages open %s', (url) => {
     expect(mayOpenInNewTab(url)).toBe(false);
+  });
+});
+
+describe('mayOpenWindow', () => {
+  it('lets scripts open what a tab may open, and a blank page that they fill', () => {
+    expect(mayOpenWindow('https://example.com/')).toBe(true);
+    expect(mayOpenWindow('about:blank')).toBe(true);
+    expect(mayOpenWindow('about:blank#frame')).toBe(true);
+    for (const url of ['about:srcdoc', 'app://settings/', 'data:text/html,hi', 'javascript:1']) {
+      expect(mayOpenWindow(url)).toBe(false);
+    }
   });
 });
 

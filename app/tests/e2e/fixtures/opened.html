@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture opened</title>
+  </head>
+  <body>
+    <button id="reply" onclick="window.opener.postMessage('Hello from the opened page', '*')">
+      Reply
+    </button>
+    <button id="close" onclick="window.close()">Close</button>
+    <script>
+      document.title = window.opener === null ? 'Fixture opened' : 'Fixture opened by a page';
+    </script>
+  </body>
+</html>

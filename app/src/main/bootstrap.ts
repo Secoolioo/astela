@@ -451,6 +451,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
     downloads: () => downloads?.summary() ?? null,
+    openWindow: () => void windows.open(),
     // The shortcut shows the downloads button first; the shell opens the list at it.
     showDownloads: (window) =>
       void loadDownloads().then((list) => {
@@ -516,7 +517,22 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   guardWebContents(app, {
     // Every view of the internal session is the browser's own: the shell and internal pages.
     isInternal: (contents) => contents.session === internal,
-    openInTab: openFromPage,
+    // What a script opens keeps its opener: a popup with a size or position gets a window of
+    // its own, anything else a tab, in the background when the user asked for that.
+    openWindow: (contents, opener, { url, disposition, features }) => {
+      const window = windows.forTab(opener);
+      if (disposition === 'new-window' && features !== '') {
+        windows.openPopup(contents, url, features, window);
+      } else if (disposition === 'new-window') {
+        windows.openWith(contents, url);
+      } else {
+        (window ?? windows.lastUsed ?? windows.open()).adopt(
+          contents,
+          url,
+          disposition !== 'background-tab',
+        );
+      }
+    },
     // Popups that the filter lists name do not open, and count as blocked on their page.
     blocksPopup: (url, opener) => {
       const blocked = blocker.blocksPopup(url, opener.getURL());
@@ -645,10 +661,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   if (startLinks.length > 0) openLinks(startLinks);
   // The session follows every change of tabs and windows; an empty one, after the last window
   // closed, is not kept, so the next start restores that window.
-  windows.onDidChange(() => {
+  const keepSession = (): void => {
     const snapshot = windows.snapshot();
     if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
-  });
+  };
+  windows.onDidChange(keepSession);
+  windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
   lifecycle.advance('ready');
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
@@ -715,7 +733,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       e.join(web.cookies.flushStore(), 'cookies');
     });
     void lifecycle.shutdown('quit').then(() => {
-      windows.dispose();
+      // A window that fails to close must not keep the browser from quitting.
+      try {
+        windows.dispose();
+      } catch (error: unknown) {
+        logger.error('A window did not close cleanly', error);
+      }
       data.dispose();
       updates?.installOnExit();
       updates?.dispose();

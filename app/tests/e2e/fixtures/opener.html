@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture opener</title>
+  </head>
+  <body>
+    <button id="tab" onclick="window.open('opened.html')">Open a tab</button>
+    <button id="popup" onclick="window.open('opened.html', 'login', 'width=520,height=420')">
+      Open a popup
+    </button>
+    <a id="link" href="second.html">A link</a>
+    <p id="message"></p>
+    <script>
+      // The page that this one opened answers through its opener.
+      window.addEventListener('message', (event) => {
+        document.getElementById('message').textContent = String(event.data);
+      });
+    </script>
+  </body>
+</html>

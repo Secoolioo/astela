@@ -1,5 +1,6 @@
 import {
   BaseWindow,
+  screen,
   WebContentsView,
   type ContextMenuParams,
   type Input,
@@ -26,6 +27,11 @@ import {
 } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
+import {
+  popupBounds,
+  visibleBounds,
+  type WindowBounds,
+} from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import type { IpcGate } from './ipc-gate.ts';
@@ -92,6 +98,8 @@ export interface BrowserWindowOptions {
   readonly downloads?: () => ShellState['downloads'];
   /** Shows the list of downloads of a window, at its button. */
   readonly showDownloads?: (window: BrowserWindowController) => void;
+  /** Opens a new window. */
+  readonly openWindow?: () => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -136,6 +144,14 @@ export interface OverlayHandle {
   close(): void;
 }
 
+/** Where a window opens, and whether it is a popup that a page opened. */
+export interface WindowPlace {
+  readonly bounds?: WindowBounds | undefined;
+  readonly maximized?: boolean | undefined;
+  /** A popup closes with its last tab and is not kept in the session. */
+  readonly popup?: boolean;
+}
+
 /** The view that shows a tab, and what belongs to it. */
 interface TabEntry {
   view: WebContentsView;
@@ -175,6 +191,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
   private readonly lazyTabs = new Map<TabId, string>();
+  /** The page that a script opened, which the next new tab shows instead of a new page. */
+  private adopting: WebContents | undefined;
+  /** Whether the window is a popup that a page opened. */
+  readonly popup: boolean;
   private visible: WebContentsView | undefined;
   private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
   private readonly subscriptions = new DisposableStore();
@@ -182,11 +202,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly options: BrowserWindowOptions;
 
   /** @param options - Environment of the window. */
-  constructor(options: BrowserWindowOptions) {
+  constructor(options: BrowserWindowOptions, place: WindowPlace = {}) {
     this.options = options;
+    this.popup = place.popup === true;
     this.window = new BaseWindow({
-      width: 1280,
-      height: 820,
+      ...(place.bounds ?? { width: 1280, height: 820 }),
       minWidth: 480,
       minHeight: 320,
       // Shown at once in the theme's background color: Chromium lowers the priority of the
@@ -213,7 +233,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         capabilities: new Set(['shell', 'appearance']),
       }),
     );
-    this.tabs = new TabService(this, options.newTabUrl);
+    if (place.maximized === true) this.window.maximize();
+    // A popup closes with its last tab, as the page that closes itself expects.
+    this.tabs = new TabService(
+      this,
+      options.newTabUrl,
+      this.popup ? () => this.window.close() : undefined,
+    );
     this.subscriptions.add(this.tabs.onDidChange(() => this.schedulePublish()));
     this.subscriptions.add(this.tabs);
     this.shell.webContents.on('before-input-event', (event, input) => this.intercept(event, input));
@@ -307,17 +333,37 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   create(id: TabId, url: string, lazy = false): void {
-    if (lazy) {
+    const adopted = this.adopting;
+    this.adopting = undefined;
+    if (lazy && adopted === undefined) {
       this.lazyTabs.set(id, url);
       return;
     }
     const entry: TabEntry = {
-      ...this.createView(id, url),
+      ...this.createView(id, url, adopted),
       requested: url,
       history: new ViewHistory(),
     };
     this.entries.set(id, entry);
-    this.loadInto(entry.view.webContents, url);
+    // A page that a script opened loads on its own, with its opener.
+    if (adopted === undefined) this.loadInto(entry.view.webContents, url);
+  }
+
+  /**
+   * Shows the page that a script of another page opened in a new tab, which keeps that page
+   * as its opener.
+   * @param contents - The new page, which Chromium made for the script.
+   * @param url - The address it opens.
+   * @param activate - Whether the tab becomes the active one.
+   * @returns The tab.
+   */
+  adopt(contents: WebContents, url: string, activate: boolean): TabId {
+    this.adopting = contents;
+    try {
+      return this.tabs.open(url, { activate });
+    } finally {
+      this.adopting = undefined;
+    }
   }
 
   show(id: TabId): void {
@@ -521,6 +567,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       case 'downloads.open':
         this.options.showDownloads?.(this);
         break;
+      case 'window.new':
+        this.options.openWindow?.();
+        break;
       case 'bookmark.toggle':
         // Only web pages get bookmarks; the browser's own pages have their own commands.
         if (active !== undefined && /^https?:/i.test(active.url)) {
@@ -671,13 +720,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
-  /**
-   * Creates the view for a URL: a web view without a preload, or for an internal page a
-   * view in the internal session whose preload only offers that page's channels.
-   */
-  private createView(id: TabId, url: string): Pick<TabEntry, 'view' | 'page' | 'registration'> {
-    const page = tabPageOf(url);
-    const view = new WebContentsView({
+  /** How the view of a tab is made: for a web page, or for one of the browser's own pages. */
+  private viewOptions(page: TabPage | undefined): Electron.WebContentsViewConstructorOptions {
+    return {
       webPreferences:
         page === undefined
           ? {
@@ -705,7 +750,23 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               spellcheck: false,
               v8CacheOptions: 'bypassHeatCheck',
             },
-    });
+    };
+  }
+
+  /**
+   * Creates the view for a URL: a web view without a preload, or for an internal page a
+   * view in the internal session whose preload only offers that page's channels. A page that
+   * a script opened comes with its own contents, which the view takes over.
+   */
+  private createView(
+    id: TabId,
+    url: string,
+    adopted?: WebContents,
+  ): Pick<TabEntry, 'view' | 'page' | 'registration'> {
+    const page = adopted === undefined ? tabPageOf(url) : undefined;
+    const view = new WebContentsView(
+      adopted === undefined ? this.viewOptions(page) : { webContents: adopted },
+    );
     const contents = view.webContents;
     let registration: Disposable | undefined;
     if (page !== undefined) {
@@ -754,6 +815,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           url: failed,
           proceed: certificate && (this.options.certificateOverride?.() ?? false),
         });
+      });
+      // A page that a script opened may close itself; its tab goes with it.
+      contents.once('destroyed', () => {
+        if (!this.window.isDestroyed() && this.entries.get(id)?.view === view) {
+          this.tabs.close(id);
+        }
       });
       // Electron reports only the process of the page itself, and the tab has nothing to show
       // once it ended, however it ended: with the sandbox of Linux, a renderer that crashed can
@@ -911,7 +978,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.visible = undefined;
     }
     registration?.dispose();
-    view.webContents.close();
+    // A page that closed itself left its view without contents.
+    const contents: WebContents | undefined = view.webContents;
+    if (contents !== undefined && !contents.isDestroyed()) contents.close();
   }
 
   private forwardContextMenu(view: WebContentsView, tabId: TabId | undefined): void {
@@ -988,6 +1057,9 @@ export class WindowManager implements Disposable {
 
   /** Fires after windows opened or closed, or their tabs changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
+  private readonly boundsEmitter = new Emitter<void>();
+  /** Fires while a window moves or changes its size. */
+  readonly onDidMove: Event<void> = this.boundsEmitter.event;
   private readonly options: BrowserWindowOptions;
 
   /** @param options - Environment for new windows. */
@@ -1003,14 +1075,57 @@ export class WindowManager implements Disposable {
   }
 
   /**
+   * Opens a window whose only tab shows a page that a script of another page opened, which
+   * keeps its opener.
+   * @param contents - The new page.
+   * @param url - The address it opens.
+   * @param place - Where the window opens.
+   * @returns The window.
+   */
+  openWith(contents: WebContents, url: string, place: WindowPlace = {}): BrowserWindowController {
+    const controller = this.add(place);
+    controller.adopt(contents, url, true);
+    return controller;
+  }
+
+  /**
+   * Opens a popup that a script of a page opened, where and as large as the page asked,
+   * with the new page, which keeps its opener.
+   * @param contents - The new page.
+   * @param url - The address it opens.
+   * @param features - The features that the script asked for, such as its size.
+   * @param opener - The window of the page that opened it.
+   * @returns The popup.
+   */
+  openPopup(
+    contents: WebContents,
+    url: string,
+    features: string,
+    opener: BrowserWindowController | undefined,
+  ): BrowserWindowController {
+    const asked = popupBounds(
+      features,
+      opener?.window.getBounds() ?? { x: 100, y: 100, width: 1280, height: 820 },
+    );
+    return this.openWith(contents, url, {
+      bounds: visibleBounds(asked, workAreas()),
+      popup: true,
+    });
+  }
+
+  /**
    * Opens the windows of a stored session. Only the active tab of each window loads; the
    * others load when they are shown.
    * @param session - The windows and their tabs.
    * @returns The first window.
    */
   restore(session: SessionSnapshot): BrowserWindowController {
+    const areas = workAreas();
     const controllers = session.windows.map((stored) => {
-      const controller = this.add();
+      const controller = this.add({
+        bounds: stored.bounds === undefined ? undefined : visibleBounds(stored.bounds, areas),
+        maximized: stored.maximized,
+      });
       const ids = stored.tabs.map((tab, index) =>
         controller.tabs.open(tab.url, {
           activate: false,
@@ -1029,19 +1144,30 @@ export class WindowManager implements Disposable {
   snapshot(): SessionSnapshot {
     return {
       version: 1,
+      // Popups are not kept; the window that opened them is.
       windows: [...this.windows].flatMap((controller) => {
+        if (controller.popup) return [];
         const tabs = controller.tabs.all;
         const active = controller.tabs.active;
-        const window = sessionWindow(tabs, active === undefined ? -1 : tabs.indexOf(active));
+        const window = sessionWindow(tabs, active === undefined ? -1 : tabs.indexOf(active), {
+          bounds: controller.window.getNormalBounds(),
+          maximized: controller.window.isMaximized(),
+        });
         return window === undefined ? [] : [window];
       }),
     };
   }
 
-  private add(): BrowserWindowController {
-    const controller = new BrowserWindowController(this.options);
+  private add(place?: WindowPlace): BrowserWindowController {
+    const controller = new BrowserWindowController(this.options, place);
     this.windows.add(controller);
     const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
+    // The session keeps where each window is.
+    const moved = (): void => this.boundsEmitter.fire();
+    controller.window.on('move', moved);
+    controller.window.on('resize', moved);
+    controller.window.on('maximize', moved);
+    controller.window.on('unmaximize', moved);
     const forget = (): void => {
       const index = this.focusOrder.indexOf(controller);
       if (index !== -1) this.focusOrder.splice(index, 1);
@@ -1127,4 +1253,9 @@ export class WindowManager implements Disposable {
 function withoutHash(address: string): string {
   const hash = address.indexOf('#');
   return hash === -1 ? address : address.slice(0, hash);
+}
+
+/** The work areas of the screens, where windows may go. */
+function workAreas(): WindowBounds[] {
+  return screen.getAllDisplays().map((display) => display.workArea);
 }

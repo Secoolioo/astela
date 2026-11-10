@@ -102,13 +102,52 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
     )
     .toEqual(
       process.platform === 'darwin'
-        ? ['New Tab', '-', 'History', 'Bookmarks', '-', 'Settings…']
-        : ['New &tab', '-', '&History', '&Bookmarks', '-', '&Settings'],
+        ? [
+            'New Tab',
+            'New Window',
+            '-',
+            'History',
+            'Downloads',
+            'Bookmarks',
+            '-',
+            'Zoom',
+            'Find…',
+            'Print…',
+            'Save Page As…',
+            'More Tools',
+            '-',
+            'Settings…',
+            'About Astela',
+            'Quit Astela',
+          ]
+        : [
+            'New &tab',
+            'New &window',
+            '-',
+            '&History',
+            '&Downloads',
+            '&Bookmarks',
+            '-',
+            '&Zoom',
+            '&Find…',
+            '&Print…',
+            'Sa&ve page as…',
+            'More t&ools',
+            '-',
+            '&Settings',
+            '&About Astela',
+            process.platform === 'win32' ? 'E&xit' : '&Quit',
+          ],
     );
-  await browser.main.evaluate(() => {
-    const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(-1);
-    menu?.items.at(-1)?.click();
-  });
+  await browser.main.evaluate(
+    (_electron, label) => {
+      const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(
+        -1,
+      );
+      menu?.items.find((item) => item.label === label)?.click();
+    },
+    process.platform === 'darwin' ? 'Settings…' : '&Settings',
+  );
   await waitForPage(browser, (url) => url.startsWith('app://settings'));
   await expect(browser.shell.getByRole('tab')).toHaveCount(1);
   await expect(browser.shell.getByRole('tab', { name: 'Settings' })).toBeVisible();

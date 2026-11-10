@@ -3,6 +3,7 @@ import type { Input } from 'electron';
 /** Keyboard shortcuts the window handles itself, also while web content has focus. */
 export type WindowCommand =
   | 'tab.new'
+  | 'window.new'
   | 'tab.close'
   | 'tab.reopen'
   | 'tab.next'
@@ -42,6 +43,7 @@ export type WindowCommand =
  */
 const macShortcuts = new Map<string, WindowCommand>([
   ['Cmd+T', 'tab.new'],
+  ['Cmd+N', 'window.new'],
   ['Cmd+W', 'tab.close'],
   ['Shift+Cmd+T', 'tab.reopen'],
   ['Ctrl+Tab', 'tab.next'],
@@ -83,6 +85,7 @@ const macShortcuts = new Map<string, WindowCommand>([
  */
 const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+T', 'tab.new'],
+  ['Ctrl+N', 'window.new'],
   ['Ctrl+W', 'tab.close'],
   ['Ctrl+F4', 'tab.close'],
   ['Ctrl+Shift+T', 'tab.reopen'],

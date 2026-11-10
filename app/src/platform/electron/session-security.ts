@@ -7,7 +7,7 @@ import type {
   WebContents,
 } from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import { mayOpenInNewTab } from '../../domain/navigation/new-tab.ts';
+import { mayOpenWindow } from '../../domain/navigation/new-tab.ts';
 import { originOf } from './ipc-gate.ts';
 
 /** Decides about the permissions of the pages of a session, asking the user where needed. */
@@ -77,8 +77,18 @@ export function hardenSession(session: Session, permissions?: PermissionHandler)
 export interface WebContentsGuardOptions {
   /** Tells whether a `WebContents` belongs to the browser's own UI. */
   readonly isInternal: (contents: WebContents) => boolean;
-  /** Opens a URL that a page wanted to open in a new window as a new tab instead. */
-  readonly openInTab: (url: string, opener: WebContents) => void;
+  /**
+   * Shows the page that a script opened, which Chromium made with the opener, in a tab or,
+   * for a popup, in a window of its own.
+   * @param contents - The new page.
+   * @param opener - The page whose script opened it.
+   * @param request - The address, how the page asked for it, and the features of a popup.
+   */
+  readonly openWindow: (
+    contents: WebContents,
+    opener: WebContents,
+    request: { readonly url: string; readonly disposition: string; readonly features: string },
+  ) => void;
   /** Tells whether a popup that a page opens is blocked, such as by the content blocker. */
   readonly blocksPopup?: (url: string, opener: WebContents) => boolean;
   readonly logger: Logger;
@@ -87,7 +97,8 @@ export interface WebContentsGuardOptions {
 /**
  * Applies navigation and window guards to every `WebContents` that is created:
  * - `<webview>` is never attached.
- * - Pages cannot open free windows; requests become tabs.
+ * - Pages cannot open free windows: what a script opens becomes a tab, or a popup window of
+ *   the browser, and keeps its opener.
  * - The browser's own views never leave their `app://` origin.
  * - Web content never navigates to `app://`.
  * @param app - The Electron app.
@@ -96,15 +107,24 @@ export interface WebContentsGuardOptions {
 export function guardWebContents(app: App, options: WebContentsGuardOptions): void {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event) => event.preventDefault());
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (
-        !options.isInternal(contents) &&
-        mayOpenInNewTab(url) &&
-        options.blocksPopup?.(url, contents) !== true
+        options.isInternal(contents) ||
+        !mayOpenWindow(url) ||
+        options.blocksPopup?.(url, contents) === true
       ) {
-        options.openInTab(url, contents);
+        return { action: 'deny' };
       }
-      return { action: 'deny' };
+      return {
+        action: 'allow',
+        // Electron hands over the page that Chromium made, and the browser shows it.
+        createWindow: (made) => {
+          const created: unknown = Reflect.get(made, 'webContents');
+          if (!isWebContents(created)) throw new Error('No page for the new window');
+          options.openWindow(created, contents, { url, disposition, features });
+          return created;
+        },
+      };
     });
     const guard = (event: { preventDefault(): void }, url: string): void => {
       if (options.isInternal(contents)) {
@@ -142,4 +162,9 @@ export function cleanUserAgent(userAgent: string): string {
     .replace(/\s+[A-Za-z][\w-]*\/\d+(?:\.\d+)*(?=\s+Chrome\/)/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+/** Whether a value is the `WebContents` of a page, which Electron's options do not declare. */
+function isWebContents(value: unknown): value is WebContents {
+  return typeof value === 'object' && value !== null && 'getURL' in value && 'id' in value;
 }
