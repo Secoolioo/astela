@@ -30,6 +30,7 @@ Positive:
 Negative:
 
 - **Popups are full windows:** a popup has the toolbar and tabs of a browser window, not a slimmer window with only its address.
+- **Frames of opened pages:** Electron creates the page that a script opens with the preferences that a child window gets, which leave out the content blocker's frame preload in its frames. The blocker blocks the requests of such a page and hides elements in its top document, but its element hiding rules and scriptlets do not reach the frames that the page embeds.
 - **Older versions:** they ignore the new fields of `session.json` and open their windows where the system puts them.
 
 ## Alternatives considered

@@ -91,6 +91,40 @@ test('asks before a site shows notifications, keeps the answer and lets the sett
   }
 });
 
+test('refuses notifications to frames of other sites without a question', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, url());
+    const frameUrl = url().replace('127.0.0.1', 'localhost');
+    await page.evaluate(
+      (src) =>
+        new Promise<void>((done) => {
+          const frame = document.createElement('iframe');
+          frame.src = src;
+          frame.addEventListener('load', () => done());
+          document.body.append(frame);
+        }),
+      frameUrl,
+    );
+    const frame = page.frames().find((candidate) => candidate.url() === frameUrl);
+    // A question would wait for an answer; a refusal comes at once.
+    expect(
+      await frame?.evaluate(() =>
+        Promise.race([
+          Notification.requestPermission(),
+          new Promise((done) => setTimeout(() => done('asked'), 3000)),
+        ]),
+      ),
+    ).toBe('denied');
+    // The page itself still asks.
+    const asked = page.evaluate(() => Notification.requestPermission());
+    await (await question(browser)).getByRole('button', { name: 'Block' }).click();
+    expect(await asked).toBe('denied');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('refuses what the user blocks, and asks again after a closed question', async () => {
   // Chromium's own test devices stand in for a camera and a microphone.
   const browser = await launch(['--use-fake-device-for-media-stream']);
@@ -115,6 +149,46 @@ test('refuses what the user blocks, and asks again after a closed question', asy
     await expect(prompt).not.toContainText('Use your camera');
     await prompt.getByRole('button', { name: 'Allow' }).click();
     expect(await asked).toBe('tracks: 1');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('takes a double click on Allow as one answer, not also as the answer to the next question', async () => {
+  const browser = await launch(['--use-fake-device-for-media-stream']);
+  try {
+    const page = await open(browser, url());
+    const camera = media(page, { video: true });
+    const microphone = media(page, { audio: true });
+    const prompt = await question(browser);
+    await expect(prompt).toContainText('Use your camera');
+    await prompt.getByRole('button', { name: 'Allow' }).click();
+    expect(await camera).toBe('tracks: 1');
+    // The second click of a double click comes a moment later, when the next question shows
+    // where the first one was. It answers nothing.
+    await expect(prompt).toContainText('Use your microphone');
+    await prompt.getByRole('button', { name: 'Allow' }).click({ force: true });
+    await prompt.getByRole('button', { name: 'Block' }).click();
+    expect(await microphone).toBe('NotAllowedError');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('closes a question with a click next to it, which refuses this time only', async () => {
+  const browser = await launch(['--use-fake-device-for-media-stream']);
+  try {
+    const page = await open(browser, url());
+    const asked = media(page, { video: true });
+    const prompt = await question(browser);
+    await expect(prompt).toContainText('Use your camera');
+    await prompt.page().mouse.click(8, 8);
+    expect(await asked).toBe('NotAllowedError');
+    // Nothing was decided, so the site may ask again.
+    const again = media(page, { video: true });
+    await expect(prompt).toContainText('Use your camera');
+    await prompt.getByRole('button', { name: 'Allow' }).click();
+    expect(await again).toBe('tracks: 1');
   } finally {
     await browser.close();
   }

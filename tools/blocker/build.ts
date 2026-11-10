@@ -140,6 +140,32 @@ export function markIsolatedScriptlets(resources: string): string {
   return JSON.stringify(parsed);
 }
 
+/** The options of filters that name types of requests, as uBlock Origin writes them. */
+const requestTypes = new Set([
+  'all',
+  'doc',
+  'document',
+  'script',
+  'image',
+  'stylesheet',
+  'css',
+  'object',
+  'xmlhttprequest',
+  'xhr',
+  'subdocument',
+  'frame',
+  'ping',
+  'beacon',
+  'websocket',
+  'webrtc',
+  'font',
+  'media',
+  'other',
+  'popunder',
+  'inline-script',
+  'inline-font',
+]);
+
 /**
  * The network filters that apply to popups, rewritten without their `popup` option. The
  * filter engine drops `$popup` filters, so they become an engine of their own that the
@@ -155,14 +181,53 @@ export function popupFilters(text: string): string[] {
       continue;
     }
     const separator = line.lastIndexOf('$');
-    if (separator <= 0) continue;
+    if (separator === -1) continue;
     const options = line.slice(separator + 1).split(',');
     if (!options.includes('popup')) continue;
-    const rest = options.filter((option) => option !== 'popup');
+    // A popup is a page of its own: the types of requests that a filter names besides it do
+    // not apply to the popup.
+    const rest = options.filter(
+      (option) => option !== 'popup' && !requestTypes.has(option.replace(/^~/, '')),
+    );
     const pattern = line.slice(0, separator);
+    // Without a pattern, a filter covers every popup of the sites that its options name;
+    // without those options either, it would cover every popup of every site.
+    if (pattern === '' && rest.length === 0) continue;
     filters.push(rest.length === 0 ? pattern : `${pattern}$${rest.join(',')}`);
   }
   return filters;
+}
+
+/**
+ * Whether a data folder holds complete data from the real filter lists. Test data from the
+ * fixture lists blocks nothing real, and data of an older version misses engines that the
+ * browser loads now.
+ * @param out - The data folder.
+ */
+export function hasRealData(out: string): boolean {
+  if (!['engine.bin', 'popups.bin', 'filters.json'].every((name) => existsSync(join(out, name)))) {
+    return false;
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(out, 'filters.json'), 'utf8'));
+    const lists =
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'lists' in parsed &&
+      Array.isArray(parsed.lists)
+        ? (parsed.lists as { readonly url?: unknown; readonly group?: unknown }[])
+        : [];
+    const groups = new Set(
+      lists.flatMap((list) => (typeof list.group === 'string' ? [list.group] : [])),
+    );
+    return (
+      lists.length > 0 &&
+      lists.every((list) => typeof list.url === 'string' && !list.url.startsWith('fixture:')) &&
+      [...groups].every((group) => existsSync(join(out, `${group}.bin`)))
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Builds the engine from lists and scriptlets and writes the data folder. */

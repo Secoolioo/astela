@@ -1,6 +1,7 @@
 import type { FiltersEngine, Request as EngineRequest, RequestType } from '@ghostery/adblocker';
 import type { OnBeforeRequestListenerDetails, OnHeadersReceivedListenerDetails } from 'electron';
 import { readFile } from 'node:fs/promises';
+import { parse } from 'tldts-experimental';
 import { join } from 'node:path';
 import type { HeaderAdditions, RequestDecision } from '../electron/request-pipeline.ts';
 import type {
@@ -10,6 +11,7 @@ import type {
   FrameRules,
 } from './blocker-types.ts';
 import { resourceUrl, type ReplacementResource } from './resource-protocol.ts';
+import { withoutRemovedParameters } from '../../domain/blocker/parameters.ts';
 
 /** The engine and the request class of the library, loaded together. */
 interface LoadedEngine {
@@ -65,8 +67,7 @@ export class BlockerEngine {
    */
   mainFrame(url: string): RequestDecision | undefined {
     const page = this.loaded.Request.fromRawDetails({ url, sourceUrl: url, type: 'main_frame' });
-    const rewritten = this.loaded.engine.match(page).rewrite?.url;
-    return rewritten === undefined || rewritten === url ? undefined : { redirectURL: rewritten };
+    return withoutTrackingParameters(url, this.loaded.engine.match(page).rewrite?.url);
   }
 
   /**
@@ -89,10 +90,7 @@ export class BlockerEngine {
           .find((extra) => extra.match);
     if (result === undefined) {
       // Tracking parameters leave the address of a request that is not blocked.
-      const rewritten = main.rewrite?.url;
-      return rewritten === undefined || rewritten === details.url
-        ? undefined
-        : { redirectURL: rewritten };
+      return withoutTrackingParameters(details.url, main.rewrite?.url);
     }
     if (details.webContentsId !== undefined) {
       this.options.onBlocked?.(details.webContentsId);
@@ -178,12 +176,13 @@ export class BlockerEngine {
   }
 
   /**
-   * The registrable domain of a page, such as `example.co.uk` for `www.example.co.uk`.
+   * The registrable domain of a page, such as `example.co.uk` for `www.example.co.uk`. Sites
+   * on hosting platforms count as sites of their own, such as `alice.github.io`.
    * @param url - The page's address.
    */
   domainOf(url: string): string {
-    const { domain, hostname } = this.loaded.Request.fromRawDetails({ url });
-    return domain === '' ? hostname : domain;
+    const { domain, hostname } = parse(url, { allowPrivateDomains: true });
+    return domain ?? hostname ?? '';
   }
 
   /**
@@ -193,10 +192,12 @@ export class BlockerEngine {
    */
   blocksPopup(url: string, openerUrl: string): boolean {
     if (this.loaded.popups === undefined) return false;
+    // Not as a page of its own: the engine counts every page as first-party, so filters for
+    // popups from other sites would never apply.
     const request = this.loaded.Request.fromRawDetails({
       url,
       sourceUrl: openerUrl,
-      type: 'main_frame',
+      type: 'other',
     });
     return this.loaded.popups.match(request).match;
   }
@@ -256,4 +257,18 @@ export class BlockerEngine {
     const { hostname, domain } = this.loaded.Request.fromRawDetails({ url });
     return { url, hostname, domain };
   }
+}
+
+/**
+ * The redirect that takes the tracking parameters out of an address, if the engine took any.
+ * @param url - The address of the request.
+ * @param rewritten - The address that the engine made of it, if any.
+ */
+function withoutTrackingParameters(
+  url: string,
+  rewritten: string | undefined,
+): RequestDecision | undefined {
+  if (rewritten === undefined || rewritten === url) return undefined;
+  const cleaned = withoutRemovedParameters(url, rewritten);
+  return cleaned === url ? undefined : { redirectURL: cleaned };
 }

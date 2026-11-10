@@ -110,6 +110,23 @@ test('finds text in the page and steps through the matches', async () => {
   }
 });
 
+test('shows the zoom of a site in every tab of the site', async () => {
+  const browser = await launch();
+  try {
+    await open(browser, `${server.origin}/find.html`);
+    await pressNative(browser, 'T', ['primary']);
+    await open(browser, `${server.origin}/second.html`);
+    // The first tab zooms its site, which the second tab shows too.
+    await withContents(browser, `${server.origin}/find.html`, 'zoomIn');
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.zoom))
+      .toEqual([1.1, 1.1]);
+    await expect(browser.shell.getByRole('button', { name: /^Zoom 110\s?%/ })).toBeVisible();
+  } finally {
+    await browser.close();
+  }
+});
+
 test('zooms a site in and out, shows its zoom and keeps it for the next start', async () => {
   const browser = await launch();
   const { profile } = browser;
@@ -135,17 +152,54 @@ test('zooms a site in and out, shows its zoom and keeps it for the next start', 
     const again = await launch([], { profile });
     try {
       const reopened = await open(again, url);
+      // The restored tab may still load the page when the address opens it once more.
+      const ratio = (): Promise<number> =>
+        reopened.evaluate(() => window.devicePixelRatio).catch(() => Number.NaN);
       const zoom = again.shell.getByRole('button', { name: /^Zoom 110\s?%/ });
       await expect(zoom).toBeVisible();
-      await expect.poll(() => reopened.evaluate(() => window.devicePixelRatio)).toBeCloseTo(1.1, 2);
+      await expect.poll(ratio).toBeCloseTo(1.1, 2);
       await zoom.click();
       await expect(again.shell.getByRole('button', { name: /^Zoom/ })).toBeHidden();
-      await expect.poll(() => reopened.evaluate(() => window.devicePixelRatio)).toBe(1);
+      await expect.poll(ratio).toBe(1);
     } finally {
       await again.close();
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('gives the shell back when another tab shows or the tab in full screen closes', async () => {
+  const browser = await launch();
+  try {
+    await open(browser, `${server.origin}/second.html`);
+    await pressNative(browser, 'T', ['primary']);
+    const page = await open(browser, `${server.origin}/find.html`);
+    const visibleTop = (): Promise<number | undefined> =>
+      browser.main.evaluate(
+        ({ BaseWindow }) =>
+          BaseWindow.getAllWindows()[0]?.contentView.children.at(-1)?.getBounds().y,
+      );
+    const top = await visibleTop();
+    expect(top).toBeGreaterThan(0);
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await expect.poll(visibleTop).toBe(0);
+    // The other tab is not in full screen, so the shell shows above it.
+    await pressNative(browser, 'Tab', ['control']);
+    await expect.poll(visibleTop).toBe(top);
+    await pressNative(browser, 'Tab', ['control']);
+    await expect.poll(visibleTop).toBe(0);
+    // Closing the tab in full screen ends it.
+    await pressNative(browser, 'W', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    await expect.poll(visibleTop).toBe(top);
+    expect(
+      await browser.main.evaluate(({ BaseWindow }) =>
+        BaseWindow.getAllWindows()[0]?.isFullScreen(),
+      ),
+    ).toBe(false);
+  } finally {
+    await browser.close();
   }
 });
 

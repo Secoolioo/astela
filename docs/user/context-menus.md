@@ -12,6 +12,8 @@ A right-click opens a context menu with the commands that fit what you clicked. 
 | A text field   | Undo, Redo, Cut, Copy, Paste, Select all              |
 | Anything else  | Back, Forward, Reload                                 |
 
+Menus in a web page end with Inspect, which opens the [developer tools](page-tools.md#developer-tools) at the element you clicked. Inspect is missing on the browser's own pages, and where an organization turns the developer tools off with the policy `DeveloperToolsAvailability`.
+
 An image inside a link gets the commands of both. A command that cannot run at the moment is grayed out, such as Undo in a field you have not changed.
 
 - **New tabs:** links and images open in a new tab next to the page, in the background. Several of them line up in the order you opened them. A search opens in a new tab in the foreground. Only web addresses (`http` and `https`) open from a page. Links and images with other addresses, such as internal pages of the browser, local files or scripts, do not open from the menu, but their address can be copied.
@@ -22,7 +24,3 @@ An image inside a link gets the commands of both. A command that cannot run at t
 ## In the address bar
 
 The address bar has the menu of a text field: Undo, Redo, Cut, Copy, Paste and Select all.
-
-## Not available yet
-
-There is no Inspect command yet, because the policy that controls the developer tools (`DeveloperToolsAvailability`) does not exist yet. Both are planned for 0.1.0; see the [roadmap](../roadmap.md). On macOS, View > Toggle Developer Tools in the menu bar already opens the developer tools.

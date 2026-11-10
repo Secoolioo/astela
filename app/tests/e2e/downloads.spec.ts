@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -23,10 +23,10 @@ test.beforeAll(async () => {
         'content-disposition': 'attachment; filename="report.txt"',
       });
       response.end('Fixture report\n');
-    } else if (path === '/large.bin') {
+    } else if (path === '/large.bin' || path === '/Large.bin') {
       response.writeHead(200, {
         'content-type': 'application/octet-stream',
-        'content-disposition': 'attachment; filename="large.bin"',
+        'content-disposition': `attachment; filename="${path.slice(1)}"`,
         'content-length': String(part.length * parts),
       });
       let sent = 0;
@@ -43,7 +43,8 @@ test.beforeAll(async () => {
       response.writeHead(200, { 'content-type': 'text/html' });
       response.end(
         '<!doctype html><title>Fixture downloads</title>' +
-          '<a href="/report.txt">Report</a> <a href="/large.bin">Large</a>',
+          '<a href="/report.txt">Report</a> <a href="/large.bin">Large</a> ' +
+          '<a href="/Large.bin">Second copy</a>',
       );
     } else {
       response.writeHead(404).end();
@@ -135,6 +136,32 @@ test('saves downloads in the downloads folder under a free name and lists them',
     await downloads.getByRole('button', { name: 'Remove from list: report.txt' }).click();
     await expect(items).toHaveCount(1);
     expect(existsSync(join(folder, 'report.txt'))).toBe(true);
+  } finally {
+    await browser.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('gives downloads whose names differ only in case names of their own', async () => {
+  const browser = await launch();
+  const folder = mkdtempSync(join(tmpdir(), 'downloads-'));
+  try {
+    await useFolder(browser, folder);
+    const page = await openPage(browser);
+    // Both run at the same time, so the file of neither is there when the other one starts.
+    await page.getByRole('link', { name: 'Large' }).click();
+    await page.getByRole('link', { name: 'Second copy' }).click();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Downloads (2 running)' }),
+    ).toBeVisible();
+    await expect(browser.shell.getByRole('button', { name: 'Downloads', exact: true })).toBeVisible(
+      { timeout: 20_000 },
+    );
+    // Windows and macOS do not tell apart names that differ only in case, so there one file
+    // would replace the other.
+    const names = readdirSync(folder);
+    expect(names).toHaveLength(2);
+    for (const name of names) expect(statSync(join(folder, name)).size).toBe(part.length * parts);
   } finally {
     await browser.close();
     rmSync(folder, { recursive: true, force: true });

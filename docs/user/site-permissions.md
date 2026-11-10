@@ -4,7 +4,7 @@
 
 Some sites want more than to show a page: the camera and the microphone for a call, your location for a map, notifications, or the text that you copied. Astela asks you first, in a small window above the page that names the site and what it wants.
 
-- **Allow** gives the site what it asked for, and **Block** refuses it. Astela keeps your answer for the site, so the site does not ask again.
+- **Allow** gives the site what it asked for, and **Block** refuses it. Astela keeps your answer for the site, so the site does not ask again. The buttons take clicks a moment after the question shows, as in other browsers, so the second click of a double click meant for something before does not answer it.
 - If you close the question without an answer, for example with Escape or a click next to it, the site gets nothing this time and can ask again.
 - Only the tab that you see can ask. A site in a tab in the background gets nothing.
 
@@ -12,7 +12,7 @@ Full screen, locking the mouse pointer, for example for a game, and copying to t
 
 ## Sharing the screen
 
-When a site wants to see your screen, for example to share it in a call, Astela shows your screens and windows with a small picture of each. The site sees only the screen or the window that you choose and **Share**; **Cancel** shares nothing. Astela asks every time. On macOS 15 and later, the picker of macOS asks instead.
+When a site wants to see your screen, for example to share it in a call, Astela shows your screens and windows with a small picture of each. The site sees only the screen or the window that you choose and **Share**; **Cancel** shares nothing. Astela asks every time. On macOS 15 and later, the picker of macOS asks instead, and under Wayland on Linux, the picker of the system asks first, once for screens and windows together.
 
 ## Change your answers
 

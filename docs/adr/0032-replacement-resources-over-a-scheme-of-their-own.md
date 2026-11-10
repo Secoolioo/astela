@@ -17,7 +17,7 @@ The lists also use `$removeparam`, which takes tracking parameters out of addres
 ## Decision
 
 - **Stand-ins from the pinned release:** `tools/blocker/redirects.ts` takes the replacement resources of uBlock Origin from the release whose scriptlets the browser uses. It reads the names and aliases from `src/js/redirect-resources.js` and the files from `src/web_accessible_resources/`. Their hashes are recorded in `tools/blocker/ubo-sources.json`, and each file must match. Resources that need parameters or trusted lists are left out, because the filter engine supports neither. The data built from them carries the stand-ins.
-- **A scheme of their own:** a matching `$redirect` filter sends the request to `astela-resource://resource/<name>`. This scheme is privileged, standard and secure, may be fetched from every origin, and is served only on web sessions, only with the stand-ins of the filter data. Web pages cannot navigate a tab to it.
+- **A scheme of their own:** a matching `$redirect` filter sends the request to `astela-resource://resource/<secret>/<name>`, where the secret is a random value of the running browser. This scheme is privileged, standard and secure, may be fetched from every origin, bypasses the content security policies of pages, so that a page's policy neither blocks the stand-ins nor reports their addresses, and is served only on web sessions, only with the stand-ins of the filter data and only under the secret, so that pages cannot use it to tell that the browser runs. Web pages cannot navigate a tab to it.
 - **Parameters:** a request that nothing blocks and whose address has a parameter that a `$removeparam` filter names goes to the address without it. Pages that the user opens are never blocked, but they lose such parameters as well once the filter engine has loaded.
 - **Policies:** the request pipeline gets a second step for response headers. The blocker adds the policy of the `$csp` filters that match a page, next to the policies that the server sends.
 
@@ -33,6 +33,7 @@ Negative:
 
 - **Size:** the filter data grows by the stand-ins, about 100 KB.
 - **Missing resources:** a filter that names a resource the build left out gets an empty stand-in of the same type from the filter engine.
+- **Policies of the first pages:** the filter engine loads with the first web request. A page whose response headers arrive before it has loaded, such as the first page after the start, gets no `$csp` policy of the lists; its requests are still blocked once the engine is there. Waiting for the engine would delay every first page.
 
 ## Alternatives considered
 

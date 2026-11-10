@@ -1,0 +1,57 @@
+import type { DownloadItem } from 'electron';
+import { describe, expect, it, vi } from 'vitest';
+import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
+import { ManualClock } from '../../kernel/time/clock.ts';
+import type { DataClient } from '../../platform/electron/data-service-client.ts';
+import type { IpcRouter } from '../../platform/electron/ipc-router.ts';
+import type { OverlayOptions } from '../../platform/electron/overlay.ts';
+import type { WindowManager } from '../../platform/electron/browser-window.ts';
+
+vi.mock('electron', () => ({
+  app: { getPath: () => '/downloads' },
+  shell: { openPath: vi.fn(), showItemInFolder: vi.fn() },
+}));
+
+/** A download that finished before the list followed it, so it sends no events any more. */
+function finishedItem(): DownloadItem {
+  return {
+    getURL: () => 'https://files.example/report.txt',
+    getSavePath: () => '/downloads/report.txt',
+    getTotalBytes: () => 15,
+    getReceivedBytes: () => 15,
+    isPaused: () => false,
+    getState: () => 'completed',
+    on: vi.fn(),
+    once: vi.fn(),
+  } as unknown as DownloadItem;
+}
+
+describe('Downloads', () => {
+  it('lists a download that finished before the list followed it as finished', async () => {
+    const { Downloads } = await import('../downloads.ts');
+    const calls: unknown[][] = [];
+    const data = {
+      call: (method: string, ...params: unknown[]) => {
+        calls.push([method, ...params]);
+        return Promise.resolve(method === 'addDownload' ? 7 : method === 'downloads' ? [] : null);
+      },
+      dispose: () => undefined,
+    } as unknown as DataClient;
+    const list = new Downloads({
+      data,
+      windows: { all: [], refreshShells: () => undefined } as unknown as WindowManager,
+      webSession: () => {
+        throw new Error('no session');
+      },
+      overlay: {} as OverlayOptions,
+      router: { handle: () => undefined } as unknown as IpcRouter,
+      logger: new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' }),
+    });
+    list.track(finishedItem(), false);
+    // The button shows no running download, and the list keeps the download as completed.
+    expect(list.summary(false)).toEqual({ active: 0, progress: null });
+    await vi.waitFor(() =>
+      expect(calls).toContainEqual(['updateDownload', 7, 15, 15, 'completed']),
+    );
+  });
+});

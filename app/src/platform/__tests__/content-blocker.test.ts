@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import { ContentBlocker } from '../blocker/content-blocker.ts';
+import { resourceUrl } from '../blocker/resource-protocol.ts';
 import {
   addHeaders,
   RequestPipeline,
@@ -231,6 +232,57 @@ const response = (url: string, resourceType: string): OnHeadersReceivedListenerD
   ({ url, resourceType, responseHeaders: {} }) as unknown as OnHeadersReceivedListenerDetails;
 
 describe('content blocker rewrites', () => {
+  it('removes every tracking parameter that the lists name, and keeps the others as they were', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('$removeparam=gclid\n$removeparam=fbclid\n$removeparam=utm_source\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    // A request of a page waits for the engine; the page itself does not.
+    expect(
+      await blocker.beforeRequest(request('https://cdn.example/a.js?q=%20&gclid=1', 'script')),
+    ).toEqual({ redirectURL: 'https://cdn.example/a.js?q=%20' });
+    const page = async (url: string): Promise<unknown> =>
+      blocker.beforeRequest(request(url, 'mainFrame'));
+    // The engine would merge filters that look alike into one, which names one parameter.
+    for (const name of ['gclid', 'fbclid', 'utm_source']) {
+      expect(await page(`https://shop.example/p?id=1&${name}=x`)).toEqual({
+        redirectURL: 'https://shop.example/p?id=1',
+      });
+    }
+    // Values that are encoded already stay exactly as the page wrote them.
+    expect(
+      await page('https://shop.example/s?q=caf%C3%A9%20au%20lait&gclid=1&next=%2Fa%3Fb%3D1'),
+    ).toEqual({
+      redirectURL: 'https://shop.example/s?q=caf%C3%A9%20au%20lait&next=%2Fa%3Fb%3D1',
+    });
+    expect(await page('https://shop.example/s?q=a+b&fbclid=1#top')).toEqual({
+      redirectURL: 'https://shop.example/s?q=a+b#top',
+    });
+  });
+
+  it('judges a request that a style sheet of a page starts by that page', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||fonts.example^\n'),
+      enabled: (page) => !page.startsWith('https://www.allowed.example'),
+      logger: logger(),
+    });
+    // A style sheet names itself as the referrer of the fonts that it loads; the origin of the
+    // document that started the request is the page.
+    const font = {
+      ...request('https://fonts.example/a.woff2', 'font'),
+      referrer: 'https://styles.example/site.css',
+      initiatorOrigin: 'https://www.allowed.example',
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(font)).toBe(undefined);
+    const elsewhere = {
+      ...request('https://fonts.example/a.woff2', 'font'),
+      referrer: 'https://styles.example/site.css',
+      initiatorOrigin: 'https://news.example',
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(elsewhere)).toEqual({ cancel: true });
+  });
+
   it('serves a stand-in for a redirect filter and removes tracking parameters', async () => {
     const onBlocked = vi.fn();
     const blocker = new ContentBlocker({
@@ -241,7 +293,7 @@ describe('content blocker rewrites', () => {
     });
     // These data carry no resources, so the engine names its empty stand-in of the same type.
     expect(await blocker.beforeRequest(request('https://ads.example/tag.js', 'script'))).toEqual({
-      redirectURL: 'astela-resource://resource/MIME_TYPE_STUB.js',
+      redirectURL: resourceUrl('MIME_TYPE_STUB.js'),
     });
     expect(onBlocked).toHaveBeenCalledWith(3);
     expect(
@@ -307,6 +359,19 @@ describe('content blocker popups and domains', () => {
     expect(blocker.blocksPopup('https://popunder.example/x', 'https://news.example/')).toBe(false);
   });
 
+  it('blocks popups that their filters name only from other sites', async () => {
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n', '||popunder.example^$third-party\n'),
+      enabled: () => true,
+      logger: logger(),
+    });
+    await blocker.load();
+    expect(blocker.blocksPopup('https://popunder.example/x', 'https://news.example/')).toBe(true);
+    expect(blocker.blocksPopup('https://popunder.example/x', 'https://popunder.example/')).toBe(
+      false,
+    );
+  });
+
   it('blocks no popups when the data has no popup filters', async () => {
     const blocker = new ContentBlocker({
       dataDir: dataDir('||popunder.example^$popup\n'),
@@ -327,6 +392,9 @@ describe('content blocker popups and domains', () => {
     await blocker.load();
     expect(blocker.domainOf('https://www.example.co.uk/a')).toBe('example.co.uk');
     expect(blocker.domainOf('https://news.example.com/')).toBe('example.com');
+    // Sites on hosting platforms are sites of their own, not parts of the platform.
+    expect(blocker.domainOf('https://alice.github.io/')).toBe('alice.github.io');
+    expect(blocker.domainOf('https://shop.foo.blogspot.com/x')).toBe('foo.blogspot.com');
     expect(blocker.domainOf('http://127.0.0.1:8080/page.html')).toBe('127.0.0.1');
     expect(blocker.domainOf('app://settings/')).toBe(undefined);
   });

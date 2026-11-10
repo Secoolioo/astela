@@ -208,6 +208,21 @@ test('serves stand-ins for redirected scripts, removes tracking parameters and a
         })),
       )
       .toEqual({ events: ['noop:load', 'ima:load'], ima: true });
+    // The stand-ins load also where the page's policy allows only its own scripts, and a page
+    // cannot load them by itself to find out that the browser blocks.
+    const strict = await open('/redirect-csp.html');
+    await expect
+      .poll(() => strict.evaluate(() => (window as unknown as { events: string[] }).events))
+      .toEqual(['noop:load', 'ima:load']);
+    expect(
+      await strict.evaluate(async () => {
+        try {
+          return (await fetch('astela-resource://resource/noop.js')).status;
+        } catch {
+          return 'refused';
+        }
+      }),
+    ).not.toBe(200);
     // Tracking parameters leave the addresses of requests and of pages.
     expect(
       await page.evaluate(async () => (await fetch('/probe.html?fixture_tracking=1&keep=2')).url),

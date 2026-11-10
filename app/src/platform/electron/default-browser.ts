@@ -1,5 +1,6 @@
 import { app, shell } from 'electron';
 import { execFile } from 'node:child_process';
+import { windowsProgram } from '../node/system-programs.ts';
 import { brand } from '../../shared/brand.ts';
 import { userChoiceProgId } from '../../domain/default-browser/default-browser.ts';
 
@@ -30,7 +31,7 @@ async function userChoice(scheme: string): Promise<string | undefined> {
   const key = `HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${scheme}\\UserChoice`;
   const output = await new Promise<string>((done) => {
     execFile(
-      'reg',
+      windowsProgram('reg'),
       ['query', key, '/v', 'ProgId'],
       { windowsHide: true, timeout: 10_000 },
       (_error, stdout) => done(stdout),

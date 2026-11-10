@@ -50,6 +50,8 @@ export interface PermissionPrompts {
 
 /** A question of a page, and everyone who waits for its answer. */
 interface Question {
+  /** The number of the question, which its answer names. */
+  readonly id: number;
   readonly contents: WebContents;
   readonly origin: string;
   readonly permissions: readonly SitePermission[];
@@ -65,6 +67,45 @@ interface Picker {
 /** Size of the pictures of screens and windows; the picker shows them smaller. */
 const thumbnailSize = { width: 320, height: 180 };
 
+/** Lists screens and windows, as Electron's desktop capturer does. */
+export type SourceLister = (options: Electron.SourcesOptions) => Promise<DesktopCapturerSource[]>;
+
+/** The system that the browser runs on, as Chromium reads it to pick how to share screens. */
+export interface ScreenSystem {
+  readonly platform: NodeJS.Platform;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Lists the screens and windows that a site may see.
+ * @param logger - Records windows that could not be listed.
+ * @param list - Lists sources; Electron's desktop capturer by default.
+ * @param system - The system; the running one by default.
+ */
+export async function listScreenSources(
+  logger: Logger,
+  list: SourceLister = (options) => desktopCapturer.getSources(options),
+  system: ScreenSystem = { platform: process.platform, env: process.env },
+): Promise<DesktopCapturerSource[]> {
+  // Under Wayland, Chromium lets the portal of the system pick, which shows its own picker
+  // for every list the browser asks for; it decides by the same two variables.
+  const wayland =
+    system.platform === 'linux' &&
+    (system.env['XDG_SESSION_TYPE'] ?? '').startsWith('wayland') &&
+    (system.env['WAYLAND_DISPLAY'] ?? '') !== '';
+  if (wayland) return list({ types: ['screen', 'window'], thumbnailSize });
+  // Elsewhere screens and windows separately: a system that cannot list its windows, such as
+  // one without a window manager, would otherwise list nothing at all.
+  const [screens, windows] = await Promise.all([
+    list({ types: ['screen'], thumbnailSize }),
+    list({ types: ['window'], thumbnailSize }).catch((error: unknown) => {
+      logger.warn('The windows could not be listed', { error: String(error) });
+      return [];
+    }),
+  ]);
+  return [...screens, ...windows];
+}
+
 /**
  * The prompts for permissions. They load with the first question of a site.
  * @param overlay - What the overlays of all windows share.
@@ -77,6 +118,7 @@ export function permissionPrompts(
   logger: Logger,
 ): PermissionPrompts {
   const queues = new WeakMap<WindowOverlay, Question[]>();
+  let questions = 0;
   const pickers = new WeakMap<WindowOverlay, Picker>();
   const settle = (question: Question, decision: PermissionDecision | undefined): void => {
     for (const answer of question.answers) answer(decision);
@@ -95,6 +137,7 @@ export function permissionPrompts(
       target.open(
         {
           kind: 'permission',
+          id: question.id,
           site: hostOf(question.origin),
           permissions: [...question.permissions],
         },
@@ -113,11 +156,17 @@ export function permissionPrompts(
     }
   };
 
-  router.handle(AnswerPermission, ({ allow }, { sender }) => {
+  router.handle(AnswerPermission, ({ id, allow }, { sender }) => {
     const open = overlayBySender(sender.id);
     const queue = open === undefined ? undefined : queues.get(open);
     const question = queue?.[0];
-    if (open?.content?.kind === 'permission' && queue !== undefined && question !== undefined) {
+    // An answer counts only for the question that it names, not for the one after it.
+    if (
+      open?.content?.kind === 'permission' &&
+      queue !== undefined &&
+      question !== undefined &&
+      question.id === id
+    ) {
       queue.shift();
       settle(question, allow ? 'allow' : 'block');
       open.close();
@@ -155,7 +204,7 @@ export function permissionPrompts(
           same.answers.push(resolve);
           return;
         }
-        queue.push({ contents, origin, permissions, answers: [resolve] });
+        queue.push({ id: questions++, contents, origin, permissions, answers: [resolve] });
         if (queue.length === 1) showNext(window, target);
       });
     },
@@ -167,17 +216,9 @@ export function permissionPrompts(
         answered = true;
         callback(streams);
       };
-      // Screens and windows separately: a system that cannot list its windows, such as one
-      // without a window manager, would otherwise list nothing at all.
-      Promise.all([
-        desktopCapturer.getSources({ types: ['screen'], thumbnailSize }),
-        desktopCapturer.getSources({ types: ['window'], thumbnailSize }).catch((error: unknown) => {
-          logger.warn('The windows could not be listed', { error: String(error) });
-          return [];
-        }),
-      ]).then(
-        ([screens, windows]) => {
-          const shown = [...screens, ...windows].slice(0, 100);
+      listScreenSources(logger).then(
+        (sources) => {
+          const shown = sources.slice(0, 100);
           if (shown.length === 0 || busy(target) || !visible(window, contents, origin)) {
             reply(null);
             return;

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'" />
+    <title>Fixture redirect with a policy</title>
+    <script>
+      window.events = [];
+    </script>
+    <script
+      src="fixture-redirect.js"
+      onload="events.push('noop:load')"
+      onerror="events.push('noop:error')"
+    ></script>
+    <script
+      src="fixture-ima.js"
+      onload="events.push('ima:load')"
+      onerror="events.push('ima:error')"
+    ></script>
+  </head>
+  <body>
+    <p>Redirect with a policy</p>
+  </body>
+</html>

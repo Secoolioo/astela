@@ -386,7 +386,7 @@ sequenceDiagram
 
 ### Wayland
 
-Wayland does not let applications position their windows. A torn-off window is therefore placed by the compositor rather than at the pointer position, and a setting to run under X11 instead is planned. Transparent views render black on Wayland, so the overlay view is opaque there.
+Wayland does not let applications position their windows. A torn-off window is therefore placed by the compositor rather than at the pointer position, and a setting to run under X11 instead is planned. The overlay view is transparent on every system; its rendering under Wayland is not yet covered by the tests, which run under X11.
 
 ## Further reading
 

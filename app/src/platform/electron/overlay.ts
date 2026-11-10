@@ -71,7 +71,8 @@ export class WindowOverlay implements OverlayHandle {
     base.contentView.addChildView(view);
     this.window.overlay = this;
     this.shown = content;
-    view.webContents.focus();
+    // Focusing the view would raise a window in the background, such as for a site's question.
+    if (base.isFocused()) view.webContents.focus();
     this.options.router.publish(OverlayChanged, view.webContents, content);
   }
 
@@ -95,7 +96,7 @@ export class WindowOverlay implements OverlayHandle {
     if (view !== undefined && !this.window.window.isDestroyed()) {
       this.window.window.contentView.removeChildView(view);
       this.options.router.publish(OverlayChanged, view.webContents, null);
-      this.window.focusContent();
+      if (this.window.window.isFocused()) this.window.focusContent();
     }
   }
 

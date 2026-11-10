@@ -79,11 +79,11 @@ On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, 
 
 ## Mouse
 
-The back and forward buttons of a mouse go back and forward in the current tab, over the page as well as over the toolbar. Ctrl and the mouse wheel zoom the page in and out.
+The back and forward buttons of a mouse go back and forward in the current tab, over the page as well as over the toolbar. On Windows and Linux, Ctrl and the mouse wheel zoom the page in and out.
 
 ## Other layouts and input methods
 
-Letter shortcuts also work with keyboard layouts for other scripts, such as Cyrillic, Greek, Arabic or Devanagari. They use the key that carries the letter on an English keyboard. The shortcuts with `[` and `]` on macOS do the same on layouts that type letters of another script on these keys, such as Russian or Arabic.
+Letter shortcuts also work with keyboard layouts for other scripts, such as Cyrillic, Greek, Arabic or Devanagari. They use the key that carries the letter on an English keyboard. The shortcuts with `[` and `]` on macOS do the same on layouts that type letters of another script on these keys, such as Russian or Arabic. Shortcuts with a digit use the key of the digit on layouts that type a letter there, such as `Ctrl+0` on French or Czech layouts. On macOS, shortcuts with Option, such as `Command+Option+I`, use the key of the letter, whatever character Option types with it.
 
 While an input method composes text, for example in Japanese or Chinese, its keys belong to the input method and do not run shortcuts.
 

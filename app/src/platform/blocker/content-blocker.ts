@@ -212,9 +212,9 @@ export class ContentBlocker implements RequestInterceptor {
 /**
  * The page a request belongs to. The first requests of a new page can arrive before the
  * browser process knows that the page is there: then the request's frame is still the page
- * before it, or has no address, and so has the tab. A request of the top document names
- * that document as its referrer, so the referrer decides for it; a request of an embedded
- * frame belongs to the top page, which is there by then.
+ * before it, or has no address, and so has the tab. For a request of the top document, the
+ * origin of the document that started it decides, or else its referrer, which names that
+ * document; a request of an embedded frame belongs to the top page, which is there by then.
  */
 function pageUrl(details: OnBeforeRequestListenerDetails): string {
   let top: string | undefined;
@@ -226,6 +226,10 @@ function pageUrl(details: OnBeforeRequestListenerDetails): string {
   } catch {
     // A frame that is gone has no address.
   }
+  // The origin of the document that started a request is its page, also for what its style
+  // sheets load; a style sheet names itself as the referrer of such requests.
+  const initiator = details.initiatorOrigin;
+  if (fromTop && initiator !== undefined && /^https?:/i.test(initiator)) return initiator;
   if ((fromTop || top === undefined || top === '') && details.referrer !== '') {
     return details.referrer;
   }

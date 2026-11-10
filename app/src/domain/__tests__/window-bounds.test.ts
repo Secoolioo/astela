@@ -17,6 +17,16 @@ describe('visibleBounds', () => {
     expect(visibleBounds({ x: 100, y: 1020, width: 800, height: 600 }, [screen])).toBeUndefined();
   });
 
+  it('fits a window larger than its screen to the screen, so its title bar buttons are on it', () => {
+    expect(visibleBounds({ x: 300, y: 50, width: 2560, height: 1400 }, [screen])).toEqual(screen);
+    expect(visibleBounds({ x: 2000, y: 50, width: 1600, height: 900 }, [screen, right])).toEqual({
+      x: 1920,
+      y: 50,
+      width: 1280,
+      height: 900,
+    });
+  });
+
   it('opens a window at least at the smallest size', () => {
     expect(visibleBounds({ x: 10, y: 10, width: 100, height: 50 }, [screen])).toEqual({
       x: 10,
@@ -42,6 +52,28 @@ describe('popupBounds', () => {
       y: 140,
       width: 520,
       height: 640,
+    });
+  });
+
+  it('keeps a popup on the screen, at most as large as the screen', () => {
+    expect(popupBounds('width=500,height=400,left=1800,top=900', opener, [screen])).toEqual({
+      x: 1420,
+      y: 640,
+      width: 500,
+      height: 400,
+    });
+    expect(popupBounds('width=3000,height=500,left=-50,top=10', opener, [screen, right])).toEqual({
+      x: 0,
+      y: 10,
+      width: 1920,
+      height: 500,
+    });
+    // On the screen that the page asks for, when it has one there.
+    expect(popupBounds('width=500,height=400,left=2000,top=10', opener, [screen, right])).toEqual({
+      x: 2000,
+      y: 10,
+      width: 500,
+      height: 400,
     });
   });
 

@@ -1,10 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { rmSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   FixtureServer,
   launch,
   pressNative,
   shellState,
+  startAgain,
   waitForPage,
   type Browser,
 } from './harness.ts';
@@ -30,6 +33,109 @@ function windowCount(browser: Browser): Promise<number> {
   return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length);
 }
 
+/**
+ * Clicks an item of the menu bar of macOS, as a person does with the mouse.
+ * @param browser - The browser.
+ * @param menu - The label of the menu, such as `File`.
+ * @param item - The label of the item.
+ */
+async function clickMenuBar(browser: Browser, menu: string, item: string): Promise<void> {
+  await browser.main.evaluate(
+    ({ Menu }, labels) => {
+      const top = Menu.getApplicationMenu()?.items.find((entry) => entry.label === labels.menu);
+      const entry = top?.submenu?.items.find((candidate) => candidate.label === labels.item);
+      if (entry === undefined) throw new Error(`${labels.menu} > ${labels.item} is missing`);
+      entry.click();
+    },
+    { menu, item },
+  );
+}
+
+test('opens one window from the menu bar of macOS when no window is open', async () => {
+  test.skip(!mac, 'Only macOS keeps running without a window');
+  const browser = await launch();
+  try {
+    // The menu bar of the browser replaces the one of Electron after the first window.
+    await expect
+      .poll(() =>
+        browser.main.evaluate(
+          ({ Menu }) =>
+            Menu.getApplicationMenu()
+              ?.items.find((entry) => entry.label === 'File')
+              ?.submenu?.items.some((entry) => entry.label === 'New Window') ?? false,
+        ),
+      )
+      .toBe(true);
+    await browser.main.evaluate(({ BaseWindow }) => {
+      for (const window of BaseWindow.getAllWindows()) window.close();
+    });
+    await expect.poll(() => windowCount(browser)).toBe(0);
+    await clickMenuBar(browser, 'File', 'New Window');
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    // A new tab in no window opens a window with its one tab.
+    await browser.main.evaluate(({ BaseWindow }) => {
+      for (const window of BaseWindow.getAllWindows()) window.close();
+    });
+    await expect.poll(() => windowCount(browser)).toBe(0);
+    await clickMenuBar(browser, 'File', 'New Tab');
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    await expect
+      .poll(() =>
+        browser.main.evaluate(
+          ({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL() === 'app://newtab/').length,
+        ),
+      )
+      .toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The shell of the window that the test opened after the first one. */
+async function otherShell(browser: Browser): Promise<Page> {
+  const find = (): Page | undefined =>
+    browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url().startsWith('app://shell') && page !== browser.shell);
+  await expect.poll(() => find() !== undefined).toBe(true);
+  const shell = find();
+  if (shell === undefined) throw new Error('The other window has no shell');
+  return shell;
+}
+
+function focusedWindow(browser: Browser): Promise<number | null> {
+  return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getFocusedWindow()?.id ?? null);
+}
+
+test('leaves the focus in the window in use when a page in another window fails', async () => {
+  // A site that answers with nothing a moment later, while the test uses the other window.
+  const failing = createServer((request) => void setTimeout(() => request.socket.destroy(), 1000));
+  await new Promise<void>((done) => failing.listen(0, '127.0.0.1', done));
+  const url = `http://127.0.0.1:${(failing.address() as AddressInfo).port}/`;
+  const browser = await launch();
+  try {
+    const first = await focusedWindow(browser);
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    const second = await otherShell(browser);
+    const address = second.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(url);
+    await address.press('Enter');
+    await browser.main.evaluate(({ BaseWindow }, id) => BaseWindow.fromId(id ?? 0)?.focus(), first);
+    await expect.poll(() => focusedWindow(browser)).toBe(first);
+    await expect(second.getByRole('region', { name: "This page can't be reached" })).toBeVisible();
+    expect(await focusedWindow(browser)).toBe(first);
+  } finally {
+    await browser.close();
+    failing.closeAllConnections();
+    await new Promise((done) => failing.close(done));
+  }
+});
+
 test('keeps the opener of a page that a script opens, which can close itself', async () => {
   const browser = await launch();
   try {
@@ -53,6 +159,25 @@ test('keeps the opener of a page that a script opens, which can close itself', a
   }
 });
 
+test('keeps the tabs that a page opened after the page closed', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('link', { name: 'A link' }).click({ button: 'middle' });
+    await opener.getByRole('button', { name: 'Open a tab' }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(3);
+    // Closing the page that opened them leaves the other tabs open.
+    await browser.shell.getByRole('tab', { name: 'Fixture opener' }).click();
+    await pressNative(browser, 'W', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url).toSorted())
+      .toEqual([`${server.origin}/opened.html`, `${server.origin}/second.html`]);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('opens a popup with a size in a window of its own, which closes with its page', async () => {
   const browser = await launch();
   try {
@@ -69,6 +194,47 @@ test('opens a popup with a size in a window of its own, which closes with its pa
     await expect(opener.locator('#message')).toHaveText('Hello from the opened page');
     await popup.evaluate(() => void setTimeout(() => window.close(), 50));
     await expect.poll(() => windowCount(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps a popup that a page asks to be larger than the screen on the screen', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.evaluate(
+      () => void window.open('/opened.html', '', 'popup,width=6000,height=6000,left=40,top=0'),
+    );
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    // The popup is the newer window.
+    const fits = await browser.main.evaluate(({ BaseWindow, screen }) => {
+      const popup = BaseWindow.getAllWindows().reduce((a, b) => (b.id > a.id ? b : a));
+      const bounds = popup.getBounds();
+      const area = screen.getDisplayMatching(bounds).workArea;
+      return (
+        bounds.x >= area.x &&
+        bounds.y >= area.y &&
+        bounds.x + bounds.width <= area.x + area.width &&
+        bounds.y + bounds.height <= area.y + area.height
+      );
+    });
+    expect(fits).toBe(true);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens links from other apps in a regular window, not in a popup', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('button', { name: 'Open a popup' }).click();
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    expect(await startAgain(browser, ['--', `${server.origin}/second.html`])).toBe(0);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/opener.html`, `${server.origin}/second.html`]);
   } finally {
     await browser.close();
   }

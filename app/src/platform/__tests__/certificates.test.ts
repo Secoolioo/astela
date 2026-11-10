@@ -31,7 +31,7 @@ describe('CertificateExceptions', () => {
     const app = new EventEmitter();
     const exceptions = new CertificateExceptions(() => true);
     exceptions.attach(app as unknown as App);
-    const page = { id: 7 } as unknown as WebContents;
+    const page = { id: 7, session: {} } as unknown as WebContents;
     expect(exceptions.allow(page)).toBe(false);
     expect(refuse(app, page, 'https://device.example/a', 'sha256/one')).toBe(false);
     expect(exceptions.allow(page)).toBe(true);
@@ -45,9 +45,22 @@ describe('CertificateExceptions', () => {
     const app = new EventEmitter();
     const exceptions = new CertificateExceptions(() => true);
     exceptions.attach(app as unknown as App);
-    const page = { id: 8 } as unknown as WebContents;
+    const page = { id: 8, session: {} } as unknown as WebContents;
     expect(refuse(app, page, 'https://frame.example/', 'sha256/one', false)).toBe(false);
     expect(exceptions.allow(page)).toBe(false);
+  });
+
+  it('keeps an accepted certificate to the session of the page that accepted it', () => {
+    const app = new EventEmitter();
+    const exceptions = new CertificateExceptions(() => true);
+    exceptions.attach(app as unknown as App);
+    const privatePage = { id: 10, session: {} } as unknown as WebContents;
+    const regular = { id: 11, session: {} } as unknown as WebContents;
+    refuse(app, privatePage, 'https://intranet.example/', 'sha256/one');
+    expect(exceptions.allow(privatePage)).toBe(true);
+    expect(refuse(app, privatePage, 'https://intranet.example/x', 'sha256/one')).toBe(true);
+    // An exception of a private window does not reach regular windows.
+    expect(refuse(app, regular, 'https://intranet.example/', 'sha256/one')).toBe(false);
   });
 
   it('accepts nothing when a policy does not allow continuing', () => {
@@ -55,7 +68,7 @@ describe('CertificateExceptions', () => {
     let allowed = true;
     const exceptions = new CertificateExceptions(() => allowed);
     exceptions.attach(app as unknown as App);
-    const page = { id: 9 } as unknown as WebContents;
+    const page = { id: 9, session: {} } as unknown as WebContents;
     refuse(app, page, 'https://device.example/', 'sha256/one');
     expect(exceptions.allow(page)).toBe(true);
     allowed = false;

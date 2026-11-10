@@ -37,6 +37,17 @@ export function freeName(name: string, taken: (candidate: string) => boolean): s
 }
 
 /**
+ * The key of a path among the paths of a folder. Windows and macOS do not tell apart names
+ * that differ only in case, and macOS also not the two ways to write an accent.
+ * @param path - The path.
+ * @param platform - `process.platform`.
+ */
+export function pathKey(path: string, platform: string): string {
+  if (platform === 'darwin') return path.normalize('NFC').toLowerCase();
+  return platform === 'win32' ? path.toLowerCase() : path;
+}
+
+/**
  * How much of a download is done, from 0 to 1, or nothing while its size is unknown.
  * @param entry - The download.
  */

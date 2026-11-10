@@ -49,5 +49,15 @@
   "menu.quit": "&Quit",
   "menu.exit": "E&xit",
   "menu.file": "&File",
-  "dialog.about": "{name} {version}"
+  "dialog.about": "{name} {version}",
+  "menu.edit": "&Edit",
+  "menu.window": "&Window",
+  "menu.minimize": "Mi&nimize",
+  "menu.zoomWindow": "&Zoom",
+  "menu.front": "Bring All to &Front",
+  "menu.services": "Ser&vices",
+  "menu.hide": "&Hide Astela",
+  "menu.hideOthers": "Hide &Others",
+  "menu.showAll": "&Show All",
+  "menu.quitApp": "&Quit Astela"
 }

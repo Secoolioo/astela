@@ -280,6 +280,17 @@ test('edits text in the clicked field of a page or of the address bar', async ()
   expect(await fieldSelection()).toEqual([1, 1]);
 });
 
+test("offers no Inspect item on the browser's own pages", async () => {
+  await start();
+  const address = browser.shell.getByRole('textbox');
+  await address.fill('app://settings');
+  await address.press('Enter');
+  const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await settings.waitForLoadState();
+  await settings.locator('body').click({ button: 'right', position: { x: 4, y: 4 } });
+  expect((await menu(1)).items).not.toContain(en.inspect);
+});
+
 test('offers history items on the page and goes back', async () => {
   await start();
   await open('index.html');
