@@ -1,5 +1,8 @@
 import { app, dialog, Menu } from 'electron';
-import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
+import type {
+  BrowserWindowController,
+  WindowManager,
+} from '../platform/electron/browser-window.ts';
 import type { WindowCommand } from '../platform/electron/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
@@ -102,6 +105,30 @@ export function showBlockerSaveError(window: BrowserWindowController, managed: b
 }
 
 /**
+ * Runs a command of the menu bar of macOS in the window that was used last. With no window
+ * open, a command that opens a window opens only that window, and any other command runs in
+ * a new window.
+ * @param windows - The browser's windows.
+ * @param command - The command.
+ * @param openPrivateWindow - Opens a private window, if people may.
+ */
+export function runFromMenuBar(
+  windows: Pick<WindowManager, 'lastUsed' | 'open'>,
+  command: WindowCommand,
+  openPrivateWindow: () => void,
+): void {
+  const front = windows.lastUsed;
+  if (front !== undefined) {
+    front.execute(command);
+  } else if (command === 'window.newPrivate') {
+    openPrivateWindow();
+  } else {
+    const opened = windows.open();
+    if (command !== 'window.new' && command !== 'tab.new') opened.execute(command);
+  }
+}
+
+/**
  * The menu bar of macOS, with the browser's settings in the application menu and the tools
  * of the page in the View menu. Its items run the commands of the window, as the keys do, so
  * they act on the page and not on the browser's own views, and the policies apply.
@@ -123,8 +150,9 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
   return Menu.buildFromTemplate([
     {
       role: 'appMenu',
+      // Roles name their items in English, so every item gets the text of the catalog.
       submenu: [
-        { role: 'about' },
+        { role: 'about', label: i18n.t('menu.about') },
         { type: 'separator' },
         {
           label: i18n.t('menu.settings'),
@@ -133,13 +161,13 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
           click: () => run('settings.open'),
         },
         { type: 'separator' },
-        { role: 'services' },
+        { role: 'services', label: i18n.t('menu.services') },
         { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
+        { role: 'hide', label: i18n.t('menu.hide') },
+        { role: 'hideOthers', label: i18n.t('menu.hideOthers') },
+        { role: 'unhide', label: i18n.t('menu.showAll') },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: i18n.t('menu.quitApp') },
       ],
     },
     {
@@ -153,7 +181,18 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
         command('menu.print', 'Cmd+P', 'page.print'),
       ],
     },
-    { role: 'editMenu' },
+    {
+      label: i18n.t('menu.edit'),
+      submenu: [
+        { role: 'undo', label: i18n.t('contextMenu.undo') },
+        { role: 'redo', label: i18n.t('contextMenu.redo') },
+        { type: 'separator' },
+        { role: 'cut', label: i18n.t('contextMenu.cut') },
+        { role: 'copy', label: i18n.t('contextMenu.copy') },
+        { role: 'paste', label: i18n.t('contextMenu.paste') },
+        { role: 'selectAll', label: i18n.t('contextMenu.selectAll') },
+      ],
+    },
     {
       label: i18n.t('menu.view'),
       submenu: [
@@ -173,7 +212,16 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
         command('menu.developerTools', 'Alt+Cmd+I', 'devtools.toggle'),
       ],
     },
-    { role: 'windowMenu' },
+    {
+      role: 'windowMenu',
+      label: i18n.t('menu.window'),
+      submenu: [
+        { role: 'minimize', label: i18n.t('menu.minimize') },
+        { role: 'zoom', label: i18n.t('menu.zoomWindow') },
+        { type: 'separator' },
+        { role: 'front', label: i18n.t('menu.front') },
+      ],
+    },
   ]);
 }
 

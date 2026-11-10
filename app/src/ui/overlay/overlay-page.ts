@@ -30,6 +30,7 @@ interface Login {
 /** A site that asks for permissions. */
 interface Permission {
   readonly kind: 'permission';
+  readonly id: number;
   readonly site: string;
   readonly permissions: readonly (
     'camera' | 'microphone' | 'location' | 'notifications' | 'clipboard'
@@ -78,6 +79,9 @@ const wants = {
 } as const satisfies Record<Permission['permissions'][number], string>;
 
 // The browser process checks every message against its contract before it sends it.
+/** How long, in milliseconds, a question shows before its buttons take clicks. */
+const armDelay = 500;
+
 const isContent = (value: unknown): value is Content =>
   typeof value === 'object' &&
   value !== null &&
@@ -120,7 +124,11 @@ const gap = 4;
  * next to the popover or Escape closes it; the browser process runs shortcuts.
  */
 export class OverlayPage extends LitElement {
-  static override properties = { content: { state: true }, chosen: { state: true } };
+  static override properties = {
+    content: { state: true },
+    chosen: { state: true },
+    armed: { state: true },
+  };
 
   /** Styles of the page, scoped to its shadow root. */
   static override styles = css`
@@ -264,6 +272,10 @@ export class OverlayPage extends LitElement {
     .buttons button:disabled {
       opacity: 0.5;
     }
+    /* The moment before a question takes clicks does not dim its buttons. */
+    .buttons[data-arming] button:disabled {
+      opacity: 1;
+    }
     /* A question takes the focus itself; its buttons show the ring once they have it. */
     .dialog:focus-visible {
       outline: none;
@@ -350,6 +362,12 @@ export class OverlayPage extends LitElement {
   declare content: Content | null;
   /** The screen or window chosen in the picker. */
   declare chosen: string | undefined;
+  /**
+   * Whether the buttons of a question take clicks. They do a moment after the question shows,
+   * as in other browsers, so the second click of a double click on the question before does
+   * not answer this one.
+   */
+  declare armed: boolean;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private stopListening: (() => void) | undefined;
@@ -358,6 +376,7 @@ export class OverlayPage extends LitElement {
     super();
     this.content = null;
     this.chosen = undefined;
+    this.armed = false;
   }
 
   override connectedCallback(): void {
@@ -387,6 +406,7 @@ export class OverlayPage extends LitElement {
     if (this.content.kind === 'shield') this.place(this.content.anchor);
     if (this.content.kind === 'downloads') this.place(this.content.anchor, listWidth);
     if (this.content.kind === 'screen') this.chosen = undefined;
+    if (this.content.kind === 'permission') this.arm(this.content.id);
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
     if (before !== this.content.kind) {
@@ -397,6 +417,14 @@ export class OverlayPage extends LitElement {
         )?.focus(),
       );
     }
+  }
+
+  /** Lets the buttons of a question take clicks once it has shown for a moment. */
+  private arm(id: number): void {
+    this.armed = false;
+    setTimeout(() => {
+      if (this.content?.kind === 'permission' && this.content.id === id) this.armed = true;
+    }, armDelay);
   }
 
   /** Puts the popover below its button, its right edge at the button's, inside the window. */
@@ -476,20 +504,32 @@ export class OverlayPage extends LitElement {
       </form>`;
   }
 
-  /** The question of a site for permissions: it stays open until it is answered or closed. */
+  /**
+   * The question of a site for permissions: it stays open until it is answered or closed, also
+   * with a click next to it.
+   */
   private renderPermission(question: Permission): TemplateResult {
-    return html`<div class="backdrop"></div>
+    return html`<div class="backdrop" @click=${this.close}></div>
       <section class="dialog" role="dialog" tabindex="-1" aria-labelledby="permission-title">
         <h2 id="permission-title">${this.t('overlay.permissionTitle', { site: question.site })}</h2>
         <ul>
           ${question.permissions.map((name) => html`<li>${this.t(wants[name])}</li>`)}
         </ul>
         <p class="note">${this.t('overlay.permissionNote')}</p>
-        <div class="buttons">
-          <button type="button" @click=${() => this.answer(false)}>
+        <div class="buttons" ?data-arming=${!this.armed}>
+          <button
+            type="button"
+            ?disabled=${!this.armed}
+            @click=${() => this.answer(question.id, false)}
+          >
             ${this.t('overlay.block')}
           </button>
-          <button type="button" class="primary" @click=${() => this.answer(true)}>
+          <button
+            type="button"
+            class="primary"
+            ?disabled=${!this.armed}
+            @click=${() => this.answer(question.id, true)}
+          >
             ${this.t('overlay.allow')}
           </button>
         </div>
@@ -625,8 +665,8 @@ export class OverlayPage extends LitElement {
     void this.bridge?.invoke('overlay.openDownloadsFolder', {});
   };
 
-  private answer(allow: boolean): void {
-    void this.bridge?.invoke('overlay.answerPermission', { allow });
+  private answer(id: number, allow: boolean): void {
+    void this.bridge?.invoke('overlay.answerPermission', { id, allow });
   }
 
   private share(id: string): void {

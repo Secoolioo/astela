@@ -1,10 +1,16 @@
 import { FiltersEngine, Request } from '@ghostery/adblocker';
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { build, isolatedScriptletMark, markIsolatedScriptlets, popupFilters } from './build.ts';
+import {
+  build,
+  hasRealData,
+  isolatedScriptletMark,
+  markIsolatedScriptlets,
+  popupFilters,
+} from './build.ts';
 import { contentTypeOf } from './redirects.ts';
 import { applyConditions, evaluateCondition, loadList } from './preprocess.ts';
 import { fetchSources, relativeImports, type UboSources } from './scriptlets.ts';
@@ -208,6 +214,33 @@ describe('build', () => {
   });
 });
 
+describe('hasRealData', () => {
+  it('takes only complete data from real lists', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'blocker-'));
+    try {
+      assert.equal(hasRealData(out), false);
+      // Test data from the fixture lists is complete, but blocks nothing real.
+      await build({
+        out,
+        fixture: resolve(import.meta.dirname, '../../app/tests/e2e/fixtures/blocker'),
+      });
+      assert.equal(hasRealData(out), false);
+      const metadata = JSON.parse(readFileSync(join(out, 'filters.json'), 'utf8')) as {
+        lists: { url: string }[];
+      };
+      for (const list of metadata.lists)
+        list.url = list.url.replace('fixture:', 'https://lists.example/');
+      writeFileSync(join(out, 'filters.json'), JSON.stringify(metadata));
+      assert.equal(hasRealData(out), true);
+      // Data without the engine of an optional group is from an older version.
+      rmSync(join(out, 'cookies.bin'));
+      assert.equal(hasRealData(out), false);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('contentTypeOf', () => {
   it('keeps scripts usable for +js() and binary files as Base64', () => {
     assert.equal(contentTypeOf('noop.js'), 'application/javascript');
@@ -232,5 +265,35 @@ describe('popupFilters', () => {
       ),
       ['||ads.example^', '||track.example^$third-party', '@@||good.example^'],
     );
+  });
+
+  it('keeps site-wide popup filters without a pattern, and drops the types of requests', () => {
+    assert.deepEqual(
+      popupFilters(
+        [
+          '$popup,third-party,domain=streams.example|videos.example',
+          '||doc.example^$doc,popup',
+          '||mixed.example^$popup,document,3p',
+          '$popup',
+        ].join('\n'),
+      ),
+      [
+        '$third-party,domain=streams.example|videos.example',
+        '||doc.example^',
+        '||mixed.example^$3p',
+      ],
+    );
+    // A popup engine from such filters blocks what they name.
+    const engine = FiltersEngine.parse(
+      popupFilters('$popup,third-party,domain=streams.example\n||doc.example^$doc,popup').join(
+        '\n',
+      ),
+    );
+    const blocks = (url: string, opener: string): boolean =>
+      engine.match(Request.fromRawDetails({ url, sourceUrl: opener, type: 'other' })).match;
+    assert.equal(blocks('https://ads.example/x', 'https://streams.example/watch'), true);
+    assert.equal(blocks('https://streams.example/next', 'https://streams.example/watch'), false);
+    assert.equal(blocks('https://ads.example/x', 'https://news.example/'), false);
+    assert.equal(blocks('https://doc.example/', 'https://news.example/'), true);
   });
 });

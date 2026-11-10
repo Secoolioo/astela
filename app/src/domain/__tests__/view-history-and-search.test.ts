@@ -75,5 +75,13 @@ describe('content blocker sites', () => {
     expect(blockingFor('https://cdn.news.example/', true, ['news.example'])).toBe('off');
     expect(blockingFor('https://othernews.example/', true, ['news.example'])).toBe('on');
     expect(toggleSite(['news.example'], 'www.news.example', 'news.example')).toEqual([]);
+    // Switching it back on removes every entry that covers the host, not only the first.
+    expect(
+      toggleSite(['news.example', 'www.news.example'], 'www.news.example', 'news.example'),
+    ).toEqual([]);
+    // A domain that does not cover the host, as for IPv6 addresses, is not what is saved.
+    expect(toggleSite([], '[::1]', '::1')).toEqual(['[::1]']);
+    expect(toggleSite(['[::1]'], '[::1]', '::1')).toEqual([]);
+    expect(toggleSite([], 'www.example.com.', 'example.com')).toEqual(['www.example.com.']);
   });
 });

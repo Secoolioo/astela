@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { freeName, progressOf } from '../downloads/downloads.ts';
+import { freeName, pathKey, progressOf } from '../downloads/downloads.ts';
 
 /** A folder with some names taken. */
 const folder =
@@ -27,5 +27,21 @@ describe('progressOf', () => {
     expect(progressOf({ received: 50, total: 200 })).toBe(0.25);
     expect(progressOf({ received: 300, total: 200 })).toBe(1);
     expect(progressOf({ received: 50, total: 0 })).toBeUndefined();
+  });
+});
+
+describe('pathKey', () => {
+  it('tells paths apart the way the file systems of each system do', () => {
+    const taken = new Set([pathKey('C:\\Downloads\\Report.pdf', 'win32')]);
+    const free = freeName('report.pdf', (name) =>
+      taken.has(pathKey(`C:\\Downloads\\${name}`, 'win32')),
+    );
+    expect(free).toBe('report (1).pdf');
+    expect(pathKey('/Users/a/Report.pdf', 'darwin')).toBe(pathKey('/Users/a/report.pdf', 'darwin'));
+    // macOS also does not tell apart the two ways to write an accent.
+    expect(pathKey('/Users/a/Caf\u00e9.pdf', 'darwin')).toBe(
+      pathKey('/Users/a/Cafe\u0301.pdf', 'darwin'),
+    );
+    expect(pathKey('/home/a/Report.pdf', 'linux')).not.toBe(pathKey('/home/a/report.pdf', 'linux'));
   });
 });

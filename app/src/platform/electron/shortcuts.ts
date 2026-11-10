@@ -154,10 +154,11 @@ function shortcutOf(input: Input, mac: boolean): string {
   const letter = /^[\p{L}\p{M}]$/u.test(key);
   if (/^[a-z]$/i.test(key)) {
     key = key.toUpperCase();
-  } else if (letter && /^Key[A-Z]$/.test(input.code)) {
+  } else if (letter && /^(?:Key[A-Z]|Digit\d)$/.test(input.code)) {
     // A layout for another script, such as Cyrillic or Devanagari: as in other browsers,
-    // Ctrl+T is the key that carries the T on a Latin keyboard.
-    key = input.code.slice(3);
+    // Ctrl+T is the key that carries the T on a Latin keyboard. Layouts such as French type
+    // letters on the keys of the digits too, where Ctrl+0 is the key that carries the 0.
+    key = input.code.slice(-1);
   } else if (mac && letter && !/\p{Script=Latin}/u.test(key) && input.code.startsWith('Bracket')) {
     // The same for Cmd+[ and Cmd+] where a layout for another script, such as Russian or
     // Arabic, types letters on these keys. Latin layouts type brackets, with Option if need
@@ -172,6 +173,10 @@ function shortcutOf(input: Input, mac: boolean): string {
       shift = true;
       key = key === '{' ? '[' : ']';
     }
+  } else if (mac && alt && /^Key[A-Z]$/.test(input.code)) {
+    // Option types another character on a letter key, or starts an accent, so Cmd+Option+I
+    // arrives as a dead key: such a shortcut counts by the letter on the key.
+    key = input.code.slice(3);
   }
   const control = input.control ? 'Ctrl+' : '';
   const meta = input.meta ? 'Cmd+' : '';

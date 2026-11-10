@@ -12,6 +12,10 @@ import {
   type PolicyIo,
 } from '../policy/policy-providers.ts';
 import { parseRegistryExport, registryPolicies } from '../policy/registry-export.ts';
+import { windowsProgram } from '../node/system-programs.ts';
+
+/** reg.exe of the system, which the provider starts by its full path. */
+const reg = windowsProgram('reg');
 
 const root = 'SOFTWARE\\Policies\\Astela';
 
@@ -173,15 +177,15 @@ const encodeUtf16 = (text: string): Uint8Array => {
 describe('WindowsRegistryPolicyProvider', () => {
   it('exports both hives, decodes UTF-16 and cleans up', async () => {
     const io = new FakeIo();
-    io.outputs[`reg export HKLM\\${root}`] = {
+    io.outputs[`${reg} export HKLM\\${root}`] = {
       status: 0,
       stdout: '',
       writes: encodeUtf16(registryExport),
     };
     const result = await new WindowsRegistryPolicyProvider(io, root).load();
     expect(io.commands).toEqual([
-      `reg export HKLM\\${root} /tmp/policies-HKLM.reg /y`,
-      `reg export HKCU\\${root} /tmp/policies-HKCU.reg /y`,
+      `${reg} export HKLM\\${root} /tmp/policies-HKLM.reg /y`,
+      `${reg} export HKCU\\${root} /tmp/policies-HKCU.reg /y`,
     ]);
     expect(result.values.find((v) => v.name === 'HomepageLocation')?.value).toContain('ße');
     expect(io.files.size).toBe(0);
@@ -189,7 +193,7 @@ describe('WindowsRegistryPolicyProvider', () => {
 
   it('reports a missing export file', async () => {
     const io = new FakeIo();
-    io.outputs['reg export HKLM'] = { status: 0, stdout: '' };
+    io.outputs[`${reg} export HKLM`] = { status: 0, stdout: '' };
     expect((await new WindowsRegistryPolicyProvider(io, root).load()).errors).toEqual([
       { source: 'HKLM', message: 'The registry export was not written' },
     ]);
@@ -197,12 +201,12 @@ describe('WindowsRegistryPolicyProvider', () => {
 
   it('exports both hives at once and reads the same each time', async () => {
     const io = new FakeIo();
-    io.outputs[`reg export HKLM\\${root}`] = {
+    io.outputs[`${reg} export HKLM\\${root}`] = {
       status: 0,
       stdout: '',
       writes: encodeUtf16(registryExport),
     };
-    io.outputs[`reg export HKCU\\${root}`] = { status: 0, stdout: '' };
+    io.outputs[`${reg} export HKCU\\${root}`] = { status: 0, stdout: '' };
     const provider = new WindowsRegistryPolicyProvider(io, root);
     const result = await provider.load();
     expect(io.commands).toHaveLength(2);
@@ -222,11 +226,11 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     const user = '/Library/Managed Preferences/ana/io.github.secoolioo.astela.plist';
     io.files.set(machine, new Uint8Array([1]));
     io.files.set(user, new Uint8Array([1]));
-    io.outputs[`plutil -convert xml1 -o - ${machine}`] = {
+    io.outputs[`/usr/bin/plutil -convert xml1 -o - ${machine}`] = {
       status: 0,
       stdout: '<plist><dict><key>UpdatePolicy</key><integer>0</integer></dict></plist>',
     };
-    io.outputs[`plutil -convert xml1 -o - ${user}`] = {
+    io.outputs[`/usr/bin/plutil -convert xml1 -o - ${user}`] = {
       status: 0,
       stdout: '<plist><array/></plist>',
     };
@@ -249,8 +253,8 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     const user = '/Library/Managed Preferences/u/b.plist';
     io.files.set(machine, new Uint8Array([1]));
     io.files.set(user, new Uint8Array([1]));
-    io.outputs[`plutil -convert xml1 -o - ${machine}`] = { status: 1, stdout: '' };
-    io.outputs[`plutil -convert xml1 -o - ${user}`] = { status: 0, stdout: 'garbage' };
+    io.outputs[`/usr/bin/plutil -convert xml1 -o - ${machine}`] = { status: 1, stdout: '' };
+    io.outputs[`/usr/bin/plutil -convert xml1 -o - ${user}`] = { status: 0, stdout: 'garbage' };
     const { errors } = await new MacManagedPreferencesPolicyProvider(io, 'b', 'u').load();
     expect(errors.map((e) => e.message)).toEqual([
       'plutil could not read the file',
@@ -262,13 +266,13 @@ describe('MacManagedPreferencesPolicyProvider', () => {
     const io = new FakeIo();
     const machine = '/Library/Managed Preferences/b.plist';
     io.files.set(machine, new Uint8Array([1]));
-    io.outputs[`plutil -convert xml1 -o - ${machine}`] = {
+    io.outputs[`/usr/bin/plutil -convert xml1 -o - ${machine}`] = {
       status: 0,
       stdout: '<plist><dict><key>UpdatePolicy</key><integer>2</integer></dict></plist>',
     };
     const provider = new MacManagedPreferencesPolicyProvider(io, 'b', 'u');
     const result = await provider.load();
-    expect(io.commands).toEqual([`plutil -convert xml1 -o - ${machine}`]);
+    expect(io.commands).toEqual([`/usr/bin/plutil -convert xml1 -o - ${machine}`]);
     expect(await provider.load()).toEqual(result);
     expect(result.values.map((v) => [v.name, v.value, v.scope])).toEqual([
       ['UpdatePolicy', 2, 'machine'],

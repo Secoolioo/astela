@@ -6,7 +6,7 @@ import { appScheme, appSourceRoutes } from './app-protocol-routes.ts';
  * Registers the browser's schemes as privileged, standard and secure; Electron allows one
  * such call, before the app is ready. `app://` serves the browser's own pages with a code
  * cache, and the content blocker's replacement resources come from a scheme that web pages
- * may fetch from.
+ * may fetch from, whatever their content security policy allows.
  */
 export function registerAppScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -16,7 +16,15 @@ export function registerAppScheme(): void {
     },
     {
       scheme: resourceScheme,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+      // The stand-ins replace files that the page's policy allowed, so the policy does not
+      // apply to them a second time.
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        bypassCSP: true,
+      },
     },
   ]);
 }

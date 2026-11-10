@@ -107,6 +107,8 @@ export interface BrowserWindowOptions {
   readonly openPrivateWindow?: () => void;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
+  /** Called when a window gets the focus. */
+  readonly onFocus?: () => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -192,10 +194,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private finding: FindState | null = null;
   /** What the find bar looked for last, to look for it again. */
   private lastQuery = '';
-  /** Whether the visible page shows an element in full screen, which covers the shell. */
-  private pageFullScreen = false;
-  /** Whether a page put the window in full screen, which the window leaves with the page. */
-  private pageMadeFullScreen = false;
+  /** The tab whose page shows an element in full screen; while it shows, it covers the shell. */
+  private fullScreenTab: TabId | undefined;
+  /** Whether the user put the window in full screen, rather than a page. */
+  private userFullScreen = false;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, string>();
   /** Tabs without a view yet, with the URL they will load when shown. */
@@ -397,6 +399,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.visible = view;
     this.window.contentView.addChildView(view);
     view.setVisible(this.problemOf(id) === null);
+    // Another window may have zoomed the site meanwhile.
+    if (entry?.page === undefined && !view.webContents.isDestroyed()) {
+      this.tabs.update(id, { zoom: view.webContents.getZoomFactor() });
+    }
     this.layout();
     this.focusContent();
   }
@@ -428,7 +434,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const view = this.entries.get(id)?.view;
     if (view !== undefined && view === this.visible && !this.window.isDestroyed()) {
       view.setVisible(problem === null);
-      this.focusContent();
+      // Focusing a view raises its window: a window in the background stays there.
+      if (this.window.isFocused()) this.focusContent();
     }
   }
 
@@ -455,6 +462,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     this.entries.delete(id);
     this.close(entry.view, entry.registration);
+    // A page that closes in full screen ends it, unless the user chose full screen.
+    if (this.fullScreenTab === id) {
+      this.fullScreenTab = undefined;
+      if (!this.userFullScreen && !this.window.isDestroyed()) this.setPageFullScreen(false);
+      this.layout();
+    }
   }
 
   load(id: TabId, url: string): void {
@@ -617,7 +630,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         }
         break;
       case 'window.fullscreen':
-        this.window.setFullScreen(!this.window.isFullScreen());
+        this.userFullScreen = !this.window.isFullScreen();
+        this.window.setFullScreen(this.userFullScreen);
         break;
       case 'page.reloadHard':
       case 'page.print':
@@ -684,6 +698,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           : (zoomFactors.toReversed().find((step) => step < current - 0.001) ?? current);
     contents.setZoomFactor(factor);
     this.tabs.update(id, { zoom: factor });
+    // Chromium zooms the site in every tab that shows it.
+    for (const [other, entry] of this.entries) {
+      const shown = entry.view.webContents;
+      if (other !== id && entry.page === undefined && !shown.isDestroyed()) {
+        this.tabs.update(other, { zoom: shown.getZoomFactor() });
+      }
+    }
     // A private window keeps no zoom for later visits.
     if (!this.isPrivate) this.options.onZoom?.(contents.getURL(), factor);
   }
@@ -874,21 +895,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.zoom(id, direction === 'in' ? 1 : -1),
       );
       // A video or another element in full screen covers the whole window, which takes the
-      // whole screen until the page leaves full screen, unless it was in full screen before.
+      // whole screen until the page leaves full screen, unless the user put it in full screen.
       contents.on('enter-html-full-screen', () => {
-        this.pageFullScreen = true;
-        if (!this.window.isFullScreen()) {
-          this.pageMadeFullScreen = true;
-          this.setPageFullScreen(true);
-        }
+        this.fullScreenTab = id;
+        if (!this.window.isFullScreen()) this.setPageFullScreen(true);
         this.layout();
       });
       contents.on('leave-html-full-screen', () => {
-        this.pageFullScreen = false;
-        if (this.pageMadeFullScreen) {
-          this.pageMadeFullScreen = false;
-          this.setPageFullScreen(false);
-        }
+        if (this.fullScreenTab === id) this.fullScreenTab = undefined;
+        if (!this.userFullScreen) this.setPageFullScreen(false);
         this.layout();
       });
     }
@@ -1051,7 +1066,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     const { width, height } = this.window.getContentBounds();
     this.shell.setBounds({ x: 0, y: 0, width, height });
-    const { top, right, bottom, left } = this.pageFullScreen
+    // Only the tab whose page is in full screen covers the shell.
+    const covering =
+      this.fullScreenTab !== undefined &&
+      this.entries.get(this.fullScreenTab)?.view === this.visible;
+    const { top, right, bottom, left } = covering
       ? { top: 0, right: 0, bottom: 0, left: 0 }
       : this.insets;
     this.visible?.setBounds({
@@ -1132,12 +1151,13 @@ export class WindowManager implements Disposable {
     opener: BrowserWindowController | undefined,
     privateWindow: boolean,
   ): BrowserWindowController {
-    const asked = popupBounds(
+    const bounds = popupBounds(
       features,
       opener?.window.getBounds() ?? { x: 100, y: 100, width: 1280, height: 820 },
+      workAreas(),
     );
     return this.openWith(contents, url, {
-      bounds: visibleBounds(asked, workAreas()),
+      bounds,
       popup: true,
       private: privateWindow,
     });
@@ -1205,6 +1225,7 @@ export class WindowManager implements Disposable {
     controller.window.on('focus', () => {
       forget();
       this.focusOrder.push(controller);
+      this.options.onFocus?.();
     });
     controller.window.on('closed', () => {
       listener.dispose();
@@ -1224,12 +1245,13 @@ export class WindowManager implements Disposable {
   }
 
   /**
-   * The regular or the private window that had the focus last, or else the newest one.
+   * The regular or the private window that had the focus last, or else the newest one;
+   * popups are left out, as their pages expect to be alone in them.
    * @param privateWindow - Whether to find a private window.
    */
   lastUsedOf(privateWindow: boolean): BrowserWindowController | undefined {
     const matches = (window: BrowserWindowController): boolean =>
-      window.isPrivate === privateWindow;
+      window.isPrivate === privateWindow && !window.popup;
     return this.focusOrder.findLast(matches) ?? [...this.windows].findLast(matches);
   }
 

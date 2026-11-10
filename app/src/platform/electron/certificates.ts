@@ -1,12 +1,14 @@
-import type { App, WebContents } from 'electron';
+import type { App, Session, WebContents } from 'electron';
 
 /**
  * Exceptions for certificates that the user accepted after the warning, for the rest of
  * the session. An exception holds for one host and one certificate, by its fingerprint, so
- * a site that shows another certificate later is refused again.
+ * a site that shows another certificate later is refused again. It holds only in the
+ * session of the page that accepted it, so an exception made in a private window ends with
+ * its session and never reaches regular windows.
  */
 export class CertificateExceptions {
-  private readonly allowed = new Set<string>();
+  private readonly allowed = new WeakMap<Session, Set<string>>();
   /** The certificate that each page was last refused, by the id of its web contents. */
   private readonly refused = new Map<number, string>();
   private readonly mayOverride: () => boolean;
@@ -26,7 +28,7 @@ export class CertificateExceptions {
       'certificate-error',
       (event, contents, url, _error, certificate, callback, isMainFrame) => {
         const key = `${hostOf(url)}|${certificate.fingerprint}`;
-        if (this.allowed.has(key) && this.mayOverride()) {
+        if (this.allowed.get(contents.session)?.has(key) === true && this.mayOverride()) {
           event.preventDefault();
           callback(true);
           return;
@@ -44,7 +46,9 @@ export class CertificateExceptions {
   allow(contents: WebContents): boolean {
     const key = this.refused.get(contents.id);
     if (key === undefined || !this.mayOverride()) return false;
-    this.allowed.add(key);
+    const allowed = this.allowed.get(contents.session) ?? new Set<string>();
+    allowed.add(key);
+    this.allowed.set(contents.session, allowed);
     return true;
   }
 }

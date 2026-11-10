@@ -165,7 +165,7 @@ settings:
 packageExtensionsChecksum: sha256-MYPhTrivtXmwsvX9FhEQYSxrSn5qE2xwogYKUTfIgtA=
 
 patchedDependencies:
-  '@ghostery/adblocker@2.20.3': 2af069528cea3f31058f06594c6687a2f0212f0ab7bd5981c40fb67db41ff810
+  '@ghostery/adblocker@2.20.3': 666c66e12c8ee00b44e486669ebbc3eca2fc144478c1e57f50235333e351bddb
   app-builder-lib@26.18.0: 462ba80b66b507e9d7bcad699e8c6c31cfdac88de72d5e439c70f3ef08dc44bd
 
 importers:
@@ -210,7 +210,7 @@ importers:
     devDependencies:
       '@ghostery/adblocker':
         specifier: 2.20.3
-        version: 2.20.3(patch_hash=2af069528cea3f31058f06594c6687a2f0212f0ab7bd5981c40fb67db41ff810)
+        version: 2.20.3(patch_hash=666c66e12c8ee00b44e486669ebbc3eca2fc144478c1e57f50235333e351bddb)
       '@ghostery/adblocker-extended-selectors':
         specifier: 2.20.3
         version: 2.20.3
@@ -235,6 +235,9 @@ importers:
       lit:
         specifier: 3.3.3
         version: 3.3.3
+      tldts-experimental:
+        specifier: 7.4.19
+        version: 7.4.19
       valibot:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)
@@ -249,7 +252,7 @@ importers:
         version: 2.1.3
       '@ghostery/adblocker':
         specifier: 2.20.3
-        version: 2.20.3(patch_hash=2af069528cea3f31058f06594c6687a2f0212f0ab7bd5981c40fb67db41ff810)
+        version: 2.20.3(patch_hash=666c66e12c8ee00b44e486669ebbc3eca2fc144478c1e57f50235333e351bddb)
       dependency-cruiser:
         specifier: 18.7.0
         version: 18.7.0(typescript@6.0.3)
@@ -5679,7 +5682,7 @@ snapshots:
 
   '@ghostery/adblocker-extended-selectors@2.20.3': {}
 
-  '@ghostery/adblocker@2.20.3(patch_hash=2af069528cea3f31058f06594c6687a2f0212f0ab7bd5981c40fb67db41ff810)':
+  '@ghostery/adblocker@2.20.3(patch_hash=666c66e12c8ee00b44e486669ebbc3eca2fc144478c1e57f50235333e351bddb)':
     dependencies:
       '@ghostery/adblocker-content': 2.20.3
       '@ghostery/adblocker-extended-selectors': 2.20.3

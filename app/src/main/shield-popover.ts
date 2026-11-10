@@ -1,4 +1,10 @@
-import { exceptionFor, siteOf, toggleSite, type Blocking } from '../domain/blocker/blocking.ts';
+import {
+  exceptionFor,
+  exceptionSite,
+  siteOf,
+  toggleSite,
+  type Blocking,
+} from '../domain/blocker/blocking.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import type {
@@ -96,7 +102,7 @@ function shieldOf(
   const site = siteOf(tab?.url ?? '');
   if (tab === undefined || site === undefined) return undefined;
   // An exception covers the whole registrable domain, such as example.co.uk.
-  const domain = deps.blocker.domainOf(tab.url) ?? site;
+  const domain = exceptionSite(site, deps.blocker.domainOf(tab.url) ?? site);
   return {
     kind: 'shield',
     anchor,

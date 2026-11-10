@@ -10,6 +10,10 @@ import type {
   RawPolicyValue,
 } from '../../domain/policy/policy.ts';
 import type * as RegistryExport from './registry-export.ts';
+import { windowsProgram } from '../node/system-programs.ts';
+
+/** The converter of macOS for property lists, by its full path. */
+const plutil = '/usr/bin/plutil';
 
 /** The outcome of a program that a policy provider ran. */
 export interface RunResult {
@@ -102,7 +106,7 @@ export class WindowsRegistryPolicyProvider implements PolicyProvider {
         hives.map(async ([hive, scope]) => {
           const file = this.io.tempFile(`policies-${hive}.reg`);
           try {
-            const run = await this.io.runAsync('reg', this.exportArgs(hive, file));
+            const run = await this.io.runAsync(windowsProgram('reg'), this.exportArgs(hive, file));
             return this.read(parser, hive, scope, file, run);
           } finally {
             this.io.remove(file);
@@ -179,7 +183,7 @@ export class MacManagedPreferencesPolicyProvider implements PolicyProvider {
     return combine(
       await Promise.all(
         files.map(async ([path, scope]) =>
-          this.read(parsePlist, path, scope, await this.io.runAsync('plutil', plutilArgs(path))),
+          this.read(parsePlist, path, scope, await this.io.runAsync(plutil, plutilArgs(path))),
         ),
       ),
     );

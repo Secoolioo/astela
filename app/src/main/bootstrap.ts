@@ -24,7 +24,6 @@ import {
   SetShellInsets,
   TabAction,
 } from '../shared/ipc/shell-contracts.ts';
-import { Lifecycle } from '../kernel/lifecycle/lifecycle.ts';
 import {
   FanOutLogSink,
   RingBufferLogSink,
@@ -33,8 +32,6 @@ import {
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { linksFromArguments } from '../domain/navigation/links.ts';
-import { resolveOmniboxInput } from '../domain/navigation/omnibox.ts';
-import { engineForSearchUrl } from '../shared/search-engines.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
@@ -92,7 +89,7 @@ import type { SitePermissions } from '../domain/permissions/site-permissions.ts'
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
-import { freeName } from '../domain/downloads/downloads.ts';
+import { freeName, pathKey } from '../domain/downloads/downloads.ts';
 import type { Downloads } from './downloads.ts';
 import type { PermissionPrompts } from './permission-prompt.ts';
 import { sitePermissions } from './site-permissions.ts';
@@ -148,6 +145,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerAppScheme();
   app.setName(brand.productName);
   app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
+  // Windows shows notifications only for the ID that the installers give the app's shortcuts.
+  if (process.platform === 'win32') app.setAppUserModelId(brand.appId);
   const safeMode = app.commandLine.hasSwitch('safe-mode');
   // The self-test is only for package checks; it loads at once, off the start-up path.
   const smokeReport = app.commandLine.getSwitchValue('smoke-test');
@@ -223,7 +222,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
   await settingsLoaded;
-  const lifecycle = new Lifecycle(logger, clock, {});
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
     new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
@@ -327,16 +325,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     const folder = app.getPath('downloads');
     const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
       const path = join(folder, candidate);
-      return reservedPaths.has(path) || existsSync(path);
+      return reservedPaths.has(pathKey(path, process.platform)) || existsSync(path);
     });
     const path = join(folder, name);
+    const reserved = pathKey(path, process.platform);
     try {
       mkdirSync(folder, { recursive: true });
     } catch (error: unknown) {
       logger.warn('The downloads folder could not be made', { error: String(error) });
     }
-    reservedPaths.add(path);
-    item.once('done', () => reservedPaths.delete(path));
+    reservedPaths.add(reserved);
+    item.once('done', () => reservedPaths.delete(reserved));
     item.setSavePath(path);
     loadDownloads().then(
       (list) => list.track(item, privateWindow),
@@ -352,8 +351,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     const handler = (): PermissionHandler =>
       privateSessions.has(s) ? privatePermissions : webPermissions;
     return {
-      request: (contents, permission, mediaTypes) =>
-        handler().request(contents, permission, mediaTypes),
+      request: (contents, permission, mediaTypes, requestingUrl) =>
+        handler().request(contents, permission, mediaTypes, requestingUrl),
       check: (contents, permission, origin, details) =>
         handler().check(contents, permission, origin, details),
       shareScreen: (request, callback) => handler().shareScreen(request, callback),
@@ -405,6 +404,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Organizations can keep people from opening private windows.
   const privateWindowsAllowed = (): boolean =>
     policies.mandatoryValue(PrivateModeAvailability) !== 1;
+  const openPrivateWindow = (): void => {
+    if (privateWindowsAllowed()) windows.open(undefined, { private: true });
+  };
 
   const gate = new IpcGate(clock);
   const router = new IpcRouter(gate, logger);
@@ -448,6 +450,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           searchTemplate,
           openTab: openFromPage,
           developerTools,
+          isInternal: (contents) => contents.session === internal,
           logger,
         }),
       )
@@ -513,9 +516,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
     downloads: (privateWindow) => downloads?.summary(privateWindow) ?? null,
     openWindow: () => void windows.open(),
-    openPrivateWindow: () => {
-      if (privateWindowsAllowed()) windows.open(undefined, { private: true });
-    },
+    openPrivateWindow,
+    // Administrators expect a change of policy to show when they come back to the browser.
+    onFocus: () => void policies.refresh(),
     onPrivateWindowsClosed: forgetPrivate,
     // The shortcut shows the downloads button first; the shell opens the list at it.
     showDownloads: (window) =>
@@ -622,10 +625,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Sites and proxies that ask for a user name and password ask in the tab's window.
   app.on('login', (event, contents, details, info, callback) => {
     const window = contents === null ? undefined : windows.forTab(contents);
-    if (window === undefined) return;
+    if (window === undefined || contents === null) return;
     event.preventDefault();
     void import('./login-prompt.ts').then(({ askForLogin }) =>
-      askForLogin(window, details, info, callback, overlayOptions, router),
+      askForLogin(window, contents, details, info, callback, overlayOptions, router),
     );
   });
   // Certificates that the user accepted after the warning hold for this session.
@@ -733,7 +736,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   windows.onDidChange(keepSession);
   windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
-  lifecycle.advance('ready');
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
   let shellLoaded = false;
   first.shellContents.once('did-finish-load', () => {
@@ -751,10 +753,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   }
   logger.info('First window opened', { ms: Math.round(process.uptime() * 1000) });
   if (process.platform === 'darwin') {
-    const frontWindow = (): BrowserWindowController => windows.lastUsed ?? windows.open();
     void import('./browser-menu.ts')
-      .then(({ macMenuBar }) =>
-        Menu.setApplicationMenu(macMenuBar((command) => frontWindow().execute(command))),
+      .then(({ macMenuBar, runFromMenuBar }) =>
+        Menu.setApplicationMenu(
+          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow)),
+        ),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
   }
@@ -770,9 +773,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .catch((error: unknown) => logger.error('The update service failed to start', error));
   });
 
-  const refreshPolicies = (): void => void policies.refresh();
-  app.on('browser-window-focus', refreshPolicies);
-  const timer = setInterval(refreshPolicies, 15 * 60 * 1000);
+  const timer = setInterval(() => void policies.refresh(), 15 * 60 * 1000);
   timer.unref();
 
   app.on('activate', () => {
@@ -788,31 +789,24 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     event.preventDefault();
     logger.info('Shutting down');
     if (shellLoaded) boot.guard.markHealthy(app.getVersion());
-    lifecycle.onWillShutdown((e) => {
-      e.join(store.flush(), 'settings');
-      const snapshot = windows.snapshot();
-      if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
-      e.join(sessionStore.flush(), 'session');
-      const web = session.fromPartition(webPartition);
-      web.flushStorageData();
-      e.join(web.cookies.flushStore(), 'cookies');
-    });
-    void lifecycle.shutdown('quit').then(() => {
-      // A window that fails to close must not keep the browser from quitting.
-      try {
-        windows.dispose();
-      } catch (error: unknown) {
-        logger.error('A window did not close cleanly', error);
-      }
-      data.dispose();
-      updates?.installOnExit();
-      updates?.dispose();
-      logger.info('Shutdown complete');
-      // Everything is saved and every window is closed at this point.
-      app.exit(0);
-    });
+    // The code that shuts the browser down loads when it quits.
+    void import('./shutdown.ts')
+      .then(({ shutDown }) =>
+        shutDown({
+          logger,
+          clock,
+          settings: store,
+          sessions: sessionStore,
+          windows,
+          web: session.fromPartition(webPartition),
+          data,
+          updates,
+        }),
+      )
+      .catch((error: unknown) => logger.error('The shutdown failed', error))
+      // Everything is saved and every window is closed at this point, or saving failed.
+      .finally(() => app.exit(0));
   });
-  lifecycle.advance('running');
 }
 
 function registerShellHandlers(
@@ -828,8 +822,8 @@ function registerShellHandlers(
     }
     return window;
   };
-  const target = async (input: string): Promise<string | undefined> =>
-    resolveOmniboxInput(input, await searchTemplate())?.url;
+  const target = (input: string): Promise<string | undefined> =>
+    resolveInput(input, searchTemplate);
   router.handle(GetShellState, (_request, { sender }) => windowOf(sender).state());
   router.handle(OpenTab, async ({ input }, { sender }) => {
     const url = input === undefined ? undefined : await target(input);
@@ -878,18 +872,33 @@ function registerNewTabHandlers(
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
 ): void {
-  router.handle(GetNewTabState, async () => ({
-    engine: engineForSearchUrl(await searchTemplate())?.name ?? null,
-  }));
+  router.handle(GetNewTabState, async () => {
+    const { engineForSearchUrl } = await import('../shared/search-engines.ts');
+    return { engine: engineForSearchUrl(await searchTemplate())?.name ?? null };
+  });
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);
-    const url = resolveOmniboxInput(input, await searchTemplate())?.url;
+    const url = await resolveInput(input, searchTemplate);
     if (window !== undefined && tabId !== undefined && url !== undefined) {
       window.tabs.navigate(tabId, url);
     }
     return null;
   });
+}
+
+/**
+ * The address that the text of an address bar or of the search field of the new tab page
+ * leads to. Its parser loads with the first text, not before the first window.
+ * @param input - The text.
+ * @param searchTemplate - The address of the search engine.
+ */
+async function resolveInput(
+  input: string,
+  searchTemplate: () => Promise<string>,
+): Promise<string | undefined> {
+  const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
+  return resolveOmniboxInput(input, await searchTemplate())?.url;
 }
 
 /**

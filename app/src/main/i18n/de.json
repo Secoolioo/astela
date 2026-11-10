@@ -49,5 +49,15 @@
   "menu.quit": "&Beenden",
   "menu.exit": "&Beenden",
   "menu.file": "&Ablage",
-  "dialog.about": "{name} {version}"
+  "dialog.about": "{name} {version}",
+  "menu.edit": "&Bearbeiten",
+  "menu.window": "&Fenster",
+  "menu.minimize": "&Im Dock ablegen",
+  "menu.zoomWindow": "&Zoomen",
+  "menu.front": "Alle nach &vorne bringen",
+  "menu.services": "&Dienste",
+  "menu.hide": "Astela &ausblenden",
+  "menu.hideOthers": "&Andere ausblenden",
+  "menu.showAll": "Alle &einblenden",
+  "menu.quitApp": "Astela &beenden"
 }

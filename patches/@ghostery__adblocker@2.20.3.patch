@@ -1,3 +1,15 @@
+diff --git a/dist/commonjs/engine/optimizer.js b/dist/commonjs/engine/optimizer.js
+index 22965de9a217341aed571847b9b6c4a275265c3b..f4411cf367ad0eb77f383d179f681f83caacd478 100644
+--- a/dist/commonjs/engine/optimizer.js
++++ b/dist/commonjs/engine/optimizer.js
+@@ -173,6 +173,7 @@ const OPTIMIZATIONS = [
+             !filter.isHostnameAnchor() &&
+             !filter.isRedirect() &&
+             !filter.isCSP() &&
++            !filter.isRemoveParam() &&
+             !filter.isCaseSensitive,
+     },
+ ];
 diff --git a/dist/commonjs/filters/cosmetic.js b/dist/commonjs/filters/cosmetic.js
 index e8e99a2b4994bb211c752d7e8f356a6fcf7add10..03bdce35863e1953b8f083702a4a6e5e8c87d2bd 100644
 --- a/dist/commonjs/filters/cosmetic.js
@@ -14,6 +26,18 @@ index e8e99a2b4994bb211c752d7e8f356a6fcf7add10..03bdce35863e1953b8f083702a4a6e5e
                  script = script.replace(`{{${i + 1}}}`, arg);
              }
              return script;
+diff --git a/dist/esm/engine/optimizer.js b/dist/esm/engine/optimizer.js
+index 7db80f234e1ea2e498e2aa0f8101ece88ee5364f..a66b6292ce5418592b142cefdcba6dc9e00b769e 100644
+--- a/dist/esm/engine/optimizer.js
++++ b/dist/esm/engine/optimizer.js
+@@ -135,6 +135,7 @@ const OPTIMIZATIONS = [
+             !filter.isHostnameAnchor() &&
+             !filter.isRedirect() &&
+             !filter.isCSP() &&
++            !filter.isRemoveParam() &&
+             !filter.isCaseSensitive,
+     },
+ ];
 diff --git a/dist/esm/filters/cosmetic.js b/dist/esm/filters/cosmetic.js
 index 5d0fd9e54166c6c4112058f5ae0233f5705ff9e3..e53f516cf60c98af7ddee369253a2665f4568d88 100644
 --- a/dist/esm/filters/cosmetic.js

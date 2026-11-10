@@ -160,3 +160,15 @@ export function forget(
   const { [origin]: _site, ...others } = sites;
   return Object.keys(rest).length === 0 ? others : { ...others, [origin]: rest };
 }
+
+/**
+ * Whether a frame may use what its page decides. A page lets the frames of other sites use
+ * its camera, microphone and location through its permissions policy, which Chromium
+ * applies; no such policy covers notifications, so only the page's own site gets them.
+ * @param permission - Electron's name of the permission.
+ * @param origin - The origin of the page.
+ * @param requesting - The address or origin of the frame that asks.
+ */
+export function mayAsk(permission: string, origin: string, requesting: string): boolean {
+  return permission !== 'notifications' || originOf(requesting) === origin;
+}

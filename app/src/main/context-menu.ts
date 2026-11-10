@@ -19,6 +19,8 @@ export interface ContextMenuDependencies {
   readonly openTab: (url: string, opener: WebContents, activate: boolean) => void;
   /** Whether the developer tools may open, which the policies decide. */
   readonly developerTools: () => boolean;
+  /** Whether a view shows one of the browser's own pages, which never get the developer tools. */
+  readonly isInternal: (contents: Electron.WebContents) => boolean;
   readonly logger: Logger;
 }
 
@@ -46,7 +48,7 @@ export async function popupContextMenu(
       canGoForward: history?.canGoForward() ?? false,
       canCopyImage: params.frame?.processId === contents.mainFrame.processId,
       searchTemplate,
-      canInspect: tabId !== undefined && deps.developerTools(),
+      canInspect: tabId !== undefined && !deps.isInternal(contents) && deps.developerTools(),
     },
     contextMenuLabels(app.getLocale(), process.platform),
     process.platform,

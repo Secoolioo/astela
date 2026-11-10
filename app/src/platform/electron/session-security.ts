@@ -17,11 +17,13 @@ export interface PermissionHandler {
    * @param contents - The page.
    * @param permission - Electron's name of the permission.
    * @param mediaTypes - For `media`, the devices that the page wants.
+   * @param requestingUrl - The address of the frame that asks, which can be an embedded one.
    */
   request(
     contents: WebContents,
     permission: string,
     mediaTypes: readonly string[],
+    requestingUrl: string,
   ): Promise<boolean>;
   /** Whether a page has a permission already, for checks such as `Notification.permission`. */
   check(
@@ -52,7 +54,9 @@ export function hardenSession(session: Session, permissions?: PermissionHandler)
       return;
     }
     const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
-    permissions.request(contents, permission, mediaTypes).then(callback, () => callback(false));
+    permissions
+      .request(contents, permission, mediaTypes, details.requestingUrl)
+      .then(callback, () => callback(false));
   });
   session.setPermissionCheckHandler(
     (contents, permission, requestingOrigin, details) =>
@@ -117,6 +121,9 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
       }
       return {
         action: 'allow',
+        // Tabs and windows stay open when the page that opened them closes, as in other
+        // browsers; Electron would close them with it.
+        outlivesOpener: true,
         // Electron hands over the page that Chromium made, and the browser shows it.
         createWindow: (made) => {
           const created: unknown = Reflect.get(made, 'webContents');

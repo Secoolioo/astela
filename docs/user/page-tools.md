@@ -2,15 +2,15 @@
 
 > **Status:** available from 0.1.0-beta.4.
 
-These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; on macOS, the View menu of the menu bar has them too.
+These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; on macOS, the File and View menus of the menu bar have them too.
 
 ## Find in the page
 
-`Ctrl+F` (`Command+F` on macOS) opens the find bar below the toolbar. Astela marks every match on the page while you type and shows which match is selected and how many there are, or that there are none. Enter or the down arrow goes to the next match, Shift+Enter or the up arrow to the previous one, also with `F3` and `Shift+F3`. Escape or the close button closes the bar and leaves the last match selected. The bar opens again with the text you looked for last.
+`Ctrl+F` (`Command+F` on macOS) opens the find bar below the toolbar. Astela marks every match on the page while you type and shows which match is selected and how many there are, or that there are none. Enter or the down arrow goes to the next match, Shift+Enter or the up arrow to the previous one, also with `F3` and `Shift+F3` (`Command+G` and `Command+Shift+G` on macOS). Escape or the close button closes the bar and leaves the last match selected. The bar opens again with the text you looked for last.
 
 ## Zoom
 
-`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), or Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to 100 %. The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at 100 %, the address bar shows its zoom; a click on it returns to 100 %.
+`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), and on Windows and Linux Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to 100 %. The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at 100 %, the address bar shows its zoom; a click on it returns to 100 %.
 
 ## Full screen
 

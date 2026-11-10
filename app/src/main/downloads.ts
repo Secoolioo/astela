@@ -17,6 +17,7 @@ import {
   type OverlayContent,
 } from '../shared/ipc/overlay-contracts.ts';
 import { existingOverlay, overlayBySender, overlayOf, track } from './overlays.ts';
+import { quarantine } from '../platform/node/quarantine.ts';
 
 /** What the list of downloads needs from the composition root. */
 export interface DownloadsDependencies {
@@ -113,6 +114,8 @@ export class Downloads {
    * @param privateWindow - Whether a page of a private window started it.
    */
   track(item: DownloadItem, privateWindow: boolean): void {
+    // A small download can finish while the list loads; it sends no events any more.
+    const state = item.getState();
     const entry: Entry = {
       id: this.nextId,
       dbId: undefined,
@@ -120,9 +123,9 @@ export class Downloads {
       path: item.getSavePath(),
       total: item.getTotalBytes(),
       received: item.getReceivedBytes(),
-      state: 'progressing',
-      paused: item.isPaused(),
-      item,
+      state,
+      paused: state === 'progressing' && item.isPaused(),
+      item: state === 'progressing' ? item : undefined,
       privateWindow,
     };
     this.nextId += 1;
@@ -131,19 +134,25 @@ export class Downloads {
     // The download joins the stored list after the list from before has loaded; downloads of
     // private windows are not stored.
     if (!privateWindow) this.store(entry);
-    item.on('updated', (_event, state) => {
+    if (state !== 'progressing') {
+      if (state === 'completed') this.markFromWeb(entry);
+      this.changed();
+      return;
+    }
+    item.on('updated', (_event, update) => {
       entry.received = item.getReceivedBytes();
       entry.total = item.getTotalBytes();
       entry.paused = item.isPaused();
-      entry.state = state === 'interrupted' ? 'interrupted' : 'progressing';
+      entry.state = update === 'interrupted' ? 'interrupted' : 'progressing';
       this.changed();
     });
-    item.once('done', (_event, state) => {
+    item.once('done', (_event, done) => {
       entry.received = item.getReceivedBytes();
       entry.total = item.getTotalBytes();
       entry.paused = false;
-      entry.state = state;
+      entry.state = done;
       entry.item = undefined;
+      if (done === 'completed') this.markFromWeb(entry);
       this.save(entry);
       this.changed();
     });
@@ -177,6 +186,17 @@ export class Downloads {
     this.deps.windows.refreshShells();
     // The list from before fills the panel once it has loaded.
     void this.loaded.then(() => this.changed());
+  }
+
+  /**
+   * Marks a finished download as coming from the internet on macOS, so Gatekeeper checks it
+   * before it opens.
+   */
+  private markFromWeb(entry: Entry): void {
+    if (process.platform !== 'darwin') return;
+    void quarantine(entry.path, app.getName(), Date.now()).then((marked) => {
+      if (!marked) this.deps.logger.warn('A download could not be marked as coming from the web');
+    });
   }
 
   /** Adds a download to the stored list, once the list from before has loaded. */

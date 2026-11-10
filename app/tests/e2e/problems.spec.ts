@@ -148,7 +148,9 @@ test('warns about a certificate that is not trusted and continues only when aske
     const url = `https://127.0.0.1:${port}/`;
     await open(browser, url);
     const problem = browser.shell.getByRole('region', { name: "Your connection isn't private" });
-    await expect(problem).toBeVisible();
+    // Windows checks an unknown certificate with the system, which can look for its issuer on
+    // the network first; the warning shows once the check has failed.
+    await expect(problem).toBeVisible({ timeout: 30_000 });
     await expect(problem).toContainText('Error: ERR_CERT_AUTHORITY_INVALID');
     expect(await pageShown(browser)).toBe(false);
     const proceed = problem.getByRole('button', { name: `Continue to 127.0.0.1:${port}` });
@@ -207,5 +209,84 @@ test('asks for the user name and password that a site wants, and signs in', asyn
   } finally {
     await browser.close();
     await new Promise<void>((done) => guarded.close(() => done()));
+  }
+});
+
+test('asks for the sign-in of a tab in the background once the tab shows', async () => {
+  let asked = 0;
+  const guarded = createServer((request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    if (request.url === '/') {
+      response.end('<!doctype html><title>Start</title><a href="/members.html">Members</a>');
+      return;
+    }
+    const expected = `Basic ${Buffer.from('tester:secret').toString('base64')}`;
+    if (request.headers.authorization === expected) {
+      response.end('<!doctype html><title>Members</title><p>Signed in as tester</p>');
+      return;
+    }
+    asked += 1;
+    response.statusCode = 401;
+    response.setHeader('WWW-Authenticate', 'Basic realm="Fixture members"');
+    response.end('<!doctype html><title>Members</title><p>Not signed in</p>');
+  });
+  await new Promise<void>((done) => guarded.listen(0, '127.0.0.1', done));
+  const { port } = guarded.address() as AddressInfo;
+  const browser = await launch();
+  try {
+    const start = `http://127.0.0.1:${port}/`;
+    await open(browser, start);
+    const page = await waitForPage(browser, (current) => current === start);
+    await page.getByRole('link', { name: 'Members' }).click({ button: 'middle' });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect.poll(() => asked).toBe(1);
+    // The question would show by now; the tab in front keeps the keyboard and the window.
+    await new Promise((done) => setTimeout(done, 1000));
+    const overlays = browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((candidate) => candidate.url().startsWith('app://overlay'));
+    for (const shown of overlays) {
+      await expect(shown.getByRole('dialog', { name: 'Sign in' })).toBeHidden();
+    }
+    await browser.shell.getByRole('tab', { name: /Members|127\.0\.0\.1/ }).click();
+    const overlay = await waitForPage(browser, (current) => current.startsWith('app://overlay'));
+    const prompt = overlay.getByRole('dialog', { name: 'Sign in' });
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('textbox', { name: 'User name' }).fill('tester');
+    await prompt.getByLabel('Password').fill('secret');
+    await prompt.getByRole('button', { name: 'Sign in' }).click();
+    const members = await waitForPage(browser, (current) => current.endsWith('/members.html'));
+    await expect(members.getByText('Signed in as tester')).toBeVisible();
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => guarded.close(() => done()));
+  }
+});
+
+test('warns that a proxy gets the password unencrypted, also on the way to an https site', async () => {
+  const refusal =
+    'HTTP/1.1 407 Proxy Authentication Required\r\n' +
+    'Proxy-Authenticate: Basic realm="Fixture proxy"\r\nContent-Length: 0\r\n\r\n';
+  const proxy = createServer((_request, response) => {
+    response.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="Fixture proxy"' }).end();
+  });
+  // A browser reaches an https site through the proxy with CONNECT, which asks the same way.
+  proxy.on('connect', (_request, socket) => {
+    socket.end(refusal);
+  });
+  await new Promise<void>((done) => proxy.listen(0, '127.0.0.1', done));
+  const { port } = proxy.address() as AddressInfo;
+  const browser = await launch([`--proxy-server=http://127.0.0.1:${port}`]);
+  try {
+    await open(browser, 'https://proxied.example/');
+    const overlay = await waitForPage(browser, (current) => current.startsWith('app://overlay'));
+    const prompt = overlay.getByRole('dialog', { name: 'Sign in' });
+    await expect(prompt).toContainText(`The proxy 127.0.0.1:${port} asks for a user name`);
+    await expect(prompt).toContainText('The connection is not encrypted');
+  } finally {
+    await browser.close();
+    proxy.closeAllConnections();
+    await new Promise<void>((done) => proxy.close(() => done()));
   }
 });

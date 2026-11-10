@@ -53,6 +53,8 @@ const windowsAndLinux: Row[] = [
   ['Ctrl+Shift+=, typing +', press('+', ctrlShift), 'zoom.in'],
   ['Ctrl+-', press('-', ctrl), 'zoom.out'],
   ['Ctrl+0', press('0', ctrl), 'zoom.reset'],
+  ['Ctrl+0 on French, typing à', press('à', { ...ctrl, code: 'Digit0' }), 'zoom.reset'],
+  ['Ctrl+- on French, on the 6 key', press('-', { ...ctrl, code: 'Digit6' }), 'zoom.out'],
   ['F11', press('F11'), 'window.fullscreen'],
   ['Ctrl+P', press('p', ctrl), 'page.print'],
   ['Ctrl+S', press('s', ctrl), 'page.save'],
@@ -123,6 +125,7 @@ const macOS: Row[] = [
   ['Cmd+=', press('=', cmd), 'zoom.in'],
   ['Cmd+-', press('-', cmd), 'zoom.out'],
   ['Cmd+0', press('0', cmd), 'zoom.reset'],
+  ['Cmd+0 on French, typing à', press('à', { ...cmd, code: 'Digit0' }), 'zoom.reset'],
   ['Ctrl+Cmd+F', press('f', { ...ctrl, ...cmd }), 'window.fullscreen'],
   ['Cmd+P', press('p', cmd), 'page.print'],
   ['Cmd+S', press('s', cmd), 'page.save'],
@@ -167,6 +170,24 @@ const macOS: Row[] = [
   ['no F5', press('F5'), undefined],
   ['no F6', press('F6'), undefined],
   ['no Option+D typing ∂', press('∂', { ...alt, code: 'KeyD' }), undefined],
+  // Option types another character on a letter key, or starts an accent.
+  [
+    'Cmd+Option+I, starting an accent',
+    press('Dead', { ...cmdOption, code: 'KeyI' }),
+    'devtools.toggle',
+  ],
+  [
+    'Cmd+Option+U, starting an accent',
+    press('Dead', { ...cmdOption, code: 'KeyU' }),
+    'page.source',
+  ],
+  ['Cmd+Option+L, typing ¬', press('¬', { ...cmdOption, code: 'KeyL' }), 'downloads.open'],
+  [
+    'Cmd+Option+L on German, typing @',
+    press('@', { ...cmdOption, code: 'KeyL' }),
+    'downloads.open',
+  ],
+  ['no Cmd+Option+D typing ∂', press('∂', { ...cmdOption, code: 'KeyD' }), undefined],
   ['no Option+Right, which moves by word', press('ArrowRight', alt), undefined],
 ];
 

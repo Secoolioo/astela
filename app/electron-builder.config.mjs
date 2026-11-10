@@ -112,6 +112,8 @@ export default {
     extendInfo: {
       NSCameraUsageDescription: 'A website you visit can ask to use the camera.',
       NSMicrophoneUsageDescription: 'A website you visit can ask to use the microphone.',
+      NSLocationUsageDescription: 'A website you visit can ask to use your location.',
+      NSLocationWhenInUseUsageDescription: 'A website you visit can ask to use your location.',
     },
   },
   dmg: { artifactName: `${slug}-macos-\${arch}.\${ext}` },

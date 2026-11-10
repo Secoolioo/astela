@@ -30,9 +30,13 @@ const LoginPrompt = v.strictObject({
   secure: v.boolean(),
 });
 
-/** A site that asks for permissions: its host, with the port if it has one, and what it wants. */
+/**
+ * A site that asks for permissions: the question's number, the site's host with the port if it
+ * has one, and what it wants.
+ */
 const PermissionPrompt = v.strictObject({
   kind: v.literal('permission'),
+  id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
   site: v.pipe(v.string(), v.maxLength(300)),
   permissions: v.pipe(
     v.array(v.picklist(['camera', 'microphone', 'location', 'notifications', 'clipboard'])),
@@ -151,7 +155,10 @@ export const SignIn = defineRequest({
 /** Answers the question of a site for permissions; the answer is kept for the site. */
 export const AnswerPermission = defineRequest({
   channel: 'overlay.answerPermission',
-  request: v.strictObject({ allow: v.boolean() }),
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    allow: v.boolean(),
+  }),
   response: v.null(),
   capability: 'overlay',
 });
