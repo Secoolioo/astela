@@ -1223,6 +1223,9 @@ export class WindowManager implements Disposable {
       if (index !== -1) this.focusOrder.splice(index, 1);
     };
     controller.window.on('focus', () => {
+      // The focus that a window got while it opened can reach it after it closed, on macOS
+      // when it closes right away; a closed window never counts as the one used last.
+      if (!this.windows.has(controller)) return;
       forget();
       this.focusOrder.push(controller);
       this.options.onFocus?.();

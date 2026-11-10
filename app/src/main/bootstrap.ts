@@ -8,22 +8,13 @@ import {
   ActivateTab,
   CloseTab,
   GetShellState,
-  OpenBlockerPopover,
-  OpenDownloads,
   ShellCommand,
-  ProceedUnsafely,
-  FindInPage,
-  StopFinding,
-  ResetZoom,
-  OpenBookmarkFolder,
-  ToggleBookmark,
-  OpenMenu,
   NavigateTab,
   OpenTab,
-  ReopenClosedTab,
   SetShellInsets,
   TabAction,
 } from '../shared/ipc/shell-contracts.ts';
+import { shellLaterChannels } from '../shared/ipc/shell-channels.ts';
 import {
   FanOutLogSink,
   RingBufferLogSink,
@@ -614,12 +605,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     logger,
   });
-  registerShellHandlers(router, windows, searchTemplate, privateWindowsAllowed);
-  router.handle(OpenDownloads, (anchor, { sender }) => {
-    const window = windows.forShell(sender);
-    if (window !== undefined) void loadDownloads().then((list) => list.open(window, anchor));
-    return null;
-  });
+  registerShellHandlers(router, windows, searchTemplate);
   const overlayOptions = {
     url: 'app://overlay/',
     preload: layout.pagePreload,
@@ -642,10 +628,31 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
   );
   certificates.attach(app);
-  router.handle(ProceedUnsafely, ({ tabId }, { sender }) => {
-    windows.forShell(sender)?.proceedUnsafely(tabId, (contents) => certificates.allow(contents));
-    return null;
-  });
+  // Requests of the shell that its first paint does not need load with the first of them.
+  router.handleLater(shellLaterChannels, () =>
+    import('./shell-later.ts').then(({ registerLaterShellHandlers }) =>
+      registerLaterShellHandlers({
+        router,
+        windows,
+        privateWindows: privateWindowsAllowed,
+        openDownloads: (window, anchor) =>
+          void loadDownloads().then((list) => list.open(window, anchor)),
+        allowCertificate: (contents) => certificates.allow(contents),
+        folderContents: (folder) => bookmarks?.contents(folder) ?? [],
+        openShieldPopover: async (window, anchor) => {
+          const { openShieldPopover } = await import('./shield-popover.ts');
+          openShieldPopover(window, anchor, {
+            windows,
+            router,
+            overlay: overlayOptions,
+            settings,
+            blocker,
+            blocking,
+          });
+        },
+      }),
+    ),
+  );
   registerNewTabHandlers(router, windows, searchTemplate);
   const shellSettings = new Set([
     BookmarksBarSetting.key,
@@ -664,37 +671,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     ) {
       void blocker.loadExtras();
     }
-  });
-  router.handle(OpenBookmarkFolder, async ({ id, from, x, y }, { sender }) => {
-    const window = windows.forShell(sender);
-    if (window === undefined) return null;
-    const { popupBookmarkFolder } = await import('./browser-menu.ts');
-    popupBookmarkFolder(
-      window,
-      { x, y },
-      { id, from },
-      (folder) => bookmarks?.contents(folder) ?? [],
-      (url, newTab) => {
-        const active = window.tabs.active;
-        if (newTab || active === undefined) window.tabs.open(url);
-        else window.tabs.navigate(active.id, url);
-      },
-    );
-    return null;
-  });
-  router.handle(OpenBlockerPopover, async (anchor, { sender }) => {
-    const window = windows.forShell(sender);
-    if (window === undefined) return null;
-    const { openShieldPopover } = await import('./shield-popover.ts');
-    openShieldPopover(window, anchor, {
-      windows,
-      router,
-      overlay: overlayOptions,
-      settings,
-      blocker,
-      blocking,
-    });
-    return null;
   });
 
   router.handle(GetBlockerStatus, async () => {
@@ -818,7 +794,6 @@ function registerShellHandlers(
   router: IpcRouter,
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
-  privateWindows: () => boolean,
 ): void {
   const windowOf = (sender: Electron.WebContents): BrowserWindowController => {
     const window = windows.forShell(sender);
@@ -839,10 +814,6 @@ function registerShellHandlers(
     ({ tabId }, { sender }) => (windowOf(sender).tabs.activate(tabId), null),
   );
   router.handle(CloseTab, ({ tabId }, { sender }) => (windowOf(sender).tabs.close(tabId), null));
-  router.handle(
-    ReopenClosedTab,
-    (_request, { sender }) => (windowOf(sender).tabs.reopenClosed(), null),
-  );
   router.handle(NavigateTab, async ({ tabId, input }, { sender }) => {
     const url = await target(input);
     if (url !== undefined) windowOf(sender).tabs.navigate(tabId, url);
@@ -853,23 +824,6 @@ function registerShellHandlers(
     ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
   );
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
-  router.handle(FindInPage, ({ tabId, query, forward, next }, { sender }) => {
-    windowOf(sender).find(tabId, query, forward, next);
-    return null;
-  });
-  router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
-  router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
-  router.handle(
-    ToggleBookmark,
-    (_request, { sender }) => (windowOf(sender).execute('bookmark.toggle'), null),
-  );
-  // The menu code loads with the first menu, not before the first window.
-  router.handle(OpenMenu, async (position, { sender }) => {
-    const window = windowOf(sender);
-    const { popupBrowserMenu } = await import('./browser-menu.ts');
-    popupBrowserMenu(window, position, { privateWindows: privateWindows() });
-    return null;
-  });
 }
 
 function registerNewTabHandlers(

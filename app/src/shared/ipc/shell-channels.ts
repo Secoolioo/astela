@@ -1,16 +1,6 @@
-/**
- * Channel names of the shell, without schemas, so the preload script stays tiny. A test
- * checks that this list matches the contracts in `shell-contracts.ts`.
- */
-export const shellChannels = [
-  'shell.getState',
-  'tabs.open',
-  'tabs.activate',
-  'tabs.close',
+/** Requests of the shell whose handlers load with the first of them. */
+export const shellLaterChannels = [
   'tabs.reopenClosed',
-  'tabs.navigate',
-  'tabs.action',
-  'shell.setInsets',
   'shell.openMenu',
   'shell.openBlockerPopover',
   'shell.openDownloads',
@@ -20,6 +10,22 @@ export const shellChannels = [
   'tabs.resetZoom',
   'shell.toggleBookmark',
   'shell.openBookmarkFolder',
+] as const;
+
+/**
+ * Channel names of the shell, without schemas, so the preload script stays tiny. A test
+ * checks that this list matches the contracts in `shell-contracts.ts` and
+ * `shell-later-contracts.ts`.
+ */
+export const shellChannels = [
+  'shell.getState',
+  'tabs.open',
+  'tabs.activate',
+  'tabs.close',
+  'tabs.navigate',
+  'tabs.action',
+  'shell.setInsets',
+  ...shellLaterChannels,
 ] as const;
 
 /** Event channels the shell listens to. */
