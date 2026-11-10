@@ -1,15 +1,31 @@
-import { webContents, type Session } from 'electron';
+import { webContents, type Session, type WebContents } from 'electron';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
 import {
+  ExportSettings,
   GetSettings,
+  ImportSettings,
+  ResetSettings,
   SetSetting,
   SettingsChanged,
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
+
+/**
+ * Whether a request comes from the settings page itself. The setup guide may use the settings
+ * too, but only the settings page resets, exports and imports them.
+ * @param sender - The page that sent the request.
+ */
+function fromSettingsPage(sender: WebContents): boolean {
+  try {
+    return new URL(sender.getURL()).host === 'settings';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Connects the settings page to the settings: it reads and writes every setting that has a
@@ -30,8 +46,18 @@ export function connectSettingsPage(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
   );
   const view = (definition: SettingDefinition<unknown>): SettingView => {
-    const { value, locked } = settings.inspect(definition);
-    return { key: definition.key, value, locked };
+    const inspection = settings.inspect(definition);
+    const { value, locked } = inspection;
+    return {
+      key: definition.key,
+      value,
+      locked,
+      changed:
+        !locked &&
+        inspection.userValue !== undefined &&
+        JSON.stringify(inspection.userValue) !== JSON.stringify(definition.default),
+      recommended: inspection.source === 'policy-recommended',
+    };
   };
   router.handle(GetSettings, () => ({
     settings: [...shown.values()].map(view),
@@ -53,6 +79,26 @@ export function connectSettingsPage(
       ok: false,
       error: result.error.kind === 'locked-by-policy' ? 'locked' : 'invalid',
     } as const;
+  });
+  router.handle(ResetSettings, ({ keys }, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page resets settings');
+    for (const key of keys) {
+      const definition = shown.get(key);
+      if (definition !== undefined && !settings.inspect(definition).locked) {
+        settings.reset(definition);
+      }
+    }
+    return null;
+  });
+  router.handle(ExportSettings, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page exports settings');
+    const { exportSettings } = await import('./settings-file.ts');
+    return { saved: await exportSettings(sender, [...shown.values()], settings) };
+  });
+  router.handle(ImportSettings, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page imports settings');
+    const { importSettings } = await import('./settings-file.ts');
+    return importSettings(sender, shown, settings);
   });
   return settings.onDidChange(({ keys }) => {
     const changed = keys.flatMap((key) => {

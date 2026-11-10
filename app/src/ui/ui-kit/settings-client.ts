@@ -4,6 +4,10 @@ export interface SettingView {
   readonly value: unknown;
   /** Whether a mandatory policy sets the value. */
   readonly locked: boolean;
+  /** Whether the user set a value other than the default. */
+  readonly changed?: boolean;
+  /** Whether the value is the one that a recommended policy suggests. */
+  readonly recommended?: boolean;
 }
 
 /** An accent preset with its color in each mode. */

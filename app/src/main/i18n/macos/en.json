@@ -59,5 +59,8 @@
   "menu.hide": "Hide Astela",
   "menu.hideOthers": "Hide Others",
   "menu.showAll": "Show All",
-  "menu.quitApp": "Quit Astela"
+  "menu.quitApp": "Quit Astela",
+  "settings.exportTitle": "Export Settings",
+  "settings.importTitle": "Import Settings",
+  "settings.fileType": "Settings"
 }

@@ -77,7 +77,13 @@ test('switches the blocker off from the settings page', async () => {
       .poll(() => settings.evaluate(() => window.bridge.invoke('settings.getAll', {})))
       .toMatchObject({
         settings: expect.arrayContaining([
-          { key: 'contentBlocker.enabled', value: false, locked: false },
+          {
+            key: 'contentBlocker.enabled',
+            value: false,
+            locked: false,
+            changed: true,
+            recommended: false,
+          },
         ]),
       });
   } finally {

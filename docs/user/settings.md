@@ -12,6 +12,16 @@ From 0.1.0-beta.5, the field at the top of the page finds settings by their name
 
 Every section and every setting has an address of its own, such as `app://settings/#privacy` or `app://settings/#tabs.position`. Opening it, also from a bookmark or another tab, shows that part of the page and puts the keyboard focus on it.
 
+## Changed settings, reset, export and import
+
+From 0.1.0-beta.5, **Show changed settings** lists only the settings that differ from their defaults. **Reset** next to such a setting sets it back; **Reset all settings…** sets every setting back after a question.
+
+**Export settings…** saves the settings that you changed in a file, and **Import settings…** reads such a file, on this or another computer. The file holds the values only, never passwords or browsing data, but its lists of sites tell which sites you gave permissions or turned the content blocker off for. An import tells how many settings it took over; it skips settings that your organization manages and values that are not valid, and a file that holds no settings of Astela changes nothing.
+
+## Settings that your organization manages
+
+A setting that a policy of your organization sets shows a lock and _Managed by your organization_; it cannot be changed, reset or imported. A setting whose value your organization only recommends shows _Recommended by your organization_; you can change it, and Reset brings the recommended value back.
+
 ## Appearance
 
 - **Color mode:** System follows the light or dark mode of your operating system; Light and Dark always use one of them. Web pages that offer a dark design follow this choice too.
