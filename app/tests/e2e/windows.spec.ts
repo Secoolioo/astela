@@ -79,14 +79,17 @@ test('opens one window from the menu bar of macOS when no window is open', async
     await expect.poll(() => windowCount(browser)).toBe(0);
     await clickMenuBar(browser, 'File', 'New Tab');
     await expect.poll(() => windowCount(browser)).toBe(1);
+    // The new tab page needs a renderer of its own, whose start can take seconds on a busy machine.
     await expect
-      .poll(() =>
-        browser.main.evaluate(
-          ({ webContents }) =>
-            webContents
-              .getAllWebContents()
-              .filter((contents) => contents.getURL() === 'app://newtab/').length,
-        ),
+      .poll(
+        () =>
+          browser.main.evaluate(
+            ({ webContents }) =>
+              webContents
+                .getAllWebContents()
+                .filter((contents) => contents.getURL() === 'app://newtab/').length,
+          ),
+        { timeout: 15_000 },
       )
       .toBe(1);
   } finally {
