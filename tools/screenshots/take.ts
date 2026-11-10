@@ -7,7 +7,7 @@
  * Usage: `pnpm screenshots`
  */
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -37,8 +37,26 @@ function run(
   }
 }
 
+// The content blocker gets the filter data of the tests, so that its shield shows the blocker
+// at work, not the error of a blocker without data. Data that was there before, such as the
+// real lists for a package, comes back afterwards.
+const blocker = join(app, 'build', 'blocker');
+const kept = `${blocker}.kept`;
+const hadData = existsSync(blocker);
+if (hadData) renameSync(blocker, kept);
 const packages = mkdtempSync(join(tmpdir(), 'screenshots-'));
 try {
+  run(
+    process.execPath,
+    [
+      'tools/blocker/build.ts',
+      '--out',
+      blocker,
+      '--fixture',
+      join(app, 'tests/e2e/fixtures/blocker'),
+    ],
+    { cwd: root },
+  );
   const testBuild = { E2E_BUILD: '1', PACKAGE_DIR: packages };
   run('pnpm', ['exec', 'electron-vite', 'build'], { cwd: app, env: testBuild });
   run(
@@ -73,4 +91,6 @@ try {
   );
 } finally {
   rmSync(packages, { recursive: true, force: true });
+  rmSync(blocker, { recursive: true, force: true });
+  if (hadData) renameSync(kept, blocker);
 }
