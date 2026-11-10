@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
+import { minifySync, type Plugin } from 'vite';
 
 const brand: unknown = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../brand.json'), 'utf8'),
@@ -19,6 +20,28 @@ const define = { BUILD_BRAND: JSON.stringify(brand) };
 // and in the main process every byte of the start-up path is read before the first window.
 const comments = { legal: true, annotation: false, jsdoc: false };
 
+/**
+ * Minifies the chunks of the main bundle that hold only dependencies, such as valibot, which
+ * the start-up path reads before the first window. Astela's own code stays as written, so its
+ * stack traces stay readable; names of functions and classes stay as well.
+ */
+const minifyDependencies: Plugin = {
+  name: 'minify-dependencies',
+  generateBundle(_options, bundle) {
+    const keepNames = { function: true, class: true };
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type !== 'chunk') continue;
+      const ids = chunk.moduleIds;
+      if (ids.length === 0 || !ids.every((id) => id.includes('/node_modules/'))) continue;
+      chunk.code = minifySync(chunk.fileName, chunk.code, {
+        module: true,
+        compress: { keepNames },
+        mangle: { keepNames },
+      }).code;
+    }
+  },
+};
+
 export default defineConfig({
   main: {
     define: {
@@ -27,6 +50,7 @@ export default defineConfig({
       // Only the rollback test builds a version that fails to start on purpose.
       BUILD_TEST_BOOT_FAILURE: JSON.stringify(process.env['TEST_BOOT_FAILURE'] === '1'),
     },
+    plugins: [minifyDependencies],
     build: {
       outDir: 'out/main',
       lib: {
