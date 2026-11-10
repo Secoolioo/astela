@@ -187,6 +187,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   );
   policies.applyCached();
   const freshPolicies = policies.refresh();
+  // Whether the shell of the first window has loaded; until then, the policies that were
+  // just read for the start are current.
+  let shellLoaded = false;
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -518,7 +521,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     openWindow: () => void windows.open(),
     openPrivateWindow,
     // Administrators expect a change of policy to show when they come back to the browser.
-    onFocus: () => void policies.refresh(),
+    // The focus that the first window gets at start does not read them a second time.
+    onFocus: () => {
+      if (shellLoaded) void policies.refresh();
+    },
     onPrivateWindowsClosed: forgetPrivate,
     // The shortcut shows the downloads button first; the shell opens the list at it.
     showDownloads: (window) =>
@@ -737,7 +743,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
-  let shellLoaded = false;
   first.shellContents.once('did-finish-load', () => {
     shellLoaded = true;
     setTimeout(() => boot.guard.markHealthy(app.getVersion()), 10_000).unref();

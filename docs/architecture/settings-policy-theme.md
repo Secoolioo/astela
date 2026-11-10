@@ -202,7 +202,7 @@ flowchart LR
 
 ### Refresh
 
-Policies will be read again whenever the browser gains focus and every 15 minutes. Changed values will apply right away, except those that need a restart.
+Policies are read again when a window gains focus and every 15 minutes. The focus that the first window gets while it opens is the exception: the policies that the start has just read are current. Changed values apply right away, except those that need a restart.
 
 ### Invalid policies
 

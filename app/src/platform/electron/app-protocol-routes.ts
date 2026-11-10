@@ -21,11 +21,16 @@ export const appContentSecurityPolicy = [
   'trusted-types lit-html',
 ].join('; ');
 
-/** Response headers of every internal page and file. */
+/**
+ * Response headers of every internal page and file. There is no `Cross-Origin-Opener-Policy`:
+ * a page with one cannot stay in the renderer that its view started with its empty first
+ * document, so every view would start a second renderer before its page could run. Internal
+ * pages have no openers to keep apart: they cannot open windows, and web pages can neither
+ * open nor navigate to them.
+ */
 export const appResponseHeaders: Readonly<Record<string, string>> = {
   'content-security-policy': appContentSecurityPolicy,
   'x-content-type-options': 'nosniff',
-  'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
   'cache-control': 'no-cache',
 };

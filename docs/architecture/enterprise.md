@@ -41,7 +41,7 @@ In M1, Astela reads every policy source without a native module while Electron s
 - **macOS:** `plutil -convert xml1 -o -` converts the managed preferences plists to XML, which is then parsed. XML is used instead of JSON because plist dates and binary data (`<date>` and `<data>`) cannot be converted to JSON.
 - **Linux:** the JSON files are read directly.
 
-Until the sources have been read, the last known policy set applies. It is cached in the profile and also serves as the fallback when a source cannot be read. The first window waits for the fresh set; only a start without a cache reads the sources before the app is ready. Policies are read again, in the background, when the browser gains focus and every 15 minutes.
+Until the sources have been read, the last known policy set applies. It is cached in the profile and also serves as the fallback when a source cannot be read. The first window waits for the fresh set; only a start without a cache reads the sources before the app is ready. Policies are read again, in the background, when a window gains focus, except while the first window opens, and every 15 minutes.
 
 In M5, a native Node-API addon is planned. It will use `RegisterGPNotification` on Windows to be notified of Group Policy changes and `CFPreferencesAppValueIsForced` on macOS to tell forced values apart.
 
