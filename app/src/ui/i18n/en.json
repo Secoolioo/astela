@@ -266,5 +266,13 @@
   "settings.importDone": "Imported settings: {count}",
   "settings.importSkipped": "Imported settings: {count}. Skipped, as your organization manages them or they are not valid: {skipped}",
   "settings.importInvalid": "This file holds no settings of Astela.",
-  "settings.recommended": "Recommended by your organization"
+  "settings.recommended": "Recommended by your organization",
+  "settings.languages": "Languages",
+  "settings.language": "Language of the browser",
+  "settings.languageNote": "Menus, dialogs and the pages of Astela",
+  "settings.language.system": "Same as the system",
+  "settings.language.keywords": "locale translation interface",
+  "settings.restartNote": "Takes effect after a restart",
+  "settings.restartNeeded": "Some changes take effect after a restart.",
+  "settings.restartNow": "Restart now"
 }

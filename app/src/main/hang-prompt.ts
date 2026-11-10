@@ -1,4 +1,5 @@
-import { app, dialog, type WebContents } from 'electron';
+import { dialog, type WebContents } from 'electron';
+import { uiLocale } from './ui-language.ts';
 import type { TabId } from '../domain/tabs/tab-service.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import { translatorFor } from './i18n/i18n.ts';
@@ -24,7 +25,7 @@ export async function askAboutHangingPage(
   const settle = (): void => answered.abort();
   contents.once('responsive', settle);
   contents.once('destroyed', settle);
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   let site = contents.getURL();
   try {
     site = new URL(site).host || site;

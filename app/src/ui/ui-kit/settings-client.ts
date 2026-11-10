@@ -8,6 +8,8 @@ export interface SettingView {
   readonly changed?: boolean;
   /** Whether the value is the one that a recommended policy suggests. */
   readonly recommended?: boolean;
+  /** Whether the value differs from the one the browser started with, until a restart. */
+  readonly restart?: boolean;
 }
 
 /** An accent preset with its color in each mode. */

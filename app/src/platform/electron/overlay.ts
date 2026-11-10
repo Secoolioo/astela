@@ -16,6 +16,8 @@ export interface OverlayOptions {
   readonly partition: string;
   /** Command line argument that gives the page its design tokens. */
   readonly appearanceArgument: () => string;
+  /** Command line arguments that give the page its language. */
+  readonly languageArguments: readonly string[];
   readonly gate: IpcGate;
   readonly router: IpcRouter;
 }
@@ -114,6 +116,7 @@ export class WindowOverlay implements OverlayHandle {
         additionalArguments: [
           '--bridge-scope=overlay',
           this.options.appearanceArgument(),
+          ...this.options.languageArguments,
           ...(this.window.isPrivate ? [privateWindowArgument] : []),
         ],
         sandbox: true,

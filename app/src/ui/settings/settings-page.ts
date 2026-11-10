@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
-import { isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
+import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
   SettingsClient,
@@ -123,6 +123,21 @@ export class SettingsPage extends LitElement {
         margin: var(--space-2) 0 0;
         color: var(--text-2);
       }
+      /* The hint stays in view at the bottom while the page scrolls. */
+      .restart {
+        position: sticky;
+        bottom: var(--space-3);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin: var(--space-3) 0 0;
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
       .lock {
         width: 12px;
         height: 12px;
@@ -144,7 +159,8 @@ export class SettingsPage extends LitElement {
         justify-content: flex-end;
         gap: var(--space-2);
       }
-      dialog .primary {
+      dialog .primary,
+      .restart .primary {
         border-color: var(--accent);
         background: var(--accent);
         color: var(--on-accent, #fff);
@@ -506,6 +522,23 @@ export class SettingsPage extends LitElement {
         ],
       },
       {
+        id: 'languages',
+        title: 'settings.languages',
+        rows: [
+          {
+            id: 'i18n.language',
+            keys: [
+              'settings.language',
+              'settings.languageNote',
+              'settings.language.keywords',
+              'settings.language.system',
+            ],
+            words: Object.keys(catalogs).map((code) => languageName(code)),
+            render: () => this.renderLanguage(),
+          },
+        ],
+      },
+      {
         id: 'search',
         title: 'settings.search',
         rows: [
@@ -641,6 +674,9 @@ export class SettingsPage extends LitElement {
   protected override render(): TemplateResult {
     const t = this.t;
     const sections = this.sections();
+    const restart = sections
+      .flatMap((section) => section.rows)
+      .some((row) => this.client?.get(row.id)?.restart === true);
     const words = searchWords(this.query);
     const shown = sections
       .map((section) => {
@@ -748,6 +784,20 @@ export class SettingsPage extends LitElement {
                     </section>`
               }`,
         )}
+        ${
+          restart
+            ? html`<div class="restart" role="status">
+                <span>${t('settings.restartNeeded')}</span>
+                <button
+                  type="button"
+                  class="primary"
+                  @click=${() => void this.bridge?.invoke('settings.restart', {})}
+                >
+                  ${t('settings.restartNow')}
+                </button>
+              </div>`
+            : nothing
+        }
       </div>
     `;
   }
@@ -983,6 +1033,43 @@ export class SettingsPage extends LitElement {
     </div>`;
   }
 
+  /** The language of the browser, which takes effect after a restart. */
+  private renderLanguage(): TemplateResult {
+    const setting = this.client?.get('i18n.language');
+    const value = typeof setting?.value === 'string' ? setting.value : 'system';
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.language')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">
+                ${this.t(setting?.restart === true ? 'settings.restartNote' : 'settings.languageNote')}
+              </span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.language')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement)
+            void this.client?.set('i18n.language', select.value);
+        }}
+      >
+        <option value="system" ?selected=${value === 'system'}>
+          ${this.t('settings.language.system')}
+        </option>
+        ${Object.keys(catalogs).map(
+          (code) =>
+            html`<option value=${code} lang=${code} ?selected=${value === code}>
+              ${languageName(code)}
+            </option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
   private renderSearch(): TemplateResult {
     const setting = this.client?.get('search.urlTemplate');
     const disabled = setting?.locked !== false;
@@ -1095,6 +1182,15 @@ interface PageSection {
 
 /** The texts of the page in every language, so a word of either language finds a setting. */
 const languages = [new Translator('en'), new Translator('de')];
+
+/** The name of a language in that language, such as Deutsch. */
+function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 /** The keys of the names of a choice's options. */
 function optionKeys(key: keyof typeof choices, label: MessageKey): MessageKey[] {

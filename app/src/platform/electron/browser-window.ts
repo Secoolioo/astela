@@ -83,6 +83,8 @@ export interface BrowserWindowOptions {
   readonly backgroundColor: (privateWindow: boolean) => string;
   /** Command line argument that gives a view of the browser's own UI its design tokens. */
   readonly appearanceArgument: () => string;
+  /** Command line arguments that give the views of the browser's own UI their language. */
+  readonly languageArguments: readonly string[];
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
@@ -235,7 +237,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       webPreferences: {
         preload: options.shellPreload,
         partition: options.internalPartition,
-        additionalArguments: [options.appearanceArgument(), ...privateArgument(this.isPrivate)],
+        additionalArguments: [
+          options.appearanceArgument(),
+          ...options.languageArguments,
+          ...privateArgument(this.isPrivate),
+        ],
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -815,6 +821,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               additionalArguments: [
                 `--bridge-scope=${[page, ...sharedChannels[page]].join(',')}`,
                 this.options.appearanceArgument(),
+                ...this.options.languageArguments,
                 ...privateArgument(this.isPrivate),
               ],
               sandbox: true,

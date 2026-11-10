@@ -1,5 +1,6 @@
-import { webContents, type Session, type WebContents } from 'electron';
+import { app, webContents, type Session, type WebContents } from 'electron';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
+import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
@@ -8,6 +9,7 @@ import {
   GetSettings,
   ImportSettings,
   ResetSettings,
+  RestartBrowser,
   SetSetting,
   SettingsChanged,
   type SettingView,
@@ -34,6 +36,8 @@ function fromSettingsPage(sender: WebContents): boolean {
  * @param settings - Loaded settings.
  * @param definitions - All settings; those with `ui` metadata appear on the page.
  * @param internal - Session of the browser's own views, whose pages receive changes.
+ * @param startValues - The values, as JSON, that the settings which need a restart had when
+ *   the browser started.
  * @returns A disposable that stops publishing changes.
  */
 export function connectSettingsPage(
@@ -41,6 +45,7 @@ export function connectSettingsPage(
   settings: SettingsService,
   definitions: readonly SettingDefinition<unknown>[],
   internal: Session,
+  startValues: ReadonlyMap<string, string>,
 ): Disposable {
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
@@ -57,6 +62,9 @@ export function connectSettingsPage(
         inspection.userValue !== undefined &&
         JSON.stringify(inspection.userValue) !== JSON.stringify(definition.default),
       recommended: inspection.source === 'policy-recommended',
+      restart:
+        definition.restartRequired === true &&
+        startValues.get(definition.key) !== JSON.stringify(value),
     };
   };
   router.handle(GetSettings, () => ({
@@ -99,6 +107,13 @@ export function connectSettingsPage(
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page imports settings');
     const { importSettings } = await import('./settings-file.ts');
     return importSettings(sender, shown, settings);
+  });
+  router.handle(RestartBrowser, (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page restarts the browser');
+    app.relaunch({ args: restartArguments(process.argv.slice(1), process.defaultApp) });
+    // Quitting saves the session and the settings first, as on every quit.
+    app.quit();
+    return null;
   });
   return settings.onDidChange(({ keys }) => {
     const changed = keys.flatMap((key) => {

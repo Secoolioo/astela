@@ -1,7 +1,7 @@
-import { Translator, pickLanguage } from '../i18n/i18n.ts';
+import { Translator, pageLanguage } from '../i18n/i18n.ts';
 import { BookmarksPage } from './bookmarks-page.ts';
 
-const i18n = new Translator(pickLanguage(navigator.languages));
+const i18n = new Translator(pageLanguage());
 document.documentElement.lang = i18n.language;
 document.title = i18n.t('bookmarks.title');
 customElements.define('bookmarks-page', BookmarksPage);

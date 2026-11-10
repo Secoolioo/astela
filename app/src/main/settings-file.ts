@@ -1,4 +1,5 @@
 import { BaseWindow, app, dialog, type WebContents } from 'electron';
+import { uiLocale } from './ui-language.ts';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
@@ -24,7 +25,7 @@ function windowOf(contents: WebContents): BaseWindow | undefined {
 
 /** The options of the file dialogs of settings files. */
 function fileOptions(title: string): Electron.SaveDialogOptions & Electron.OpenDialogOptions {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   return {
     title,
     defaultPath: join(app.getPath('documents'), `${brand.slug}-settings.json`),
@@ -44,7 +45,7 @@ export async function exportSettings(
   definitions: readonly SettingDefinition<unknown>[],
   settings: SettingsService,
 ): Promise<boolean> {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   const options = fileOptions(i18n.t('settings.exportTitle'));
   const window = windowOf(sender);
   const { canceled, filePath } =
@@ -77,7 +78,7 @@ export async function importSettings(
   | { readonly ok: true; readonly applied: number; readonly skipped: number }
   | { readonly ok: false; readonly error: 'canceled' | 'invalid' }
 > {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   const options = {
     ...fileOptions(i18n.t('settings.importTitle')),
     properties: ['openFile' as const],
