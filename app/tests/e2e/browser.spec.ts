@@ -80,6 +80,32 @@ test('opens, closes and reopens tabs with keyboard shortcuts', async () => {
     .toContain(`${server.origin}/index.html`);
 });
 
+test('takes what is typed right after a new tab opened into the address bar of that tab', async () => {
+  await navigate(`${server.origin}/index.html`);
+  await waitForPage(browser, (url) => url.endsWith('/index.html'));
+  await browser.shell.evaluate(() => {
+    const events: string[] = [];
+    Reflect.set(window, 'shellEvents', events);
+    window.bridge.on('shell.stateChanged', (state) => {
+      events.push(`state ${String((state as { activeTabId: unknown }).activeTabId)}`);
+    });
+    window.bridge.on('shell.command', (command) => events.push(`command ${String(command)}`));
+  });
+  const events = (): Promise<string[]> =>
+    browser.shell.evaluate(() => Reflect.get(window, 'shellEvents') as string[]);
+  await pressNative(browser, 'T', ['primary']);
+  // The shell knows the new tab before its address bar takes the focus, so the first keys
+  // after the shortcut do not go to the tab that was active.
+  await expect.poll(events).toContain('command omnibox.focus');
+  const seen = await events();
+  expect(seen.slice(0, seen.indexOf('command omnibox.focus'))).toContain('state t2');
+  await navigate(`${server.origin}/second.html`);
+  await waitForPage(browser, (url) => url.endsWith('/second.html'));
+  await expect
+    .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+    .toEqual([`${server.origin}/index.html`, `${server.origin}/second.html`]);
+});
+
 test('goes back and forward with the shortcuts of each system', async () => {
   await navigate(`${server.origin}/index.html`);
   const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));

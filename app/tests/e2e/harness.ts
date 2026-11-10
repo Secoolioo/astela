@@ -32,7 +32,10 @@ const appDir = resolve(import.meta.dirname, '../..');
 declare global {
   interface Window {
     /** The shell's preload bridge; only internal pages have it. */
-    readonly bridge: { invoke(channel: string, payload: unknown): Promise<unknown> };
+    readonly bridge: {
+      invoke(channel: string, payload: unknown): Promise<unknown>;
+      on(channel: string, listener: (payload: unknown) => void): () => void;
+    };
   }
 }
 
