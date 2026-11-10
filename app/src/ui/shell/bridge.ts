@@ -4,21 +4,23 @@ import type {
   CloseTab,
   GetShellState,
   NavigateTab,
-  OpenBlockerPopover,
-  OpenDownloads,
-  ProceedUnsafely,
-  FindInPage,
-  StopFinding,
-  ResetZoom,
-  OpenMenu,
   OpenTab,
-  ReopenClosedTab,
   SetShellInsets,
   ShellState,
   TabAction,
-  ToggleBookmark,
-  OpenBookmarkFolder,
 } from '../../shared/ipc/shell-contracts.ts';
+import type {
+  FindInPage,
+  OpenBlockerPopover,
+  OpenBookmarkFolder,
+  OpenDownloads,
+  OpenMenu,
+  ProceedUnsafely,
+  ReopenClosedTab,
+  ResetZoom,
+  StopFinding,
+  ToggleBookmark,
+} from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
   'shell.getState': typeof GetShellState;

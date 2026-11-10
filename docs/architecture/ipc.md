@@ -49,6 +49,8 @@ In the browser process, `IpcRouter` is designed to register handlers with `handl
 
 A call that fails any check will be dropped and logged locally, and the handler never sees it. Nothing is reported to a remote service.
 
+Channels that the first window does not need, such as the shell's find in page, browser menu and popovers, are registered with `handleLater(channels, register)`. Their contracts and handlers are in a chunk of their own that loads with the first request on any of them; that request waits for the chunk, and every request passes the same checks as above. A test checks that these channels are exactly the ones that the chunk handles.
+
 ```mermaid
 flowchart LR
   CALL["Call from a view"] --> FRAME{"Registered app:// top-level frame?"}

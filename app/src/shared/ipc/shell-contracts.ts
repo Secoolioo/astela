@@ -1,11 +1,13 @@
 import * as v from 'valibot';
 import { tabStripPositions } from '../layout.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
-import { OverlayAnchor } from './overlay-anchor.ts';
 
-const TabId = v.pipe(v.string(), v.regex(/^t[0-9a-z]{1,12}$/));
-const Empty = v.strictObject({});
-const Done = v.null();
+/** The id of a tab. */
+export const TabId = v.pipe(v.string(), v.regex(/^t[0-9a-z]{1,12}$/));
+/** A request without a payload. */
+export const Empty = v.strictObject({});
+/** A response without a payload. */
+export const Done = v.null();
 
 /**
  * Why a tab shows no page: it could not be loaded (`error`), the certificate of its site is
@@ -124,14 +126,6 @@ export const CloseTab = defineRequest({
   capability: 'shell',
 });
 
-/** Reopens the most recently closed tab. */
-export const ReopenClosedTab = defineRequest({
-  channel: 'tabs.reopenClosed',
-  request: Empty,
-  response: Done,
-  capability: 'shell',
-});
-
 /** Navigates a tab to what the user typed in the address bar. */
 export const NavigateTab = defineRequest({
   channel: 'tabs.navigate',
@@ -168,92 +162,6 @@ export const SetShellInsets = defineRequest({
   ratePerSecond: 120,
 });
 
-/** Opens the browser menu below the menu button, at a point of the shell in CSS pixels. */
-export const OpenMenu = defineRequest({
-  channel: 'shell.openMenu',
-  request: v.strictObject({
-    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-  }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Looks for text in the page of a tab, or for its next or previous match. */
-export const FindInPage = defineRequest({
-  channel: 'tabs.find',
-  request: v.strictObject({
-    tabId: TabId,
-    query: v.pipe(v.string(), v.maxLength(1000)),
-    forward: v.boolean(),
-    next: v.boolean(),
-  }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Closes the find bar and stops looking. */
-export const StopFinding = defineRequest({
-  channel: 'tabs.stopFind',
-  request: v.strictObject({ tabId: TabId }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Sets the zoom of a tab's page back to 100 %. */
-export const ResetZoom = defineRequest({
-  channel: 'tabs.resetZoom',
-  request: v.strictObject({ tabId: TabId }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Accepts the certificate that a tab's page was refused, for this session, and reloads it. */
-export const ProceedUnsafely = defineRequest({
-  channel: 'tabs.proceedUnsafely',
-  request: v.strictObject({ tabId: TabId }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Opens the list of downloads at its button. */
-export const OpenDownloads = defineRequest({
-  channel: 'shell.openDownloads',
-  request: OverlayAnchor,
-  response: Done,
-  capability: 'shell',
-});
-
-/** Opens the content blocker's popover for the active tab at its button. */
-export const OpenBlockerPopover = defineRequest({
-  channel: 'shell.openBlockerPopover',
-  request: OverlayAnchor,
-  response: Done,
-  capability: 'shell',
-});
-
-/** Opens a menu with the contents of a folder of the bookmarks bar below its button. */
-export const OpenBookmarkFolder = defineRequest({
-  channel: 'shell.openBookmarkFolder',
-  request: v.strictObject({
-    id: v.pipe(v.number(), v.integer(), v.minValue(1)),
-    // How many of the folder's first entries the menu leaves out, as the bar shows them.
-    from: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
-    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-  }),
-  response: Done,
-  capability: 'shell',
-});
-
-/** Adds a bookmark for the page of the active tab, or removes its bookmarks. */
-export const ToggleBookmark = defineRequest({
-  channel: 'shell.toggleBookmark',
-  request: Empty,
-  response: Done,
-  capability: 'shell',
-});
-
 /** Sent to the shell when its state changed. */
 export const ShellStateChanged = defineEvent({
   channel: 'shell.stateChanged',
@@ -268,23 +176,16 @@ export const ShellCommand = defineEvent({
   capability: 'shell',
 });
 
-/** Every request contract of the shell, for registration and for the preload bridge. */
+/**
+ * The request contracts of the shell that its first paint needs; the others are in
+ * `shell-later-contracts.ts`.
+ */
 export const shellRequests: readonly RequestContract<unknown, unknown>[] = [
   GetShellState,
   OpenTab,
   ActivateTab,
   CloseTab,
-  ReopenClosedTab,
   NavigateTab,
   TabAction,
   SetShellInsets,
-  OpenMenu,
-  OpenBlockerPopover,
-  OpenDownloads,
-  ProceedUnsafely,
-  FindInPage,
-  StopFinding,
-  ResetZoom,
-  ToggleBookmark,
-  OpenBookmarkFolder,
 ];

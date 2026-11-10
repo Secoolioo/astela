@@ -2,12 +2,17 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 import { defineEvent, defineRequest } from '../../shared/ipc/contract.ts';
-import { shellChannels, shellEventChannels } from '../../shared/ipc/shell-channels.ts';
+import {
+  shellChannels,
+  shellEventChannels,
+  shellLaterChannels,
+} from '../../shared/ipc/shell-channels.ts';
 import {
   ShellCommand,
   ShellStateChanged,
   shellRequests,
 } from '../../shared/ipc/shell-contracts.ts';
+import { shellLaterRequests } from '../../shared/ipc/shell-later-contracts.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import {
   appContentSecurityPolicy,
@@ -98,7 +103,13 @@ describe('IpcGate', () => {
 
 describe('contracts', () => {
   it('keeps the preload channel list in sync with the contracts', () => {
-    expect(shellRequests.map((c) => c.channel).toSorted()).toEqual([...shellChannels].toSorted());
+    expect([...shellRequests, ...shellLaterRequests].map((c) => c.channel).toSorted()).toEqual(
+      [...shellChannels].toSorted(),
+    );
+    // The channels that load later are the ones whose contracts load later.
+    expect(shellLaterRequests.map((c) => c.channel).toSorted()).toEqual(
+      [...shellLaterChannels].toSorted(),
+    );
     expect([ShellStateChanged.channel, ShellCommand.channel].toSorted()).toEqual(
       [...shellEventChannels].toSorted(),
     );
