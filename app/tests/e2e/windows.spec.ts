@@ -240,6 +240,40 @@ test('opens links from other apps in a regular window, not in a popup', async ()
   }
 });
 
+test('forgets a window that closed, also when its focus arrives after it closed', async () => {
+  const browser = await launch();
+  try {
+    const first = await browser.main.evaluate(({ BaseWindow }) =>
+      BaseWindow.getAllWindows().map((window) => window.id),
+    );
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    // The new window closes at once. The focus that it got while it opened can reach it only
+    // after it closed, as on macOS when a window closes right after it opened. A link from
+    // another app that comes then opens in the window that is still open.
+    const link = `${server.origin}/second.html`;
+    await browser.main.evaluate(
+      async ({ app, BaseWindow }, { ids, url }) => {
+        const window = BaseWindow.getAllWindows().find((candidate) => !ids.includes(candidate.id));
+        if (window === undefined) throw new Error('The new window is missing');
+        await new Promise<void>((done) => {
+          window.once('closed', () => done());
+          window.close();
+        });
+        window.emit('focus');
+        app.emit('second-instance', {}, [process.execPath, '--', url], process.cwd(), {});
+      },
+      { ids: first, url: link },
+    );
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual(['app://newtab/', link]);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('opens a link in the background with a middle click, and in a new window with Shift', async () => {
   const browser = await launch();
   try {
