@@ -2,7 +2,14 @@ import { expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  FixtureServer,
+  launch,
+  pressNative,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 
 let browser: Browser;
 
@@ -343,4 +350,45 @@ test('scales the controls with the density, and the text with the text size and 
     'Use letters, digits, spaces, dots, hyphens and underscores only.',
   );
   await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+});
+
+test('gives web pages that open after a change the text size and the fonts of the settings', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const page = await openSettings();
+    await page.getByRole('combobox', { name: 'Text size of web pages' }).selectOption('Very large');
+    const standard = page.getByRole('textbox', { name: 'Standard' });
+    await standard.fill('DejaVu Serif');
+    await standard.blur();
+    await expect
+      .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+      .toMatchObject({
+        settings: expect.arrayContaining([
+          expect.objectContaining({ key: 'fonts.size', value: 24 }),
+          expect.objectContaining({
+            key: 'fonts.web',
+            value: { standard: 'DejaVu Serif', serif: '', sansSerif: '', fixed: '' },
+          }),
+        ]),
+      });
+    await pressNative(browser, 'T', ['primary']);
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    const web = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    const style = await web.evaluate(() => {
+      const body = getComputedStyle(document.body);
+      return { size: body.fontSize, family: body.fontFamily };
+    });
+    expect(style).toEqual({ size: '24px', family: '"DejaVu Serif"' });
+    // A name that is not one is refused.
+    await standard.fill('x";}');
+    await standard.blur();
+    await expect(page.getByRole('alert')).toHaveText(
+      'Use letters, digits, spaces, dots, hyphens and underscores only.',
+    );
+  } finally {
+    await server.stop();
+  }
 });

@@ -79,7 +79,7 @@ The font of the UI is a setting: the name of an installed font, or empty for the
 | Large     | 12   | 13    | 14  | 15    | 17     | 22    | 30      | 20, 20, 24, 28, 36 |
 | Larger    | 13   | 14    | 16  | 17    | 19     | 24    | 32      | 20, 24, 24, 32, 40 |
 
-Medium is the default. The line heights belong to the UI, Large, Larger, Title and Display text. The default fonts for web content are separate settings. The wordmark on the website is an SVG.
+Medium is the default. The line heights belong to the UI, Large, Larger, Title and Display text. The default fonts and the text size of web pages are separate settings, which new tabs get as web preferences. The wordmark on the website is an SVG.
 
 ## Icons
 
@@ -157,4 +157,4 @@ The three density levels, the text size, the font of the UI and the accent color
 
 The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area.
 
-Not implemented yet: `palette.json`, the banner and the social preview image, the default fonts of web content, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
+Not implemented yet: `palette.json`, the banner and the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
