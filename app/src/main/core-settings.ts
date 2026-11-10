@@ -179,6 +179,23 @@ export const BookmarksBarSetting = defineSetting<boolean>({
   ui: { section: 'appearance', control: 'toggle', order: 5 },
 });
 
+/**
+ * The language of the browser's menus, dialogs and own pages: `system` follows the language
+ * of the system, a language code such as `de` sets one. It takes effect after a restart.
+ */
+export const LanguageSetting = defineSetting<string>({
+  key: 'i18n.language',
+  schema: v.pipe(
+    v.string(),
+    v.regex(/^(?:system|[a-z]{2,3})$/, 'Must be system or a language code'),
+  ),
+  default: 'system',
+  scope: 'global',
+  policy: { name: 'ApplicationLocaleValue', recommended: true },
+  restartRequired: true,
+  ui: { section: 'languages', control: 'select', order: 1 },
+});
+
 /** Settings that exist before any feature module contributes its own. */
 export const coreSettings = [
   SearchUrlTemplate,
@@ -195,4 +212,5 @@ export const coreSettings = [
   StartupSetting,
   SetupShownSetting,
   BookmarksBarSetting,
+  LanguageSetting,
 ];

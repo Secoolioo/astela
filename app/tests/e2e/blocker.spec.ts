@@ -83,6 +83,7 @@ test('switches the blocker off from the settings page', async () => {
             locked: false,
             changed: true,
             recommended: false,
+            restart: false,
           },
         ]),
       });

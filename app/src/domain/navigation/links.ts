@@ -25,3 +25,6 @@ export function linksFromArguments(args: readonly string[]): string[] {
   }
   return links;
 }
+
+/** The switch that makes a start restore the last session, whatever the startup setting says. */
+export const restoreSessionSwitch = 'restore-last-session';

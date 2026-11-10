@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { launch, pressNative, waitForPage, type Browser } from './harness.ts';
+import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
 
 let browser: Browser;
 
@@ -87,6 +87,7 @@ test('chooses the search engine of the new tab page and the address bar', async 
         locked: false,
         changed: true,
         recommended: false,
+        restart: false,
       },
     ]),
   });
@@ -256,4 +257,63 @@ test('exports the settings to a file and imports them again', async () => {
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test('switches the language of the browser with a restart that brings the tabs back', async () => {
+  await browser.close();
+  // A link that this start opened does not open again after the restart.
+  browser = await launch(['--', 'http://127.0.0.1:9/link']);
+  const page = await openSettings();
+  const language = page.getByRole('combobox', { name: 'Language of the browser' });
+  const hint = page.getByRole('status').filter({ hasText: 'after a restart' });
+  await language.selectOption('de');
+  await expect(hint).toBeVisible();
+  await language.selectOption('system');
+  await expect(hint).toBeHidden();
+  await language.selectOption('de');
+  await page.getByRole('radio', { name: 'New tab page' }).check();
+  await browser.main.evaluate(({ app }) => {
+    const calls: unknown[] = [];
+    Reflect.set(globalThis, 'restartCalls', calls);
+    const quit = app.quit.bind(app);
+    app.relaunch = (options) => {
+      calls.push(options?.args);
+    };
+    app.quit = () => {
+      calls.push('quit');
+      app.quit = quit;
+    };
+  });
+  await page.getByRole('button', { name: 'Restart now' }).click();
+  const calls = (): Promise<unknown> =>
+    browser.main.evaluate(() => Reflect.get(globalThis, 'restartCalls') as unknown);
+  await expect
+    .poll(calls)
+    .toEqual([expect.arrayContaining(['--lang=en-US', '--restore-last-session']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['http://127.0.0.1:9/link']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['--']), 'quit']);
+
+  // The browser starts again as the restart starts it: in German, and with the tabs of
+  // before, although it starts with a new tab page otherwise.
+  const { profile } = browser;
+  await browser.close({ keepProfile: true });
+  browser = await launch(['--restore-last-session'], { profile });
+  await expect(
+    browser.shell.getByRole('textbox', { name: 'Adress- und Suchleiste' }),
+  ).toBeVisible();
+  expect((await shellState(browser.shell)).tabs.map((tab) => tab.url)).toEqual(['app://settings/']);
+  const restored = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(restored.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
+  await expect(restored.getByRole('status').filter({ hasText: 'Neustart' })).toHaveCount(0);
+  // The dialogs of the browser speak German too.
+  await browser.main.evaluate(({ dialog }) => {
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      Reflect.set(globalThis, 'dialogTitle', Reflect.get(Object(args.at(-1)), 'title'));
+      return Promise.resolve({ canceled: true, filePath: '' });
+    };
+  });
+  await restored.getByRole('button', { name: 'Einstellungen exportieren…' }).click();
+  await expect
+    .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'dialogTitle') as unknown))
+    .toBe('Einstellungen exportieren');
 });

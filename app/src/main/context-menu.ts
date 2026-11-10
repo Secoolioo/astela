@@ -1,4 +1,5 @@
-import { app, clipboard, Menu, type MenuItemConstructorOptions, type WebContents } from 'electron';
+import { clipboard, Menu, type MenuItemConstructorOptions, type WebContents } from 'electron';
+import { uiLocale } from './ui-language.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import {
   buildContextMenu,
@@ -50,7 +51,7 @@ export async function popupContextMenu(
       searchTemplate,
       canInspect: tabId !== undefined && !deps.isInternal(contents) && deps.developerTools(),
     },
-    contextMenuLabels(app.getLocale(), process.platform),
+    contextMenuLabels(uiLocale(), process.platform),
     process.platform,
   );
   if (entries.length === 0) {

@@ -266,5 +266,13 @@
   "settings.importDone": "Importierte Einstellungen: {count}",
   "settings.importSkipped": "Importierte Einstellungen: {count}. Übersprungen, weil deine Organisation sie verwaltet oder sie ungültig sind: {skipped}",
   "settings.importInvalid": "Diese Datei enthält keine Einstellungen von Astela.",
-  "settings.recommended": "Von deiner Organisation empfohlen"
+  "settings.recommended": "Von deiner Organisation empfohlen",
+  "settings.languages": "Sprachen",
+  "settings.language": "Sprache des Browsers",
+  "settings.languageNote": "Menüs, Dialoge und die Seiten von Astela",
+  "settings.language.system": "Wie im System",
+  "settings.language.keywords": "Gebietsschema Übersetzung Oberfläche",
+  "settings.restartNote": "Wirkt nach einem Neustart",
+  "settings.restartNeeded": "Manche Änderungen wirken erst nach einem Neustart.",
+  "settings.restartNow": "Jetzt neu starten"
 }

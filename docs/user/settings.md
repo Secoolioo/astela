@@ -4,7 +4,7 @@
 
 Open the settings from the menu button at the right end of the toolbar, then **Settings**. On macOS, the application menu has **Settings…** as well, and Cmd+, opens them. The settings open in a new tab, or in place of the new tab page when the current tab shows it; if a tab of the same window shows them already, that tab comes to the front.
 
-Every change applies at once, in every window, and is kept when the browser restarts.
+Every change applies at once, in every window, and is kept when the browser restarts; only the [language](#languages) waits for a restart.
 
 ## Find a setting
 
@@ -33,6 +33,12 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 ## On startup
 
 - **Open:** Last session reopens the windows and tabs you had open when the browser closed; New tab page starts with a single new tab. Restored tabs load when you first open them, so a start with many tabs stays fast.
+
+## Languages
+
+- **Language of the browser:** from 0.1.0-beta.5, the language of the menus, the dialogs and the pages of Astela, such as the settings and the new tab page. Same as the system follows the language of your operating system; English and Deutsch set one. Websites keep their own language.
+
+The language changes when the browser starts again. Until then, the settings page says that some changes take effect after a restart and offers **Restart now**, which quits Astela and starts it again with the windows and tabs that were open, also when it otherwise starts with a new tab page.
 
 ## Search
 
