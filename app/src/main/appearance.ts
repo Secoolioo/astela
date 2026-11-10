@@ -9,13 +9,25 @@ import type { SettingsService } from '../domain/settings/settings-service.ts';
 import { DisposableStore, toDisposable, type Disposable } from '../shared/disposable.ts';
 import { AppearanceChanged } from '../shared/ipc/appearance-contracts.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
-import { AccentSetting, ColorModeSetting, DensitySetting } from './core-settings.ts';
+import {
+  AccentSetting,
+  ColorModeSetting,
+  DensitySetting,
+  TextSizeSetting,
+  UiFontSetting,
+} from './core-settings.ts';
 
-const appearanceKeys = new Set([ColorModeSetting.key, AccentSetting.key, DensitySetting.key]);
+const appearanceKeys = new Set([
+  ColorModeSetting.key,
+  AccentSetting.key,
+  DensitySetting.key,
+  TextSizeSetting.key,
+  UiFontSetting.key,
+]);
 
 /**
  * Applies the appearance settings: the color mode to Chromium, so pages and the window
- * follow it, and the accent and density as design tokens to every view of the browser's
+ * follow it, and the accent, density, text size and font as design tokens to every view of the browser's
  * own UI. New views get the tokens on their command line, so they paint with them at once;
  * open views get them as an event when they change. The color math for a custom accent
  * loads with the first custom accent; the presets need none.
@@ -113,6 +125,8 @@ export class AppearanceController implements Disposable {
         ? presetAccentColors[accent]
         : (this.solve?.(accent) ?? presetAccentColors.blue),
       density: this.settings.get(DensitySetting),
+      textSize: this.settings.get(TextSizeSetting),
+      font: this.settings.get(UiFontSetting),
     });
   }
 

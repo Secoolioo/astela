@@ -274,5 +274,16 @@
   "settings.language.keywords": "Gebietsschema Übersetzung Oberfläche",
   "settings.restartNote": "Wirkt nach einem Neustart",
   "settings.restartNeeded": "Manche Änderungen wirken erst nach einem Neustart.",
-  "settings.restartNow": "Jetzt neu starten"
+  "settings.restartNow": "Jetzt neu starten",
+  "settings.textSize": "Textgröße",
+  "settings.textSize.small": "Klein",
+  "settings.textSize.medium": "Mittel",
+  "settings.textSize.large": "Groß",
+  "settings.textSize.larger": "Größer",
+  "settings.textSize.keywords": "Schriftgröße größer kleiner Zoom lesbar",
+  "settings.font": "Schrift des Browsers",
+  "settings.fontNote": "Der Name einer Schrift auf diesem Computer, etwa Inter. Leer nimmt die Schrift des Systems.",
+  "settings.fontSystem": "Schrift des Systems",
+  "settings.fontInvalid": "Nur Buchstaben, Ziffern, Leerzeichen, Punkte, Binde- und Unterstriche.",
+  "settings.font.keywords": "Schriftart Familie Typografie"
 }

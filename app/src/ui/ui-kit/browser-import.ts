@@ -83,7 +83,7 @@ export class BrowserImport extends LitElement {
       display: flex;
       align-items: center;
       gap: var(--space-3);
-      min-height: 48px;
+      min-height: var(--row-height);
       padding: 0 var(--space-3);
     }
     li + li {
@@ -105,7 +105,7 @@ export class BrowserImport extends LitElement {
       text-align: end;
     }
     button {
-      height: 28px;
+      height: var(--control-height);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);

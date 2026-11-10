@@ -14,7 +14,7 @@ export const choiceStyles = css`
   .segments label {
     position: relative;
     padding: var(--space-1) var(--space-3);
-    line-height: 20px;
+    line-height: var(--line-height-large);
   }
   .segments label + label {
     border-left: 1px solid var(--border-1);

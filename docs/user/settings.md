@@ -26,7 +26,9 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 
 - **Color mode:** System follows the light or dark mode of your operating system; Light and Dark always use one of them. Web pages that offer a dark design follow this choice too.
 - **Accent color:** blue, teal, green, orange, red, graphite, or any color you pick. A picked color keeps its hue; Astela only makes it darker in light mode or lighter in dark mode where that is needed to stay readable.
-- **Density:** Compact, Normal or Comfortable changes the height of the tabs and the toolbar.
+- **Density:** Compact, Normal or Comfortable changes the height of the tabs, the toolbar, the buttons and fields, and the space between them, in the browser's own pages as well.
+- **Text size:** from 0.1.0-beta.5, Small, Medium, Large or Larger changes the size of the text in the toolbar, the tabs, the menus and the browser's own pages. Web pages keep their size; zoom them with `Ctrl` and `+`.
+- **Font of the browser:** from 0.1.0-beta.5, the name of a font installed on your computer, such as Inter, for the text of the browser itself. An empty field, the default, uses the font of the system.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
 - **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 

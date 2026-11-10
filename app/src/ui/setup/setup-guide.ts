@@ -63,7 +63,7 @@ export class SetupGuide extends LitElement {
       .progress {
         display: flex;
         gap: var(--space-1);
-        margin-bottom: 32px;
+        margin-bottom: var(--space-6);
       }
       .progress span {
         height: 4px;
@@ -88,7 +88,7 @@ export class SetupGuide extends LitElement {
         display: flex;
         align-items: center;
         gap: var(--space-3);
-        min-height: 48px;
+        min-height: var(--row-height);
         padding: var(--space-2) var(--space-3);
       }
       .option .text {
@@ -118,28 +118,28 @@ export class SetupGuide extends LitElement {
       .eyebrow {
         margin: 0 0 var(--space-2);
         color: var(--text-2);
-        font-size: 12px;
-        line-height: 16px;
+        font-size: var(--font-size-small);
+        line-height: var(--line-height-ui);
         letter-spacing: 0.04em;
         text-transform: uppercase;
       }
       h1 {
         margin: 0 0 var(--space-2);
-        font-size: 28px;
-        line-height: 36px;
+        font-size: var(--font-size-display);
+        line-height: var(--line-height-display);
         font-weight: 600;
       }
       p {
-        margin: 0 0 24px;
+        margin: 0 0 var(--space-5);
         max-width: 560px;
         color: var(--text-2);
-        font-size: 14px;
-        line-height: 20px;
+        font-size: var(--font-size-large);
+        line-height: var(--line-height-large);
       }
       h2 {
-        margin: 24px 0 var(--space-2);
-        font-size: 14px;
-        line-height: 20px;
+        margin: var(--space-5) 0 var(--space-2);
+        font-size: var(--font-size-large);
+        line-height: var(--line-height-large);
         font-weight: 600;
       }
       .cards {
@@ -172,8 +172,8 @@ export class SetupGuide extends LitElement {
         border-radius: var(--radius-1);
       }
       .card span {
-        font-size: 13px;
-        line-height: 16px;
+        font-size: var(--font-size-ui);
+        line-height: var(--line-height-ui);
       }
       /* Presentation attributes cannot use custom properties, so the previews use classes. */
       .card .accent {
@@ -191,7 +191,7 @@ export class SetupGuide extends LitElement {
       .engines .card {
         flex-direction: row;
         align-items: center;
-        min-height: 48px;
+        min-height: var(--row-height);
         padding: 0 var(--space-3);
       }
       .swatches {
@@ -201,7 +201,7 @@ export class SetupGuide extends LitElement {
         box-sizing: border-box;
         width: 100%;
         max-width: 480px;
-        height: 32px;
+        height: var(--control-large);
         padding: 0 var(--space-2);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);
@@ -213,19 +213,19 @@ export class SetupGuide extends LitElement {
         display: block;
         margin-top: var(--space-1);
         color: var(--danger);
-        font-size: 12px;
+        font-size: var(--font-size-small);
       }
       footer {
         display: flex;
         align-items: center;
         gap: var(--space-2);
-        padding: 24px 0 var(--space-3);
+        padding: var(--space-5) 0 var(--space-3);
       }
       footer .spacer {
         flex: 1;
       }
       button {
-        height: 36px;
+        height: calc(var(--control-large) + 4px);
         padding: 0 var(--space-3);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);

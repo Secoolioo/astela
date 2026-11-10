@@ -317,3 +317,30 @@ test('switches the language of the browser with a restart that brings the tabs b
     .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'dialogTitle') as unknown))
     .toBe('Einstellungen exportieren');
 });
+
+test('scales the controls with the density, and the text with the text size and the font', async () => {
+  const page = await openSettings();
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  const height = (): Promise<string> => address.evaluate((input) => getComputedStyle(input).height);
+  expect(await height()).toBe('28px');
+  await page.getByRole('radio', { name: 'Compact' }).check();
+  await expect.poll(height).toBe('24px');
+  await page.getByRole('radio', { name: 'Comfortable' }).check();
+  await expect.poll(height).toBe('32px');
+  const body = (property: 'fontSize' | 'fontFamily') => () =>
+    page.evaluate((name) => getComputedStyle(document.body)[name], property);
+  expect(await body('fontSize')()).toBe('13px');
+  await page.getByRole('radio', { name: 'Larger' }).check();
+  await expect.poll(body('fontSize')).toBe('16px');
+  await expect.poll(() => browser.shell.evaluate(token, '--font-size-ui')).toBe('16px');
+  const font = page.getByRole('textbox', { name: 'Font of the browser' });
+  await font.fill('Inter Display');
+  await font.blur();
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+  await font.fill('x";} body{color:red');
+  await font.blur();
+  await expect(page.getByRole('alert')).toHaveText(
+    'Use letters, digits, spaces, dots, hyphens and underscores only.',
+  );
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+});

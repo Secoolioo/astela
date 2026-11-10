@@ -3,8 +3,11 @@ import { accentPresets } from '../domain/appearance/accent-presets.ts';
 import {
   colorModes,
   densities,
+  fontNamePattern,
+  textSizes,
   type ColorMode,
   type Density,
+  type TextSize,
 } from '../domain/appearance/appearance.ts';
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
@@ -51,6 +54,24 @@ export const DensitySetting = defineSetting<Density>({
   default: 'normal',
   scope: 'global',
   ui: { section: 'appearance', control: 'select', order: 3 },
+});
+
+/** How large the text of the browser's own UI is; the density sets its spacing. */
+export const TextSizeSetting = defineSetting<TextSize>({
+  key: 'appearance.textSize',
+  schema: v.picklist(textSizes),
+  default: 'medium',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'select', order: 6 },
+});
+
+/** The font of the browser's own UI, by its name; empty keeps the font of the system. */
+export const UiFontSetting = defineSetting<string>({
+  key: 'appearance.font',
+  schema: v.pipe(v.string(), v.regex(fontNamePattern, 'Must be the name of a font')),
+  default: '',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'text', order: 7 },
 });
 
 /** Where the tab strip is; vertical positions show the tabs as a list at the side. */
@@ -202,6 +223,8 @@ export const coreSettings = [
   ColorModeSetting,
   AccentSetting,
   DensitySetting,
+  TextSizeSetting,
+  UiFontSetting,
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,

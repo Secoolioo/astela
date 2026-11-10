@@ -13,6 +13,7 @@ import {
 const choices = {
   'appearance.colorMode': ['system', 'light', 'dark'],
   'appearance.density': ['compact', 'normal', 'comfortable'],
+  'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
   'startup.page': ['restore', 'newtab'],
 } as const;
@@ -25,6 +26,7 @@ export class SettingsPage extends LitElement {
   static override properties = {
     revision: { state: true },
     searchError: { state: true },
+    fontError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
     siteError: { state: true },
@@ -42,9 +44,9 @@ export class SettingsPage extends LitElement {
         display: grid;
         grid-template-columns: 176px minmax(0, 720px);
         justify-content: center;
-        column-gap: 32px;
+        column-gap: var(--space-6);
         box-sizing: border-box;
-        padding: var(--space-3) var(--space-3) 48px;
+        padding: var(--space-3) var(--space-3) var(--space-7);
       }
       nav {
         position: sticky;
@@ -81,7 +83,7 @@ export class SettingsPage extends LitElement {
       input[type='search'] {
         width: 100%;
         box-sizing: border-box;
-        height: 32px;
+        height: var(--control-large);
         padding: 0 var(--space-2);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);
@@ -141,7 +143,7 @@ export class SettingsPage extends LitElement {
       .lock {
         width: 12px;
         height: 12px;
-        margin-right: 4px;
+        margin-right: var(--space-1);
         vertical-align: -1px;
       }
       dialog {
@@ -166,15 +168,15 @@ export class SettingsPage extends LitElement {
         color: var(--on-accent, #fff);
       }
       h1 {
-        margin: 24px 0 16px;
-        font-size: 20px;
-        line-height: 28px;
+        margin: var(--space-5) 0 var(--space-4);
+        font-size: var(--font-size-title);
+        line-height: var(--line-height-title);
         font-weight: 600;
       }
       h2 {
-        margin: 24px 0 8px;
-        font-size: 14px;
-        line-height: 20px;
+        margin: var(--space-5) 0 var(--space-2);
+        font-size: var(--font-size-large);
+        line-height: var(--line-height-large);
         font-weight: 600;
         color: var(--text-2);
       }
@@ -192,7 +194,7 @@ export class SettingsPage extends LitElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--space-3);
-        min-height: 48px;
+        min-height: var(--row-height);
         padding: var(--space-2) var(--space-3);
         box-sizing: border-box;
       }
@@ -206,22 +208,22 @@ export class SettingsPage extends LitElement {
       }
       .note {
         color: var(--text-2);
-        font-size: 12px;
-        line-height: 16px;
+        font-size: var(--font-size-small);
+        line-height: var(--line-height-ui);
       }
       .problem {
         color: var(--danger);
       }
       .error {
         color: var(--danger);
-        font-size: 12px;
-        line-height: 16px;
+        font-size: var(--font-size-small);
+        line-height: var(--line-height-ui);
       }
       select,
       input[type='url'],
       input[type='text'],
       button {
-        height: 32px;
+        height: var(--control-large);
         padding: 0 var(--space-2);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);
@@ -293,6 +295,8 @@ export class SettingsPage extends LitElement {
 
   declare revision: number;
   declare searchError: boolean;
+  /** Whether the last font name was not one. */
+  declare fontError: boolean;
   declare customSearch: boolean;
   /** Whether the content blocker has no usable filter data. */
   declare blockerFailed: boolean;
@@ -314,6 +318,7 @@ export class SettingsPage extends LitElement {
     super();
     this.revision = 0;
     this.searchError = false;
+    this.fontError = false;
     this.customSearch = false;
     this.blockerFailed = false;
     this.siteError = false;
@@ -484,6 +489,20 @@ export class SettingsPage extends LitElement {
               ...optionKeys('appearance.density', 'settings.density'),
             ],
             render: () => this.renderChoice('appearance.density', 'settings.density'),
+          },
+          {
+            id: 'appearance.textSize',
+            keys: [
+              'settings.textSize',
+              'settings.textSize.keywords',
+              ...optionKeys('appearance.textSize', 'settings.textSize'),
+            ],
+            render: () => this.renderChoice('appearance.textSize', 'settings.textSize'),
+          },
+          {
+            id: 'appearance.font',
+            keys: ['settings.font', 'settings.fontNote', 'settings.font.keywords'],
+            render: () => this.renderFont(),
           },
           {
             id: 'tabs.position',
@@ -1031,6 +1050,45 @@ export class SettingsPage extends LitElement {
         />
       </div>
     </div>`;
+  }
+
+  /** The font of the browser, by name; an empty field keeps the font of the system. */
+  private renderFont(): TemplateResult {
+    const setting = this.client?.get('appearance.font');
+    return html`<div class="row stack">
+      <label class="label" for="ui-font">
+        <span>${this.t('settings.font')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.fontNote')}</span>`
+        }
+      </label>
+      <input
+        id="ui-font"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        maxlength="64"
+        placeholder=${this.t('settings.fontSystem')}
+        .value=${typeof setting?.value === 'string' ? setting.value : ''}
+        ?disabled=${setting?.locked !== false}
+        aria-invalid=${this.fontError ? 'true' : 'false'}
+        @change=${(event: Event) => void this.setFont(event)}
+      />
+      ${
+        this.fontError
+          ? html`<span class="error" role="alert">${this.t('settings.fontInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setFont(event: Event): Promise<void> {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && this.client !== undefined) {
+      this.fontError = !(await this.client.set('appearance.font', input.value.trim()));
+    }
   }
 
   /** The language of the browser, which takes effect after a restart. */

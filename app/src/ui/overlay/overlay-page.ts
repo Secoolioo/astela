@@ -167,7 +167,7 @@ export class OverlayPage extends LitElement {
       color: var(--text-2);
     }
     .count strong {
-      font-size: 24px;
+      font-size: calc(var(--font-size-title) + 4px);
       font-weight: 600;
       color: var(--text-1);
     }
@@ -225,7 +225,7 @@ export class OverlayPage extends LitElement {
     }
     .dialog h2 {
       margin: 0 0 var(--space-2);
-      font-size: 16px;
+      font-size: var(--font-size-larger);
       font-weight: 600;
     }
     .dialog p {
@@ -235,11 +235,11 @@ export class OverlayPage extends LitElement {
     .dialog label {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--space-1);
       margin-top: var(--space-2);
     }
     .dialog input {
-      height: 32px;
+      height: var(--control-large);
       padding: 0 var(--space-2);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -329,13 +329,13 @@ export class OverlayPage extends LitElement {
     .sources h3 {
       grid-column: 1 / -1;
       margin: var(--space-2) 0 0;
-      font-size: 13px;
+      font-size: var(--font-size-ui);
       font-weight: 600;
     }
     .source {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--space-1);
       margin: 0;
       padding: var(--space-1);
       text-align: start;
