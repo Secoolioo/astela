@@ -52,6 +52,10 @@ if ! kill -0 "$server" 2>/dev/null; then
   exit 1
 fi
 
+# The Ubuntu containers use the mirror of the runner, where it has one of its own: the default
+# archive can be slow or out of reach from the runner while that mirror is close to it.
+ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | head -1 || true)
+
 for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
@@ -63,6 +67,9 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
       "refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }; $1"
   }
   inside "echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries"
+  if [ -n "$ubuntu_mirror" ]; then
+    inside "sed -i -E 's#https?://(archive|security)\.ubuntu\.com#$ubuntu_mirror#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true"
+  fi
   publish 0
   inside "refresh && ${env_prefix}_REPO_URL=$base apt-get install -y -qq /packages/*.deb >/dev/null"
   check "$image installs beta.1 from its file" "0.0.1~beta.1" "$(inside "dpkg-query -W -f='\${Version}' $slug")"

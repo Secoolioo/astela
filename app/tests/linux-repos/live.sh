@@ -36,6 +36,11 @@ finish() {
   exit 0
 }
 
+# Ubuntu containers use the mirror of the runner, where it has one of its own: the default
+# archive can be slow or out of reach from the runner while that mirror is close to it.
+ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | head -1 || true)
+use_mirror="if [ -n '$ubuntu_mirror' ]; then sed -i -E 's#https?://(archive|security)\.ubuntu\.com#$ubuntu_mirror#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; fi"
+
 if [ "${1:-}" = --upgrade ]; then
   # Package versions sort prereleases with a tilde: 0.1.0-beta.1 is 0.1.0~beta.1.
   new="${2/-/\~}"
@@ -49,6 +54,7 @@ if [ "${1:-}" = --upgrade ]; then
     set -e
     export DEBIAN_FRONTEND=noninteractive
     echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries
+    $use_mirror
     refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }
     refresh && apt-get install -y -qq ca-certificates >/dev/null
     apt-get install -y -qq /packages/*.deb >/dev/null
@@ -84,6 +90,7 @@ for channel in stable beta; do
     set -e
     export DEBIAN_FRONTEND=noninteractive
     echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries
+    $use_mirror
     refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }
     refresh && apt-get install -y -qq curl ca-certificates >/dev/null
     curl -fsSL '${site}linux-repo.asc' -o '/usr/share/keyrings/$slug.asc'
