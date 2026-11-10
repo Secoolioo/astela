@@ -70,7 +70,7 @@ pnpm verify    # every check CI runs in the verify job
    - It builds every package on native runners and smoke-tests each one.
    - It runs the updater tests, then signs and attests the artifacts and uploads them to a draft release.
    - It publishes the release, which creates the tag.
-   - It deploys the website, documentation, update feeds and package repositories.
+   - It deploys the website, documentation, update feeds and package repositories. The deployment waits up to 30 minutes for GitHub to publish the site, which carries the package repositories.
    - It verifies the live result.
    - It installs the previous release of the channel on Windows and Linux and proves that it updates itself to the new one through the live feed, and that its deb and rpm packages upgrade through the live repositories. The first release has no previous one and skips this step.
 4. A run that failed before the release was published is resumed with `workflow_dispatch`; a draft left behind is completed. Once the release is published, a new run counts the version as released and skips the live update proof, so a failure in `pages` or `live-update` is resumed by re-running the failed jobs of the same run, which keeps its plan and runs the proof after the deployment. Published releases and their tags are immutable. If a published release is wrong, ship the next patch version instead. When only the live update proof fails, the release is already public: re-run the failed jobs once the cause is understood, and fix a broken update path in the next patch version.

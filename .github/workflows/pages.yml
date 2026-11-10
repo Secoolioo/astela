@@ -121,6 +121,7 @@ jobs:
     name: deploy
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -132,6 +133,10 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        with:
+          # The site carries the package repositories, which GitHub can take longer to publish
+          # than the ten minutes the action waits by default.
+          timeout: 1800000
 
   verify-live:
     name: verify-live
