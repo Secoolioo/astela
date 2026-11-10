@@ -15,6 +15,16 @@ interface ProcessInfo {
   readonly cpuMs: number;
   /** Memory in bytes, when the platform reports it for all processes at once. */
   readonly memoryBytes?: number;
+  /** The kind of process, from its command line, such as `renderer` or `main`. */
+  readonly label?: string;
+}
+
+/** The kind of a process from its command line, as Chromium passes it with `--type`. */
+function labelOf(commandLine: string): string {
+  const type = /--type=(\S+)/.exec(commandLine)?.[1];
+  if (type === undefined) return 'main';
+  const sub = /--utility-sub-type=(\S+)/.exec(commandLine)?.[1];
+  return sub === undefined ? type : `${type}:${sub}`;
 }
 
 /** Totals for a process and all its descendants. */
@@ -22,6 +32,12 @@ export interface TreeSample {
   readonly processes: number;
   readonly cpuMs: number;
   readonly memoryBytes: number;
+  /** CPU time of each process of the tree. */
+  readonly perProcess: readonly {
+    readonly pid: number;
+    readonly label: string;
+    readonly cpuMs: number;
+  }[];
 }
 
 /** Name of the memory metric on this platform. */
@@ -113,6 +129,7 @@ export function sampleTree(rootPid: number): TreeSample {
     processes: tree.length,
     cpuMs: tree.reduce((sum, p) => sum + p.cpuMs, 0),
     memoryBytes: memory,
+    perProcess: tree.map((p) => ({ pid: p.pid, label: p.label ?? '?', cpuMs: p.cpuMs })),
   };
 }
 
@@ -140,7 +157,18 @@ function linuxProcesses(): Map<number, ProcessInfo> {
     const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
     const ppid = Number(fields[1]);
     const ticks = Number(fields[11]) + Number(fields[12]);
-    result.set(Number(name), { pid: Number(name), ppid, cpuMs: (ticks * 1000) / clockTicks });
+    let commandLine = '';
+    try {
+      commandLine = readFileSync(`/proc/${name}/cmdline`, 'utf8').replaceAll('\0', ' ');
+    } catch {
+      // Gone meanwhile.
+    }
+    result.set(Number(name), {
+      pid: Number(name),
+      ppid,
+      cpuMs: (ticks * 1000) / clockTicks,
+      label: labelOf(commandLine),
+    });
   }
   return result;
 }
@@ -171,14 +199,15 @@ function linuxPss(pids: readonly number[]): number {
 function windowsProcesses(): Map<number, ProcessInfo> {
   const script =
     'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) ' +
-    '$($_.PrivatePageCount) $($_.KernelModeTime) $($_.UserModeTime)" }';
+    '$($_.PrivatePageCount) $($_.KernelModeTime) $($_.UserModeTime) $($_.CommandLine)" }';
   const output = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf8',
     windowsHide: true,
   }).stdout;
   const result = new Map<number, ProcessInfo>();
   for (const line of output.split(/\r?\n/)) {
-    const [pid, ppid, privateBytes, kernel, user] = line.trim().split(' ').map(Number);
+    const words = line.trim().split(' ');
+    const [pid, ppid, privateBytes, kernel, user] = words.slice(0, 5).map(Number);
     if (pid === undefined || Number.isNaN(pid) || ppid === undefined) continue;
     result.set(pid, {
       pid,
@@ -186,13 +215,16 @@ function windowsProcesses(): Map<number, ProcessInfo> {
       // Kernel and user times are counted in units of 100 ns.
       cpuMs: ((kernel ?? 0) + (user ?? 0)) / 10_000,
       memoryBytes: privateBytes ?? 0,
+      label: labelOf(words.slice(5).join(' ')),
     });
   }
   return result;
 }
 
 function macProcesses(): Map<number, ProcessInfo> {
-  const ps = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,time='], { encoding: 'utf8' }).stdout;
+  const ps = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,time=,command='], {
+    encoding: 'utf8',
+  }).stdout;
   // The MEM column of top is the physical footprint.
   const top = spawnSync('top', ['-l', '1', '-stats', 'pid,mem'], { encoding: 'utf8' }).stdout;
   const footprint = new Map<number, number>();
@@ -202,7 +234,7 @@ function macProcesses(): Map<number, ProcessInfo> {
   }
   const result = new Map<number, ProcessInfo>();
   for (const line of ps.split('\n')) {
-    const [pid, ppid, time] = line.trim().split(/\s+/);
+    const [pid, ppid, time, ...command] = line.trim().split(/\s+/);
     if (pid === undefined || ppid === undefined || time === undefined) continue;
     const memory = footprint.get(Number(pid));
     result.set(Number(pid), {
@@ -210,6 +242,7 @@ function macProcesses(): Map<number, ProcessInfo> {
       ppid: Number(ppid),
       cpuMs: parseCpuTime(time),
       ...(memory === undefined ? {} : { memoryBytes: memory }),
+      label: labelOf(command.join(' ')),
     });
   }
   return result;

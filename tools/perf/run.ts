@@ -357,6 +357,13 @@ async function measureCpu(variants: readonly Variant[], m: Measurements): Promis
         const startedAt = performance.now();
         await sleep(options.cpuSeconds * 1000);
         const after = sample(child);
+        const earlier = new Map(before.perProcess.map((p) => [p.pid, p.cpuMs]));
+        const busiest = after.perProcess
+          .map((p) => ({ label: p.label, ms: p.cpuMs - (earlier.get(p.pid) ?? 0) }))
+          .toSorted((a, b) => b.ms - a.ms)
+          .slice(0, 8)
+          .map((p) => `${p.label} ${p.ms.toFixed(0)} ms`);
+        console.log(`CPU of ${variant.name} by process: ${busiest.join(', ')}`);
         return ((after.cpuMs - before.cpuMs) / (performance.now() - startedAt)) * 100;
       } finally {
         await restore();
@@ -678,6 +685,10 @@ async function main(): Promise<void> {
     if (stepSummary !== undefined) appendFileSync(stepSummary, summary);
     if (checks.some((c) => !c.pass)) {
       console.error('Performance budgets exceeded.');
+      process.exitCode = 1;
+    }
+    if (process.env['PERF_DIAGNOSTIC'] === '1') {
+      console.error('Diagnostic run: it fails on purpose, so that it is not merged.');
       process.exitCode = 1;
     }
   } finally {

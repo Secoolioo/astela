@@ -376,6 +376,8 @@ jobs:
               ;;
           esac
       - name: Measure against the bare reference
+        env:
+          PERF_DIAGNOSTIC: '1'
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
