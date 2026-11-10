@@ -5,7 +5,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import {
   existsSync,
@@ -210,6 +210,8 @@ export async function launch(
     readonly env?: Readonly<Record<string, string>>;
     /** Another packaged browser to start, such as {@link packageWithoutBlockerData}. */
     readonly app?: string;
+    /** Called once the browser reported its start, before the harness connects to it. */
+    readonly onReady?: (child: ChildProcess) => void;
   } = {},
 ): Promise<Browser> {
   const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
@@ -253,13 +255,29 @@ export async function launch(
   const devtools = waitForLine(child, /DevTools listening on (ws:\/\/\S+)/);
   const [inspectorMatch, devtoolsMatch] = await Promise.all([inspector, devtools]);
   for (let i = 0; !existsSync(report); i += 1) {
-    if (i > 300 || child.exitCode !== null) throw new Error('The shell did not become ready');
+    if (i > 300 || child.exitCode !== null) {
+      await reportFailedStart(child, undefined, profile, 'The shell did not become ready');
+      throw new Error('The shell did not become ready');
+    }
     await new Promise((done) => setTimeout(done, 100));
   }
-  const main = await MainProcess.connect(inspectorMatch[1] ?? '');
-  const cdp = await chromium.connectOverCDP(devtoolsMatch[1] ?? '');
-  const shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
-  await shell.waitForSelector('app-shell');
+  options.onReady?.(child);
+  let main: MainProcess | undefined;
+  let cdp: CdpBrowser;
+  let shell: Page;
+  try {
+    main = await within(
+      MainProcess.connect(inspectorMatch[1] ?? ''),
+      answerTime,
+      'The browser process',
+    );
+    cdp = await chromium.connectOverCDP(devtoolsMatch[1] ?? '');
+    shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
+    await shell.waitForSelector('app-shell');
+  } catch (error) {
+    await reportFailedStart(child, main, profile, String(error));
+    throw error;
+  }
   return {
     main,
     cdp,
@@ -363,6 +381,90 @@ async function reportState(main: MainProcess, shell: Page, profile: string): Pro
   writeFileSync(file, report);
   await info.attach('browser', { path: file, contentType: 'text/plain' });
   return answered;
+}
+
+/**
+ * Records a browser that started but could not be reached, such as one whose browser process
+ * hangs, and stops it, so that it does not slow down the tests after it. The record holds what
+ * the browser process still answers, the call stacks of its threads where the system can
+ * sample them, and the end of its log; it goes with the files of the test and to the job log.
+ * @param child - The browser process.
+ * @param main - Its main process, if the harness reached it.
+ * @param profile - Its profile.
+ * @param reason - What failed.
+ */
+async function reportFailedStart(
+  child: ChildProcess,
+  main: MainProcess | undefined,
+  profile: string,
+  reason: string,
+): Promise<void> {
+  let report = `The browser started, but the harness could not use it: ${reason}\n`;
+  if (main !== undefined) {
+    report += await within(processReport(main), answerTime, 'The browser process').then(
+      (known) => `Browser process: ${JSON.stringify(known)}\n`,
+      (failure: unknown) => `Browser process not available: ${String(failure)}\n`,
+    );
+  }
+  report += threadStacks(child.pid, profile);
+  report += logTail(profile);
+  process.stdout.write(report);
+  main?.close();
+  const exited =
+    child.exitCode === null && child.signalCode === null
+      ? new Promise<void>((done) => child.once('exit', () => done()))
+      : Promise.resolve();
+  child.kill('SIGKILL');
+  await within(exited, answerTime, 'The browser process').catch(() => undefined);
+  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  try {
+    const info = test.info();
+    const file = info.outputPath('failed-start.txt');
+    writeFileSync(file, report);
+    await info.attach('failed start', { path: file, contentType: 'text/plain' });
+  } catch {
+    // Outside a test there is nothing to attach to.
+  }
+}
+
+/**
+ * Runs a tool and returns its output, with `sudo` when it fails without, or nothing.
+ * @param command - The tool.
+ * @param args - Its arguments.
+ */
+function runTool(command: string, args: readonly string[]): string {
+  for (const prefix of [[], ['sudo', '-n']]) {
+    const [program, ...rest] = [...prefix, command, ...args];
+    const result = spawnSync(program ?? command, rest, { encoding: 'utf8', timeout: 60_000 });
+    if (result.status === 0) return result.stdout;
+  }
+  return '';
+}
+
+/**
+ * The call stacks of the threads of a process, where the system has a tool for them: `sample`
+ * on macOS and `gdb` on Linux, run with `sudo` when the process may not be examined otherwise,
+ * as on the runners of CI.
+ * @param pid - The process.
+ * @param profile - A folder for the tool's output.
+ */
+function threadStacks(pid: number | undefined, profile: string): string {
+  if (pid === undefined) return '';
+  if (process.platform === 'darwin') {
+    const file = join(profile, 'sample.txt');
+    runTool('sample', [String(pid), '3', '-mayDie', '-file', file]);
+    const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    return text === ''
+      ? 'No sample of the browser process\n'
+      : `Sample of the browser process:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
+  }
+  if (process.platform === 'linux') {
+    const text = runTool('gdb', ['-p', String(pid), '-batch', '-ex', 'thread apply all bt 40']);
+    return text === ''
+      ? 'No call stacks of the browser process\n'
+      : `Call stacks of the browser process:\n${text.split('\n').slice(0, 400).join('\n')}\n`;
+  }
+  return '';
 }
 
 /** How long the end of a test waits for an answer of the shell or the browser process. */
