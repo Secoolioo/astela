@@ -7,9 +7,10 @@
  * Options: `--runs <n>` start-up runs (20), `--memory-runs <n>` (10), `--cpu-seconds <s>`
  * (60) and `--settle-seconds <s>` (15). `--updates-off` adds a check that the browser's
  * update service was off in every run, as the `UpdatePolicy` policy turns it off.
- * `--background` measures the idle CPU with the window in the background (Linux, Xvfb).
+ * `--background` measures the idle CPU with the window in the background, as when the user
+ * works in another app.
  */
-import { spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
@@ -232,31 +233,134 @@ async function measureMemory(variants: readonly Variant[], m: Measurements): Pro
 }
 
 /**
- * With `--background` on Linux, takes the keyboard focus from the window that just opened,
- * so that every idle CPU window measures a window in the background. Xvfb has no window
- * manager: a window activates itself as it opens, and Electron then focuses each view
- * whose page commits while its window is active. The browser's shell and its new tab page
- * commit within the same millisecond; when the shell commits last, the address bar keeps
- * the focus and its caret blinks twice a second, which the idle window measured in about
- * one start of ten (0.42 instead of 0.08 % of one core). With the X input focus on no
- * window, no window is active and no caret blinks, in the browser or the reference.
+ * A small window that takes the foreground on Windows and keeps it until the harness stops
+ * it. It prints whether Windows gave it the foreground.
  */
-function sendToBackground(): void {
-  if (!options.background || process.platform !== 'linux') return;
-  const result = spawnSync('xdotool', ['windowfocus', '0'], { encoding: 'utf8' });
-  if (result.status !== 0) throw new Error(`xdotool failed: ${result.stderr}`);
+const foregroundWindowScript = `Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class Foreground {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+}
+'@
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'Background'
+$form.ShowInTaskbar = $false
+$form.StartPosition = 'Manual'
+$form.Location = New-Object System.Drawing.Point(0, 0)
+$form.Size = New-Object System.Drawing.Size(160, 90)
+$form.Add_Shown({
+  [void][Foreground]::SetForegroundWindow($form.Handle)
+  $form.Activate()
+  if ([Foreground]::GetForegroundWindow() -eq $form.Handle) { [Console]::WriteLine('foreground') }
+  else { [Console]::WriteLine('not foreground') }
+})
+[System.Windows.Forms.Application]::Run($form)
+`;
+
+/** Waits until a process prints a line that `done` accepts, or fails after `ms`. */
+function waitForLine(
+  child: ChildProcess,
+  ms: number,
+  done: (line: string) => boolean,
+): Promise<string> {
+  return new Promise((resolveLine, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error(`No answer within ${ms} ms: ${output}`)), ms);
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      output += chunk;
+      const line = output.split(/\r?\n/).find((candidate) => done(candidate.trim()));
+      if (line !== undefined) {
+        clearTimeout(timer);
+        resolveLine(line.trim());
+      }
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`It exited with ${code}: ${output}`));
+    });
+  });
+}
+
+/** What ends a background state that needs no ending. */
+const nothing = (): Promise<void> => Promise.resolve();
+
+/**
+ * With `--background`, takes the keyboard focus from the window that just opened, so that
+ * every idle CPU window measures a window in the background, as when the user works in
+ * another app, in the browser and in the reference alike. A window that has the focus can
+ * show a blinking caret, such as that of the browser's address bar, which the idle window
+ * measured on Linux (0.42 instead of 0.08 % of one core, with software rendering), and
+ * Electron gives the focus to each view whose page commits while its window is active.
+ * - Linux: Xvfb has no window manager, so a window activates itself as it opens; with the X
+ *   input focus on no window (`xdotool windowfocus 0`), no window is active.
+ * - macOS: Finder becomes the active app (`open -a Finder`), which `lsappinfo` confirms.
+ * - Windows: a small window of PowerShell takes the foreground and keeps it until the
+ *   window was measured.
+ * @returns What to call once the window was measured.
+ */
+async function sendToBackground(): Promise<() => Promise<void>> {
+  if (!options.background) return nothing;
+  if (process.platform === 'linux') {
+    const result = spawnSync('xdotool', ['windowfocus', '0'], { encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(`xdotool failed: ${result.stderr}`);
+    return nothing;
+  }
+  if (process.platform === 'darwin') {
+    const opened = spawnSync('open', ['-a', 'Finder'], { encoding: 'utf8' });
+    if (opened.status !== 0) throw new Error(`open -a Finder failed: ${opened.stderr}`);
+    let front = '';
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const asn = spawnSync('lsappinfo', ['front'], { encoding: 'utf8' });
+      if (asn.error !== undefined) throw new Error(`lsappinfo failed: ${String(asn.error)}`);
+      const info = ['info', '-only', 'name', asn.stdout.trim()];
+      front = spawnSync('lsappinfo', info, { encoding: 'utf8' }).stdout;
+      if (front.includes('"Finder"')) return nothing;
+      await sleep(100);
+    }
+    throw new Error(`Finder did not become the active app: ${front.trim()}`);
+  }
+  const work = mkdtempSync(join(tmpdir(), 'perf-background-'));
+  const script = join(work, 'foreground.ps1');
+  writeFileSync(script, foregroundWindowScript);
+  const holder = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+    { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
+  );
+  const stop = async (): Promise<void> => {
+    await stopTree(holder);
+    rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  };
+  try {
+    const answer = await waitForLine(holder, 30_000, (line) => line.endsWith('foreground'));
+    if (answer !== 'foreground') throw new Error('Windows did not give the window the foreground');
+  } catch (error) {
+    await stop();
+    throw new Error(`The window could not be sent to the background: ${String(error)}`, {
+      cause: error,
+    });
+  }
+  return stop;
 }
 
 async function measureCpu(variants: readonly Variant[], m: Measurements): Promise<void> {
   for (const variant of variants) {
     const { value } = await launch(variant, async (child) => {
-      sendToBackground();
-      await sleep(options.settleSeconds * 1000);
-      const before = sample(child);
-      const startedAt = performance.now();
-      await sleep(options.cpuSeconds * 1000);
-      const after = sample(child);
-      return ((after.cpuMs - before.cpuMs) / (performance.now() - startedAt)) * 100;
+      const restore = await sendToBackground();
+      try {
+        await sleep(options.settleSeconds * 1000);
+        const before = sample(child);
+        const startedAt = performance.now();
+        await sleep(options.cpuSeconds * 1000);
+        const after = sample(child);
+        return ((after.cpuMs - before.cpuMs) / (performance.now() - startedAt)) * 100;
+      } finally {
+        await restore();
+      }
     });
     m.cpuPercent[variant.name].push(value);
   }
