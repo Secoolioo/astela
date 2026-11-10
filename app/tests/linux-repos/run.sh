@@ -55,17 +55,24 @@ fi
 for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
-  inside() { docker exec -e DEBIAN_FRONTEND=noninteractive repo-test bash -c "$1"; }
+  # The lists of a distribution mirror fail to load for a while when the mirror is being
+  # updated, so a container reads them up to three times; it also retries the download of a
+  # package, as the runners do.
+  inside() {
+    docker exec -e DEBIAN_FRONTEND=noninteractive repo-test bash -c \
+      "refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }; $1"
+  }
+  inside "echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries"
   publish 0
-  inside "apt-get update -qq >/dev/null && ${env_prefix}_REPO_URL=$base apt-get install -y -qq /packages/*.deb >/dev/null"
+  inside "refresh && ${env_prefix}_REPO_URL=$base apt-get install -y -qq /packages/*.deb >/dev/null"
   check "$image installs beta.1 from its file" "0.0.1~beta.1" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
   check "$image registers the beta repository" "Suites: beta" "$(inside "grep Suites /etc/apt/sources.list.d/$slug.sources")"
   publish 0 1
-  inside "apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade $slug >/dev/null"
+  inside "refresh && apt-get install -y -qq --only-upgrade $slug >/dev/null"
   check "$image upgrades to beta.2" "0.0.1~beta.2" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
   check "$image keeps the command after the upgrade" "/opt/$product/$slug" "$(inside "readlink -f /usr/bin/$slug")"
   publish 1 2
-  inside "apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade $slug >/dev/null"
+  inside "refresh && apt-get install -y -qq --only-upgrade $slug >/dev/null"
   check "$image upgrades to the stable release" "0.0.1" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
   inside "apt-get purge -y -qq $slug >/dev/null"
   check "$image removes the repository" "gone" "$(inside "test -e /etc/apt/sources.list.d/$slug.sources && echo present || echo gone")"

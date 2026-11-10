@@ -48,10 +48,12 @@ if [ "${1:-}" = --upgrade ]; then
   versions=$(docker run --rm -v "$packages:/packages:ro" ubuntu:24.04 bash -c "
     set -e
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq >/dev/null && apt-get install -y -qq ca-certificates >/dev/null
+    echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries
+    refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }
+    refresh && apt-get install -y -qq ca-certificates >/dev/null
     apt-get install -y -qq /packages/*.deb >/dev/null
     dpkg-query -W -f='\${Version}\n' '$slug'
-    apt-get update -qq >/dev/null && apt-get install -y -qq --only-upgrade '$slug' >/dev/null
+    refresh && apt-get install -y -qq --only-upgrade '$slug' >/dev/null
     dpkg-query -W -f='\${Version}\n' '$slug'
     readlink -f '/usr/bin/$slug'") || true
   check "APT installs the earlier release from its file" "$old" "$(sed -n 1p <<<"$versions")"
@@ -81,11 +83,13 @@ for channel in stable beta; do
   installed=$(docker run --rm ubuntu:24.04 bash -c "
     set -e
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq >/dev/null && apt-get install -y -qq curl ca-certificates >/dev/null
+    echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries
+    refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }
+    refresh && apt-get install -y -qq curl ca-certificates >/dev/null
     curl -fsSL '${site}linux-repo.asc' -o '/usr/share/keyrings/$slug.asc'
     printf 'Types: deb\nURIs: %s\nSuites: %s\nComponents: main\nSigned-By: %s\n' \
       '${site}apt' '$channel' '/usr/share/keyrings/$slug.asc' >'/etc/apt/sources.list.d/$slug.sources'
-    apt-get update -qq >/dev/null && apt-get install -y -qq '$slug' >/dev/null
+    refresh && apt-get install -y -qq '$slug' >/dev/null
     dpkg-query -W -f='\${Version}' '$slug'")
   check "APT $channel installs the newest release" "$expected" "$installed"
 
