@@ -242,5 +242,15 @@
   "overlay.downloadRetry": "Erneut versuchen",
   "overlay.downloadRemove": "Aus der Liste entfernen",
   "overlay.downloadActionFor": "{action}: {name}",
-  "overlay.downloadsFolder": "Download-Ordner öffnen"
+  "overlay.downloadsFolder": "Download-Ordner öffnen",
+  "settings.sections": "Abschnitte",
+  "settings.searchLabel": "Einstellungen durchsuchen",
+  "settings.searchEmpty": "Keine Einstellung passt zu {query}.",
+  "settings.colorMode.keywords": "dunkel hell design nacht",
+  "settings.density.keywords": "kompakt abstand größe",
+  "settings.tabPosition.keywords": "vertikal seitenleiste tableiste",
+  "settings.startupPage.keywords": "sitzung wiederherstellen start",
+  "settings.searchEngine.keywords": "adressleiste websuche",
+  "settings.contentBlocker.keywords": "werbung werbeblocker tracker filterlisten",
+  "settings.sitePermissions.keywords": "kamera mikrofon standort benachrichtigungen zwischenablage"
 }

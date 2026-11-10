@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
-import { isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
+import { isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
   SettingsClient,
@@ -28,6 +28,8 @@ export class SettingsPage extends LitElement {
     customSearch: { state: true },
     blockerFailed: { state: true },
     siteError: { state: true },
+    query: { state: true },
+    current: { state: true },
   };
 
   /** Styles of the page, scoped to its shadow root. */
@@ -35,11 +37,62 @@ export class SettingsPage extends LitElement {
     choiceStyles,
     css`
       :host {
-        display: block;
+        display: grid;
+        grid-template-columns: 176px minmax(0, 720px);
+        justify-content: center;
+        column-gap: 32px;
         box-sizing: border-box;
-        max-width: 720px;
-        margin: 0 auto;
         padding: var(--space-3) var(--space-3) 48px;
+      }
+      nav {
+        position: sticky;
+        top: var(--space-3);
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 112px;
+      }
+      /* A link moves the focus to a heading; it needs no frame there. */
+      h2:focus {
+        outline: none;
+      }
+      nav button {
+        border: none;
+        background: none;
+        color: var(--text-2);
+        text-align: start;
+      }
+      nav button[aria-current='true'] {
+        background: var(--surface-hover);
+        color: var(--text-1);
+        font-weight: 600;
+      }
+      @media (max-width: 760px) {
+        :host {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        nav {
+          display: none;
+        }
+      }
+      input[type='search'] {
+        width: 100%;
+        box-sizing: border-box;
+        height: 32px;
+        padding: 0 var(--space-2);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-1);
+        background: var(--surface-0);
+        color: var(--text-1);
+        font: inherit;
+      }
+      .empty {
+        margin: var(--space-3) 0;
+        color: var(--text-2);
+      }
+      .slot + .slot {
+        border-top: 1px solid var(--border-1);
       }
       h1 {
         margin: 24px 0 16px;
@@ -174,6 +227,10 @@ export class SettingsPage extends LitElement {
   declare blockerFailed: boolean;
   /** Whether the last site to add was not a site name. */
   declare siteError: boolean;
+  /** What the search field holds. */
+  declare query: string;
+  /** The section in view, which the navigation marks. */
+  declare current: string;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -185,6 +242,8 @@ export class SettingsPage extends LitElement {
     this.customSearch = false;
     this.blockerFailed = false;
     this.siteError = false;
+    this.query = '';
+    this.current = 'appearance';
   }
 
   override connectedCallback(): void {
@@ -195,8 +254,10 @@ export class SettingsPage extends LitElement {
     this.client = new SettingsClient(this.bridge, () => (this.revision += 1));
     void this.client.load().then(() => {
       this.customSearch = this.engineId() === 'custom';
+      this.reveal(location.hash);
       document.documentElement.dataset['ready'] = 'true';
     });
+    addEventListener('hashchange', this.onHashChange);
     void this.bridge
       .invoke('settings.getBlockerStatus', {})
       .then((result) => {
@@ -210,65 +271,314 @@ export class SettingsPage extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    removeEventListener('hashchange', this.onHashChange);
+    this.spy?.disconnect();
     this.client?.dispose();
   }
 
   protected override updated(): void {
     paintSwatches(this.renderRoot, this.client?.accents ?? []);
+    // The navigation marks the section whose heading is in the upper part of the window.
+    this.spy?.disconnect();
+    this.spy = new IntersectionObserver(
+      (entries) => {
+        const shown = entries.find((entry) => entry.isIntersecting);
+        if (shown !== undefined) this.current = shown.target.id;
+      },
+      { rootMargin: '0px 0px -70% 0px' },
+    );
+    for (const heading of this.renderRoot.querySelectorAll('h2')) this.spy.observe(heading);
+  }
+
+  private spy: IntersectionObserver | undefined;
+
+  private readonly onHashChange = (): void => this.reveal(location.hash);
+
+  /**
+   * Shows a section or a setting that a link names, such as `#tabs.position`, and gives the
+   * focus to its first control. The name is only looked up, never put into the page.
+   * @param hash - The fragment of the page's address.
+   */
+  private reveal(hash: string): void {
+    let id = '';
+    try {
+      id = decodeURIComponent(hash.replace(/^#/, ''));
+    } catch {
+      return;
+    }
+    if (id === '') return;
+    // A search could hide what the link names.
+    this.query = '';
+    void this.updateComplete.then(() => {
+      const root = this.renderRoot;
+      const row = root.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`);
+      const heading = root.querySelector<HTMLElement>(`h2[id="${CSS.escape(id)}"]`);
+      const target = row ?? heading;
+      if (target === null) return;
+      target.scrollIntoView({ block: 'start' });
+      const control = row?.querySelector<HTMLElement>('input, select, button') ?? target;
+      control.focus({ preventScroll: true });
+      if (heading !== null) this.current = id;
+    });
+  }
+
+  /** The sections of the page with their rows, and the words that find each row. */
+  private sections(): readonly PageSection[] {
+    const t = this.t;
+    return [
+      {
+        id: 'appearance',
+        title: 'settings.appearance',
+        rows: [
+          {
+            id: 'appearance.colorMode',
+            keys: [
+              'settings.colorMode',
+              'settings.colorMode.keywords',
+              ...optionKeys('appearance.colorMode', 'settings.colorMode'),
+            ],
+            render: () => this.renderChoice('appearance.colorMode', 'settings.colorMode'),
+          },
+          { id: 'appearance.accent', keys: ['settings.accent'], render: () => this.renderAccent() },
+          {
+            id: 'appearance.density',
+            keys: [
+              'settings.density',
+              'settings.density.keywords',
+              ...optionKeys('appearance.density', 'settings.density'),
+            ],
+            render: () => this.renderChoice('appearance.density', 'settings.density'),
+          },
+          {
+            id: 'tabs.position',
+            keys: [
+              'settings.tabPosition',
+              'settings.tabPosition.keywords',
+              ...optionKeys('tabs.position', 'settings.tabPosition'),
+            ],
+            render: () => this.renderChoice('tabs.position', 'settings.tabPosition'),
+          },
+          {
+            id: 'bookmarks.bar',
+            keys: ['settings.bookmarksBar', 'settings.bookmarksBarNote'],
+            render: () =>
+              this.renderToggle(
+                'bookmarks.bar',
+                'settings.bookmarksBar',
+                'settings.bookmarksBarNote',
+              ),
+          },
+        ],
+      },
+      {
+        id: 'startup',
+        title: 'settings.startup',
+        rows: [
+          {
+            id: 'startup.page',
+            keys: [
+              'settings.startupPage',
+              'settings.startupPage.keywords',
+              ...optionKeys('startup.page', 'settings.startupPage'),
+            ],
+            render: () => this.renderChoice('startup.page', 'settings.startupPage'),
+          },
+        ],
+      },
+      {
+        id: 'search',
+        title: 'settings.search',
+        rows: [
+          {
+            id: 'search.urlTemplate',
+            keys: ['settings.searchEngine', 'settings.searchEngine.keywords'],
+            words: searchEngines.map((engine) => engine.name),
+            render: () => this.renderSearch(),
+          },
+        ],
+      },
+      {
+        id: 'privacy',
+        title: 'settings.privacy',
+        rows: [
+          {
+            id: 'contentBlocker.enabled',
+            keys: [
+              'settings.contentBlocker',
+              'settings.contentBlockerNote',
+              'settings.contentBlocker.keywords',
+            ],
+            render: () =>
+              html`${this.renderToggle(
+                'contentBlocker.enabled',
+                'settings.contentBlocker',
+                'settings.contentBlockerNote',
+              )}${
+                this.blockerFailed
+                  ? html`<p class="row note problem" role="alert">
+                      ${t('settings.contentBlockerFailed')}
+                    </p>`
+                  : nothing
+              }`,
+          },
+          {
+            id: 'contentBlocker.cookieNotices',
+            keys: [
+              'settings.cookieNotices',
+              'settings.cookieNoticesNote',
+              'settings.contentBlocker.keywords',
+            ],
+            render: () =>
+              this.renderToggle(
+                'contentBlocker.cookieNotices',
+                'settings.cookieNotices',
+                'settings.cookieNoticesNote',
+              ),
+          },
+          {
+            id: 'contentBlocker.annoyances',
+            keys: [
+              'settings.annoyances',
+              'settings.annoyancesNote',
+              'settings.contentBlocker.keywords',
+            ],
+            render: () =>
+              this.renderToggle(
+                'contentBlocker.annoyances',
+                'settings.annoyances',
+                'settings.annoyancesNote',
+              ),
+          },
+          {
+            id: 'contentBlocker.allowedSites',
+            keys: [
+              'settings.allowedSites',
+              'settings.allowedSitesNote',
+              'settings.contentBlocker.keywords',
+            ],
+            render: () => this.renderAllowedSites(),
+          },
+          {
+            id: 'permissions.sites',
+            keys: [
+              'settings.sitePermissions',
+              'settings.sitePermissionsNote',
+              'settings.sitePermissions.keywords',
+            ],
+            render: () => this.renderSitePermissions(),
+          },
+        ],
+      },
+      {
+        id: 'default-browser',
+        title: 'defaultBrowser.title',
+        rows: [
+          {
+            id: 'default-browser',
+            keys: ['defaultBrowser.title'],
+            render: () =>
+              html`<default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>`,
+          },
+        ],
+      },
+      {
+        id: 'import',
+        title: 'import.title',
+        plain: true,
+        rows: [
+          {
+            id: 'import',
+            keys: ['import.title', 'import.note'],
+            render: () =>
+              html`<p class="intro">${t('import.note')}</p>
+                <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>`,
+          },
+        ],
+      },
+      {
+        id: 'setup',
+        title: 'settings.setup',
+        rows: [
+          {
+            id: 'setup',
+            keys: ['settings.setupGuide', 'settings.setupGuideNote'],
+            render: () =>
+              html`<div class="row">
+                <span class="label">
+                  <span>${t('settings.setupGuide')}</span>
+                  <span class="note">${t('settings.setupGuideNote')}</span>
+                </span>
+                <button @click=${() => void this.bridge?.invoke('settings.openSetup', {})}>
+                  ${t('settings.setupGuideOpen')}
+                </button>
+              </div>`,
+          },
+        ],
+      },
+    ];
   }
 
   protected override render(): TemplateResult {
     const t = this.t;
+    const sections = this.sections();
+    const words = searchWords(this.query);
+    const shown = sections
+      .map((section) => {
+        const all = matches(textOf([section.title]), words);
+        return {
+          ...section,
+          rows: section.rows.filter((row) => all || matches(textOf(row.keys, row.words), words)),
+        };
+      })
+      .filter((section) => section.rows.length > 0);
     return html`
-      <h1>${t('settings.title')}</h1>
-      <h2 id="appearance">${t('settings.appearance')}</h2>
-      <section aria-labelledby="appearance">
-        ${this.renderChoice('appearance.colorMode', 'settings.colorMode')} ${this.renderAccent()}
-        ${this.renderChoice('appearance.density', 'settings.density')}
-        ${this.renderChoice('tabs.position', 'settings.tabPosition')}
-        ${this.renderToggle('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote')}
-      </section>
-      <h2 id="startup">${t('settings.startup')}</h2>
-      <section aria-labelledby="startup">
-        ${this.renderChoice('startup.page', 'settings.startupPage')}
-      </section>
-      <h2 id="search">${t('settings.search')}</h2>
-      <section aria-labelledby="search">${this.renderSearch()}</section>
-      <h2 id="privacy">${t('settings.privacy')}</h2>
-      <section aria-labelledby="privacy">
-        ${this.renderToggle('contentBlocker.enabled', 'settings.contentBlocker', 'settings.contentBlockerNote')}
-        ${this.renderToggle('contentBlocker.cookieNotices', 'settings.cookieNotices', 'settings.cookieNoticesNote')}
-        ${this.renderToggle('contentBlocker.annoyances', 'settings.annoyances', 'settings.annoyancesNote')}
-        ${this.renderAllowedSites()} ${this.renderSitePermissions()}
+      <nav aria-label=${t('settings.sections')}>
+        ${sections.map(
+          (section) =>
+            html`<button
+              type="button"
+              aria-current=${this.current === section.id ? 'true' : nothing}
+              @click=${() => this.reveal(section.id)}
+            >
+              ${t(section.title)}
+            </button>`,
+        )}
+      </nav>
+      <div>
+        <h1>${t('settings.title')}</h1>
+        <input
+          type="search"
+          aria-label=${t('settings.searchLabel')}
+          placeholder=${t('settings.searchLabel')}
+          .value=${this.query}
+          @input=${(event: Event) => {
+            const input = event.target;
+            if (input instanceof HTMLInputElement) this.query = input.value;
+          }}
+        />
         ${
-          this.blockerFailed
-            ? html`<p class="row note problem" role="alert">
-                ${t('settings.contentBlockerFailed')}
+          shown.length === 0
+            ? html`<p class="empty" role="status">
+                ${t('settings.searchEmpty', { query: this.query.trim() })}
               </p>`
             : nothing
         }
-      </section>
-      <h2 id="default-browser">${t('defaultBrowser.title')}</h2>
-      <section aria-labelledby="default-browser">
-        <default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>
-      </section>
-      <h2 id="import">${t('import.title')}</h2>
-      <div class="plain" role="group" aria-labelledby="import">
-        <p class="intro">${t('import.note')}</p>
-        <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>
+        ${shown.map(
+          (section) =>
+            html`<h2 id=${section.id} tabindex="-1">${t(section.title)}</h2>
+              ${
+                section.plain === true
+                  ? html`<div class="plain" role="group" aria-labelledby=${section.id}>
+                      ${section.rows.map((row) => html`<div data-row=${row.id}>${row.render()}</div>`)}
+                    </div>`
+                  : html`<section aria-labelledby=${section.id}>
+                      ${section.rows.map(
+                        (row) => html`<div class="slot" data-row=${row.id}>${row.render()}</div>`,
+                      )}
+                    </section>`
+              }`,
+        )}
       </div>
-      <h2 id="setup">${t('settings.setup')}</h2>
-      <section aria-labelledby="setup">
-        <div class="row">
-          <span class="label">
-            <span>${t('settings.setupGuide')}</span>
-            <span class="note">${t('settings.setupGuideNote')}</span>
-          </span>
-          <button @click=${() => void this.bridge?.invoke('settings.openSetup', {})}>
-            ${t('settings.setupGuideOpen')}
-          </button>
-        </div>
-      </section>
     `;
   }
 
@@ -589,6 +899,58 @@ export class SettingsPage extends LitElement {
  * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
  * @param input - The text of the field.
  */
+/** A row of the settings page: a setting, or a part such as the import. */
+interface PageRow {
+  /** The setting's key, or the part's name; links name it after `#`. */
+  readonly id: string;
+  /** The texts that find the row, in every language. */
+  readonly keys: readonly MessageKey[];
+  /** Words that find the row in every language, such as the names of search engines. */
+  readonly words?: readonly string[];
+  readonly render: () => TemplateResult;
+}
+
+/** A section of the settings page. */
+interface PageSection {
+  readonly id: string;
+  readonly title: MessageKey;
+  /** Whether the section draws its rows without a frame. */
+  readonly plain?: boolean;
+  readonly rows: readonly PageRow[];
+}
+
+/** The texts of the page in every language, so a word of either language finds a setting. */
+const languages = [new Translator('en'), new Translator('de')];
+
+/** The keys of the names of a choice's options. */
+function optionKeys(key: keyof typeof choices, label: MessageKey): MessageKey[] {
+  return choices[key].map((option) => `${label}.${option}`).filter(isMessageKey);
+}
+
+/** Text in a form that compares without case, accents and ß. */
+function folded(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('ß', 'ss');
+}
+
+/** The words of a search, folded. */
+function searchWords(query: string): string[] {
+  return folded(query)
+    .split(/\s+/)
+    .filter((word) => word !== '');
+}
+
+/** The texts of some keys in every language, and some more words, folded. */
+function textOf(keys: readonly MessageKey[], words: readonly string[] = []): string {
+  return folded(
+    [...keys.flatMap((key) => languages.map((i18n) => i18n.t(key))), ...words].join(' '),
+  );
+}
+
+/** Whether a text holds every word of a search. */
+function matches(text: string, words: readonly string[]): boolean {
+  return words.every((word) => text.includes(word));
+}
+
 /** The permissions that sites ask for, and their names on the page. */
 const permissionLabels = {
   camera: 'settings.permission.camera',

@@ -6,6 +6,12 @@ Open the settings from the menu button at the right end of the toolbar, then **S
 
 Every change applies at once, in every window, and is kept when the browser restarts.
 
+## Find a setting
+
+From 0.1.0-beta.5, the field at the top of the page finds settings by their names, their descriptions and words that people look for, such as _vertical_ for the tabs at the side. It understands English and German words in either language. A wide window shows the sections of the page at its left; a click takes you to a section, and the one in view is marked.
+
+Every section and every setting has an address of its own, such as `app://settings/#privacy` or `app://settings/#tabs.position`. Opening it, also from a bookmark or another tab, shows that part of the page and puts the keyboard focus on it.
+
 ## Appearance
 
 - **Color mode:** System follows the light or dark mode of your operating system; Light and Dark always use one of them. Web pages that offer a dark design follow this choice too.
