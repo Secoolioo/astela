@@ -234,6 +234,7 @@ jobs:
       - name: Install and start the rpm on Fedora
         if: matrix.name == 'linux-x64'
         run: |
+          tools/ci/pull-images.sh fedora:latest
           docker run --rm -v "$RUNNER_TEMP/packages:/packages" fedora:latest bash -c '
             dnf install -y -q /packages/*-x86_64.rpm xorg-x11-server-Xvfb xorg-x11-xauth >/dev/null &&
             xvfb-run -a /opt/*/astela --no-sandbox --smoke-test=/packages/rpm-report.json'
