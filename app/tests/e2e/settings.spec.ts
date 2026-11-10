@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { launch, pressNative, waitForPage, type Browser } from './harness.ts';
 
 let browser: Browser;
@@ -78,7 +81,13 @@ test('chooses the search engine of the new tab page and the address bar', async 
   await expect(page.getByRole('alert')).toHaveCount(0);
   expect(await page.evaluate(() => window.bridge.invoke('settings.getAll', {}))).toMatchObject({
     settings: expect.arrayContaining([
-      { key: 'search.urlTemplate', value: 'https://search.example/?q=%s', locked: false },
+      {
+        key: 'search.urlTemplate',
+        value: 'https://search.example/?q=%s',
+        locked: false,
+        changed: true,
+        recommended: false,
+      },
     ]),
   });
 });
@@ -189,4 +198,62 @@ test('opens a setting from its link and marks the section of the page in the nav
     location.hash = '#appearance.density';
   });
   await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
+});
+
+test('shows the changed settings and resets one or all of them', async () => {
+  await browser.close();
+  browser = await launch([], {
+    settings: { 'tabs.position': 'left', 'appearance.density': 'compact' },
+  });
+  const page = await openSettings();
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Density' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset Tabs' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset all settings…' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reset all' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'No setting differs' })).toHaveText(
+    'No setting differs from its default.',
+  );
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radio', { name: 'Top' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Normal' })).toBeChecked();
+});
+
+test('exports the settings to a file and imports them again', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'settings-file-'));
+  const file = join(folder, 'settings.json');
+  try {
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, file);
+    const page = await openSettings();
+    await page.getByRole('radio', { name: 'Left' }).check();
+    await page.getByRole('button', { name: 'Export settings…' }).click();
+    await expect
+      .poll(() => {
+        try {
+          return JSON.parse(readFileSync(file, 'utf8')) as unknown;
+        } catch {
+          return undefined;
+        }
+      })
+      .toEqual({ $schemaVersion: 1, settings: { 'tabs.position': 'left' } });
+    await page.getByRole('radio', { name: 'Top' }).check();
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Imported settings' })).toHaveText(
+      'Imported settings: 1',
+    );
+    // A file that is not a settings file changes nothing.
+    writeFileSync(file, '{"tabs.position": "right"}');
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('alert')).toHaveText('This file holds no settings of Astela.');
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });

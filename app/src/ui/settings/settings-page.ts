@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
 import { isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
@@ -30,6 +30,8 @@ export class SettingsPage extends LitElement {
     siteError: { state: true },
     query: { state: true },
     current: { state: true },
+    changedOnly: { state: true },
+    message: { state: true },
   };
 
   /** Styles of the page, scoped to its shadow root. */
@@ -93,6 +95,59 @@ export class SettingsPage extends LitElement {
       }
       .slot + .slot {
         border-top: 1px solid var(--border-1);
+      }
+      .slot {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+      }
+      .slot > :not(.reset) {
+        grid-column: 1;
+      }
+      .slot > .reset {
+        grid-column: 2;
+        grid-row: 1;
+        margin-right: var(--space-3);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin: var(--space-2) 0 0;
+      }
+      .actions button[aria-pressed='true'] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .message {
+        margin: var(--space-2) 0 0;
+        color: var(--text-2);
+      }
+      .lock {
+        width: 12px;
+        height: 12px;
+        margin-right: 4px;
+        vertical-align: -1px;
+      }
+      dialog {
+        max-width: 420px;
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+        color: var(--text-1);
+      }
+      dialog::backdrop {
+        background: rgb(0 0 0 / 30%);
+      }
+      dialog .buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+      }
+      dialog .primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--on-accent, #fff);
       }
       h1 {
         margin: 24px 0 16px;
@@ -231,6 +286,10 @@ export class SettingsPage extends LitElement {
   declare query: string;
   /** The section in view, which the navigation marks. */
   declare current: string;
+  /** Whether the page shows only the settings that differ from their defaults. */
+  declare changedOnly: boolean;
+  /** The outcome of the last import, if it needs telling. */
+  declare message: { readonly alert: boolean; readonly text: string } | undefined;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -244,6 +303,8 @@ export class SettingsPage extends LitElement {
     this.siteError = false;
     this.query = '';
     this.current = 'appearance';
+    this.changedOnly = false;
+    this.message = undefined;
   }
 
   override connectedCallback(): void {
@@ -291,6 +352,65 @@ export class SettingsPage extends LitElement {
   }
 
   private spy: IntersectionObserver | undefined;
+
+  /** The button that sets a changed setting back to its default. */
+  private renderReset(row: PageRow): TemplateResult | typeof nothing {
+    const title = row.keys[0];
+    if (this.client?.get(row.id)?.changed !== true || title === undefined) return nothing;
+    return html`<button
+      type="button"
+      class="reset"
+      aria-label=${this.t('settings.resetOne', { setting: this.t(title) })}
+      @click=${() => void this.bridge?.invoke('settings.reset', { keys: [row.id] })}
+    >
+      ${this.t('settings.resetShort')}
+    </button>`;
+  }
+
+  /** Sets every setting that differs from its default back, after the question. */
+  private async resetAll(): Promise<void> {
+    this.renderRoot.querySelector('dialog')?.close();
+    const keys = this.sections()
+      .flatMap((section) => section.rows)
+      .map((row) => row.id)
+      .filter((id) => this.client?.get(id)?.changed === true);
+    await this.bridge?.invoke('settings.reset', { keys });
+  }
+
+  private async exportFile(): Promise<void> {
+    this.message = undefined;
+    await this.bridge?.invoke('settings.export', {});
+  }
+
+  private async importFile(): Promise<void> {
+    this.message = undefined;
+    const result: unknown = await this.bridge?.invoke('settings.import', {});
+    if (typeof result !== 'object' || result === null) return;
+    if (Reflect.get(result, 'ok') === true) {
+      const count = String(Reflect.get(result, 'applied'));
+      const skipped = Number(Reflect.get(result, 'skipped'));
+      this.message = {
+        alert: false,
+        text:
+          skipped > 0
+            ? this.t('settings.importSkipped', { count, skipped: String(skipped) })
+            : this.t('settings.importDone', { count }),
+      };
+    } else if (Reflect.get(result, 'error') === 'invalid') {
+      this.message = { alert: true, text: this.t('settings.importInvalid') };
+    }
+  }
+
+  /** The note of a value that the organization sets or suggests, or else nothing. */
+  private managedNote(setting: SettingView | undefined): TemplateResult | typeof nothing {
+    if (setting?.locked === true) {
+      return html`<span class="note">${lockIcon}${this.t('settings.managed')}</span>`;
+    }
+    if (setting?.recommended === true) {
+      return html`<span class="note">${this.t('settings.recommended')}</span>`;
+    }
+    return nothing;
+  }
 
   private readonly onHashChange = (): void => this.reveal(location.hash);
 
@@ -527,7 +647,11 @@ export class SettingsPage extends LitElement {
         const all = matches(textOf([section.title]), words);
         return {
           ...section,
-          rows: section.rows.filter((row) => all || matches(textOf(row.keys, row.words), words)),
+          rows: section.rows.filter(
+            (row) =>
+              (all || matches(textOf(row.keys, row.words), words)) &&
+              (!this.changedOnly || this.client?.get(row.id)?.changed === true),
+          ),
         };
       })
       .filter((section) => section.rows.length > 0);
@@ -556,10 +680,53 @@ export class SettingsPage extends LitElement {
             if (input instanceof HTMLInputElement) this.query = input.value;
           }}
         />
+        <div class="actions">
+          <button
+            type="button"
+            aria-pressed=${this.changedOnly ? 'true' : 'false'}
+            @click=${() => (this.changedOnly = !this.changedOnly)}
+          >
+            ${t('settings.changedOnly')}
+          </button>
+          <button type="button" @click=${() => void this.exportFile()}>
+            ${t('settings.export')}
+          </button>
+          <button type="button" @click=${() => void this.importFile()}>
+            ${t('settings.import')}
+          </button>
+          <button
+            type="button"
+            @click=${() => this.renderRoot.querySelector('dialog')?.showModal()}
+          >
+            ${t('settings.resetAll')}
+          </button>
+        </div>
+        ${
+          this.message === undefined
+            ? nothing
+            : html`<p class="message" role=${this.message.alert ? 'alert' : 'status'}>
+                ${this.message.text}
+              </p>`
+        }
+        <dialog aria-labelledby="reset-question">
+          <p id="reset-question">${t('settings.resetAllQuestion')}</p>
+          <div class="buttons">
+            <button type="button" @click=${() => this.renderRoot.querySelector('dialog')?.close()}>
+              ${t('settings.cancel')}
+            </button>
+            <button type="button" class="primary" @click=${() => void this.resetAll()}>
+              ${t('settings.resetAllConfirm')}
+            </button>
+          </div>
+        </dialog>
         ${
           shown.length === 0
             ? html`<p class="empty" role="status">
-                ${t('settings.searchEmpty', { query: this.query.trim() })}
+                ${
+                  this.changedOnly && this.query.trim() === ''
+                    ? t('settings.changedNone')
+                    : t('settings.searchEmpty', { query: this.query.trim() })
+                }
               </p>`
             : nothing
         }
@@ -573,7 +740,10 @@ export class SettingsPage extends LitElement {
                     </div>`
                   : html`<section aria-labelledby=${section.id}>
                       ${section.rows.map(
-                        (row) => html`<div class="slot" data-row=${row.id}>${row.render()}</div>`,
+                        (row) =>
+                          html`<div class="slot" data-row=${row.id}>
+                            ${row.render()}${this.renderReset(row)}
+                          </div>`,
                       )}
                     </section>`
               }`,
@@ -591,11 +761,7 @@ export class SettingsPage extends LitElement {
   private renderLabel(key: MessageKey, setting: SettingView | undefined): TemplateResult {
     return html`<span class="label">
       <span>${this.t(key)}</span>
-      ${
-        setting?.locked === true
-          ? html`<span class="note">${this.t('settings.managed')}</span>`
-          : nothing
-      }
+      ${this.managedNote(setting)}
     </span>`;
   }
 
@@ -760,9 +926,11 @@ export class SettingsPage extends LitElement {
     return html`<div class="row">
       <label class="label" for=${key}>
         <span>${this.t(label)}</span>
-        <span class="note">
-          ${setting?.locked === true ? this.t('settings.managed') : this.t(note)}
-        </span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t(note)}</span>`
+        }
       </label>
       <input
         id=${key}
@@ -899,6 +1067,12 @@ export class SettingsPage extends LitElement {
  * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
  * @param input - The text of the field.
  */
+/** The mark of values that the organization sets. */
+const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
+  <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5" />
+</svg>`;
+
 /** A row of the settings page: a setting, or a part such as the import. */
 interface PageRow {
   /** The setting's key, or the part's name; links name it after `#`. */
