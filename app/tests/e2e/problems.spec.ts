@@ -148,7 +148,9 @@ test('warns about a certificate that is not trusted and continues only when aske
     const url = `https://127.0.0.1:${port}/`;
     await open(browser, url);
     const problem = browser.shell.getByRole('region', { name: "Your connection isn't private" });
-    await expect(problem).toBeVisible();
+    // Windows checks an unknown certificate with the system, which can look for its issuer on
+    // the network first; the warning shows once the check has failed.
+    await expect(problem).toBeVisible({ timeout: 30_000 });
     await expect(problem).toContainText('Error: ERR_CERT_AUTHORITY_INVALID');
     expect(await pageShown(browser)).toBe(false);
     const proceed = problem.getByRole('button', { name: `Continue to 127.0.0.1:${port}` });
