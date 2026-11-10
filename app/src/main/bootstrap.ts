@@ -24,7 +24,6 @@ import {
   SetShellInsets,
   TabAction,
 } from '../shared/ipc/shell-contracts.ts';
-import { Lifecycle } from '../kernel/lifecycle/lifecycle.ts';
 import {
   FanOutLogSink,
   RingBufferLogSink,
@@ -223,7 +222,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
   await settingsLoaded;
-  const lifecycle = new Lifecycle(logger, clock, {});
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
     new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
@@ -738,7 +736,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   windows.onDidChange(keepSession);
   windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
-  lifecycle.advance('ready');
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
   let shellLoaded = false;
   first.shellContents.once('did-finish-load', () => {
@@ -792,31 +789,24 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     event.preventDefault();
     logger.info('Shutting down');
     if (shellLoaded) boot.guard.markHealthy(app.getVersion());
-    lifecycle.onWillShutdown((e) => {
-      e.join(store.flush(), 'settings');
-      const snapshot = windows.snapshot();
-      if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
-      e.join(sessionStore.flush(), 'session');
-      const web = session.fromPartition(webPartition);
-      web.flushStorageData();
-      e.join(web.cookies.flushStore(), 'cookies');
-    });
-    void lifecycle.shutdown('quit').then(() => {
-      // A window that fails to close must not keep the browser from quitting.
-      try {
-        windows.dispose();
-      } catch (error: unknown) {
-        logger.error('A window did not close cleanly', error);
-      }
-      data.dispose();
-      updates?.installOnExit();
-      updates?.dispose();
-      logger.info('Shutdown complete');
-      // Everything is saved and every window is closed at this point.
-      app.exit(0);
-    });
+    // The code that shuts the browser down loads when it quits.
+    void import('./shutdown.ts')
+      .then(({ shutDown }) =>
+        shutDown({
+          logger,
+          clock,
+          settings: store,
+          sessions: sessionStore,
+          windows,
+          web: session.fromPartition(webPartition),
+          data,
+          updates,
+        }),
+      )
+      .catch((error: unknown) => logger.error('The shutdown failed', error))
+      // Everything is saved and every window is closed at this point, or saving failed.
+      .finally(() => app.exit(0));
   });
-  lifecycle.advance('running');
 }
 
 function registerShellHandlers(
