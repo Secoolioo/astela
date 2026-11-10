@@ -25,7 +25,20 @@ async function open(browser: Browser, url: string): Promise<Page> {
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await address.fill(url);
   await address.press('Enter');
-  return waitForPage(browser, (current) => current === url);
+  const page = await waitForPage(browser, (current) => current === url);
+  // The page gets the focus once it shows; keys reach only the view that has the focus.
+  await expect
+    .poll(() =>
+      browser.main.evaluate(
+        ({ webContents }, shown) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL() === shown && contents.isFocused()),
+        url,
+      ),
+    )
+    .toBe(true);
+  return page;
 }
 
 /** Presses a key in the page, where the browser sees it before the page does. */
