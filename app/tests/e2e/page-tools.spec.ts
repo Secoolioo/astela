@@ -51,7 +51,15 @@ async function pressInPage(
 }
 
 /** What the tests do with the web contents of a page in the browser process. */
-type ContentsTask = 'zoomIn' | 'mockPrint' | 'pageText' | 'devToolsOpened' | 'pdfViewer';
+type ContentsTask =
+  | 'zoomIn'
+  | 'mockPrint'
+  | 'pageText'
+  | 'devToolsOpened'
+  | 'pdfViewer'
+  | 'loading'
+  | 'failSave'
+  | 'recordFind';
 
 /**
  * Works with the web contents of the page at a URL in the browser process.
@@ -75,6 +83,20 @@ function withContents(browser: Browser, url: string, task: ContentsTask): Promis
         return contents.executeJavaScript('document.body.innerText');
       } else if (wanted === 'devToolsOpened') {
         return contents.isDevToolsOpened();
+      } else if (wanted === 'loading') {
+        return contents.isLoading();
+      } else if (wanted === 'failSave') {
+        // As when the page changes while it is saved, such as when it loads again.
+        contents.savePage = () => Promise.reject(new Error('Failed to save the page.'));
+      } else if (wanted === 'recordFind') {
+        // What the browser asks of Chromium's search in the page.
+        const finds: unknown[] = [];
+        Reflect.set(globalThis, 'finds', finds);
+        const find = contents.findInPage.bind(contents);
+        contents.findInPage = (text, options) => {
+          finds.push({ text, ...options });
+          return find(text, options);
+        };
       } else {
         // Chromium's PDF viewer is an extension frame inside the tab's page.
         return contents.mainFrame.framesInSubtree.some((frame) =>
@@ -118,6 +140,31 @@ test('finds text in the page and steps through the matches', async () => {
     await pressInPage(browser, 'F', ['primary']);
     await expect(field).toHaveValue('pie');
     await expect(find).toContainText('1 of 1');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('starts a new search for new text and goes on with it for the next match', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/find.html`;
+    await open(browser, url);
+    await withContents(browser, url, 'recordFind');
+    await pressInPage(browser, 'F', ['primary']);
+    const find = browser.shell.getByRole('search', { name: 'Find in page' });
+    const field = find.getByRole('searchbox', { name: 'Find in page' });
+    await expect(field).toBeFocused();
+    await field.fill('apple');
+    await expect(find).toContainText('1 of 3');
+    await field.press('Enter');
+    await expect(find).toContainText('2 of 3');
+    // Electron's findNext begins a new search; a step that began one would start from the top
+    // again when the search of the text was not done yet.
+    expect(await browser.main.evaluate(() => Reflect.get(globalThis, 'finds'))).toEqual([
+      { text: 'apple', forward: true, findNext: true },
+      { text: 'apple', forward: true, findNext: false },
+    ]);
   } finally {
     await browser.close();
   }
@@ -274,6 +321,9 @@ test('reloads without the cache, prints, saves and shows the source of a page', 
       ).length;
     await pressInPage(browser, 'R', ['primary', 'shift']);
     await expect.poll(reloads).toBe(1);
+    // A page that loads again while it is saved is not saved, so the test lets the reload finish
+    // first, as it does while a person chooses where to save the page.
+    await expect.poll(() => withContents(browser, url, 'loading')).toBe(false);
     await withContents(browser, url, 'mockPrint');
     await pressInPage(browser, 'P', ['primary']);
     await expect
@@ -297,6 +347,33 @@ test('reloads without the cache, prints, saves and shows the source of a page', 
   } finally {
     await browser.close();
     rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('writes to the log that a page was not saved, instead of failing unnoticed', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/find.html`;
+    await open(browser, url);
+    await browser.main.evaluate(
+      ({ dialog }, path) => {
+        dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
+        // Promises that fail without a handler, which the browser would only print.
+        const unhandled: string[] = [];
+        Reflect.set(globalThis, 'unhandled', unhandled);
+        process.on('unhandledRejection', (reason) => unhandled.push(String(reason)));
+      },
+      join(tmpdir(), 'not-saved.html'),
+    );
+    await withContents(browser, url, 'failSave');
+    await pressInPage(browser, 'S', ['primary']);
+    const log = join(browser.profile, 'data', 'logs', 'main.log');
+    await expect
+      .poll(() => (existsSync(log) ? readFileSync(log, 'utf8') : ''))
+      .toContain('The page was not saved');
+    expect(await browser.main.evaluate(() => Reflect.get(globalThis, 'unhandled'))).toEqual([]);
+  } finally {
+    await browser.close();
   }
 });
 

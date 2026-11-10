@@ -662,8 +662,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.lastQuery = query;
     // The numbers stay until the page reports those of the new search, so they do not flicker.
     this.finding = { ...this.finding, query };
+    // Electron's findNext begins a new search: new text starts one, and the next or previous
+    // match goes on with it, so Chromium handles a step only after the search it belongs to.
     if (query === '') contents.stopFindInPage('clearSelection');
-    else contents.findInPage(query, { forward, findNext: next });
+    else contents.findInPage(query, { forward, findNext: !next });
     this.schedulePublish();
   }
 
