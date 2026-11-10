@@ -23,6 +23,12 @@ input {
   transition: border-color var(--motion-fast);
 }
 
+#private {
+  margin: var(--space-3) 0 0;
+  color: var(--text-2);
+  line-height: 20px;
+}
+
 input::placeholder {
   color: var(--text-2);
 }

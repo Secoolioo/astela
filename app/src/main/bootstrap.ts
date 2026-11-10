@@ -56,6 +56,7 @@ import {
   cleanUserAgent,
   guardWebContents,
   hardenSession,
+  type PermissionHandler,
 } from '../platform/electron/session-security.ts';
 import { RotatingFileLogSink } from '../platform/node/file-log-sink.ts';
 import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
@@ -86,6 +87,8 @@ import {
 import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
+import { PrivateModeAvailability } from '../domain/windows/private-windows.ts';
+import type { SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import { connectBlockerFrames } from './blocker-frames.ts';
@@ -118,6 +121,8 @@ export interface BundleLayout {
 
 const internalPartition = 'internal';
 const webPartition = 'persist:default';
+/** Private windows keep the data of their pages in memory: partitions without `persist:`. */
+const privatePartition = 'private';
 
 /**
  * Starts the browser. The order matters for start-up time and safety: schemes and the
@@ -174,6 +179,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       ImportEnabled,
       SSLErrorOverrideAllowed,
       DeveloperToolsAvailability,
+      PrivateModeAvailability,
       DefaultBrowserSettingEnabled,
     ],
     createPolicyProviders(brand, process.platform),
@@ -286,6 +292,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     prompts: loadPrompts,
     logger,
   });
+  // Private windows ask again, and keep the answers only until the last of them closes.
+  let privateSites: SitePermissions = {};
+  const privatePermissions = sitePermissions({
+    sites: () => privateSites,
+    save: (sites) => {
+      privateSites = sites;
+    },
+    windowOf: (contents) => windows.forTab(contents),
+    prompts: loadPrompts,
+    logger,
+  });
   // Downloads go to the downloads folder without a question, under a name that is free there,
   // also from downloads that still run; the list and its panel load with the first download.
   let downloads: Downloads | undefined;
@@ -295,7 +312,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       downloads = new List({
         data,
         windows,
-        webSession: () => session.fromPartition(webPartition),
+        webSession: (privateWindow) =>
+          privateWindow ? privateWeb() : session.fromPartition(webPartition),
         overlay: overlayOptions,
         router,
         logger: logger.child('downloads'),
@@ -305,7 +323,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     return downloadsLoaded;
   };
   const reservedPaths = new Set<string>();
-  const saveDownload = (item: DownloadItem): void => {
+  const saveDownload = (item: DownloadItem, privateWindow: boolean): void => {
     const folder = app.getPath('downloads');
     const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
       const path = join(folder, candidate);
@@ -321,11 +339,26 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     item.once('done', () => reservedPaths.delete(path));
     item.setSavePath(path);
     loadDownloads().then(
-      (list) => list.track(item),
+      (list) => list.track(item, privateWindow),
       (error: unknown) => logger.error('The list of downloads failed', error),
     );
   };
   const webSessions = new Set<Session>();
+  // The sessions of private windows: a new one after the last private window closed.
+  const privateSessions = new WeakSet<Session>();
+  // A session's pages get the answers of their kind of window. A private session is known
+  // only once it was made, so each question looks again.
+  const permissionsOf = (s: Session): PermissionHandler => {
+    const handler = (): PermissionHandler =>
+      privateSessions.has(s) ? privatePermissions : webPermissions;
+    return {
+      request: (contents, permission, mediaTypes) =>
+        handler().request(contents, permission, mediaTypes),
+      check: (contents, permission, origin, details) =>
+        handler().check(contents, permission, origin, details),
+      shareScreen: (request, callback) => handler().shareScreen(request, callback),
+    };
+  };
   const addFramePreload = connectBlockerFrames(
     blocker,
     (s) => webSessions.has(s),
@@ -336,8 +369,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       webSessions.add(s);
       protocolHandler.refuse(s);
       serveResources(s, (name) => blocker.resource(name));
-      hardenSession(s, webPermissions);
-      s.on('will-download', (_event, item) => saveDownload(item));
+      hardenSession(s, permissionsOf(s));
+      s.on('will-download', (_event, item) => saveDownload(item, privateSessions.has(s)));
       pipeline.attach(s);
       addFramePreload(s);
     }
@@ -345,6 +378,33 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   app.on('session-created', protectWebSession);
   protectWebSession(session.defaultSession);
   protectWebSession(session.fromPartition(webPartition));
+  // Private windows share a session in memory, made with the first of them; after the last
+  // of them closed, its data is deleted and the next private window gets a new session.
+  let privateSession: Session | undefined;
+  let privateRuns = 0;
+  const privateWeb = (): Session => {
+    if (privateSession === undefined) {
+      privateRuns += 1;
+      const created = session.fromPartition(`${privatePartition}-${privateRuns}`);
+      privateSessions.add(created);
+      protectWebSession(created);
+      privateSession = created;
+    }
+    return privateSession;
+  };
+  const forgetPrivate = (): void => {
+    const ended = privateSession;
+    privateSession = undefined;
+    privateSites = {};
+    downloads?.forgetPrivate();
+    if (ended === undefined) return;
+    Promise.all([ended.clearStorageData(), ended.clearCache(), ended.clearAuthCache()]).catch(
+      (error: unknown) => logger.warn('Private data was not deleted', { error: String(error) }),
+    );
+  };
+  // Organizations can keep people from opening private windows.
+  const privateWindowsAllowed = (): boolean =>
+    policies.mandatoryValue(PrivateModeAvailability) !== 1;
 
   const gate = new IpcGate(clock);
   const router = new IpcRouter(gate, logger);
@@ -422,6 +482,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     pagePreload: layout.pagePreload,
     internalPartition,
     webPartition,
+    privateSession: privateWeb,
     newTabUrl,
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
@@ -450,12 +511,16 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
-    downloads: () => downloads?.summary() ?? null,
+    downloads: (privateWindow) => downloads?.summary(privateWindow) ?? null,
     openWindow: () => void windows.open(),
+    openPrivateWindow: () => {
+      if (privateWindowsAllowed()) windows.open(undefined, { private: true });
+    },
+    onPrivateWindowsClosed: forgetPrivate,
     // The shortcut shows the downloads button first; the shell opens the list at it.
     showDownloads: (window) =>
       void loadDownloads().then((list) => {
-        list.reveal();
+        list.reveal(window.isPrivate);
         window.refreshShell();
         router.publish(ShellCommand, window.shellContents, 'downloads.open');
       }),
@@ -519,19 +584,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     isInternal: (contents) => contents.session === internal,
     // What a script opens keeps its opener: a popup with a size or position gets a window of
     // its own, anything else a tab, in the background when the user asked for that.
+    // What a page of a private window opens stays private.
     openWindow: (contents, opener, { url, disposition, features }) => {
       const window = windows.forTab(opener);
+      const privateWindow = privateSessions.has(opener.session);
       if (disposition === 'new-window' && features !== '') {
-        windows.openPopup(contents, url, features, window);
-      } else if (disposition === 'new-window') {
-        windows.openWith(contents, url);
-      } else {
-        (window ?? windows.lastUsed ?? windows.open()).adopt(
-          contents,
-          url,
-          disposition !== 'background-tab',
-        );
+        windows.openPopup(contents, url, features, window, privateWindow);
+        return;
       }
+      const target =
+        disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(privateWindow));
+      if (target === undefined) windows.openWith(contents, url, { private: privateWindow });
+      else target.adopt(contents, url, disposition !== 'background-tab');
     },
     // Popups that the filter lists name do not open, and count as blocked on their page.
     blocksPopup: (url, opener) => {
@@ -541,7 +605,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     logger,
   });
-  registerShellHandlers(router, windows, searchTemplate);
+  registerShellHandlers(router, windows, searchTemplate, privateWindowsAllowed);
   router.handle(OpenDownloads, (anchor, { sender }) => {
     const window = windows.forShell(sender);
     if (window !== undefined) void loadDownloads().then((list) => list.open(window, anchor));
@@ -652,7 +716,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // without a window, the first link opens one.
   openLinks = (links) => {
     const [link, ...more] = links;
-    const used = windows.lastUsed;
+    // Links from other apps never open in private windows.
+    const used = windows.lastUsedOf(false);
     const target = used ?? windows.open(link);
     if (used !== undefined && link !== undefined) target.tabs.open(link);
     for (const url of more) target.tabs.open(url);
@@ -754,6 +819,7 @@ function registerShellHandlers(
   router: IpcRouter,
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
+  privateWindows: () => boolean,
 ): void {
   const windowOf = (sender: Electron.WebContents): BrowserWindowController => {
     const window = windows.forShell(sender);
@@ -802,7 +868,7 @@ function registerShellHandlers(
   router.handle(OpenMenu, async (position, { sender }) => {
     const window = windowOf(sender);
     const { popupBrowserMenu } = await import('./browser-menu.ts');
-    popupBrowserMenu(window, position);
+    popupBrowserMenu(window, position, { privateWindows: privateWindows() });
     return null;
   });
 }

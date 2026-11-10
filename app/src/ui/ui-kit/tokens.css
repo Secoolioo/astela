@@ -46,6 +46,21 @@
   }
 }
 
+/* The browser's own views in a private window look dark in both modes, as in dark mode. */
+:root[data-private] {
+  color-scheme: dark;
+  --surface-0: oklch(20% 0.008 260);
+  --surface-1: oklch(25% 0.009 260);
+  --surface-2: oklch(29% 0.01 260);
+  --surface-hover: oklch(33% 0.011 260);
+  --text-1: oklch(95% 0.005 260);
+  --text-2: oklch(75% 0.01 260);
+  --border-1: oklch(36% 0.01 260);
+  --accent: var(--accent-dark, oklch(72% 0.148 255));
+  --focus-ring: var(--accent);
+  --danger: oklch(72% 0.15 25);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-fast: 0ms;

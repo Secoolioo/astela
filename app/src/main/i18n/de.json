@@ -38,6 +38,7 @@
   "dialog.closePage": "Seite schließen",
   "dialog.webPage": "Webseite",
   "menu.newWindow": "Neues &Fenster",
+  "menu.newPrivateWindow": "Neues &privates Fenster",
   "menu.downloads": "&Downloads",
   "menu.zoom": "&Zoom",
   "menu.find": "&Suchen…",

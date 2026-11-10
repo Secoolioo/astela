@@ -34,6 +34,7 @@ import {
 } from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
+import { privateWindowArgument } from '../../shared/private-window.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
@@ -74,10 +75,12 @@ export interface BrowserWindowOptions {
   readonly internalPartition: string;
   /** Partition of web tabs. */
   readonly webPartition: string;
+  /** The session of web tabs in private windows, which keeps their data in memory. */
+  readonly privateSession: () => Electron.Session;
   /** URL of a new tab. */
   readonly newTabUrl: string;
-  /** Window background while the shell loads, for the current light or dark mode. */
-  readonly backgroundColor: () => string;
+  /** Window background while the shell loads: for the light or dark mode, or a private window. */
+  readonly backgroundColor: (privateWindow: boolean) => string;
   /** Command line argument that gives a view of the browser's own UI its design tokens. */
   readonly appearanceArgument: () => string;
   /** Where the shell shows the tab strip. */
@@ -94,12 +97,16 @@ export interface BrowserWindowOptions {
   readonly bookmarksBar?: () => BarItem[] | null;
   /** Shows or hides the bookmarks bar. */
   readonly toggleBookmarksBar?: () => void;
-  /** How the downloads button looks, or `null` while it is hidden. */
-  readonly downloads?: () => ShellState['downloads'];
+  /** How the downloads button of a regular or a private window looks, or `null` while it is hidden. */
+  readonly downloads?: (privateWindow: boolean) => ShellState['downloads'];
   /** Shows the list of downloads of a window, at its button. */
   readonly showDownloads?: (window: BrowserWindowController) => void;
   /** Opens a new window. */
   readonly openWindow?: () => void;
+  /** Opens a new private window, if people may. */
+  readonly openPrivateWindow?: () => void;
+  /** Called after the last private window closed, to forget what private windows kept. */
+  readonly onPrivateWindowsClosed?: () => void;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -150,6 +157,8 @@ export interface WindowPlace {
   readonly maximized?: boolean | undefined;
   /** A popup closes with its last tab and is not kept in the session. */
   readonly popup?: boolean;
+  /** A private window keeps no history and no session, and its pages' data only in memory. */
+  readonly private?: boolean;
 }
 
 /** The view that shows a tab, and what belongs to it. */
@@ -195,6 +204,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private adopting: WebContents | undefined;
   /** Whether the window is a popup that a page opened. */
   readonly popup: boolean;
+  /** Whether the window is a private window. */
+  readonly isPrivate: boolean;
   private visible: WebContentsView | undefined;
   private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
   private readonly subscriptions = new DisposableStore();
@@ -205,19 +216,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   constructor(options: BrowserWindowOptions, place: WindowPlace = {}) {
     this.options = options;
     this.popup = place.popup === true;
+    this.isPrivate = place.private === true;
     this.window = new BaseWindow({
       ...(place.bounds ?? { width: 1280, height: 820 }),
       minWidth: 480,
       minHeight: 320,
       // Shown at once in the theme's background color: Chromium lowers the priority of the
       // renderer of a hidden window, so the shell would load later in one.
-      backgroundColor: options.backgroundColor(),
+      backgroundColor: options.backgroundColor(this.isPrivate),
     });
     this.shell = new WebContentsView({
       webPreferences: {
         preload: options.shellPreload,
         partition: options.internalPartition,
-        additionalArguments: [options.appearanceArgument()],
+        additionalArguments: [options.appearanceArgument(), ...privateArgument(this.isPrivate)],
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -225,7 +237,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         v8CacheOptions: 'bypassHeatCheck',
       },
     });
-    this.shell.setBackgroundColor(options.backgroundColor());
+    this.shell.setBackgroundColor(options.backgroundColor(this.isPrivate));
     this.window.contentView.addChildView(this.shell);
     this.subscriptions.add(
       options.gate.registerView(this.shell.webContents.id, {
@@ -284,7 +296,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       tabStrip: this.options.tabStripPosition(),
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
       find: this.finding,
-      downloads: this.options.downloads?.() ?? null,
+      downloads: this.options.downloads?.(this.isPrivate) ?? null,
+      private: this.isPrivate,
     };
   }
 
@@ -491,7 +504,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.window.isDestroyed()) {
       return;
     }
-    const color = this.options.backgroundColor();
+    const color = this.options.backgroundColor(this.isPrivate);
     this.window.setBackgroundColor(color);
     this.shell.setBackgroundColor(color);
     for (const entry of this.entries.values()) {
@@ -569,6 +582,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'window.new':
         this.options.openWindow?.();
+        break;
+      case 'window.newPrivate':
+        this.options.openPrivateWindow?.();
         break;
       case 'bookmark.toggle':
         // Only web pages get bookmarks; the browser's own pages have their own commands.
@@ -668,7 +684,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           : (zoomFactors.toReversed().find((step) => step < current - 0.001) ?? current);
     contents.setZoomFactor(factor);
     this.tabs.update(id, { zoom: factor });
-    this.options.onZoom?.(contents.getURL(), factor);
+    // A private window keeps no zoom for later visits.
+    if (!this.isPrivate) this.options.onZoom?.(contents.getURL(), factor);
   }
 
   /** The web contents of a tab that shows a web page, and no internal page or problem. */
@@ -726,7 +743,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       webPreferences:
         page === undefined
           ? {
-              partition: this.options.webPartition,
+              // A private window's pages keep their data in memory.
+              ...(this.isPrivate
+                ? { session: this.options.privateSession() }
+                : { partition: this.options.webPartition }),
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
@@ -743,6 +763,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               additionalArguments: [
                 `--bridge-scope=${[page, ...sharedChannels[page]].join(',')}`,
                 this.options.appearanceArgument(),
+                ...privateArgument(this.isPrivate),
               ],
               sandbox: true,
               contextIsolation: true,
@@ -770,7 +791,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const contents = view.webContents;
     let registration: Disposable | undefined;
     if (page !== undefined) {
-      view.setBackgroundColor(this.options.backgroundColor());
+      view.setBackgroundColor(this.options.backgroundColor(this.isPrivate));
       registration = this.options.gate.registerView(contents.id, {
         origin: `app://${page}`,
         capabilities: new Set<Capability>([
@@ -783,12 +804,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const sync = (): void => this.sync(id, contents);
     if (page === undefined) {
       // Pages that change their address with the History API, as many web apps do, count as
-      // visits too; a jump to an anchor on the same page does not.
+      // visits too; a jump to an anchor on the same page does not. A private window keeps no
+      // history.
+      const onVisit = this.isPrivate ? undefined : this.options.onVisit;
       let visited = '';
       const visit = (address: string): void => {
         if (!/^https?:/i.test(address) || withoutHash(address) === withoutHash(visited)) return;
         visited = address;
-        this.options.onVisit?.(address, contents.getTitle(), false);
+        onVisit?.(address, contents.getTitle(), false);
       };
       contents.on('did-navigate', (_event, address) => {
         visited = '';
@@ -799,7 +822,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       });
       contents.on('page-title-updated', (_event, title) => {
         const address = contents.getURL();
-        if (/^https?:/i.test(address)) this.options.onVisit?.(address, title, true);
+        if (/^https?:/i.test(address)) onVisit?.(address, title, true);
       });
     }
     if (page === undefined) {
@@ -1067,9 +1090,13 @@ export class WindowManager implements Disposable {
     this.options = options;
   }
 
-  /** Opens a window with one tab. */
-  open(url?: string): BrowserWindowController {
-    const controller = this.add();
+  /**
+   * Opens a window with one tab.
+   * @param url - What the tab shows; a new tab page without it.
+   * @param place - Where the window opens, and whether it is private.
+   */
+  open(url?: string, place?: WindowPlace): BrowserWindowController {
+    const controller = this.add(place);
     controller.tabs.open(url);
     return controller;
   }
@@ -1095,6 +1122,7 @@ export class WindowManager implements Disposable {
    * @param url - The address it opens.
    * @param features - The features that the script asked for, such as its size.
    * @param opener - The window of the page that opened it.
+   * @param privateWindow - Whether the page that opened it is in a private window.
    * @returns The popup.
    */
   openPopup(
@@ -1102,6 +1130,7 @@ export class WindowManager implements Disposable {
     url: string,
     features: string,
     opener: BrowserWindowController | undefined,
+    privateWindow: boolean,
   ): BrowserWindowController {
     const asked = popupBounds(
       features,
@@ -1110,6 +1139,7 @@ export class WindowManager implements Disposable {
     return this.openWith(contents, url, {
       bounds: visibleBounds(asked, workAreas()),
       popup: true,
+      private: privateWindow,
     });
   }
 
@@ -1144,9 +1174,9 @@ export class WindowManager implements Disposable {
   snapshot(): SessionSnapshot {
     return {
       version: 1,
-      // Popups are not kept; the window that opened them is.
+      // Popups and private windows are not kept; the window that opened a popup is.
       windows: [...this.windows].flatMap((controller) => {
-        if (controller.popup) return [];
+        if (controller.popup || controller.isPrivate) return [];
         const tabs = controller.tabs.all;
         const active = controller.tabs.active;
         const window = sessionWindow(tabs, active === undefined ? -1 : tabs.indexOf(active), {
@@ -1181,6 +1211,9 @@ export class WindowManager implements Disposable {
       forget();
       this.windows.delete(controller);
       this.changeEmitter.fire();
+      if (controller.isPrivate && ![...this.windows].some((other) => other.isPrivate)) {
+        this.options.onPrivateWindowsClosed?.();
+      }
     });
     return controller;
   }
@@ -1188,6 +1221,16 @@ export class WindowManager implements Disposable {
   /** The window that had the focus last, or else the newest window. */
   get lastUsed(): BrowserWindowController | undefined {
     return this.focusOrder.at(-1) ?? [...this.windows].at(-1);
+  }
+
+  /**
+   * The regular or the private window that had the focus last, or else the newest one.
+   * @param privateWindow - Whether to find a private window.
+   */
+  lastUsedOf(privateWindow: boolean): BrowserWindowController | undefined {
+    const matches = (window: BrowserWindowController): boolean =>
+      window.isPrivate === privateWindow;
+    return this.focusOrder.findLast(matches) ?? [...this.windows].findLast(matches);
   }
 
   /**
@@ -1258,4 +1301,9 @@ function withoutHash(address: string): string {
 /** The work areas of the screens, where windows may go. */
 function workAreas(): WindowBounds[] {
   return screen.getAllDisplays().map((display) => display.workArea);
+}
+
+/** The argument that gives the browser's own views in a private window their look. */
+function privateArgument(privateWindow: boolean): string[] {
+  return privateWindow ? [privateWindowArgument] : [];
 }

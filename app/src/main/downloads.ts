@@ -22,8 +22,8 @@ import { existingOverlay, overlayBySender, overlayOf, track } from './overlays.t
 export interface DownloadsDependencies {
   readonly data: DataClient;
   readonly windows: WindowManager;
-  /** The session of web pages, which downloads a file again. */
-  readonly webSession: () => Session;
+  /** The session of web pages in regular or private windows, which downloads a file again. */
+  readonly webSession: (privateWindow: boolean) => Session;
   readonly overlay: OverlayOptions;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -42,6 +42,8 @@ interface Entry {
   state: DownloadState;
   paused: boolean;
   item: DownloadItem | undefined;
+  /** Whether a private window downloaded it: such a download is not kept in the profile. */
+  readonly privateWindow: boolean;
 }
 
 /** Most downloads that the panel shows. */
@@ -60,7 +62,8 @@ export class Downloads {
   private readonly entries: Entry[] = [];
   private readonly loaded: Promise<void>;
   private nextId = 1;
-  private shown = false;
+  /** Whether regular windows (`false`) and private windows (`true`) show the button. */
+  private readonly shown = new Set<boolean>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** The button that each window's panel opened at. */
   private readonly anchors = new WeakMap<BrowserWindowController, OverlayAnchor>();
@@ -77,15 +80,26 @@ export class Downloads {
     });
   }
 
-  /** Shows the downloads button from now on, such as for its shortcut. */
-  reveal(): void {
-    this.shown = true;
+  /**
+   * Shows the downloads button from now on, such as for its shortcut.
+   * @param privateWindow - Whether the button of private windows shows, or of regular ones.
+   */
+  reveal(privateWindow: boolean): void {
+    this.shown.add(privateWindow);
   }
 
-  /** How the downloads button looks: `null` hides it until the browser downloads something. */
-  summary(): { readonly active: number; readonly progress: number | null } | null {
-    if (!this.shown) return null;
-    const active = this.entries.filter((entry) => entry.state === 'progressing');
+  /**
+   * How the downloads button looks: `null` hides it until the browser downloads something.
+   * Regular and private windows each count only their own downloads.
+   * @param privateWindow - Whether the button is one of a private window.
+   */
+  summary(
+    privateWindow: boolean,
+  ): { readonly active: number; readonly progress: number | null } | null {
+    if (!this.shown.has(privateWindow)) return null;
+    const active = this.entries.filter(
+      (entry) => entry.privateWindow === privateWindow && entry.state === 'progressing',
+    );
     const sizes = active.map((entry) => progressOf(entry));
     const known = sizes.every((size) => size !== undefined) && active.length > 0;
     const total = active.reduce((sum, entry) => sum + entry.total, 0);
@@ -96,8 +110,9 @@ export class Downloads {
   /**
    * Follows a download that started, whose file was chosen already.
    * @param item - Electron's download.
+   * @param privateWindow - Whether a page of a private window started it.
    */
-  track(item: DownloadItem): void {
+  track(item: DownloadItem, privateWindow: boolean): void {
     const entry: Entry = {
       id: this.nextId,
       dbId: undefined,
@@ -108,19 +123,14 @@ export class Downloads {
       state: 'progressing',
       paused: item.isPaused(),
       item,
+      privateWindow,
     };
     this.nextId += 1;
     this.entries.unshift(entry);
-    this.shown = true;
-    // The download joins the stored list after the list from before has loaded.
-    void this.loaded.then(async () => {
-      try {
-        entry.dbId = await this.deps.data.call('addDownload', entry.url, entry.path, entry.total);
-        if (entry.state !== 'progressing') this.save(entry);
-      } catch (error: unknown) {
-        this.deps.logger.warn('A download was not added to the list', { error: String(error) });
-      }
-    });
+    this.shown.add(privateWindow);
+    // The download joins the stored list after the list from before has loaded; downloads of
+    // private windows are not stored.
+    if (!privateWindow) this.store(entry);
     item.on('updated', (_event, state) => {
       entry.received = item.getReceivedBytes();
       entry.total = item.getTotalBytes();
@@ -141,19 +151,44 @@ export class Downloads {
   }
 
   /**
+   * Cancels the downloads of private windows and leaves them out of the list, after the last
+   * private window closed. Their finished files stay.
+   */
+  forgetPrivate(): void {
+    for (const entry of this.entries.filter((candidate) => candidate.privateWindow)) {
+      entry.item?.cancel();
+      this.entries.splice(this.entries.indexOf(entry), 1);
+    }
+    this.shown.delete(true);
+    this.changed();
+  }
+
+  /**
    * Opens the panel of the list at the downloads button of a window.
    * @param window - The window.
    * @param anchor - The button.
    */
   open(window: BrowserWindowController, anchor: OverlayAnchor): void {
-    this.shown = true;
+    this.shown.add(window.isPrivate);
     this.anchors.set(window, anchor);
     const overlay = overlayOf(window, this.deps.overlay, this.deps.router);
-    overlay.open(this.panel(anchor));
+    overlay.open(this.panel(anchor, window.isPrivate));
     track(window, overlay);
     this.deps.windows.refreshShells();
     // The list from before fills the panel once it has loaded.
     void this.loaded.then(() => this.changed());
+  }
+
+  /** Adds a download to the stored list, once the list from before has loaded. */
+  private store(entry: Entry): void {
+    void this.loaded.then(async () => {
+      try {
+        entry.dbId = await this.deps.data.call('addDownload', entry.url, entry.path, entry.total);
+        if (entry.state !== 'progressing') this.save(entry);
+      } catch (error: unknown) {
+        this.deps.logger.warn('A download was not added to the list', { error: String(error) });
+      }
+    });
   }
 
   private async load(): Promise<void> {
@@ -172,6 +207,7 @@ export class Downloads {
           state: row.state,
           paused: false,
           item: undefined,
+          privateWindow: false,
         });
         this.nextId += 1;
       }
@@ -209,7 +245,7 @@ export class Downloads {
       case 'retry':
         if (entry.state === 'cancelled' || entry.state === 'interrupted') {
           this.remove(entry);
-          this.deps.webSession().downloadURL(entry.url);
+          this.deps.webSession(entry.privateWindow).downloadURL(entry.url);
         }
         break;
       case 'remove':
@@ -237,19 +273,23 @@ export class Downloads {
       });
   }
 
-  private panel(anchor: OverlayAnchor): OverlayContent {
+  /** The panel of regular or private windows, each with only their own downloads. */
+  private panel(anchor: OverlayAnchor, privateWindow: boolean): OverlayContent {
     return {
       kind: 'downloads',
       anchor,
-      items: this.entries.slice(0, shownDownloads).map((entry) => ({
-        id: entry.id,
-        name: basename(entry.path).slice(0, 1000),
-        state: entry.state,
-        received: entry.received,
-        total: entry.total,
-        paused: entry.paused,
-        exists: entry.state === 'completed' && existsSync(entry.path),
-      })),
+      items: this.entries
+        .filter((entry) => entry.privateWindow === privateWindow)
+        .slice(0, shownDownloads)
+        .map((entry) => ({
+          id: entry.id,
+          name: basename(entry.path).slice(0, 1000),
+          state: entry.state,
+          received: entry.received,
+          total: entry.total,
+          paused: entry.paused,
+          exists: entry.state === 'completed' && existsSync(entry.path),
+        })),
     };
   }
 
@@ -261,7 +301,7 @@ export class Downloads {
         const overlay = existingOverlay(window);
         const anchor = this.anchors.get(window);
         if (overlay?.content?.kind === 'downloads' && anchor !== undefined) {
-          overlay.update(this.panel(anchor));
+          overlay.update(this.panel(anchor, window.isPrivate));
         }
       }
       this.deps.windows.refreshShells();

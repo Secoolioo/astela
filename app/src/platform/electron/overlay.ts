@@ -1,5 +1,6 @@
 import { WebContentsView, type WebContents } from 'electron';
 import { OverlayChanged, type OverlayContent } from '../../shared/ipc/overlay-contracts.ts';
+import { privateWindowArgument } from '../../shared/private-window.ts';
 import type { BrowserWindowController, OverlayHandle } from './browser-window.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
@@ -109,7 +110,11 @@ export class WindowOverlay implements OverlayHandle {
       webPreferences: {
         preload: this.options.preload,
         partition: this.options.partition,
-        additionalArguments: ['--bridge-scope=overlay', this.options.appearanceArgument()],
+        additionalArguments: [
+          '--bridge-scope=overlay',
+          this.options.appearanceArgument(),
+          ...(this.window.isPrivate ? [privateWindowArgument] : []),
+        ],
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
