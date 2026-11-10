@@ -38,8 +38,9 @@ export function selfSignedCertificate(): { key: string; cert: string } {
   const algorithm = sequence(oid('1.2.840.10045.4.3.2'));
   const name = sequence(set(sequence(oid('2.5.4.3'), der(0x0c, Buffer.from('Astela test')))));
   const day = 24 * 60 * 60 * 1000;
+  // A positive serial number whose first byte is not zero, as DER allows no leading zero.
   const serial = randomBytes(8);
-  serial[0] = (serial[0] ?? 0) & 0x7f;
+  serial[0] = ((serial[0] ?? 0) & 0x3f) | 0x40;
   const altName = sequence(
     oid('2.5.29.17'),
     der(0x04, sequence(der(0x87, Buffer.from([127, 0, 0, 1])))),
