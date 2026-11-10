@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`; `0.1.0-beta.3` adds the setup guide, the new tab page, settings, the content blocker, history, bookmarks, session restore and the import from other browsers. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`; `0.1.0-beta.3` adds the setup guide, the new tab page, settings, the content blocker, history, bookmarks, session restore and the import from other browsers; `0.1.0-beta.4` adds the working basics listed below. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 
