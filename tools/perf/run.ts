@@ -256,7 +256,19 @@ async function measureCpu(variants: readonly Variant[], m: Measurements): Promis
       const startedAt = performance.now();
       await sleep(options.cpuSeconds * 1000);
       const after = sample(child);
-      return ((after.cpuMs - before.cpuMs) / (performance.now() - startedAt)) * 100;
+      // Each process counts what it used in the window; one that ended meanwhile takes
+      // nothing away, and one that started counts all it used.
+      const earlier = new Map(before.perProcess.map((p) => [p.pid, p.cpuMs]));
+      const used = after.perProcess.map((p) => ({
+        label: p.label,
+        ms: Math.max(0, p.cpuMs - (earlier.get(p.pid) ?? 0)),
+      }));
+      const busiest = used.toSorted((a, b) => b.ms - a.ms).slice(0, 5);
+      console.log(
+        `CPU of ${variant.name}: ${busiest.map((p) => `${p.label} ${p.ms.toFixed(0)} ms`).join(', ')}`,
+      );
+      const ms = used.reduce((sum, p) => sum + p.ms, 0);
+      return (ms / (performance.now() - startedAt)) * 100;
     });
     m.cpuPercent[variant.name].push(value);
   }
