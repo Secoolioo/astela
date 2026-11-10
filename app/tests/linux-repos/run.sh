@@ -58,6 +58,7 @@ fi
 ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
 
 for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
+  "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
   # The lists of a distribution mirror fail to load for a while when the mirror is being
@@ -86,8 +87,10 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   check "$image removes the repository" "gone" "$(inside "test -e /etc/apt/sources.list.d/$slug.sources && echo present || echo gone")"
 done
 
+"$root/tools/ci/pull-images.sh" fedora:latest
 latest=$(docker run --rm fedora:latest bash -c '. /etc/os-release; echo "$VERSION_ID"')
 for image in "fedora:$latest" "fedora:$((latest - 1))"; do
+  "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
   inside() { docker exec repo-test bash -c "$1"; }
