@@ -269,10 +269,14 @@ export async function launch(
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
-      await reportState(main, shell, profile);
-      await main.evaluate(({ app }) => {
-        setTimeout(() => app.quit(), 0);
-      });
+      const answered = await reportState(main, shell, profile);
+      await within(
+        main.evaluate(({ app }) => {
+          setTimeout(() => app.quit(), 0);
+        }),
+        answerTime,
+        'The browser process',
+      ).catch(() => undefined);
       main.close();
       await cdp.close().catch(() => undefined);
       let timer: NodeJS.Timeout | undefined;
@@ -289,6 +293,7 @@ export async function launch(
         }),
       ]).finally(() => clearTimeout(timer));
       if (closeOptions.keepProfile !== true) rmSync(profile, { recursive: true, force: true });
+      if (!answered) throw new Error('The shell did not answer at the end of the test');
     },
   };
 }
@@ -300,34 +305,52 @@ export async function launch(
  * test closed its browser. A test that has failed by now, such as by its time limit, also
  * prints the record to the job log.
  */
-async function reportState(main: MainProcess, shell: Page, profile: string): Promise<void> {
+async function reportState(main: MainProcess, shell: Page, profile: string): Promise<boolean> {
   let info: TestInfo;
   try {
     info = test.info();
   } catch {
-    return;
+    return true;
   }
   let report: string;
+  let answered = true;
   try {
-    const state = await shellState(shell);
-    const address = await shell.evaluate(() => {
-      const root = document.querySelector('app-shell')?.shadowRoot;
-      const input = root?.querySelector('input');
-      return { value: input?.value, focused: input !== undefined && root?.activeElement === input };
-    });
-    const views = await main.evaluate(({ webContents }) =>
-      webContents.getAllWebContents().map((contents) => ({
-        id: contents.id,
-        url: contents.getURL(),
-        title: contents.getTitle(),
-        loading: contents.isLoading(),
-        crashed: contents.isCrashed(),
-        focused: contents.isFocused(),
-      })),
+    const state = await within(shellState(shell), answerTime, 'The shell');
+    const address = await within(
+      shell.evaluate(() => {
+        const root = document.querySelector('app-shell')?.shadowRoot;
+        const input = root?.querySelector('input');
+        return {
+          value: input?.value,
+          focused: input !== undefined && root?.activeElement === input,
+        };
+      }),
+      answerTime,
+      'The shell',
+    );
+    const views = await within(
+      main.evaluate(({ webContents }) =>
+        webContents.getAllWebContents().map((contents) => ({
+          id: contents.id,
+          url: contents.getURL(),
+          title: contents.getTitle(),
+          loading: contents.isLoading(),
+          crashed: contents.isCrashed(),
+          focused: contents.isFocused(),
+        })),
+      ),
+      answerTime,
+      'The browser process',
     );
     report = `Browser at the end of the test: ${JSON.stringify({ state, address, views })}\n`;
   } catch (error) {
+    // A shell that was closed throws at once; one that does not answer hangs.
+    answered = !(error instanceof NoAnswer);
     report = `Browser state not available: ${String(error)}\n`;
+    report += await within(processReport(main), answerTime, 'The browser process').then(
+      (known) => `Browser process: ${JSON.stringify(known)}\n`,
+      (failure: unknown) => `Browser process not available: ${String(failure)}\n`,
+    );
   }
   report += logTail(profile);
   if (info.status !== info.expectedStatus) process.stdout.write(report);
@@ -336,6 +359,65 @@ async function reportState(main: MainProcess, shell: Page, profile: string): Pro
   const file = info.outputPath(count === 0 ? 'browser.txt' : `browser-${String(count + 1)}.txt`);
   writeFileSync(file, report);
   await info.attach('browser', { path: file, contentType: 'text/plain' });
+  return answered;
+}
+
+/** How long the end of a test waits for an answer of the shell or the browser process. */
+const answerTime = 10_000;
+
+/** An answer that did not come in time. */
+class NoAnswer extends Error {}
+
+/**
+ * Waits for an answer, but not longer than a given time, so that a browser that hangs fails
+ * its test with a report instead of holding it until its time limit.
+ * @param answer - The answer.
+ * @param ms - The time to wait.
+ * @param who - Who should answer, for the error.
+ */
+async function within<T>(answer: Promise<T>, ms: number, who: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      answer,
+      new Promise<never>((_, fail) => {
+        timer = setTimeout(
+          () => fail(new NoAnswer(`${who} did not answer within ${String(ms / 1000)} seconds`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * What the browser process knows when the shell does not answer: its windows, its views and
+ * its processes with the processor time that each one uses.
+ */
+function processReport(main: MainProcess): Promise<unknown> {
+  return main.evaluate(({ app, BaseWindow, webContents }) => ({
+    windows: BaseWindow.getAllWindows().map((window) => ({
+      id: window.id,
+      focused: window.isFocused(),
+      visible: window.isVisible(),
+      minimized: window.isMinimized(),
+    })),
+    views: webContents.getAllWebContents().map((contents) => ({
+      id: contents.id,
+      url: contents.getURL(),
+      loading: contents.isLoading(),
+      crashed: contents.isCrashed(),
+      focused: contents.isFocused(),
+      pid: contents.getOSProcessId(),
+    })),
+    processes: app.getAppMetrics().map((metric) => ({
+      pid: metric.pid,
+      type: metric.type,
+      cpu: metric.cpu.percentCPUUsage,
+    })),
+  }));
 }
 
 /** The end of the browser's log, or nothing when it has none. */
