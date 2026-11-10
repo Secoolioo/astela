@@ -154,3 +154,39 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
   await expect(browser.shell.getByRole('tab')).toHaveCount(1);
   await expect(browser.shell.getByRole('tab', { name: 'Settings' })).toBeVisible();
 });
+
+test('finds settings by their words in English and German, and says when none matches', async () => {
+  const page = await openSettings();
+  const search = page.getByRole('searchbox', { name: 'Search settings' });
+  await search.fill('vertical');
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+  // A German word finds the setting on the English page too.
+  await search.fill('Seitenleiste');
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Density' })).toBeHidden();
+  await search.fill('zzzz');
+  await expect(page.getByRole('status')).toHaveText('No setting matches zzzz.');
+  await search.fill('');
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeVisible();
+});
+
+test('opens a setting from its link and marks the section of the page in the navigation', async () => {
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await address.fill('app://settings/#tabs.position');
+  await address.press('Enter');
+  const page = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(page.getByRole('radio', { name: 'Top' })).toBeFocused();
+  const sections = page.getByRole('navigation', { name: 'Sections' });
+  await sections.getByRole('button', { name: 'Privacy' }).click();
+  await expect(page.getByRole('heading', { name: 'Privacy' })).toBeInViewport();
+  await expect(sections.getByRole('button', { name: 'Privacy' })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  // A link to another setting in the same tab goes there, too.
+  await page.evaluate(() => {
+    location.hash = '#appearance.density';
+  });
+  await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
+});

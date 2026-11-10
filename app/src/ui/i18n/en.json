@@ -242,5 +242,15 @@
   "overlay.downloadRetry": "Try again",
   "overlay.downloadRemove": "Remove from list",
   "overlay.downloadActionFor": "{action}: {name}",
-  "overlay.downloadsFolder": "Open the downloads folder"
+  "overlay.downloadsFolder": "Open the downloads folder",
+  "settings.sections": "Sections",
+  "settings.searchLabel": "Search settings",
+  "settings.searchEmpty": "No setting matches {query}.",
+  "settings.colorMode.keywords": "dark light theme night",
+  "settings.density.keywords": "compact spacing size",
+  "settings.tabPosition.keywords": "vertical sidebar tab strip",
+  "settings.startupPage.keywords": "restore session start",
+  "settings.searchEngine.keywords": "address bar web search",
+  "settings.contentBlocker.keywords": "ads adblock tracker filter lists",
+  "settings.sitePermissions.keywords": "camera microphone location notifications clipboard"
 }
