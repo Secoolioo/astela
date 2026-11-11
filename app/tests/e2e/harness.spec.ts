@@ -88,6 +88,8 @@ test('connects to a browser whose first page fails to load while the harness att
   for (const delay of [0, 10, 20]) {
     const sockets: Socket[] = [];
     const server = createServer((socket) => {
+      // The browser resets the connection when its request fails, which is no error here.
+      socket.on('error', () => undefined);
       sockets.push(socket);
     });
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
