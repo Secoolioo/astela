@@ -344,5 +344,17 @@
   "settings.toolbar.shield": "Inhaltsblocker",
   "settings.toolbar.downloads": "Downloads",
   "settings.toolbarUp": "{item} nach links",
-  "settings.toolbarDown": "{item} nach rechts"
+  "settings.toolbarDown": "{item} nach rechts",
+  "newtab.tiles": "Verknüpfungen",
+  "settings.newTab": "Neuer Tab",
+  "settings.newTabSearch": "Suchfeld anzeigen",
+  "settings.newTabSearchNote": "Die Adressleiste sucht ebenso.",
+  "settings.newTabClock": "Uhr anzeigen",
+  "settings.newTabClockNote": "Die Uhrzeit deines Computers, über dem Suchfeld.",
+  "settings.newTabTiles": "Verknüpfungen",
+  "settings.newTabTilesNote": "Bis zu 12 Seiten, die der neue Tab unter dem Suchfeld zeigt.",
+  "settings.newTab.keywords": "Kacheln Schnellwahl Startseite Favoriten",
+  "settings.newTabTileTitle": "Titel",
+  "settings.newTabTileAddress": "Adresse der Verknüpfung",
+  "settings.newTabTileRemove": "{tile} entfernen"
 }

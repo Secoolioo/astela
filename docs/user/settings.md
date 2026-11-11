@@ -42,6 +42,11 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Show home button:** from 0.1.0-beta.5, a home button next to Reload, which opens the home page in the current tab. `Alt+Home` (`Command+Shift+H` on macOS) does the same, also without the button.
 - **Home page:** the page of the home button. An empty field opens the new tab page.
 
+## New tab page
+
+- **Show the search field** and **Show a clock:** from 0.1.0-beta.5, what the [new tab page](new-tab-page.md) shows. The search field is on and the clock off by default; the clock shows the time of your computer and changes once a minute while the page shows.
+- **Shortcuts:** up to 12 pages, each with a title, that the new tab page shows below the search field. A click opens the page in the tab.
+
 ## Downloads
 
 - **Save downloads in:** from 0.1.0-beta.5, the folder where downloads are saved; by default the downloads folder of the system. **Change…** picks another one in the dialog of the system.

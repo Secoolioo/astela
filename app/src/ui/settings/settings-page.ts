@@ -34,6 +34,7 @@ export class SettingsPage extends LitElement {
     fontError: { state: true },
     pageError: { state: true },
     engineError: { state: true },
+    tileError: { state: true },
     homeError: { state: true },
     webFontError: { state: true },
     customSearch: { state: true },
@@ -175,6 +176,14 @@ export class SettingsPage extends LitElement {
       }
       .engines li button {
         justify-self: end;
+      }
+      .add-tile {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+        gap: var(--space-2);
+      }
+      .add-tile input {
+        min-width: 0;
       }
       .add-engine {
         display: grid;
@@ -370,6 +379,8 @@ export class SettingsPage extends LitElement {
   declare pageError: boolean;
   /** Whether the last search engine to add was not valid. */
   declare engineError: boolean;
+  /** Whether the last tile to add had no web address. */
+  declare tileError: boolean;
   /** Whether the last home page was not a web address. */
   declare homeError: boolean;
   /** Whether the last name of a font for web pages was not one. */
@@ -401,6 +412,7 @@ export class SettingsPage extends LitElement {
     this.fontError = false;
     this.pageError = false;
     this.engineError = false;
+    this.tileError = false;
     this.homeError = false;
     this.webFontError = false;
     this.customSearch = false;
@@ -687,6 +699,33 @@ export class SettingsPage extends LitElement {
             id: 'home.page',
             keys: ['settings.homePage', 'settings.homePageNote', 'settings.home.keywords'],
             render: () => this.renderHomePage(),
+          },
+        ],
+      },
+      {
+        id: 'newtab',
+        title: 'settings.newTab',
+        rows: [
+          {
+            id: 'newtab.search',
+            keys: ['settings.newTabSearch', 'settings.newTabSearchNote'],
+            render: () =>
+              this.renderToggle(
+                'newtab.search',
+                'settings.newTabSearch',
+                'settings.newTabSearchNote',
+              ),
+          },
+          {
+            id: 'newtab.clock',
+            keys: ['settings.newTabClock', 'settings.newTabClockNote'],
+            render: () =>
+              this.renderToggle('newtab.clock', 'settings.newTabClock', 'settings.newTabClockNote'),
+          },
+          {
+            id: 'newtab.tiles',
+            keys: ['settings.newTabTiles', 'settings.newTabTilesNote', 'settings.newTab.keywords'],
+            render: () => this.renderTiles(),
           },
         ],
       },
@@ -1640,6 +1679,106 @@ export class SettingsPage extends LitElement {
     );
     const target = focus.step < 0 ? left : right;
     (target?.disabled === true ? (focus.step < 0 ? right : left) : target)?.focus();
+  }
+
+  /** The tiles of the new tab page, with a way to add and to remove them. */
+  private renderTiles(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('newtab.tiles');
+    const tiles = Array.isArray(setting?.value)
+      ? setting.value.filter(
+          (tile): tile is { title: string; url: string } =>
+            typeof tile === 'object' &&
+            tile !== null &&
+            typeof Reflect.get(tile, 'title') === 'string' &&
+            typeof Reflect.get(tile, 'url') === 'string',
+        )
+      : [];
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="newtab-tiles">${t('settings.newTabTiles')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.newTabTilesNote')}</span>`
+        }
+      </span>
+      ${
+        tiles.length === 0
+          ? nothing
+          : html`<ul class="sites" aria-labelledby="newtab-tiles">
+              ${tiles.map(
+                (tile, index) =>
+                  html`<li>
+                    <span>${tile.title}</span>
+                    <span class="keyword">${tile.url}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.newTabTileRemove', { tile: tile.title })}
+                      @click=${() =>
+                        void this.client?.set(
+                          'newtab.tiles',
+                          tiles.filter((_tile, other) => other !== index),
+                        )}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form class="add-tile" @submit=${(event: SubmitEvent) => void this.addTile(event, tiles)}>
+        <input
+          type="text"
+          name="title"
+          autocomplete="off"
+          maxlength="64"
+          aria-label=${t('settings.newTabTileTitle')}
+          placeholder=${t('settings.newTabTileTitle')}
+          ?disabled=${disabled || tiles.length >= 12}
+        />
+        <input
+          type="text"
+          inputmode="url"
+          name="url"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.newTabTileAddress')}
+          placeholder="https://example.com"
+          ?disabled=${disabled || tiles.length >= 12}
+        />
+        <button type="submit" ?disabled=${disabled || tiles.length >= 12}>
+          ${t('settings.add')}
+        </button>
+      </form>
+      ${
+        this.tileError
+          ? html`<span class="error" role="alert">${t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async addTile(
+    event: SubmitEvent,
+    tiles: readonly { title: string; url: string }[],
+  ): Promise<void> {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = (name: string): string => {
+      const input = form.elements.namedItem(name);
+      return input instanceof HTMLInputElement ? input.value.trim() : '';
+    };
+    const url = webAddressOf(field('url'));
+    const title = field('title') || (url === undefined ? '' : new URL(url).hostname);
+    const saved =
+      url !== undefined &&
+      (await this.client?.set('newtab.tiles', [...tiles, { title, url }])) === true;
+    this.tileError = !saved;
+    if (saved) form.reset();
   }
 
   /** The language of the browser, which takes effect after a restart. */

@@ -458,7 +458,7 @@ test('adds a search engine with a keyword and makes it the default', async () =>
   await field('Name').fill('Example');
   await field('Keyword').fill('@ex');
   await field('Address with %s').fill('https://search.example/?q=%s');
-  await page.getByRole('button', { name: 'Add', exact: true }).first().click();
+  await page.locator('form.add-engine').getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('starts with neither ! nor @');
   await field('Keyword').fill('ex');
   await field('Address with %s').press('Enter');
@@ -554,4 +554,31 @@ test('keeps the focus on a toolbar button while it moves', async () => {
   // At the end of the list, the focus moves to the other button of the same item.
   await expect(right).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Move Bookmark star to the left' })).toBeFocused();
+});
+
+test('adds and removes shortcuts of the new tab page', async () => {
+  const page = await openSettings();
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill('Example');
+  const shortcut = page.getByRole('textbox', { name: 'Address of the shortcut' });
+  await shortcut.fill('example.com');
+  await shortcut.press('Enter');
+  const list = page.getByRole('list', { name: 'Shortcuts' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await shortcut.fill('javascript:alert(1)');
+  await shortcut.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Enter a web address, such as example.com or https://example.com/page.',
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'newtab.tiles',
+          value: [{ title: 'Example', url: 'https://example.com/' }],
+        }),
+      ]),
+    });
+  await list.getByRole('button', { name: 'Remove Example' }).click();
+  await expect(list).toHaveCount(0);
 });

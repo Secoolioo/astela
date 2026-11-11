@@ -14,19 +14,25 @@ test.afterEach(async () => {
   await browser.close();
 });
 
-/** Scrolls with the mouse wheel, as a person does, until the element is in view. */
+/**
+ * Scrolls with the mouse wheel, as a person does, until the element is in view. Each turn of
+ * the wheel scrolls 400 pixels, so a long page takes many turns.
+ */
 async function wheelTo(page: Page, target: Locator): Promise<void> {
   const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   await page.mouse.move(size.width / 2, size.height / 2);
   await expect
-    .poll(async () => {
-      const inView = await target.evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return box.top >= 0 && box.bottom <= innerHeight;
-      });
-      if (!inView) await page.mouse.wheel(0, 400);
-      return inView;
-    })
+    .poll(
+      async () => {
+        const inView = await target.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= innerHeight;
+        });
+        if (!inView) await page.mouse.wheel(0, 400);
+        return inView;
+      },
+      { intervals: [100], timeout: 20_000 },
+    )
     .toBe(true);
 }
 
