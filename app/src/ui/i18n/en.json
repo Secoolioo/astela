@@ -325,5 +325,16 @@
   "settings.downloadFolderSystem": "The downloads folder of the system",
   "settings.downloadFolderChange": "Change…",
   "settings.downloadAsk": "Ask where to save each file",
-  "settings.downloadAskNote": "The browser asks before it saves a download, and suggests the folder above."
+  "settings.downloadAskNote": "The browser asks before it saves a download, and suggests the folder above.",
+  "settings.searchEngines": "Search engines and keywords",
+  "settings.searchEnginesNote": "Type a keyword and a space before a search in the address bar to search with that engine.",
+  "settings.searchEngines.keywords": "keyword shortcut custom engine add",
+  "settings.searchEngineName": "Name",
+  "settings.searchEngineKeyword": "Keyword",
+  "settings.searchEngineAddress": "Address with %s",
+  "settings.searchEngineRemove": "Remove {name}",
+  "settings.searchEngineInvalid": "Give a name, a keyword that is free, has no spaces and starts with neither ! nor @, and an https address with %s for the search.",
+  "settings.bangs": "Search sites with !shortcuts",
+  "settings.bangsNote": "Such as !w for Wikipedia or !gh for GitHub, at the start or the end of a search in the address bar.",
+  "settings.bangsAll": "All shortcuts"
 }

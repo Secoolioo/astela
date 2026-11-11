@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
-import { searchEngines } from '../../shared/search-engines.ts';
+import { bangs } from '../../shared/bangs.ts';
+import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
@@ -30,6 +31,7 @@ export class SettingsPage extends LitElement {
     searchError: { state: true },
     fontError: { state: true },
     pageError: { state: true },
+    engineError: { state: true },
     homeError: { state: true },
     webFontError: { state: true },
     customSearch: { state: true },
@@ -148,6 +150,38 @@ export class SettingsPage extends LitElement {
       }
       .path {
         overflow-wrap: anywhere;
+      }
+      .keyword {
+        color: var(--text-2);
+        font-family: ui-monospace, monospace;
+        font-size: var(--font-size-small);
+      }
+      .engines li {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(8em, auto) 6em;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .engines li button {
+        justify-self: end;
+      }
+      .add-engine {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 2fr) auto;
+        gap: var(--space-2);
+      }
+      .add-engine input {
+        min-width: 0;
+      }
+      .bangs {
+        padding: 0 var(--space-3) var(--space-2);
+        color: var(--text-2);
+      }
+      .bangs ul {
+        columns: 2;
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        list-style: none;
       }
       /* The hint stays in view at the bottom while the page scrolls. */
       .restart {
@@ -323,6 +357,8 @@ export class SettingsPage extends LitElement {
   declare fontError: boolean;
   /** Whether the last page to add at start was not a web address. */
   declare pageError: boolean;
+  /** Whether the last search engine to add was not valid. */
+  declare engineError: boolean;
   /** Whether the last home page was not a web address. */
   declare homeError: boolean;
   /** Whether the last name of a font for web pages was not one. */
@@ -350,6 +386,7 @@ export class SettingsPage extends LitElement {
     this.searchError = false;
     this.fontError = false;
     this.pageError = false;
+    this.engineError = false;
     this.homeError = false;
     this.webFontError = false;
     this.customSearch = false;
@@ -677,6 +714,22 @@ export class SettingsPage extends LitElement {
             keys: ['settings.searchEngine', 'settings.searchEngine.keywords'],
             words: searchEngines.map((engine) => engine.name),
             render: () => this.renderSearch(),
+          },
+          {
+            id: 'search.engines',
+            keys: [
+              'settings.searchEngines',
+              'settings.searchEnginesNote',
+              'settings.searchEngines.keywords',
+            ],
+            words: searchEngines.map((engine) => engine.keyword),
+            render: () => this.renderSearchEngines(),
+          },
+          {
+            id: 'search.bangs',
+            keys: ['settings.bangs', 'settings.bangsNote'],
+            words: bangs.map((site) => site.name),
+            render: () => this.renderBangs(),
           },
         ],
       },
@@ -1522,6 +1575,15 @@ export class SettingsPage extends LitElement {
                 ${option.name}
               </option>`,
           )}
+          ${this.customEngines().map(
+            (option) =>
+              html`<option
+                value=${`engine:${option.keyword}`}
+                ?selected=${!custom && engine === `engine:${option.keyword}`}
+              >
+                ${option.name}
+              </option>`,
+          )}
           <option value="custom" ?selected=${custom}>
             ${this.t('settings.searchEngine.custom')}
           </option>
@@ -1559,7 +1621,139 @@ export class SettingsPage extends LitElement {
 
   private engineId(): string {
     const value = this.client?.get('search.urlTemplate')?.value;
-    return searchEngines.find((engine) => engine.searchUrl === value)?.id ?? 'custom';
+    const added = this.customEngines().find((engine) => engine.url === value);
+    return (
+      searchEngines.find((engine) => engine.searchUrl === value)?.id ??
+      (added === undefined ? 'custom' : `engine:${added.keyword}`)
+    );
+  }
+
+  /** The search engines that someone added, as the setting holds them. */
+  private customEngines(): CustomSearchEngine[] {
+    const value = this.client?.get('search.engines')?.value;
+    return Array.isArray(value)
+      ? value.filter(
+          (engine): engine is CustomSearchEngine =>
+            typeof engine === 'object' &&
+            engine !== null &&
+            typeof Reflect.get(engine, 'name') === 'string' &&
+            typeof Reflect.get(engine, 'keyword') === 'string' &&
+            typeof Reflect.get(engine, 'url') === 'string',
+        )
+      : [];
+  }
+
+  /** The engines and their keywords, with a way to add and to remove engines. */
+  private renderSearchEngines(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('search.engines');
+    const added = this.customEngines();
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="search-engines">${t('settings.searchEngines')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.searchEnginesNote')}</span>`
+        }
+      </span>
+      <ul class="sites engines" aria-labelledby="search-engines">
+        ${searchEngines.map(
+          (engine) =>
+            html`<li>
+              <span>${engine.name}</span>
+              <span class="keyword">${engine.keyword}</span>
+            </li>`,
+        )}
+        ${added.map(
+          (engine) =>
+            html`<li>
+              <span>${engine.name}</span>
+              <span class="keyword">${engine.keyword}</span>
+              <button
+                ?disabled=${disabled}
+                aria-label=${t('settings.searchEngineRemove', { name: engine.name })}
+                @click=${() =>
+                  void this.client?.set(
+                    'search.engines',
+                    added.filter((other) => other.keyword !== engine.keyword),
+                  )}
+              >
+                ${t('settings.remove')}
+              </button>
+            </li>`,
+        )}
+      </ul>
+      <form class="add-engine" @submit=${(event: SubmitEvent) => void this.addEngine(event, added)}>
+        <input
+          type="text"
+          name="name"
+          autocomplete="off"
+          aria-label=${t('settings.searchEngineName')}
+          placeholder=${t('settings.searchEngineName')}
+          ?disabled=${disabled}
+        />
+        <input
+          type="text"
+          name="keyword"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.searchEngineKeyword')}
+          placeholder=${t('settings.searchEngineKeyword')}
+          ?disabled=${disabled}
+        />
+        <input
+          type="text"
+          inputmode="url"
+          name="url"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.searchEngineAddress')}
+          placeholder="https://search.example/?q=%s"
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${
+        this.engineError
+          ? html`<span class="error" role="alert">${t('settings.searchEngineInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async addEngine(event: SubmitEvent, added: readonly CustomSearchEngine[]): Promise<void> {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = (name: string): string => {
+      const input = form.elements.namedItem(name);
+      return input instanceof HTMLInputElement ? input.value.trim() : '';
+    };
+    const engine = { name: field('name'), keyword: field('keyword'), url: field('url') };
+    const taken = searchEngines.some(
+      (other) => other.keyword.toLowerCase() === engine.keyword.toLowerCase(),
+    );
+    const saved = !taken && (await this.client?.set('search.engines', [...added, engine])) === true;
+    this.engineError = !saved;
+    if (saved) form.reset();
+  }
+
+  /** Whether `!bangs` search their sites, with the list of them. */
+  private renderBangs(): TemplateResult {
+    const setting = this.client?.get('search.bangs');
+    return html`${this.renderToggle('search.bangs', 'settings.bangs', 'settings.bangsNote')}
+      <details class="bangs">
+        <summary>${this.t('settings.bangsAll')}</summary>
+        <ul>
+          ${bangs.map(
+            (site) => html`<li><span class="keyword">!${site.bang}</span> ${site.name}</li>`,
+          )}
+        </ul>
+      </details>
+      ${setting === undefined ? nothing : nothing}`;
   }
 
   private async chooseEngine(event: Event): Promise<void> {
@@ -1567,11 +1761,13 @@ export class SettingsPage extends LitElement {
     if (!(select instanceof HTMLSelectElement)) {
       return;
     }
-    const engine = searchEngines.find((option) => option.id === select.value);
-    this.customSearch = engine === undefined;
+    const url =
+      searchEngines.find((option) => option.id === select.value)?.searchUrl ??
+      this.customEngines().find((option) => `engine:${option.keyword}` === select.value)?.url;
+    this.customSearch = url === undefined;
     this.searchError = false;
-    if (engine !== undefined) {
-      await this.client?.set('search.urlTemplate', engine.searchUrl);
+    if (url !== undefined) {
+      await this.client?.set('search.urlTemplate', url);
     }
   }
 

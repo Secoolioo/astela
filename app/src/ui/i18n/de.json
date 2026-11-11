@@ -325,5 +325,16 @@
   "settings.downloadFolderSystem": "Der Download-Ordner des Systems",
   "settings.downloadFolderChange": "Ändern…",
   "settings.downloadAsk": "Bei jeder Datei fragen, wo sie gespeichert wird",
-  "settings.downloadAskNote": "Der Browser fragt, bevor er einen Download speichert, und schlägt den Ordner oben vor."
+  "settings.downloadAskNote": "Der Browser fragt, bevor er einen Download speichert, und schlägt den Ordner oben vor.",
+  "settings.searchEngines": "Suchmaschinen und Kürzel",
+  "settings.searchEnginesNote": "Tippe in der Adressleiste ein Kürzel und ein Leerzeichen vor eine Suche, um mit dieser Suchmaschine zu suchen.",
+  "settings.searchEngines.keywords": "Schlüsselwort Kürzel eigene Suchmaschine hinzufügen",
+  "settings.searchEngineName": "Name",
+  "settings.searchEngineKeyword": "Kürzel",
+  "settings.searchEngineAddress": "Adresse mit %s",
+  "settings.searchEngineRemove": "{name} entfernen",
+  "settings.searchEngineInvalid": "Gib einen Namen an, ein freies Kürzel ohne Leerzeichen, das weder mit ! noch mit @ beginnt, und eine https-Adresse mit %s für die Suche.",
+  "settings.bangs": "Websites mit !Kürzeln durchsuchen",
+  "settings.bangsNote": "Etwa !w für Wikipedia oder !gh für GitHub, am Anfang oder Ende einer Suche in der Adressleiste.",
+  "settings.bangsAll": "Alle Kürzel"
 }

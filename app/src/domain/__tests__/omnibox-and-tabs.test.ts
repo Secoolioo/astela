@@ -4,6 +4,41 @@ import { TabService, type TabViewPort } from '../tabs/tab-service.ts';
 
 const template = 'https://search.example/?q=%s';
 
+describe('search shortcuts', () => {
+  const engines = [{ keyword: 'ex', url: 'https://other.example/find?term=%s' }];
+
+  it('searches with the engine of a keyword, built in or added', () => {
+    expect(resolveOmniboxInput('ex astela tabs', template, { engines })?.url).toBe(
+      'https://other.example/find?term=astela%20tabs',
+    );
+    expect(resolveOmniboxInput('@Google astela', template)?.url).toBe(
+      'https://www.google.com/search?q=astela',
+    );
+    // A keyword alone, or inside a search, is a search with the default engine.
+    expect(resolveOmniboxInput('ex', template, { engines })?.url).toBe(
+      'https://search.example/?q=ex',
+    );
+    expect(resolveOmniboxInput('see ex here', template, { engines })?.url).toBe(
+      'https://search.example/?q=see%20ex%20here',
+    );
+  });
+
+  it('searches the site of a !bang at the start or the end, when !bangs are on', () => {
+    const wikipedia = 'https://en.wikipedia.org/wiki/Special:Search?search=astela';
+    expect(resolveOmniboxInput('!w astela', template, { bangs: true })?.url).toBe(wikipedia);
+    expect(resolveOmniboxInput('astela !W', template, { bangs: true })?.url).toBe(wikipedia);
+    expect(resolveOmniboxInput('!w astela', template)?.url).toBe(
+      'https://search.example/?q=!w%20astela',
+    );
+    expect(resolveOmniboxInput('!nothing astela', template, { bangs: true })?.url).toBe(
+      'https://search.example/?q=!nothing%20astela',
+    );
+    expect(resolveOmniboxInput('a !w b', template, { bangs: true })?.url).toBe(
+      'https://search.example/?q=a%20!w%20b',
+    );
+  });
+});
+
 describe('resolveOmniboxInput', () => {
   it.each([
     ['example.com', 'https://example.com'],

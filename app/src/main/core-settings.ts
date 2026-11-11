@@ -13,7 +13,15 @@ import {
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
 import { tabStripPositions, type TabStripPosition } from '../shared/layout.ts';
+import type { CustomSearchEngine } from '../shared/search-engines.ts';
 import { zoomFactors } from '../shared/zoom.ts';
+
+/** The search address of an engine: https, with `%s` for the query. */
+const SearchAddress = v.pipe(
+  v.string(),
+  v.maxLength(2048),
+  v.regex(/^https:\/\/[^\s]+%s[^\s]*$/, 'Must be an https URL with %s'),
+);
 
 /**
  * Search URL used by the address bar, with `%s` for the query. The default engine is a
@@ -21,11 +29,46 @@ import { zoomFactors } from '../shared/zoom.ts';
  */
 export const SearchUrlTemplate = defineSetting({
   key: 'search.urlTemplate',
-  schema: v.pipe(v.string(), v.regex(/^https:\/\/[^\s]+%s[^\s]*$/, 'Must be an https URL with %s')),
+  schema: SearchAddress,
   default: 'https://duckduckgo.com/?q=%s',
   scope: 'global',
   policy: { name: 'DefaultSearchProviderSearchURL', sensitive: true },
   ui: { section: 'search', control: 'text' },
+});
+
+/**
+ * Search engines that someone added, which their keyword picks in the address bar, such as
+ * `ex` for `ex terms`. Keywords differ from each other and start with neither `!` nor `@`.
+ */
+export const SearchEnginesSetting = defineSetting<CustomSearchEngine[]>({
+  key: 'search.engines',
+  schema: v.pipe(
+    v.array(
+      v.strictObject({
+        name: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+        keyword: v.pipe(v.string(), v.regex(/^[^\s!@]\S{0,31}$/, 'Must be a word without ! or @')),
+        url: SearchAddress,
+      }),
+    ),
+    v.maxLength(50),
+    v.check(
+      (engines) =>
+        new Set(engines.map((engine) => engine.keyword.toLowerCase())).size === engines.length,
+      'Keywords must differ',
+    ),
+  ),
+  default: [],
+  scope: 'global',
+  ui: { section: 'search', control: 'list', order: 2 },
+});
+
+/** Whether a `!bang` at the start or the end of a search, such as `!w`, searches its site. */
+export const SearchBangsSetting = defineSetting<boolean>({
+  key: 'search.bangs',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  ui: { section: 'search', control: 'toggle', order: 3 },
 });
 
 /** Whether the browser follows the system's light or dark mode, or always uses one. */
@@ -325,6 +368,8 @@ export const LanguageSetting = defineSetting<string>({
 /** Settings that exist before any feature module contributes its own. */
 export const coreSettings = [
   SearchUrlTemplate,
+  SearchEnginesSetting,
+  SearchBangsSetting,
   ColorModeSetting,
   AccentSetting,
   DensitySetting,
