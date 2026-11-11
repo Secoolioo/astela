@@ -344,5 +344,17 @@
   "settings.toolbar.shield": "Content blocker",
   "settings.toolbar.downloads": "Downloads",
   "settings.toolbarUp": "Move {item} to the left",
-  "settings.toolbarDown": "Move {item} to the right"
+  "settings.toolbarDown": "Move {item} to the right",
+  "newtab.tiles": "Shortcuts",
+  "settings.newTab": "New tab page",
+  "settings.newTabSearch": "Show the search field",
+  "settings.newTabSearchNote": "The address bar searches as well.",
+  "settings.newTabClock": "Show a clock",
+  "settings.newTabClockNote": "The time of your computer, above the search field.",
+  "settings.newTabTiles": "Shortcuts",
+  "settings.newTabTilesNote": "Up to 12 pages that the new tab page shows below the search field.",
+  "settings.newTab.keywords": "tiles speed dial start page favorites",
+  "settings.newTabTileTitle": "Title",
+  "settings.newTabTileAddress": "Address of the shortcut",
+  "settings.newTabTileRemove": "Remove {tile}"
 }

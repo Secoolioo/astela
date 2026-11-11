@@ -1,11 +1,16 @@
-import { app, Menu, session, type DownloadItem, type Session } from 'electron';
+import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
 import { languageArguments } from '../shared/ui-language.ts';
 import { sameZoom } from '../shared/zoom.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
-import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
+import {
+  GetNewTabState,
+  NavigateFromNewTab,
+  NewTabChanged,
+  type NewTabState,
+} from '../shared/ipc/newtab-contracts.ts';
 import {
   ActivateTab,
   CloseTab,
@@ -64,6 +69,9 @@ import {
   DownloadFolderSetting,
   HomeButtonSetting,
   HomePageSetting,
+  NewTabClockSetting,
+  NewTabSearchSetting,
+  NewTabTilesSetting,
   StartupPagesSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
@@ -706,7 +714,35 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     ),
   );
-  registerNewTabHandlers(router, windows, searchTemplate, searchShortcuts);
+  // What the new tab page shows besides the search engine, as the settings say.
+  const newTabState = async (): Promise<NewTabState> => {
+    const template = await searchTemplate();
+    const custom = (await searchShortcuts()).engines.find((engine) => engine.url === template);
+    return {
+      engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null,
+      search: settings.get(NewTabSearchSetting),
+      clock: settings.get(NewTabClockSetting),
+      tiles: settings.get(NewTabTilesSetting),
+    };
+  };
+  registerNewTabHandlers(router, windows, newTabState, searchTemplate, searchShortcuts);
+  const newTabKeys = new Set([
+    NewTabSearchSetting.key,
+    NewTabClockSetting.key,
+    NewTabTilesSetting.key,
+    SearchUrlTemplate.key,
+    SearchEnginesSetting.key,
+  ]);
+  settings.onDidChange(({ keys }) => {
+    if (!keys.some((key) => newTabKeys.has(key))) return;
+    void newTabState().then((state) => {
+      for (const contents of webContents.getAllWebContents()) {
+        if (contents.session === internal && contents.getURL().startsWith(newTabUrl)) {
+          router.publish(NewTabChanged, contents, state);
+        }
+      }
+    });
+  });
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
@@ -908,14 +944,11 @@ function registerShellHandlers(
 function registerNewTabHandlers(
   router: IpcRouter,
   windows: WindowManager,
+  newTabState: () => Promise<NewTabState>,
   searchTemplate: () => Promise<string>,
   searchShortcuts: () => Promise<SearchSettings>,
 ): void {
-  router.handle(GetNewTabState, async () => {
-    const template = await searchTemplate();
-    const custom = (await searchShortcuts()).engines.find((engine) => engine.url === template);
-    return { engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null };
-  });
+  router.handle(GetNewTabState, () => newTabState());
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);

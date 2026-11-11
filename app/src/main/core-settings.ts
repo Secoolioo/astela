@@ -347,6 +347,41 @@ export const AskDownloadSetting = defineSetting<boolean>({
   ui: { section: 'downloads', control: 'toggle', order: 2 },
 });
 
+/** Whether the new tab page shows the search field. */
+export const NewTabSearchSetting = defineSetting<boolean>({
+  key: 'newtab.search',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  ui: { section: 'newtab', control: 'toggle', order: 1 },
+});
+
+/** Whether the new tab page shows a clock. */
+export const NewTabClockSetting = defineSetting<boolean>({
+  key: 'newtab.clock',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  ui: { section: 'newtab', control: 'toggle', order: 2 },
+});
+
+/** The tiles of the new tab page: web pages with a title, in their order. */
+export const NewTabTilesSetting = defineSetting<{ title: string; url: string }[]>({
+  key: 'newtab.tiles',
+  schema: v.pipe(
+    v.array(
+      v.strictObject({
+        title: v.pipe(v.string(), v.maxLength(64)),
+        url: v.pipe(v.string(), v.maxLength(8192), v.regex(/^https?:\/\/\S+$/i)),
+      }),
+    ),
+    v.maxLength(12),
+  ),
+  default: [],
+  scope: 'global',
+  ui: { section: 'newtab', control: 'list', order: 3 },
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -407,6 +442,9 @@ export const coreSettings = [
   StartupPagesSetting,
   DownloadFolderSetting,
   AskDownloadSetting,
+  NewTabSearchSetting,
+  NewTabClockSetting,
+  NewTabTilesSetting,
   HomeButtonSetting,
   HomePageSetting,
   SetupShownSetting,
