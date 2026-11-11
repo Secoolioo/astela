@@ -1,7 +1,8 @@
 # Squash-merges an owner pull request once its required checks have passed.
 # It runs after every `CI` and `PR title` run, merges with the owner token
 # through the REST API and needs no auto-merge setting on the pull request.
-# A CI run whose failed jobs never got a runner, or lost it, is run once more first.
+# A CI run whose failed jobs never got a runner, lost it, or failed only in the artifact
+# service of GitHub is run once more first.
 # Like auto-pr.yml it always runs in the version stored on main; it never
 # checks out or executes branch code.
 name: Merge pull request
@@ -23,7 +24,10 @@ jobs:
     # A job that GitHub never started on a runner tested nothing. Neither did
     # one whose runner stopped responding until GitHub cancelled the job at its
     # time limit: a test that hangs is ended by the step's own limit and fails.
-    # The failed jobs run once more and the second result counts, whatever it is.
+    # Nor did one that failed only while it stored or fetched an artifact because
+    # the artifact service of GitHub did not answer; the jobs that need its
+    # artifact never ran. The failed jobs run once more and the second result
+    # counts, whatever it is.
     if: >-
       (github.event.workflow_run.conclusion == 'failure' ||
       github.event.workflow_run.conclusion == 'cancelled') &&
@@ -40,7 +44,7 @@ jobs:
     outputs:
       conclusion: ${{ steps.rerun.outputs.conclusion }}
     steps:
-      - name: Re-run jobs without a working runner and wait for the result
+      - name: Re-run jobs without a working runner or artifact service and wait for the result
         id: rerun
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,12 +56,12 @@ jobs:
           failed=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" \
             --jq '.jobs[] | select(.name != "ci-gate")
               | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
-              | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\(.name)"')
+              | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("|"))"')
           if [[ -z "$failed" ]]; then
             echo "No job failed; nothing to run again."
             exit 0
           fi
-          while IFS=$'\t' read -r id conclusion steps unfinished name; do
+          while IFS=$'\t' read -r id conclusion steps unfinished name failing; do
             if [[ "$steps" == 0 ]]; then
               echo "Never got a runner: $name"
               continue
@@ -68,6 +72,16 @@ jobs:
               --jq '[.[] | select(.annotation_level == "failure") | .message] | join(" | ")')
             if [[ "$conclusion" == cancelled && "$unfinished" -gt 0 && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
               echo "Lost its runner: $name"
+              continue
+            fi
+            # Failed only in steps that store or fetch artifacts, and only with the
+            # errors of the artifact client when the service gives no answer.
+            artifacts=$(tr '|' '\n' <<<"$failing" | grep -cvE '^Run actions/(upload|download)-artifact@' || true)
+            service=$(gh api "repos/$REPOSITORY/check-runs/$id/annotations" \
+              --jq '[.[] | select(.annotation_level == "failure") | .message
+                | select(test("^Failed to (CreateArtifact|FinalizeArtifact|ListArtifacts|GetSignedArtifactURL)|Failed to make request after") | not)] | length')
+            if [[ "$conclusion" == failure && -n "$failing" && "$artifacts" == 0 && -n "$notes" && "$service" == 0 ]]; then
+              echo "The artifact service failed: $name"
               continue
             fi
             echo "A job failed after it started: $name; the failure stands."
