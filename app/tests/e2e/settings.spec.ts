@@ -663,3 +663,44 @@ test('applies the secure DNS provider that is chosen, and turns it off', async (
   await dns.selectOption({ label: 'Off' });
   await expect.poll(lastCall).toEqual({ secureDnsMode: 'off', secureDnsServers: [] });
 });
+
+test('changes the shortcut of a command, keeps conflicts and text keys out, and resets it', async () => {
+  const page = await openSettings();
+  const mac = process.platform === 'darwin';
+  const tabs = async (): Promise<number> => (await shellState(browser.shell)).tabs.length;
+  const keys = (command: string): Promise<string[]> =>
+    page.locator(`[data-command="${command}"] kbd`).allTextContents();
+  const change = page.getByRole('button', { name: 'Change the shortcut of New tab' });
+  await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘T' : 'Ctrl+T']);
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'K', ['primary', 'shift'], 'app://settings');
+  await expect.poll(() => keys('tab.new')).toEqual([mac ? '⇧⌘K' : 'Ctrl+Shift+K']);
+  // The old shortcut does nothing now, and the new one opens a tab.
+  const before = await tabs();
+  await pressNative(browser, 'T', ['primary']);
+  await pressNative(browser, 'K', ['primary', 'shift']);
+  await expect.poll(tabs).toBe(before + 1);
+  await expect(page.getByRole('button', { name: 'Reset the shortcut of New tab' })).toBeVisible();
+  // A shortcut of another command needs a confirmation, and moves.
+  await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'D', ['primary'], 'app://settings');
+  const taken = page.getByRole('alert').filter({ hasText: 'is the shortcut of' });
+  await expect(taken).toContainText(
+    `${mac ? '⌘D' : 'Ctrl+D'} is the shortcut of Bookmark the page.`,
+  );
+  await taken.getByRole('button', { name: 'Use it for New tab' }).click();
+  await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
+  await expect.poll(() => keys('bookmark.toggle')).toEqual([]);
+  // A key that types text is no shortcut.
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'K', [], 'app://settings');
+  await expect(page.getByRole('alert')).toContainText('This key types text');
+  await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
+  await page.getByRole('button', { name: 'Reset the shortcut of New tab' }).click();
+  await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘T' : 'Ctrl+T']);
+  await expect.poll(() => keys('bookmark.toggle')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
+});

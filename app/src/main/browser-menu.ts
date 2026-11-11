@@ -4,7 +4,7 @@ import type {
   BrowserWindowController,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
-import type { WindowCommand } from '../platform/electron/shortcuts.ts';
+import { acceleratorOf, shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
 /**
@@ -21,49 +21,49 @@ export function popupBrowserMenu(
 ): void {
   const i18n = translatorFor(uiLocale(), process.platform);
   const mac = process.platform === 'darwin';
-  const key = (macKey: string, otherKey: string): string => (mac ? macKey : otherKey);
+  const table = window.shortcuts();
   const item = (
     label: Parameters<typeof i18n.t>[0],
     command: WindowCommand,
-    accelerator?: string,
-  ): Electron.MenuItemConstructorOptions => ({
-    label: i18n.t(label),
-    ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
-    click: () => window.execute(command),
-  });
+  ): Electron.MenuItemConstructorOptions => {
+    const accelerator = acceleratorFor(table, command);
+    return {
+      label: i18n.t(label),
+      ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
+      click: () => window.execute(command),
+    };
+  };
   const menu = Menu.buildFromTemplate([
-    item('menu.newTab', 'tab.new', key('Cmd+T', 'Ctrl+T')),
-    item('menu.newWindow', 'window.new', key('Cmd+N', 'Ctrl+N')),
-    ...(options.privateWindows
-      ? [item('menu.newPrivateWindow', 'window.newPrivate', key('Shift+Cmd+N', 'Ctrl+Shift+N'))]
-      : []),
+    item('menu.newTab', 'tab.new'),
+    item('menu.newWindow', 'window.new'),
+    ...(options.privateWindows ? [item('menu.newPrivateWindow', 'window.newPrivate')] : []),
     { type: 'separator' },
-    item('menu.history', 'history.open', key('Cmd+Y', 'Ctrl+H')),
-    item('menu.downloads', 'downloads.open', key('Alt+Cmd+L', 'Ctrl+J')),
-    item('menu.bookmarks', 'bookmarks.open', key('Shift+Cmd+O', 'Ctrl+Shift+O')),
+    item('menu.history', 'history.open'),
+    item('menu.downloads', 'downloads.open'),
+    item('menu.bookmarks', 'bookmarks.open'),
     { type: 'separator' },
     {
       label: i18n.t('menu.zoom'),
       submenu: [
-        item('menu.zoomIn', 'zoom.in', key('Cmd+Plus', 'Ctrl+Plus')),
-        item('menu.zoomOut', 'zoom.out', key('Cmd+-', 'Ctrl+-')),
-        item('menu.actualSize', 'zoom.reset', key('Cmd+0', 'Ctrl+0')),
+        item('menu.zoomIn', 'zoom.in'),
+        item('menu.zoomOut', 'zoom.out'),
+        item('menu.actualSize', 'zoom.reset'),
         { type: 'separator' },
-        item('menu.fullScreen', 'window.fullscreen', key('Ctrl+Cmd+F', 'F11')),
+        item('menu.fullScreen', 'window.fullscreen'),
       ],
     },
-    item('menu.find', 'find.open', key('Cmd+F', 'Ctrl+F')),
-    item('menu.print', 'page.print', key('Cmd+P', 'Ctrl+P')),
-    item('menu.savePage', 'page.save', key('Cmd+S', 'Ctrl+S')),
+    item('menu.find', 'find.open'),
+    item('menu.print', 'page.print'),
+    item('menu.savePage', 'page.save'),
     {
       label: i18n.t('menu.moreTools'),
       submenu: [
-        item('menu.viewSource', 'page.source', key('Alt+Cmd+U', 'Ctrl+U')),
-        item('menu.developerTools', 'devtools.toggle', key('Alt+Cmd+I', 'F12')),
+        item('menu.viewSource', 'page.source'),
+        item('menu.developerTools', 'devtools.toggle'),
       ],
     },
     { type: 'separator' },
-    item('menu.settings', 'settings.open', mac ? 'Cmd+,' : undefined),
+    item('menu.settings', 'settings.open'),
     { label: i18n.t('menu.about'), click: () => showAbout(window) },
     {
       label: i18n.t(process.platform === 'win32' ? 'menu.exit' : 'menu.quit'),
@@ -72,6 +72,18 @@ export function popupBrowserMenu(
     },
   ]);
   menu.popup({ window: window.window, x: position.x, y: position.y });
+}
+
+/** The shortcut of a command that a menu shows: the first that Electron can write. */
+function acceleratorFor(
+  table: ReadonlyMap<string, WindowCommand>,
+  command: WindowCommand,
+): string | undefined {
+  for (const shortcut of shortcutsOf(table, command)) {
+    const accelerator = acceleratorOf(shortcut);
+    if (accelerator !== undefined) return accelerator;
+  }
+  return undefined;
 }
 
 /**
@@ -134,20 +146,25 @@ export function runFromMenuBar(
  * of the page in the View menu. Its items run the commands of the window, as the keys do, so
  * they act on the page and not on the browser's own views, and the policies apply.
  * @param run - Runs a command in the frontmost window.
+ * @param table - The keyboard shortcuts of the windows, which the items show.
  */
-export function macMenuBar(run: (command: WindowCommand) => void): Menu {
+export function macMenuBar(
+  run: (command: WindowCommand) => void,
+  table: ReadonlyMap<string, WindowCommand>,
+): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
   // The window handles the keys itself, also while a page has the focus.
   const command = (
     label: Parameters<typeof i18n.t>[0],
-    accelerator: string,
     name: WindowCommand,
-  ): Electron.MenuItemConstructorOptions => ({
-    label: i18n.t(label),
-    accelerator,
-    registerAccelerator: false,
-    click: () => run(name),
-  });
+  ): Electron.MenuItemConstructorOptions => {
+    const accelerator = acceleratorFor(table, name);
+    return {
+      label: i18n.t(label),
+      ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
+      click: () => run(name),
+    };
+  };
   return Menu.buildFromTemplate([
     {
       role: 'appMenu',
@@ -155,12 +172,7 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
       submenu: [
         { role: 'about', label: i18n.t('menu.about') },
         { type: 'separator' },
-        {
-          label: i18n.t('menu.settings'),
-          accelerator: 'Cmd+,',
-          registerAccelerator: false,
-          click: () => run('settings.open'),
-        },
+        command('menu.settings', 'settings.open'),
         { type: 'separator' },
         { role: 'services', label: i18n.t('menu.services') },
         { type: 'separator' },
@@ -174,12 +186,12 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
     {
       label: i18n.t('menu.file'),
       submenu: [
-        command('menu.newTab', 'Cmd+T', 'tab.new'),
-        command('menu.newWindow', 'Cmd+N', 'window.new'),
-        command('menu.newPrivateWindow', 'Shift+Cmd+N', 'window.newPrivate'),
+        command('menu.newTab', 'tab.new'),
+        command('menu.newWindow', 'window.new'),
+        command('menu.newPrivateWindow', 'window.newPrivate'),
         { type: 'separator' },
-        command('menu.savePage', 'Cmd+S', 'page.save'),
-        command('menu.print', 'Cmd+P', 'page.print'),
+        command('menu.savePage', 'page.save'),
+        command('menu.print', 'page.print'),
       ],
     },
     {
@@ -197,20 +209,20 @@ export function macMenuBar(run: (command: WindowCommand) => void): Menu {
     {
       label: i18n.t('menu.view'),
       submenu: [
-        command('menu.find', 'Cmd+F', 'find.open'),
-        command('menu.downloads', 'Alt+Cmd+L', 'downloads.open'),
+        command('menu.find', 'find.open'),
+        command('menu.downloads', 'downloads.open'),
         { type: 'separator' },
-        command('menu.reload', 'Cmd+R', 'page.reload'),
-        command('menu.reloadHard', 'Shift+Cmd+R', 'page.reloadHard'),
+        command('menu.reload', 'page.reload'),
+        command('menu.reloadHard', 'page.reloadHard'),
         { type: 'separator' },
-        command('menu.actualSize', 'Cmd+0', 'zoom.reset'),
-        command('menu.zoomIn', 'Cmd+Plus', 'zoom.in'),
-        command('menu.zoomOut', 'Cmd+-', 'zoom.out'),
+        command('menu.actualSize', 'zoom.reset'),
+        command('menu.zoomIn', 'zoom.in'),
+        command('menu.zoomOut', 'zoom.out'),
         { type: 'separator' },
-        command('menu.fullScreen', 'Ctrl+Cmd+F', 'window.fullscreen'),
+        command('menu.fullScreen', 'window.fullscreen'),
         { type: 'separator' },
-        command('menu.viewSource', 'Alt+Cmd+U', 'page.source'),
-        command('menu.developerTools', 'Alt+Cmd+I', 'devtools.toggle'),
+        command('menu.viewSource', 'page.source'),
+        command('menu.developerTools', 'devtools.toggle'),
       ],
     },
     {

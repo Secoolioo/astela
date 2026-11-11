@@ -1,3 +1,5 @@
+import { shortcutTable } from '../shared/shortcuts.ts';
+import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -75,6 +77,7 @@ import {
   HttpsFirstSetting,
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
+  ShortcutsSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
@@ -292,6 +295,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     dispose: () => startedClient?.dispose(),
   };
+  // The keyboard shortcuts of the windows, made again when people change them.
+  let shortcuts = shortcutTable(process.platform, settings.get(ShortcutsSetting));
+  const shortcutRecorder = new ShortcutRecorder();
   // Every request of web content passes the request pipeline. HTTPS-First sends pages to the
   // secure address first; the content blocker follows, and its engine loads with the first
   // web page.
@@ -610,6 +616,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
     insecureAddressFor: (contents, failed) => httpsFirst.insecureAddressFor(contents, failed),
+    shortcuts: () => shortcuts,
+    shortcutRecorder,
     onPageCommand: (window, command, contents) =>
       void import('./page-tools.ts').then(({ runPageCommand }) =>
         runPageCommand(window, command, contents, {
@@ -654,6 +662,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
           webSession: () => session.fromPartition(webPartition),
+          shortcuts: {
+            table: () => shortcuts,
+            overrides: () => settings.get(ShortcutsSetting),
+            record: (contents) => shortcutRecorder.record(contents),
+          },
         });
         pages = true;
       })
@@ -876,15 +889,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     });
   }
   logger.info('First window opened', { ms: Math.round(process.uptime() * 1000) });
-  if (process.platform === 'darwin') {
+  // The menu bar of macOS shows the shortcuts, so it is made again when they change.
+  const showMenuBar = (): void => {
+    if (process.platform !== 'darwin') return;
     void import('./browser-menu.ts')
       .then(({ macMenuBar, runFromMenuBar }) =>
         Menu.setApplicationMenu(
-          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow)),
+          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts),
         ),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
-  }
+  };
+  showMenuBar();
+  settings.onDidChange(({ keys }) => {
+    if (!keys.includes(ShortcutsSetting.key)) return;
+    shortcuts = shortcutTable(process.platform, settings.get(ShortcutsSetting));
+    showMenuBar();
+  });
 
   // Everything that is not needed for the first window loads after its shell.
   let updates: UpdateService | undefined;

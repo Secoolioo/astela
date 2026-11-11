@@ -1,4 +1,5 @@
-import type { Session } from 'electron';
+import type { Session, WebContents } from 'electron';
+import type { ShortcutOverrides, WindowCommand } from '../shared/shortcuts.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { DataClient } from '../platform/electron/data-service-client.ts';
@@ -33,6 +34,15 @@ export interface PageDependencies {
   readonly startValues: ReadonlyMap<string, string>;
   /** The session of web pages in regular windows. */
   readonly webSession: () => Session;
+  /** The shortcuts of the windows, and a way to wait for a key press of a page. */
+  readonly shortcuts: {
+    /** The shortcuts of the windows, by key press. */
+    readonly table: () => ReadonlyMap<string, WindowCommand>;
+    /** The shortcuts that people chose, by command. */
+    readonly overrides: () => ShortcutOverrides;
+    /** Waits for the next key press of a page, as a shortcut. */
+    readonly record: (contents: WebContents) => Promise<string | undefined>;
+  };
 }
 
 /**
@@ -50,6 +60,7 @@ export function connectPages(dependencies: PageDependencies): void {
     dependencies.internal,
     dependencies.startValues,
     { data, web: dependencies.webSession },
+    dependencies.shortcuts,
   );
   connectHistoryPage(router, data, windows);
   connectBookmarksPage(router, data, bookmarks, windows);

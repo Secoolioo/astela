@@ -139,7 +139,7 @@ export class WindowOverlay implements OverlayHandle {
         this.close();
         return;
       }
-      const command = commandForInput(input, process.platform);
+      const command = commandForInput(input, process.platform, this.window.shortcuts());
       if (command !== undefined) {
         event.preventDefault();
         this.close();

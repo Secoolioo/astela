@@ -38,7 +38,8 @@ import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
-import { commandForInput, type WindowCommand } from './shortcuts.ts';
+import { commandForInput, type ShortcutRecorder, type WindowCommand } from './shortcuts.ts';
+import { shortcutTable } from '../../shared/shortcuts.ts';
 
 /** Space the shell occupies at the window edges. */
 export interface Insets {
@@ -127,6 +128,10 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
   /** Whether people may continue to a site whose certificate is not trusted. */
   readonly certificateOverride?: () => boolean;
+  /** The keyboard shortcuts of the windows; the defaults of the system when left out. */
+  readonly shortcuts?: () => ReadonlyMap<string, WindowCommand>;
+  /** Takes the key presses of a page while the editor of shortcuts waits for one. */
+  readonly shortcutRecorder?: ShortcutRecorder;
   /**
    * The insecure address to offer in place of a page that did not load securely, when
    * HTTPS-First sent the page to the secure address.
@@ -277,7 +282,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     );
     this.subscriptions.add(this.tabs.onDidChange(() => this.schedulePublish()));
     this.subscriptions.add(this.tabs);
-    this.shell.webContents.on('before-input-event', (event, input) => this.intercept(event, input));
+    this.shell.webContents.on('before-input-event', (event, input) =>
+      this.intercept(event, input, this.shell.webContents.id),
+    );
     this.forwardContextMenu(this.shell, undefined);
     this.shell.webContents.once('did-finish-load', () => this.layout());
     this.window.on('resize', () => this.layout());
@@ -485,6 +492,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (problem?.kind !== 'insecure' || contents === undefined) return;
     allow(contents, problem.url);
     contents.loadURL(problem.url).catch(() => undefined);
+  }
+
+  /** The keyboard shortcuts of the window. */
+  shortcuts(): ReadonlyMap<string, WindowCommand> {
+    return this.options.shortcuts?.() ?? shortcutTable(process.platform);
   }
 
   /** Why a tab shows no page, or `null` when it shows one. */
@@ -831,8 +843,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * `app-command` event reports them as well and stays unused, or one click would go back
    * two pages.
    */
-  private intercept(event: { preventDefault(): void }, input: Input): void {
-    const command = commandForInput(input, process.platform);
+  private intercept(event: { preventDefault(): void }, input: Input, contentsId: number): void {
+    if (this.options.shortcutRecorder?.take(contentsId, input, process.platform) === true) {
+      event.preventDefault();
+      return;
+    }
+    const command = commandForInput(input, process.platform, this.shortcuts());
     if (command !== undefined) {
       event.preventDefault();
       this.execute(command);
@@ -1024,7 +1040,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     contents.on('did-navigate', sync);
     contents.on('did-navigate-in-page', sync);
     contents.on('page-title-updated', sync);
-    contents.on('before-input-event', (event, input) => this.intercept(event, input));
+    contents.on('before-input-event', (event, input) => this.intercept(event, input, contents.id));
     this.forwardContextMenu(view, id);
     return { view, page, registration };
   }

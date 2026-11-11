@@ -1,4 +1,10 @@
 import {
+  shortcutPattern,
+  shortcutProblem,
+  windowCommands,
+  type ShortcutOverrides,
+} from '../shared/shortcuts.ts';
+import {
   secureDnsModes,
   secureDnsTemplatesPattern,
   type SecureDnsMode,
@@ -362,6 +368,27 @@ export const SecureDnsTemplatesSetting = defineSetting<string>({
   ui: { section: 'privacy', control: 'text', order: 8 },
 });
 
+/** The keyboard shortcuts that people chose, by command; other commands keep their defaults. */
+export const ShortcutsSetting = defineSetting<ShortcutOverrides>({
+  key: 'keys.shortcuts',
+  schema: v.pipe(
+    v.record(
+      v.picklist(windowCommands),
+      v.pipe(v.array(v.pipe(v.string(), v.regex(shortcutPattern))), v.maxLength(4)),
+    ),
+    v.check(
+      (overrides) =>
+        Object.values(overrides).every((list) =>
+          list.every((shortcut) => shortcutProblem(shortcut, process.platform) === undefined),
+        ),
+      'A shortcut types text or belongs to the system',
+    ),
+  ),
+  default: {},
+  scope: 'global',
+  ui: { section: 'shortcuts', control: 'list', order: 1 },
+});
+
 /** Whether the toolbar has a home button, which opens the home page. */
 export const HomeButtonSetting = defineSetting<boolean>({
   key: 'home.button',
@@ -506,6 +533,7 @@ export const coreSettings = [
   HttpAllowlistSetting,
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
+  ShortcutsSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,

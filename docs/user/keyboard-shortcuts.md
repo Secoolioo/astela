@@ -1,8 +1,14 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5.
 
-Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. Shortcuts cannot be changed yet; a shortcut editor is planned for 0.1.0, see the [roadmap](../roadmap.md).
+Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
+
+## Changing shortcuts
+
+Under **Keyboard shortcuts** in the [settings](settings.md), every command shows its shortcuts. **Change** waits for the keys of a new one; press them together, or Esc to stop without a change. The new shortcut replaces those of the command. **Reset** brings back the defaults of a command, and **Reset all** those of every command. The menus show the shortcuts you chose.
+
+A shortcut needs Ctrl, Alt, or Command on macOS, or a function key, because other keys type text in pages. On Windows and Linux, Ctrl and Alt together are not possible either, because Windows types characters with them. Shortcuts that the system uses, such as `Alt+F4` or `Command+Q`, cannot be chosen. When another command has the keys already, the settings page asks before it moves them; that command then has no shortcut until you reset it.
 
 ## Windows and Linux
 
