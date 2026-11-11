@@ -7,12 +7,13 @@ export type TabId = string;
 
 /**
  * Why a tab shows no page: the page could not be loaded (`error`), the certificate of its
- * site is not trusted (`certificate`), or the process that showed it is gone (`crashed`).
+ * site is not trusted (`certificate`), the site has no secure connection (`insecure`, with the
+ * insecure address in `url`), or the process that showed it is gone (`crashed`).
  * `code` is Chromium's name for the cause, such as `ERR_CONNECTION_REFUSED`, `url` the
  * address of the page, and `proceed` whether the user may continue to it after a warning.
  */
 export interface TabProblem {
-  readonly kind: 'error' | 'certificate' | 'crashed';
+  readonly kind: 'error' | 'certificate' | 'insecure' | 'crashed';
   readonly code: string;
   readonly url: string;
   readonly proceed: boolean;

@@ -372,5 +372,10 @@
   "settings.clearDataCache": "Bilder und Dateien im Cache",
   "settings.clearDataAll": "Der Zeitraum gilt für den Verlauf; Cookies, Websitedaten und der Cache werden immer ganz gelöscht.",
   "settings.clearDataConfirm": "Daten löschen",
-  "settings.clearDataDone": "Die Browserdaten sind gelöscht."
+  "settings.clearDataDone": "Die Browserdaten sind gelöscht.",
+  "problem.insecureTitle": "Diese Website hat keine sichere Verbindung",
+  "problem.insecure": "{site} unterstützt keine sichere Verbindung. Andere im Netzwerk könnten sehen oder ändern, was du sendest und empfängst.",
+  "settings.httpsFirst": "Immer sichere Verbindungen verwenden",
+  "settings.httpsFirstNote": "Öffnet Websites über HTTPS und warnt, bevor eine Website ohne sichere Verbindung lädt.",
+  "settings.httpsFirst.keywords": "https http sicher Verbindung Verschlüsselung tls ssl"
 }

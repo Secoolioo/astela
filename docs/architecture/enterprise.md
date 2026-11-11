@@ -219,6 +219,8 @@ Also implemented:
 - `PromptForDownloadLocation` (boolean): whether the browser asks where to save each download, like the setting `downloads.ask`.
 - `ShowHomeButton` (boolean): shows or hides the home button of the toolbar, like the setting `home.button`.
 - `HomepageLocation` (web address, or empty for the new tab page): the page of the home button and of its shortcut, like the setting `home.page`.
+- `HttpsOnlyMode` (`disallowed`, `force_enabled` or `force_balanced_enabled`): as a mandatory policy, `disallowed` turns [HTTPS-First](../user/page-problems.md#sites-without-a-secure-connection) off and the other two keep it on, like the setting `privacy.httpsFirst`. Astela has one mode, which warns before an insecure address; `allowed` leaves the choice to the user, as no policy does, and the browser reports it as an invalid value.
+- `HttpAllowlist` (list of host names): hosts that HTTPS-First leaves on their insecure address, such as `intranet.example.com`; `[*.]example.com` also names every host below `example.com`. IP addresses and local names are never upgraded and need no entry.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
 
 The MSI package (x64, per machine, with the fixed upgrade code) is built for every pull request and installed and removed silently in CI.

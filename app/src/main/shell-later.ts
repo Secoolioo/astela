@@ -6,6 +6,7 @@ import {
   OpenBookmarkFolder,
   OpenDownloads,
   OpenMenu,
+  ProceedInsecurely,
   ProceedUnsafely,
   ReopenClosedTab,
   ResetZoom,
@@ -29,6 +30,8 @@ export interface LaterShellDependencies {
   readonly openDownloads: (window: BrowserWindowController, anchor: OverlayAnchor) => void;
   /** Accepts the certificate that a page was refused, for this session. */
   readonly allowCertificate: (contents: WebContents) => boolean;
+  /** Allows the insecure address of a site for the session of a page. */
+  readonly allowInsecure: (contents: WebContents, address: string) => void;
   /** The bookmarks and folders in a folder of the bookmarks bar. */
   readonly folderContents: (folder: number) => readonly FolderEntry[];
   /** Opens the content blocker's popover of a window at its button. */
@@ -77,6 +80,10 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(ProceedUnsafely, ({ tabId }, { sender }) => {
     windows.forShell(sender)?.proceedUnsafely(tabId, dependencies.allowCertificate);
+    return null;
+  });
+  router.handle(ProceedInsecurely, ({ tabId }, { sender }) => {
+    windows.forShell(sender)?.proceedInsecurely(tabId, dependencies.allowInsecure);
     return null;
   });
   router.handle(OpenBookmarkFolder, async ({ id, from, x, y }, { sender }) => {
