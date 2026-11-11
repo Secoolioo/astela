@@ -215,6 +215,8 @@ Also implemented:
 - `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
 - `RestoreOnStartup` (`1`, `4` or `5`): sets or recommends what the browser opens when it starts, like the setting `startup.page`, with Chromium's numbers: `1` the last session, `4` the pages of `RestoreOnStartupURLs`, `5` a new tab page.
 - `RestoreOnStartupURLs` (list of web addresses): the pages that open at start with `RestoreOnStartup` set to `4`, like the setting `startup.urls`; at most 100 http and https addresses.
+- `DownloadDirectory` (path): the folder where downloads are saved, like the setting `downloads.folder`, as an absolute path; empty for the downloads folder of the system. Unlike in Chromium, variables such as `${user_home}` are not replaced.
+- `PromptForDownloadLocation` (boolean): whether the browser asks where to save each download, like the setting `downloads.ask`.
 - `ShowHomeButton` (boolean): shows or hides the home button of the toolbar, like the setting `home.button`.
 - `HomepageLocation` (web address, or empty for the new tab page): the page of the home button and of its shortcut, like the setting `home.page`.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.

@@ -110,8 +110,35 @@ export async function importSettings(
   let skipped = 0;
   for (const [key, value] of Object.entries(values)) {
     const definition = shown.get(key);
-    if (definition !== undefined && settings.set(definition, value).ok) applied += 1;
-    else skipped += 1;
+    // A folder of another computer has no place here; only the system's dialog sets one.
+    if (definition?.ui?.control !== 'folder' && definition !== undefined) {
+      if (settings.set(definition, value).ok) applied += 1;
+      else skipped += 1;
+    } else {
+      skipped += 1;
+    }
   }
   return { ok: true, applied, skipped };
+}
+
+/**
+ * Asks for a folder in the system's dialog, in the window of the page that asked.
+ * @param sender - The page that asked.
+ * @param start - The folder that the dialog shows first.
+ * @returns The chosen folder, or `undefined` when the dialog was cancelled.
+ */
+export async function chooseFolder(
+  sender: WebContents,
+  start: string,
+): Promise<string | undefined> {
+  const options = {
+    defaultPath: start,
+    properties: ['openDirectory' as const, 'createDirectory' as const],
+  };
+  const window = windowOf(sender);
+  const { canceled, filePaths } =
+    window === undefined
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options);
+  return canceled ? undefined : filePaths[0];
 }

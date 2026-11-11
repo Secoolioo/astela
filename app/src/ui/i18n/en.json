@@ -318,5 +318,12 @@
   "shell.home": "Home",
   "settings.pageZoom": "Page zoom",
   "settings.pageZoomNote": "For sites that you have not zoomed yourself.",
-  "settings.pageZoom.keywords": "zoom size bigger smaller magnify scale"
+  "settings.pageZoom.keywords": "zoom size bigger smaller magnify scale",
+  "settings.downloads": "Downloads",
+  "settings.downloadFolder": "Save downloads in",
+  "settings.downloadFolder.keywords": "location directory path save folder",
+  "settings.downloadFolderSystem": "The downloads folder of the system",
+  "settings.downloadFolderChange": "Change…",
+  "settings.downloadAsk": "Ask where to save each file",
+  "settings.downloadAskNote": "The browser asks before it saves a download, and suggests the folder above."
 }

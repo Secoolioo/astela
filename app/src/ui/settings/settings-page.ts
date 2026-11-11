@@ -146,6 +146,9 @@ export class SettingsPage extends LitElement {
         width: 100%;
         min-width: 0;
       }
+      .path {
+        overflow-wrap: anywhere;
+      }
       /* The hint stays in view at the bottom while the page scrolls. */
       .restart {
         position: sticky;
@@ -620,6 +623,31 @@ export class SettingsPage extends LitElement {
             id: 'home.page',
             keys: ['settings.homePage', 'settings.homePageNote', 'settings.home.keywords'],
             render: () => this.renderHomePage(),
+          },
+        ],
+      },
+      {
+        id: 'downloads',
+        title: 'settings.downloads',
+        rows: [
+          {
+            id: 'downloads.folder',
+            keys: [
+              'settings.downloadFolder',
+              'settings.downloadFolder.keywords',
+              'settings.downloadFolderSystem',
+            ],
+            render: () => this.renderDownloadFolder(),
+          },
+          {
+            id: 'downloads.ask',
+            keys: ['settings.downloadAsk', 'settings.downloadAskNote'],
+            render: () =>
+              this.renderToggle(
+                'downloads.ask',
+                'settings.downloadAsk',
+                'settings.downloadAskNote',
+              ),
           },
         ],
       },
@@ -1412,6 +1440,31 @@ export class SettingsPage extends LitElement {
     }
     const value = { ...current, [name]: input.value.trim() };
     this.webFontError = !(await this.client?.set('fonts.web', value));
+  }
+
+  /** The folder of downloads, which only the system's dialog changes. */
+  private renderDownloadFolder(): TemplateResult {
+    const setting = this.client?.get('downloads.folder');
+    const folder = typeof setting?.value === 'string' ? setting.value : '';
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.downloadFolder')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note path">
+                ${folder === '' ? this.t('settings.downloadFolderSystem') : folder}
+              </span>`
+        }
+      </span>
+      <button
+        type="button"
+        ?disabled=${setting?.locked !== false}
+        @click=${() => void this.bridge?.invoke('settings.chooseDownloadFolder', {})}
+      >
+        ${this.t('settings.downloadFolderChange')}
+      </button>
+    </div>`;
   }
 
   /** The language of the browser, which takes effect after a restart. */

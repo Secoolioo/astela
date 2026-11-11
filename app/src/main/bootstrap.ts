@@ -57,7 +57,9 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-cache.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  AskDownloadSetting,
   BookmarksBarSetting,
+  DownloadFolderSetting,
   HomeButtonSetting,
   HomePageSetting,
   StartupPagesSetting,
@@ -321,11 +323,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // also from downloads that still run; the list and its panel load with the first download.
   let downloads: Downloads | undefined;
   let downloadsLoaded: Promise<Downloads> | undefined;
+  const downloadFolder = (): string =>
+    settings.get(DownloadFolderSetting) || app.getPath('downloads');
   const loadDownloads = (): Promise<Downloads> => {
     downloadsLoaded ??= import('./downloads.ts').then(({ Downloads: List }) => {
       downloads = new List({
         data,
         windows,
+        folder: downloadFolder,
         webSession: (privateWindow) =>
           privateWindow ? privateWeb() : session.fromPartition(webPartition),
         overlay: overlayOptions,
@@ -338,12 +343,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   };
   const reservedPaths = new Set<string>();
   const saveDownload = (item: DownloadItem, privateWindow: boolean): void => {
-    const folder = app.getPath('downloads');
+    const folder = downloadFolder();
+    const ask = settings.get(AskDownloadSetting);
+    // While the browser asks where to save a download, it goes on under a name of its own.
+    const working = (path: string): string => (ask ? `${path}.part` : path);
     const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
       const path = join(folder, candidate);
-      return reservedPaths.has(pathKey(path, process.platform)) || existsSync(path);
+      return [path, working(path)].some(
+        (taken) => reservedPaths.has(pathKey(taken, process.platform)) || existsSync(taken),
+      );
     });
-    const path = join(folder, name);
+    const suggested = join(folder, name);
+    const path = working(suggested);
     const reserved = pathKey(path, process.platform);
     try {
       mkdirSync(folder, { recursive: true });
@@ -354,7 +365,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     item.once('done', () => reservedPaths.delete(reserved));
     item.setSavePath(path);
     loadDownloads().then(
-      (list) => list.track(item, privateWindow),
+      (list) => (ask ? list.ask(item, privateWindow, suggested) : list.track(item, privateWindow)),
       (error: unknown) => logger.error('The list of downloads failed', error),
     );
   };

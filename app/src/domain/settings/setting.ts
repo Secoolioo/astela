@@ -28,7 +28,16 @@ export interface SettingUi {
   /** Section id on the settings page, such as `appearance`. */
   readonly section: string;
   /** Control used to edit the value. */
-  readonly control: 'toggle' | 'select' | 'text' | 'number' | 'color' | 'list' | 'shortcut';
+  readonly control:
+    | 'toggle'
+    | 'select'
+    | 'text'
+    | 'number'
+    | 'color'
+    | 'list'
+    | 'shortcut'
+    /** A folder, which only the system's dialog sets, never a page or an imported file. */
+    | 'folder';
   /** Sort order inside the section; lower comes first. */
   readonly order?: number;
 }
