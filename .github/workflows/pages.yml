@@ -124,19 +124,26 @@ jobs:
     timeout-minutes: 40
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.first.outputs.page_url || steps.second.outputs.page_url || steps.third.outputs.page_url }}
     permissions:
       pages: write
       id-token: write
     outputs:
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.first.outputs.page_url || steps.second.outputs.page_url || steps.third.outputs.page_url }}
     steps:
-      - id: deployment
+      # GitHub sometimes takes longer than the ten minutes that the action allows at most to
+      # publish the site, which carries the package repositories. The job then tries again, up
+      # to three times.
+      - id: first
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
-        with:
-          # The site carries the package repositories, which GitHub can take longer to publish
-          # than the ten minutes the action waits by default.
-          timeout: 1800000
+        continue-on-error: true
+      - id: second
+        if: steps.first.outcome == 'failure'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        continue-on-error: true
+      - id: third
+        if: steps.second.outcome == 'failure'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   verify-live:
     name: verify-live
