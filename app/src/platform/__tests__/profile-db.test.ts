@@ -42,6 +42,24 @@ describe('ProfileDatabase history', () => {
     db.close();
   });
 
+  it('removes the pages visited since a time, with their earlier visits', () => {
+    let now = 1000;
+    const db = new ProfileDatabase(':memory:', () => now);
+    db.addVisit('https://old.example/', 'Old');
+    now = 2000;
+    db.addVisit('https://both.example/', 'Both');
+    now = 5000;
+    db.addVisit('https://new.example/', 'New');
+    db.addVisit('https://both.example/');
+    db.clearHistorySince(4000);
+    expect(db.history('').map((entry) => entry.url)).toEqual(['https://old.example/']);
+    expect(db.history('old').length).toBe(1);
+    expect(db.history('both')).toEqual([]);
+    db.clearHistorySince(0);
+    expect(db.history('')).toEqual([]);
+    db.close();
+  });
+
   it('imports history and merges it with pages that exist', () => {
     const db = new ProfileDatabase(':memory:', () => 5000);
     db.addVisit('https://a.example/', 'A');

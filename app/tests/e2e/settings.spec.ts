@@ -582,3 +582,50 @@ test('adds and removes shortcuts of the new tab page', async () => {
   await list.getByRole('button', { name: 'Remove Example' }).click();
   await expect(list).toHaveCount(0);
 });
+
+test('clears the history, the cookies and the cache of web pages', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    const web = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await web.evaluate(() => {
+      document.cookie = 'kept=yes; max-age=3600';
+    });
+    const stored = (): Promise<{ cookies: number; cache: number }> =>
+      browser.main.evaluate(async ({ session }) => {
+        const pages = session.fromPartition('persist:default');
+        return { cookies: (await pages.cookies.get({})).length, cache: await pages.getCacheSize() };
+      });
+    await expect.poll(async () => (await stored()).cookies).toBe(1);
+    const page = await openSettings();
+    await page.getByRole('button', { name: 'Clear…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
+    await dialog.getByRole('combobox', { name: 'Time range' }).selectOption('all');
+    await dialog.getByRole('button', { name: 'Clear data' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveText(
+      'The browsing data is cleared.',
+    );
+    expect(await stored()).toEqual({ cookies: 0, cache: 0 });
+    await address.fill('app://history');
+    await address.press('Enter');
+    const history = await waitForPage(browser, (url) => url.startsWith('app://history'));
+    await expect(history.getByRole('button', { name: /^Fixture home/ })).toHaveCount(0);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('keeps the data when the question is cancelled', async () => {
+  const page = await openSettings();
+  await page.getByRole('button', { name: 'Clear…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
+  await expect(dialog.getByRole('combobox', { name: 'Time range' })).toHaveValue('hour');
+  await expect(dialog.getByRole('checkbox', { name: 'History' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveCount(0);
+});

@@ -35,6 +35,7 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    dataCleared: { state: true },
     homeError: { state: true },
     webFontError: { state: true },
     customSearch: { state: true },
@@ -176,6 +177,23 @@ export class SettingsPage extends LitElement {
       }
       .engines li button {
         justify-self: end;
+      }
+      #clear-data form {
+        display: grid;
+        gap: var(--space-2);
+      }
+      #clear-data h3 {
+        margin: 0;
+        font-size: var(--font-size-large);
+      }
+      #clear-data .field {
+        display: grid;
+        gap: var(--space-1);
+      }
+      #clear-data .check {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
       }
       .add-tile {
         display: grid;
@@ -381,6 +399,8 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** Whether the browsing data was just cleared. */
+  declare dataCleared: boolean;
   /** Whether the last home page was not a web address. */
   declare homeError: boolean;
   /** Whether the last name of a font for web pages was not one. */
@@ -413,6 +433,7 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.dataCleared = false;
     this.homeError = false;
     this.webFontError = false;
     this.customSearch = false;
@@ -859,6 +880,11 @@ export class SettingsPage extends LitElement {
               'settings.contentBlocker.keywords',
             ],
             render: () => this.renderAllowedSites(),
+          },
+          {
+            id: 'clear-data',
+            keys: ['settings.clearData', 'settings.clearDataNote', 'settings.clearData.keywords'],
+            render: () => this.renderClearData(),
           },
           {
             id: 'permissions.sites',
@@ -1779,6 +1805,86 @@ export class SettingsPage extends LitElement {
       (await this.client?.set('newtab.tiles', [...tiles, { title, url }])) === true;
     this.tileError = !saved;
     if (saved) form.reset();
+  }
+
+  /** Clearing the browsing data, with a question for the time range and the kinds of data. */
+  private renderClearData(): TemplateResult {
+    const t = this.t;
+    const dialog = (): HTMLDialogElement | null => this.renderRoot.querySelector('#clear-data');
+    return html`<div class="row">
+        <span class="label">
+          <span>${t('settings.clearData')}</span>
+          <span class="note">${t('settings.clearDataNote')}</span>
+        </span>
+        <button
+          type="button"
+          @click=${() => {
+            this.dataCleared = false;
+            dialog()?.showModal();
+          }}
+        >
+          ${t('settings.clearDataOpen')}
+        </button>
+      </div>
+      ${
+        this.dataCleared
+          ? html`<p class="row note" role="status">${t('settings.clearDataDone')}</p>`
+          : nothing
+      }
+      <dialog id="clear-data" aria-labelledby="clear-data-title">
+        <form method="dialog" @submit=${(event: SubmitEvent) => void this.clearData(event)}>
+          <h3 id="clear-data-title">${t('settings.clearData')}</h3>
+          <label class="field">
+            <span>${t('settings.clearDataRange')}</span>
+            <select name="range">
+              ${(['hour', 'day', 'week', 'month', 'all'] as const).map(
+                (range) =>
+                  html`<option value=${range} ?selected=${range === 'hour'}>
+                    ${t(`settings.clearDataRange.${range}`)}
+                  </option>`,
+              )}
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="history" checked />
+            ${t('settings.clearDataHistory')}
+          </label>
+          <label class="check">
+            <input type="checkbox" name="cookies" checked />
+            ${t('settings.clearDataCookies')}
+          </label>
+          <label class="check">
+            <input type="checkbox" name="cache" checked />
+            ${t('settings.clearDataCache')}
+          </label>
+          <p class="note">${t('settings.clearDataAll')}</p>
+          <div class="buttons">
+            <button type="button" @click=${() => dialog()?.close()}>${t('settings.cancel')}</button>
+            <button type="submit" class="primary">${t('settings.clearDataConfirm')}</button>
+          </div>
+        </form>
+      </dialog>`;
+  }
+
+  private async clearData(event: SubmitEvent): Promise<void> {
+    // The page cannot submit forms; it asks the browser instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const checked = (name: string): boolean => {
+      const box = form.elements.namedItem(name);
+      return box instanceof HTMLInputElement && box.checked;
+    };
+    const select = form.elements.namedItem('range');
+    const range = select instanceof HTMLSelectElement ? select.value : 'hour';
+    this.renderRoot.querySelector<HTMLDialogElement>('#clear-data')?.close();
+    await this.bridge?.invoke('settings.clearData', {
+      range,
+      history: checked('history'),
+      cookies: checked('cookies'),
+      cache: checked('cache'),
+    });
+    this.dataCleared = true;
   }
 
   /** The language of the browser, which takes effect after a restart. */
