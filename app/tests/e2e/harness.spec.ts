@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { createServer, type AddressInfo, type Socket } from 'node:net';
 import { launch, pageReport } from './harness.ts';
 
 test('fails a test with a report of the browser process when the shell stops answering', async () => {
@@ -76,5 +77,33 @@ test('names the page that does not answer in the record of a start', async () =>
       }
     });
     await browser.close();
+  }
+});
+
+test('connects to a browser whose first page fails to load while the harness attaches', async () => {
+  test.setTimeout(120_000);
+  // The request of the link waits until the harness reached the browser process, and then
+  // fails: the error page comes in a process of its own just when the harness would attach
+  // to the pages, and an attachment at that moment would wait for that page forever.
+  for (const delay of [0, 10, 20]) {
+    const sockets: Socket[] = [];
+    const server = createServer((socket) => {
+      sockets.push(socket);
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const browser = await launch(['--', `http://127.0.0.1:${String(port)}/fails`], {
+        onMain: () => {
+          setTimeout(() => {
+            for (const socket of sockets) socket.destroy();
+          }, delay);
+          return Promise.resolve();
+        },
+      });
+      await browser.close();
+    } finally {
+      server.close();
+    }
   }
 });
