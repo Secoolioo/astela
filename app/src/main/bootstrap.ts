@@ -188,6 +188,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   process.on('uncaughtException', (error) => {
     logger.error('An error in the browser process was not caught', error);
   });
+  // A promise that fails without a handler only warns on the console, which nobody reads.
+  process.on('unhandledRejection', (reason) => {
+    logger.error('A promise of the browser process failed and no code handled it', reason);
+  });
   logger.info('Starting', {
     version: app.getVersion(),
     electron: process.versions.electron,
