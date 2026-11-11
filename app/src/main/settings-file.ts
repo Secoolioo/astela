@@ -1,6 +1,7 @@
 import { BaseWindow, app, dialog, type WebContents } from 'electron';
 import { uiLocale } from './ui-language.ts';
-import { readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
@@ -236,4 +237,81 @@ function orderedPalette(palette: CustomTheme['light']): Record<string, string> {
       return value === undefined ? [] : [[token, value.toLowerCase()]];
     }),
   );
+}
+
+/** The largest image that the new tab page takes as its background. */
+const largestImage = 10 * 1024 * 1024;
+
+/** The extensions of the images that the new tab page takes, by what the file starts with. */
+const imageKinds: readonly {
+  readonly extension: string;
+  readonly matches: (head: Buffer) => boolean;
+}[] = [
+  {
+    extension: 'png',
+    matches: (head) =>
+      head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  },
+  { extension: 'jpg', matches: (head) => head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff },
+  { extension: 'gif', matches: (head) => head.subarray(0, 4).toString('latin1') === 'GIF8' },
+  {
+    extension: 'webp',
+    matches: (head) =>
+      head.subarray(0, 4).toString('latin1') === 'RIFF' &&
+      head.subarray(8, 12).toString('latin1') === 'WEBP',
+  },
+  {
+    extension: 'avif',
+    matches: (head) => head.subarray(4, 12).toString('latin1') === 'ftypavif',
+  },
+];
+
+/**
+ * Asks for an image in the system's dialog and copies it into the profile, under a name
+ * from its content; the images that were there before go.
+ * @param sender - The settings page.
+ * @param folder - The folder of the image in the profile.
+ * @returns The name of the copy; `undefined` when the user chose nothing; `invalid` for a
+ *   file that is no image or is too large.
+ */
+export async function chooseNewTabImage(
+  sender: WebContents,
+  folder: string,
+): Promise<{ readonly file: string } | 'invalid' | undefined> {
+  const i18n = translatorFor(uiLocale(), process.platform);
+  const options = {
+    title: i18n.t('settings.newTabImageTitle'),
+    defaultPath: app.getPath('pictures'),
+    filters: [
+      {
+        name: i18n.t('settings.imageFileType'),
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'],
+      },
+    ],
+    properties: ['openFile' as const],
+  };
+  const window = windowOf(sender);
+  const { canceled, filePaths } =
+    window === undefined
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options);
+  const path = filePaths[0];
+  if (canceled || path === undefined) return undefined;
+  let content: Buffer;
+  try {
+    if ((await stat(path)).size > largestImage) return 'invalid';
+    content = await readFile(path);
+  } catch {
+    return 'invalid';
+  }
+  // The content decides the kind, not the name, so the page only ever loads an image.
+  const kind = imageKinds.find((known) => known.matches(content.subarray(0, 16)));
+  if (kind === undefined) return 'invalid';
+  const name = `background-${createHash('sha256').update(content).digest('hex').slice(0, 16)}.${kind.extension}`;
+  await mkdir(folder, { recursive: true });
+  await writeFileAtomic(join(folder, name), content);
+  for (const old of await readdir(folder)) {
+    if (old !== name && old.startsWith('background-')) await rm(join(folder, old), { force: true });
+  }
+  return { file: name };
 }

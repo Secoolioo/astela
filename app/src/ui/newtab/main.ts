@@ -8,6 +8,7 @@ const form = document.getElementById('search');
 const query = document.getElementById('query');
 const clock = document.getElementById('clock');
 const tiles = document.getElementById('tiles');
+const top = document.getElementById('top');
 // In a private window, the page tells what the window keeps.
 const note = document.getElementById('private');
 if (note !== null && document.documentElement.hasAttribute('data-private')) {
@@ -53,11 +54,81 @@ function isNewTabState(value: unknown): value is NewTabState {
     typeof value.clock === 'boolean' &&
     'tiles' in value &&
     Array.isArray(value.tiles) &&
-    value.tiles.every(isTile)
+    value.tiles.every(isTile) &&
+    'mostVisited' in value &&
+    Array.isArray(value.mostVisited) &&
+    value.mostVisited.every(isTile) &&
+    'background' in value &&
+    isBackground(value.background)
   );
 }
 
-/** Shows what the settings say: the search field, the clock and the tiles. */
+function isHex(color: unknown): boolean {
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color);
+}
+
+function isBackground(value: unknown): value is NewTabState['background'] {
+  if (typeof value !== 'object' || value === null || !('kind' in value)) return false;
+  switch (value.kind) {
+    case 'none':
+      return true;
+    case 'color':
+      return 'color' in value && isHex(value.color);
+    case 'gradient':
+      return 'from' in value && isHex(value.from) && 'to' in value && isHex(value.to);
+    case 'image':
+      return (
+        'file' in value &&
+        typeof value.file === 'string' &&
+        /^background-[0-9a-f]{16}\.(?:png|jpg|webp|gif|avif)$/.test(value.file)
+      );
+    default:
+      return false;
+  }
+}
+
+/** The background of the page, as CSS, or nothing for the page's own color. */
+function backgroundCss(background: NewTabState['background']): string | undefined {
+  if (background.kind === 'color') return background.color;
+  if (background.kind === 'gradient') {
+    return `linear-gradient(135deg, ${background.from}, ${background.to})`;
+  }
+  if (background.kind === 'image') {
+    return `url("/background/${background.file}") center / cover no-repeat`;
+  }
+  return undefined;
+}
+
+/** Fills a list with tiles that open their pages in this tab. */
+function showTiles(list: HTMLUListElement, entries: NewTabState['tiles'], label: string): void {
+  list.hidden = entries.length === 0;
+  list.setAttribute('aria-label', label);
+  list.replaceChildren(
+    ...entries.map((tile) => {
+      const item = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = tile.url;
+      const letter = document.createElement('span');
+      letter.className = 'letter';
+      letter.setAttribute('aria-hidden', 'true');
+      const title = tile.title === '' ? new URL(tile.url).hostname : tile.title;
+      letter.textContent = title.slice(0, 1).toUpperCase();
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = title;
+      link.append(letter, name);
+      // The page cannot leave its origin; the browser opens the tile in this tab.
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        void window.bridge.invoke('newtab.navigate', { input: tile.url });
+      });
+      item.append(link);
+      return item;
+    }),
+  );
+}
+
+/** Shows what the settings say: the search field, the clock, the tiles and the background. */
 function show(state: NewTabState): void {
   if (form instanceof HTMLFormElement && query instanceof HTMLInputElement) {
     form.hidden = !state.search;
@@ -73,33 +144,16 @@ function show(state: NewTabState): void {
     if (state.clock) showTime();
     else clearTimeout(tick);
   }
-  if (tiles instanceof HTMLUListElement) {
-    tiles.hidden = state.tiles.length === 0;
-    tiles.setAttribute('aria-label', i18n.t('newtab.tiles'));
-    tiles.replaceChildren(
-      ...state.tiles.map((tile) => {
-        const item = document.createElement('li');
-        const link = document.createElement('a');
-        link.href = tile.url;
-        const letter = document.createElement('span');
-        letter.className = 'letter';
-        letter.setAttribute('aria-hidden', 'true');
-        const title = tile.title === '' ? new URL(tile.url).hostname : tile.title;
-        letter.textContent = title.slice(0, 1).toUpperCase();
-        const name = document.createElement('span');
-        name.className = 'name';
-        name.textContent = title;
-        link.append(letter, name);
-        // The page cannot leave its origin; the browser opens the tile in this tab.
-        link.addEventListener('click', (event) => {
-          event.preventDefault();
-          void window.bridge.invoke('newtab.navigate', { input: tile.url });
-        });
-        item.append(link);
-        return item;
-      }),
-    );
+  if (tiles instanceof HTMLUListElement) showTiles(tiles, state.tiles, i18n.t('newtab.tiles'));
+  if (top instanceof HTMLUListElement) {
+    showTiles(top, state.mostVisited, i18n.t('newtab.mostVisited'));
   }
+  // The page's background, which a style of the page's own takes from a property.
+  const background = backgroundCss(state.background);
+  const root = document.documentElement;
+  if (background === undefined) root.style.removeProperty('--newtab-background');
+  else root.style.setProperty('--newtab-background', background);
+  document.documentElement.classList.toggle('has-background', background !== undefined);
 }
 
 if (form instanceof HTMLFormElement && query instanceof HTMLInputElement) {

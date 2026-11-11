@@ -462,5 +462,20 @@
   "settings.themeImported": "The theme is imported.",
   "settings.themeInvalid": "The file is not a theme of this browser.",
   "settings.themeMode.light": "light",
-  "settings.themeMode.dark": "dark"
+  "settings.themeMode.dark": "dark",
+  "settings.newTabMostVisited": "Most visited sites",
+  "settings.newTabMostVisitedNote": "Shows the sites you open most often, from the history of regular windows. Private windows show none.",
+  "settings.newTabBackground": "Background",
+  "settings.newTabBackgroundNote": "The background of the new tab page: a color, a gradient of two colors, or an image of yours.",
+  "settings.newTabBackground.keywords": "wallpaper picture photo image gradient color background",
+  "settings.newTabBackground.none": "None",
+  "settings.newTabBackground.color": "Color",
+  "settings.newTabBackground.gradient": "Gradient",
+  "settings.newTabBackground.image": "Image",
+  "settings.newTabBackgroundColor": "Color",
+  "settings.newTabBackgroundFrom": "From",
+  "settings.newTabBackgroundTo": "To",
+  "settings.newTabBackgroundChoose": "Choose image…",
+  "settings.newTabBackgroundInvalid": "Choose a PNG, JPEG, WebP, GIF or AVIF image of at most 10 MB.",
+  "newtab.mostVisited": "Most visited"
 }

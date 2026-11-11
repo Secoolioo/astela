@@ -214,6 +214,26 @@ export class ProfileDatabase {
   }
 
   /**
+   * The pages opened most often, the most recent first among pages opened as often.
+   * @param limit - How many pages at most.
+   */
+  topSites(limit: number): HistoryEntry[] {
+    return this.db
+      .prepare(
+        `SELECT id, url, title, visit_count, last_visit FROM places
+         ORDER BY visit_count DESC, last_visit DESC LIMIT ?`,
+      )
+      .all(limit)
+      .map((row) => ({
+        id: Number(row['id']),
+        url: String(row['url']),
+        title: String(row['title']),
+        visitCount: Number(row['visit_count']),
+        lastVisit: Number(row['last_visit']),
+      }));
+  }
+
+  /**
    * Removes pages from the history.
    * @param ids - The pages.
    */

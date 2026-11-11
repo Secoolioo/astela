@@ -47,6 +47,7 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    imageError: { state: true },
     themeMessage: { state: true },
     shortcuts: { state: true },
     recording: { state: true },
@@ -269,6 +270,11 @@ export class SettingsPage extends LitElement {
         align-items: center;
       }
       .custom-theme .from {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
+      }
+      .background-color {
         display: flex;
         gap: var(--space-2);
         align-items: center;
@@ -511,6 +517,8 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** Whether the chosen image could not be the background of the new tab page. */
+  declare imageError: boolean;
   /** What the last import or export of a theme did. */
   declare themeMessage: { readonly alert: boolean; readonly text: string } | undefined;
   /** The shortcuts of every command, as the window uses them, once loaded. */
@@ -561,6 +569,7 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.imageError = false;
     this.themeMessage = undefined;
     this.shortcuts = undefined;
     this.recording = undefined;
@@ -896,6 +905,25 @@ export class SettingsPage extends LitElement {
             keys: ['settings.newTabClock', 'settings.newTabClockNote'],
             render: () =>
               this.renderToggle('newtab.clock', 'settings.newTabClock', 'settings.newTabClockNote'),
+          },
+          {
+            id: 'newtab.mostVisited',
+            keys: ['settings.newTabMostVisited', 'settings.newTabMostVisitedNote'],
+            render: () =>
+              this.renderToggle(
+                'newtab.mostVisited',
+                'settings.newTabMostVisited',
+                'settings.newTabMostVisitedNote',
+              ),
+          },
+          {
+            id: 'newtab.background',
+            keys: [
+              'settings.newTabBackground',
+              'settings.newTabBackgroundNote',
+              'settings.newTabBackground.keywords',
+            ],
+            render: () => this.renderNewTabBackground(),
           },
           {
             id: 'newtab.tiles',
@@ -2099,6 +2127,114 @@ export class SettingsPage extends LitElement {
     );
     const target = focus.step < 0 ? left : right;
     (target?.disabled === true ? (focus.step < 0 ? right : left) : target)?.focus();
+  }
+
+  /** The background of the new tab page: none, a color, a gradient or an image. */
+  private renderNewTabBackground(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('newtab.background');
+    const disabled = setting?.locked !== false;
+    const value: unknown = setting?.value;
+    const kind =
+      typeof value === 'object' && value !== null && typeof Reflect.get(value, 'kind') === 'string'
+        ? String(Reflect.get(value, 'kind'))
+        : 'none';
+    const color = (name: string, fallback: string): string => {
+      const chosen: unknown =
+        typeof value === 'object' && value !== null ? Reflect.get(value, name) : undefined;
+      return typeof chosen === 'string' ? chosen : fallback;
+    };
+    const set = (background: Record<string, string>): void => {
+      this.imageError = false;
+      void this.client?.set('newtab.background', background);
+    };
+    const field = (
+      name: 'color' | 'from' | 'to',
+      label: MessageKey,
+      fallback: string,
+    ): TemplateResult =>
+      html`<label class="background-color">
+        <span>${t(label)}</span>
+        <input
+          type="color"
+          .value=${color(name, fallback)}
+          ?disabled=${disabled}
+          @change=${(event: Event) => {
+            const input = event.target;
+            if (!(input instanceof HTMLInputElement)) return;
+            if (kind === 'gradient') {
+              set({
+                kind: 'gradient',
+                from: name === 'from' ? input.value : color('from', '#3a6ea5'),
+                to: name === 'to' ? input.value : color('to', '#2e8b57'),
+              });
+            } else {
+              set({ kind: 'color', color: input.value });
+            }
+          }}
+        />
+      </label>`;
+    return html`<div class="row stack">
+      ${this.renderLabel('settings.newTabBackground', setting)}
+      <span class="note">${t('settings.newTabBackgroundNote')}</span>
+      <div class="segments" role="radiogroup" aria-label=${t('settings.newTabBackground')}>
+        ${(['none', 'color', 'gradient', 'image'] as const).map(
+          (option) =>
+            html`<label>
+              <input
+                type="radio"
+                name="newtab-background"
+                .checked=${kind === option}
+                ?disabled=${disabled}
+                @change=${() => {
+                  if (option === 'none') set({ kind: 'none' });
+                  else if (option === 'color')
+                    set({ kind: 'color', color: color('color', '#3a6ea5') });
+                  else if (option === 'gradient')
+                    set({
+                      kind: 'gradient',
+                      from: color('from', '#3a6ea5'),
+                      to: color('to', '#2e8b57'),
+                    });
+                  else void this.chooseNewTabImage();
+                }}
+              />${t(`settings.newTabBackground.${option}`)}
+            </label>`,
+        )}
+      </div>
+      ${kind === 'color' ? field('color', 'settings.newTabBackgroundColor', '#3a6ea5') : nothing}
+      ${
+        kind === 'gradient'
+          ? html`${field('from', 'settings.newTabBackgroundFrom', '#3a6ea5')}
+            ${field('to', 'settings.newTabBackgroundTo', '#2e8b57')}`
+          : nothing
+      }
+      ${
+        kind === 'image'
+          ? html`<button
+              type="button"
+              ?disabled=${disabled}
+              @click=${() => void this.chooseNewTabImage()}
+            >
+              ${t('settings.newTabBackgroundChoose')}
+            </button>`
+          : nothing
+      }
+      ${
+        this.imageError
+          ? html`<span class="error" role="alert">${t('settings.newTabBackgroundInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async chooseNewTabImage(): Promise<void> {
+    this.imageError = false;
+    const result = await this.bridge?.invoke('settings.chooseNewTabImage', {});
+    this.imageError =
+      typeof result === 'object' && result !== null && Reflect.get(result, 'error') === 'invalid';
+    // Without an image, the radio buttons show the background that stays.
+    this.requestUpdate();
   }
 
   /** The tiles of the new tab page, with a way to add and to remove them. */

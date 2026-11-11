@@ -42,6 +42,20 @@ describe('ProfileDatabase history', () => {
     db.close();
   });
 
+  it('lists the pages opened most often, the most recent first among equals', () => {
+    let now = 1000;
+    const db = new ProfileDatabase(':memory:', () => (now += 1));
+    db.addVisit('https://once.example/', 'Once');
+    db.addVisit('https://twice.example/', 'Twice');
+    db.addVisit('https://twice.example/');
+    db.addVisit('https://also-once.example/', 'Also once');
+    expect(db.topSites(2).map((site) => site.url)).toEqual([
+      'https://twice.example/',
+      'https://also-once.example/',
+    ]);
+    db.close();
+  });
+
   it('removes the pages visited since a time, with their earlier visits', () => {
     let now = 1000;
     const db = new ProfileDatabase(':memory:', () => now);

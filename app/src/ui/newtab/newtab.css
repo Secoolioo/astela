@@ -22,7 +22,18 @@ form {
   font-variant-numeric: tabular-nums;
 }
 
-#tiles {
+/* The background covers the whole page, the gutter of the scroll bar too. */
+html {
+  min-height: 100%;
+  background: var(--newtab-background, var(--surface-0));
+}
+
+body {
+  background: none;
+}
+
+#tiles,
+#top {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -33,7 +44,8 @@ form {
   list-style: none;
 }
 
-#tiles a {
+#tiles a,
+#top a {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -45,11 +57,13 @@ form {
   text-decoration: none;
 }
 
-#tiles a:hover {
+#tiles a:hover,
+#top a:hover {
   background: var(--surface-hover);
 }
 
-#tiles .letter {
+#tiles .letter,
+#top .letter {
   display: grid;
   place-items: center;
   width: 40px;
@@ -61,7 +75,8 @@ form {
   font-weight: 600;
 }
 
-#tiles .name {
+#tiles .name,
+#top .name {
   max-width: 100%;
   overflow: hidden;
   font-size: var(--font-size-small);
@@ -97,4 +112,16 @@ input::placeholder {
 input:focus-visible {
   border-color: var(--focus-ring);
   box-shadow: 0 0 0 1px var(--focus-ring);
+}
+
+/* On a background of their choice, the clock and the tiles keep a surface of their own. */
+.has-background #clock,
+.has-background #tiles a,
+.has-background #top a {
+  background: var(--surface-1);
+}
+
+.has-background #clock {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-2);
 }

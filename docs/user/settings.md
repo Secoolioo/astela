@@ -46,6 +46,8 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 ## New tab page
 
 - **Show the search field** and **Show a clock:** from 0.1.0-beta.5, what the [new tab page](new-tab-page.md) shows. The search field is on and the clock off by default; the clock shows the time of your computer and changes once a minute while the page shows.
+- **Most visited sites:** from 0.1.0-beta.5, off by default. The new tab page also shows up to 8 sites that you open most often, from the history of regular windows; private windows show none.
+- **Background:** from 0.1.0-beta.5, the background of the new tab page: none, one color, a gradient of two colors, or an image of yours (PNG, JPEG, WebP, GIF or AVIF, at most 10 MB). The browser copies the image into the profile, so moving or deleting the original changes nothing.
 - **Shortcuts:** up to 12 pages, each with a title, that the new tab page shows below the search field. A click opens the page in the tab.
 
 ## Downloads
