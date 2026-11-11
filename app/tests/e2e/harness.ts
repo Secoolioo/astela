@@ -214,6 +214,8 @@ export async function launch(
     readonly app?: string;
     /** Called once the browser reported its start, before the harness connects to it. */
     readonly onReady?: (child: ChildProcess) => void;
+    /** Called once the harness reached the browser process, before it attaches to the pages. */
+    readonly onMain?: (main: MainProcess) => Promise<unknown>;
   } = {},
 ): Promise<Browser> {
   const profile = options.profile ?? mkdtempSync(join(tmpdir(), 'e2e-profile-'));
@@ -279,6 +281,8 @@ export async function launch(
       answerTime,
       'The browser process',
     );
+    await options.onMain?.(main);
+    await pagesLoaded(main);
     cdp = await chromium.connectOverCDP(devtoolsMatch[1] ?? '');
     shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
     await shell.waitForSelector('app-shell');
@@ -546,6 +550,28 @@ function pageAnswer(address: string): Promise<string> {
       finish('cannot be reached');
     });
   });
+}
+
+/**
+ * Waits until no page of the browser is loading, but not longer than {@link answerTime}. A page
+ * that the start opens can still be on its way, as a link whose load fails: its error page
+ * comes in a process of its own, and the DevTools connection misses that change when it
+ * attaches at that moment and then waits for the page forever.
+ * @param main - The browser process.
+ */
+async function pagesLoaded(main: MainProcess): Promise<void> {
+  const ends = Date.now() + answerTime;
+  while (Date.now() < ends) {
+    const loading = await within(
+      main.evaluate(({ webContents }) =>
+        webContents.getAllWebContents().some((contents) => contents.isLoading()),
+      ),
+      answerTime,
+      'The browser process',
+    );
+    if (!loading) return;
+    await new Promise((done) => setTimeout(done, 50));
+  }
 }
 
 /** How long the end of a test waits for an answer of the shell or the browser process. */
