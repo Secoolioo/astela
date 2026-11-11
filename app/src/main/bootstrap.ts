@@ -25,6 +25,7 @@ import {
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
+import { webFontPreferences } from '../domain/appearance/appearance.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
@@ -62,6 +63,8 @@ import {
   BlockerCookieNoticesSetting,
   ContentBlockerSetting,
   LanguageSetting,
+  WebFontsSetting,
+  WebTextSizeSetting,
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
@@ -498,6 +501,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
     languageArguments: languageArguments(language),
+    webFonts: () =>
+      webFontPreferences(settings.get(WebFontsSetting), settings.get(WebTextSizeSetting)),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.

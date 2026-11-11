@@ -106,3 +106,40 @@ export function appearanceCss(appearance: {
     `${tokens.join(';')}}`
   );
 }
+
+/** The fonts that web pages use where they name none, by family; empty keeps Chromium's. */
+export interface WebFonts {
+  readonly standard: string;
+  readonly serif: string;
+  readonly sansSerif: string;
+  readonly fixed: string;
+}
+
+/**
+ * The web preferences that give a new web page the default fonts and the text size of the
+ * settings; a font without a name keeps the one that Chromium picks.
+ * @param fonts - The fonts of the settings.
+ * @param size - The text size of the settings, in CSS pixels.
+ */
+export function webFontPreferences(
+  fonts: WebFonts,
+  size: number,
+): {
+  readonly defaultFontFamily: {
+    readonly standard?: string;
+    readonly serif?: string;
+    readonly sansSerif?: string;
+    readonly monospace?: string;
+  };
+  readonly defaultFontSize: number;
+} {
+  return {
+    defaultFontFamily: {
+      ...(fonts.standard === '' ? {} : { standard: fonts.standard }),
+      ...(fonts.serif === '' ? {} : { serif: fonts.serif }),
+      ...(fonts.sansSerif === '' ? {} : { sansSerif: fonts.sansSerif }),
+      ...(fonts.fixed === '' ? {} : { monospace: fonts.fixed }),
+    },
+    defaultFontSize: size,
+  };
+}

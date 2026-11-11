@@ -85,6 +85,8 @@ export interface BrowserWindowOptions {
   readonly appearanceArgument: () => string;
   /** Command line arguments that give the views of the browser's own UI their language. */
   readonly languageArguments: readonly string[];
+  /** The default fonts and text size of web pages, which a new web page gets. */
+  readonly webFonts?: () => Pick<Electron.WebPreferences, 'defaultFontFamily' | 'defaultFontSize'>;
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
@@ -814,6 +816,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               // The window takes the screen for a page in full screen itself, so the page
               // leaves full screen at once and never waits for the window's animation.
               disableHtmlFullscreenWindowResize: true,
+              ...this.options.webFonts?.(),
             }
           : {
               preload: this.options.pagePreload,

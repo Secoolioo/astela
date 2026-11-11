@@ -285,5 +285,21 @@
   "settings.fontNote": "The name of a font on this computer, such as Inter. Empty uses the font of the system.",
   "settings.fontSystem": "Font of the system",
   "settings.fontInvalid": "Use letters, digits, spaces, dots, hyphens and underscores only.",
-  "settings.font.keywords": "typeface family typography"
+  "settings.font.keywords": "typeface family typography",
+  "settings.webTextSize": "Text size of web pages",
+  "settings.webTextSizeNote": "For pages that set no size. Tabs that open after a change use it.",
+  "settings.webTextSize.keywords": "font size zoom bigger smaller readable",
+  "settings.webTextSize.9": "Very small",
+  "settings.webTextSize.12": "Small",
+  "settings.webTextSize.16": "Medium",
+  "settings.webTextSize.20": "Large",
+  "settings.webTextSize.24": "Very large",
+  "settings.webFonts": "Fonts of web pages",
+  "settings.webFontsNote": "For pages that name no font. An empty field keeps the default. Tabs that open after a change use them.",
+  "settings.webFonts.keywords": "typeface family serif monospace",
+  "settings.webFont.standard": "Standard",
+  "settings.webFont.serif": "Serif",
+  "settings.webFont.sansSerif": "Sans serif",
+  "settings.webFont.fixed": "Fixed width",
+  "settings.webFontDefault": "Default"
 }

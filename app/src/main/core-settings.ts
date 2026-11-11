@@ -8,6 +8,7 @@ import {
   type ColorMode,
   type Density,
   type TextSize,
+  type WebFonts,
 } from '../domain/appearance/appearance.ts';
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
@@ -56,6 +57,9 @@ export const DensitySetting = defineSetting<Density>({
   ui: { section: 'appearance', control: 'select', order: 3 },
 });
 
+/** A font, by the name of its family; empty for the default. */
+const FontName = v.pipe(v.string(), v.regex(fontNamePattern, 'Must be the name of a font'));
+
 /** How large the text of the browser's own UI is; the density sets its spacing. */
 export const TextSizeSetting = defineSetting<TextSize>({
   key: 'appearance.textSize',
@@ -68,10 +72,33 @@ export const TextSizeSetting = defineSetting<TextSize>({
 /** The font of the browser's own UI, by its name; empty keeps the font of the system. */
 export const UiFontSetting = defineSetting<string>({
   key: 'appearance.font',
-  schema: v.pipe(v.string(), v.regex(fontNamePattern, 'Must be the name of a font')),
+  schema: FontName,
   default: '',
   scope: 'global',
   ui: { section: 'appearance', control: 'text', order: 7 },
+});
+
+/** The fonts of web pages that name none; new tabs use them. */
+export const WebFontsSetting = defineSetting<WebFonts>({
+  key: 'fonts.web',
+  schema: v.strictObject({
+    standard: FontName,
+    serif: FontName,
+    sansSerif: FontName,
+    fixed: FontName,
+  }),
+  default: { standard: '', serif: '', sansSerif: '', fixed: '' },
+  scope: 'global',
+  ui: { section: 'appearance', control: 'text', order: 9 },
+});
+
+/** The size of the text of web pages that set none, in CSS pixels; new tabs use it. */
+export const WebTextSizeSetting = defineSetting<number>({
+  key: 'fonts.size',
+  schema: v.pipe(v.number(), v.integer(), v.minValue(6), v.maxValue(72)),
+  default: 16,
+  scope: 'global',
+  ui: { section: 'appearance', control: 'select', order: 8 },
 });
 
 /** Where the tab strip is; vertical positions show the tabs as a list at the side. */
@@ -225,6 +252,8 @@ export const coreSettings = [
   DensitySetting,
   TextSizeSetting,
   UiFontSetting,
+  WebTextSizeSetting,
+  WebFontsSetting,
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,

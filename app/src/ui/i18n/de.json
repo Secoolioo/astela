@@ -285,5 +285,21 @@
   "settings.fontNote": "Der Name einer Schrift auf diesem Computer, etwa Inter. Leer nimmt die Schrift des Systems.",
   "settings.fontSystem": "Schrift des Systems",
   "settings.fontInvalid": "Nur Buchstaben, Ziffern, Leerzeichen, Punkte, Binde- und Unterstriche.",
-  "settings.font.keywords": "Schriftart Familie Typografie"
+  "settings.font.keywords": "Schriftart Familie Typografie",
+  "settings.webTextSize": "Textgröße von Webseiten",
+  "settings.webTextSizeNote": "Für Seiten, die keine Größe festlegen. Tabs, die nach einer Änderung öffnen, nutzen sie.",
+  "settings.webTextSize.keywords": "Schriftgröße Zoom größer kleiner lesbar",
+  "settings.webTextSize.9": "Sehr klein",
+  "settings.webTextSize.12": "Klein",
+  "settings.webTextSize.16": "Mittel",
+  "settings.webTextSize.20": "Groß",
+  "settings.webTextSize.24": "Sehr groß",
+  "settings.webFonts": "Schriften von Webseiten",
+  "settings.webFontsNote": "Für Seiten, die keine Schrift nennen. Ein leeres Feld behält die Vorgabe. Tabs, die nach einer Änderung öffnen, nutzen sie.",
+  "settings.webFonts.keywords": "Schriftart Familie Serifen Festbreite",
+  "settings.webFont.standard": "Standard",
+  "settings.webFont.serif": "Mit Serifen",
+  "settings.webFont.sansSerif": "Ohne Serifen",
+  "settings.webFont.fixed": "Feste Breite",
+  "settings.webFontDefault": "Vorgabe"
 }

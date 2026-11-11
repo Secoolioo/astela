@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
+import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
@@ -27,6 +28,7 @@ export class SettingsPage extends LitElement {
     revision: { state: true },
     searchError: { state: true },
     fontError: { state: true },
+    webFontError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
     siteError: { state: true },
@@ -124,6 +126,22 @@ export class SettingsPage extends LitElement {
       .message {
         margin: var(--space-2) 0 0;
         color: var(--text-2);
+      }
+      .fonts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2) var(--space-3);
+      }
+      .font {
+        display: grid;
+        gap: var(--space-1);
+        color: var(--text-2);
+        font-size: var(--font-size-small);
+      }
+      .font input {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
       }
       /* The hint stays in view at the bottom while the page scrolls. */
       .restart {
@@ -297,6 +315,8 @@ export class SettingsPage extends LitElement {
   declare searchError: boolean;
   /** Whether the last font name was not one. */
   declare fontError: boolean;
+  /** Whether the last name of a font for web pages was not one. */
+  declare webFontError: boolean;
   declare customSearch: boolean;
   /** Whether the content blocker has no usable filter data. */
   declare blockerFailed: boolean;
@@ -319,6 +339,7 @@ export class SettingsPage extends LitElement {
     this.revision = 0;
     this.searchError = false;
     this.fontError = false;
+    this.webFontError = false;
     this.customSearch = false;
     this.blockerFailed = false;
     this.siteError = false;
@@ -503,6 +524,33 @@ export class SettingsPage extends LitElement {
             id: 'appearance.font',
             keys: ['settings.font', 'settings.fontNote', 'settings.font.keywords'],
             render: () => this.renderFont(),
+          },
+          {
+            id: 'fonts.size',
+            keys: [
+              'settings.webTextSize',
+              'settings.webTextSizeNote',
+              'settings.webTextSize.keywords',
+              'settings.webTextSize.9',
+              'settings.webTextSize.12',
+              'settings.webTextSize.16',
+              'settings.webTextSize.20',
+              'settings.webTextSize.24',
+            ],
+            render: () => this.renderWebTextSize(),
+          },
+          {
+            id: 'fonts.web',
+            keys: [
+              'settings.webFonts',
+              'settings.webFontsNote',
+              'settings.webFonts.keywords',
+              'settings.webFont.standard',
+              'settings.webFont.serif',
+              'settings.webFont.sansSerif',
+              'settings.webFont.fixed',
+            ],
+            render: () => this.renderWebFonts(),
           },
           {
             id: 'tabs.position',
@@ -1089,6 +1137,97 @@ export class SettingsPage extends LitElement {
     if (input instanceof HTMLInputElement && this.client !== undefined) {
       this.fontError = !(await this.client.set('appearance.font', input.value.trim()));
     }
+  }
+
+  /** The size of the text of web pages, from a list of sizes; new tabs use it. */
+  private renderWebTextSize(): TemplateResult {
+    const setting = this.client?.get('fonts.size');
+    const value = typeof setting?.value === 'number' ? setting.value : 16;
+    // A size from a policy or an import that the list does not offer is shown as well.
+    const sizes = [...new Set([...webTextSizes, value])].toSorted((a, b) => a - b);
+    const label = (size: number): string => {
+      const key = `settings.webTextSize.${String(size)}`;
+      return isMessageKey(key) ? this.t(key) : `${String(size)} px`;
+    };
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.webTextSize')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.webTextSizeNote')}</span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.webTextSize')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement) {
+            void this.client?.set('fonts.size', Number(select.value));
+          }
+        }}
+      >
+        ${sizes.map(
+          (size) =>
+            html`<option value=${String(size)} ?selected=${size === value}>${label(size)}</option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /** The fonts of web pages that name none; an empty field keeps the default. */
+  private renderWebFonts(): TemplateResult {
+    const setting = this.client?.get('fonts.web');
+    const fonts = typeof setting?.value === 'object' && setting.value !== null ? setting.value : {};
+    const disabled = setting?.locked !== false;
+    const field = (name: 'standard' | 'serif' | 'sansSerif' | 'fixed'): TemplateResult => {
+      const value: unknown = Reflect.get(fonts, name);
+      return html`<label class="font">
+        <span>${this.t(`settings.webFont.${name}`)}</span>
+        <input
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          maxlength="64"
+          placeholder=${this.t('settings.webFontDefault')}
+          .value=${typeof value === 'string' ? value : ''}
+          ?disabled=${disabled}
+          @change=${(event: Event) => void this.setWebFont(name, event)}
+        />
+      </label>`;
+    };
+    return html`<div class="row stack">
+      <span class="label">
+        <span>${this.t('settings.webFonts')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.webFontsNote')}</span>`
+        }
+      </span>
+      <div class="fonts">
+        ${field('standard')}${field('serif')}${field('sansSerif')}${field('fixed')}
+      </div>
+      ${
+        this.webFontError
+          ? html`<span class="error" role="alert">${this.t('settings.fontInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setWebFont(
+    name: 'standard' | 'serif' | 'sansSerif' | 'fixed',
+    event: Event,
+  ): Promise<void> {
+    const input = event.target;
+    const current = this.client?.get('fonts.web')?.value;
+    if (!(input instanceof HTMLInputElement) || typeof current !== 'object' || current === null) {
+      return;
+    }
+    const value = { ...current, [name]: input.value.trim() };
+    this.webFontError = !(await this.client?.set('fonts.web', value));
   }
 
   /** The language of the browser, which takes effect after a restart. */
