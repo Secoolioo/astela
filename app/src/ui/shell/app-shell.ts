@@ -569,7 +569,13 @@ export class AppShell extends LitElement {
           autocomplete="off"
           aria-label=${t('shell.address')}
           placeholder=${t('shell.addressPlaceholder')}
-          .value=${this.editing ?? displayUrl(active?.url)}
+          .value=${
+            this.editing ??
+            displayUrl(
+              // A site without a secure connection shows the insecure address that was asked for.
+              active?.problem?.kind === 'insecure' ? active.problem.url : active?.url,
+            )
+          }
           @focus=${(e: FocusEvent) => inputOf(e)?.select()}
           @input=${(e: InputEvent) => (this.editing = inputOf(e)?.value)}
           @keydown=${this.onAddressKey}
@@ -1015,6 +1021,23 @@ export class AppShell extends LitElement {
               </details>`
             : html`<p>${this.tp('problem.certificateManaged')}</p>`
         }
+      </section>`;
+    }
+    if (problem.kind === 'insecure') {
+      return html`<section class="problem" aria-labelledby="problem-title">
+        <h1 id="problem-title">${this.tp('problem.insecureTitle')}</h1>
+        <p>${this.tp('problem.insecure', { site })}</p>
+        <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
+        ${
+          tab.canGoBack
+            ? html`<button @click=${() => this.action('back')}>${this.tp('problem.back')}</button>`
+            : nothing
+        }
+        <button
+          @click=${() => void this.bridge?.invoke('tabs.proceedInsecurely', { tabId: tab.id })}
+        >
+          ${this.tp('problem.proceed', { site })}
+        </button>
       </section>`;
     }
     const crashed = problem.kind === 'crashed';

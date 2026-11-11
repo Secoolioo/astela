@@ -48,6 +48,7 @@ import {
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
+import { HttpsFirst } from '../platform/electron/https-first.ts';
 import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import { serveResources } from '../platform/blocker/resource-protocol.ts';
@@ -69,6 +70,8 @@ import {
   DownloadFolderSetting,
   HomeButtonSetting,
   HomePageSetting,
+  HttpAllowlistSetting,
+  HttpsFirstSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
@@ -277,9 +280,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     dispose: () => startedClient?.dispose(),
   };
-  // Every request of web content passes the request pipeline; the content blocker is its
-  // first step. Its engine loads with the first web page.
+  // Every request of web content passes the request pipeline. HTTPS-First sends pages to the
+  // secure address first; the content blocker follows, and its engine loads with the first
+  // web page.
   const pipeline = new RequestPipeline();
+  const httpsFirst = new HttpsFirst({
+    enabled: () => settings.get(HttpsFirstSetting),
+    allowlist: () => settings.get(HttpAllowlistSetting),
+  });
+  pipeline.add(httpsFirst);
   // A blocker without filter data shows that it fails where it should block.
   const blocking = (url: string): Blocking => {
     const value = blockingFor(
@@ -588,6 +597,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+    insecureAddressFor: (contents, failed) => httpsFirst.insecureAddressFor(contents, failed),
     onPageCommand: (window, command, contents) =>
       void import('./page-tools.ts').then(({ runPageCommand }) =>
         runPageCommand(window, command, contents, {
@@ -700,6 +710,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         openDownloads: (window, anchor) =>
           void loadDownloads().then((list) => list.open(window, anchor)),
         allowCertificate: (contents) => certificates.allow(contents),
+        allowInsecure: (contents, address) => httpsFirst.allow(contents, address),
         folderContents: (folder) => bookmarks?.contents(folder) ?? [],
         openShieldPopover: async (window, anchor) => {
           const { openShieldPopover } = await import('./shield-popover.ts');

@@ -5,6 +5,7 @@ export const shellLaterChannels = [
   'shell.openBlockerPopover',
   'shell.openDownloads',
   'tabs.proceedUnsafely',
+  'tabs.proceedInsecurely',
   'tabs.find',
   'tabs.stopFind',
   'tabs.resetZoom',

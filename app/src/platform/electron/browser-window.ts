@@ -127,6 +127,11 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
   /** Whether people may continue to a site whose certificate is not trusted. */
   readonly certificateOverride?: () => boolean;
+  /**
+   * The insecure address to offer in place of a page that did not load securely, when
+   * HTTPS-First sent the page to the secure address.
+   */
+  readonly insecureAddressFor?: (contents: WebContents, failed: string) => string | undefined;
   /** Prints, saves or shows the source of a web page, or opens its developer tools. */
   readonly onPageCommand?: (
     window: BrowserWindowController,
@@ -467,6 +472,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.problemOf(id)?.kind === 'certificate' && contents !== undefined && accept(contents)) {
       contents.reload();
     }
+  }
+
+  /**
+   * Loads the insecure address of a site without a secure connection, once it is allowed.
+   * @param id - The tab.
+   * @param allow - Allows the site's insecure address for the session of the tab's page.
+   */
+  proceedInsecurely(id: TabId, allow: (contents: WebContents, address: string) => void): void {
+    const problem = this.problemOf(id);
+    const contents = this.entries.get(id)?.view.webContents;
+    if (problem?.kind !== 'insecure' || contents === undefined) return;
+    allow(contents, problem.url);
+    contents.loadURL(problem.url).catch(() => undefined);
   }
 
   /** Why a tab shows no page, or `null` when it shows one. */
@@ -927,6 +945,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
         if (!isMainFrame || code === -3) return;
         const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
+        // A site that HTTPS-First could not load securely offers its insecure address after a
+        // warning. Without a name or a network, the insecure address would not load either.
+        const insecure =
+          code === -105 || code === -106
+            ? undefined
+            : this.options.insecureAddressFor?.(contents, failed);
+        if (insecure !== undefined) {
+          this.setProblem(id, { kind: 'insecure', code: name, url: insecure, proceed: true });
+          return;
+        }
         const certificate = code <= -200 && code > -300;
         this.setProblem(id, {
           kind: certificate ? 'certificate' : 'error',

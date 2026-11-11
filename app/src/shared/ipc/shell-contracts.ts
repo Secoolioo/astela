@@ -11,12 +11,13 @@ export const Done = v.null();
 
 /**
  * Why a tab shows no page: it could not be loaded (`error`), the certificate of its site is
- * not trusted (`certificate`), or its renderer is gone (`crashed`). `code` is Chromium's
+ * not trusted (`certificate`), its site has no secure connection (`insecure`), or its
+ * renderer is gone (`crashed`). `code` is Chromium's
  * name for the cause, such as `ERR_CONNECTION_REFUSED`; `proceed` tells whether the user
  * may continue to the page after the warning.
  */
 export const TabProblem = v.strictObject({
-  kind: v.picklist(['error', 'certificate', 'crashed']),
+  kind: v.picklist(['error', 'certificate', 'insecure', 'crashed']),
   code: v.pipe(v.string(), v.regex(/^[A-Z0-9_]{1,64}$/)),
   url: v.pipe(v.string(), v.maxLength(8192)),
   proceed: v.boolean(),

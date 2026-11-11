@@ -372,5 +372,10 @@
   "settings.clearDataCache": "Cached images and files",
   "settings.clearDataAll": "The time range applies to the history; cookies, site data and the cache are always cleared completely.",
   "settings.clearDataConfirm": "Clear data",
-  "settings.clearDataDone": "The browsing data is cleared."
+  "settings.clearDataDone": "The browsing data is cleared.",
+  "problem.insecureTitle": "This site has no secure connection",
+  "problem.insecure": "{site} does not support a secure connection. Others in the network could see or change what you send and receive.",
+  "settings.httpsFirst": "Always use secure connections",
+  "settings.httpsFirstNote": "Opens sites over HTTPS and warns before it loads a site that has no secure connection.",
+  "settings.httpsFirst.keywords": "https http secure connection encryption tls ssl"
 }

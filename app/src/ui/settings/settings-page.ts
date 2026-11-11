@@ -882,6 +882,20 @@ export class SettingsPage extends LitElement {
             render: () => this.renderAllowedSites(),
           },
           {
+            id: 'privacy.httpsFirst',
+            keys: [
+              'settings.httpsFirst',
+              'settings.httpsFirstNote',
+              'settings.httpsFirst.keywords',
+            ],
+            render: () =>
+              this.renderToggle(
+                'privacy.httpsFirst',
+                'settings.httpsFirst',
+                'settings.httpsFirstNote',
+              ),
+          },
+          {
             id: 'clear-data',
             keys: ['settings.clearData', 'settings.clearDataNote', 'settings.clearData.keywords'],
             render: () => this.renderClearData(),

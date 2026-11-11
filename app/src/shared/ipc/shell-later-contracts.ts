@@ -62,6 +62,14 @@ export const ProceedUnsafely = defineRequest({
   capability: 'shell',
 });
 
+/** Loads the insecure address of a site without a secure connection, for this session. */
+export const ProceedInsecurely = defineRequest({
+  channel: 'tabs.proceedInsecurely',
+  request: v.strictObject({ tabId: TabId }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** Opens the list of downloads at its button. */
 export const OpenDownloads = defineRequest({
   channel: 'shell.openDownloads',
@@ -108,6 +116,7 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   StopFinding,
   ResetZoom,
   ProceedUnsafely,
+  ProceedInsecurely,
   OpenDownloads,
   OpenBlockerPopover,
   OpenBookmarkFolder,

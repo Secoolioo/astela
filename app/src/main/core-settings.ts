@@ -307,6 +307,35 @@ export const StartupPagesSetting = defineSetting<string[]>({
   ui: { section: 'startup', control: 'list', order: 2 },
 });
 
+/** Whether the browser loads sites over HTTPS and warns before an insecure connection. */
+export const HttpsFirstSetting = defineSetting<boolean>({
+  key: 'privacy.httpsFirst',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: {
+    name: 'HttpsOnlyMode',
+    // Chromium's values; `allowed` leaves the choice to the user, as no policy does.
+    schema: v.pipe(
+      v.picklist(['disallowed', 'force_enabled', 'force_balanced_enabled']),
+      v.transform((value) => value !== 'disallowed'),
+    ),
+  },
+  ui: { section: 'privacy', control: 'toggle', order: 6 },
+});
+
+/** Hosts that HTTPS-First leaves on their insecure address, such as sites of an intranet. */
+export const HttpAllowlistSetting = defineSetting<string[]>({
+  key: 'privacy.httpAllowlist',
+  schema: v.pipe(
+    v.array(v.pipe(v.string(), v.regex(/^(?:\[\*\.\]|\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*$/i))),
+    v.maxLength(1000),
+  ),
+  default: [],
+  scope: 'global',
+  policy: { name: 'HttpAllowlist' },
+});
+
 /** Whether the toolbar has a home button, which opens the home page. */
 export const HomeButtonSetting = defineSetting<boolean>({
   key: 'home.button',
@@ -447,6 +476,8 @@ export const coreSettings = [
   NewTabTilesSetting,
   HomeButtonSetting,
   HomePageSetting,
+  HttpsFirstSetting,
+  HttpAllowlistSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,
