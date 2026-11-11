@@ -377,5 +377,14 @@
   "problem.insecure": "{site} does not support a secure connection. Others in the network could see or change what you send and receive.",
   "settings.httpsFirst": "Always use secure connections",
   "settings.httpsFirstNote": "Opens sites over HTTPS and warns before it loads a site that has no secure connection.",
-  "settings.httpsFirst.keywords": "https http secure connection encryption tls ssl"
+  "settings.httpsFirst.keywords": "https http secure connection encryption tls ssl",
+  "settings.save": "Save",
+  "settings.secureDns": "Use secure DNS",
+  "settings.secureDnsNote": "Looks up the addresses of sites over an encrypted connection, so others in the network do not see which sites you open.",
+  "settings.secureDns.keywords": "dns doh dns over https resolver provider encrypted privacy",
+  "settings.secureDnsAutomatic": "Your current provider",
+  "settings.secureDnsCustom": "Other service",
+  "settings.secureDnsOff": "Off",
+  "settings.secureDnsTemplate": "Address of the DNS over HTTPS service",
+  "settings.secureDnsInvalid": "Enter the https address of a DNS over HTTPS service, such as https://dns.example/dns-query."
 }

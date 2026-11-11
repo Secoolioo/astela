@@ -377,5 +377,14 @@
   "problem.insecure": "{site} unterstützt keine sichere Verbindung. Andere im Netzwerk könnten sehen oder ändern, was du sendest und empfängst.",
   "settings.httpsFirst": "Immer sichere Verbindungen verwenden",
   "settings.httpsFirstNote": "Öffnet Websites über HTTPS und warnt, bevor eine Website ohne sichere Verbindung lädt.",
-  "settings.httpsFirst.keywords": "https http sicher Verbindung Verschlüsselung tls ssl"
+  "settings.httpsFirst.keywords": "https http sicher Verbindung Verschlüsselung tls ssl",
+  "settings.save": "Speichern",
+  "settings.secureDns": "Sicheres DNS verwenden",
+  "settings.secureDnsNote": "Fragt die Adressen von Websites über eine verschlüsselte Verbindung ab, sodass andere im Netzwerk nicht sehen, welche Websites du öffnest.",
+  "settings.secureDns.keywords": "dns doh dns über https Auflösung Anbieter verschlüsselt Datenschutz",
+  "settings.secureDnsAutomatic": "Dein aktueller Anbieter",
+  "settings.secureDnsCustom": "Anderer Dienst",
+  "settings.secureDnsOff": "Aus",
+  "settings.secureDnsTemplate": "Adresse des DNS-über-HTTPS-Dienstes",
+  "settings.secureDnsInvalid": "Gib die https-Adresse eines DNS-über-HTTPS-Dienstes ein, etwa https://dns.example/dns-query."
 }
