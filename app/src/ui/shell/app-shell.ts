@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
@@ -405,6 +406,7 @@ export class AppShell extends LitElement {
       downloads: null,
       private: false,
       home: false,
+      defaultZoom: 1,
     };
     this.editing = undefined;
   }
@@ -559,12 +561,18 @@ export class AppShell extends LitElement {
           @blur=${() => (this.editing = undefined)}
         />
         ${
-          active === undefined || active.zoom === 1
+          active === undefined || sameZoom(active.zoom, this.state.defaultZoom)
             ? nothing
             : html`<button
                 class="zoom"
-                title=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
-                aria-label=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
+                title=${this.tp('shell.zoom', {
+                  zoom: percent(active.zoom, this.i18n?.language),
+                  reset: percent(this.state.defaultZoom, this.i18n?.language),
+                })}
+                aria-label=${this.tp('shell.zoom', {
+                  zoom: percent(active.zoom, this.i18n?.language),
+                  reset: percent(this.state.defaultZoom, this.i18n?.language),
+                })}
                 @click=${() => void this.bridge?.invoke('tabs.resetZoom', { tabId: active.id })}
               >
                 ${percent(active.zoom, this.i18n?.language)}

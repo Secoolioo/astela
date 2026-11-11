@@ -129,7 +129,7 @@
   "find.previous": "Previous match",
   "find.next": "Next match",
   "find.close": "Close the find bar",
-  "shell.zoom": "Zoom {zoom}, choose for 100 %",
+  "shell.zoom": "Zoom {zoom}, choose for {reset}",
   "shell.blocker": "Content blocker",
   "shell.blockerOn": "Content blocker: {count} blocked",
   "shell.blockerOff": "Content blocker: off on this site",
@@ -315,5 +315,8 @@
   "settings.homePageNote": "The page of the home button and its shortcut. Empty opens the new tab page.",
   "settings.homePageNewTab": "New tab page",
   "settings.home.keywords": "homepage start house",
-  "shell.home": "Home"
+  "shell.home": "Home",
+  "settings.pageZoom": "Page zoom",
+  "settings.pageZoomNote": "For sites that you have not zoomed yourself.",
+  "settings.pageZoom.keywords": "zoom size bigger smaller magnify scale"
 }

@@ -13,6 +13,7 @@ import {
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
 import { tabStripPositions, type TabStripPosition } from '../shared/layout.ts';
+import { zoomFactors } from '../shared/zoom.ts';
 
 /**
  * Search URL used by the address bar, with `%s` for the query. The default engine is a
@@ -154,6 +155,15 @@ export const BlockerAnnoyancesSetting = defineSetting<boolean>({
   scope: 'global',
   policy: { name: 'ContentBlockerAnnoyancesEnabled', recommended: true },
   ui: { section: 'privacy', control: 'toggle', order: 3 },
+});
+
+/** The zoom of pages whose site has no zoom of its own, as a factor of their size. */
+export const DefaultZoomSetting = defineSetting<number>({
+  key: 'zoom.default',
+  schema: v.picklist(zoomFactors),
+  default: 1,
+  scope: 'global',
+  ui: { section: 'appearance', control: 'select', order: 10 },
 });
 
 /** The zoom factor of each site whose zoom someone changed, by host name. */
@@ -307,6 +317,7 @@ export const coreSettings = [
   BlockerAllowedSitesSetting,
   BlockerCookieNoticesSetting,
   BlockerAnnoyancesSetting,
+  DefaultZoomSetting,
   SiteZoomSetting,
   SitePermissionsSetting,
   StartupSetting,

@@ -78,7 +78,8 @@ const DownloadsSummary = v.strictObject({
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
- * the window is a private window, and `home` whether the toolbar has a home button.
+ * the window is a private window, `home` whether the toolbar has a home button, and
+ * `defaultZoom` the zoom of sites without a zoom of their own.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -89,6 +90,7 @@ export const ShellState = v.strictObject({
   downloads: v.nullable(DownloadsSummary),
   private: v.boolean(),
   home: v.boolean(),
+  defaultZoom: v.number(),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

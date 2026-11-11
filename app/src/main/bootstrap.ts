@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
 import { languageArguments } from '../shared/ui-language.ts';
+import { sameZoom } from '../shared/zoom.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
 import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
 import {
@@ -65,6 +66,7 @@ import {
   BlockerAnnoyancesSetting,
   BlockerCookieNoticesSetting,
   ContentBlockerSetting,
+  DefaultZoomSetting,
   LanguageSetting,
   WebFontsSetting,
   WebTextSizeSetting,
@@ -507,6 +509,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     webFonts: () =>
       webFontPreferences(settings.get(WebFontsSetting), settings.get(WebTextSizeSetting)),
     homeButton: () => settings.get(HomeButtonSetting),
+    defaultZoom: () => settings.get(DefaultZoomSetting),
     homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
     blocking,
@@ -571,7 +574,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       const host = siteOf(url);
       if (host === undefined) return;
       const { [host]: _old, ...others } = settings.get(SiteZoomSetting);
-      void settings.set(SiteZoomSetting, factor === 1 ? others : { ...others, [host]: factor });
+      // A site at the default zoom has no zoom of its own.
+      const plain = sameZoom(factor, settings.get(DefaultZoomSetting));
+      void settings.set(SiteZoomSetting, plain ? others : { ...others, [host]: factor });
     },
     onUnresponsive: (window, tabId, contents) =>
       void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
@@ -684,11 +689,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
+    DefaultZoomSetting.key,
     TabStripPositionSetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
+    if (keys.includes(DefaultZoomSetting.key)) {
+      windows.applyDefaultZoom(settings.get(DefaultZoomSetting));
+    }
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
     // Optional lists that were turned on load at once, so the next page has them.
     if (

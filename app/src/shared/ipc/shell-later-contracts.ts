@@ -46,7 +46,7 @@ export const StopFinding = defineRequest({
   capability: 'shell',
 });
 
-/** Sets the zoom of a tab's page back to 100 %. */
+/** Sets the zoom of a tab's page back to the default zoom. */
 export const ResetZoom = defineRequest({
   channel: 'tabs.resetZoom',
   request: v.strictObject({ tabId: TabId }),
