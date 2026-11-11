@@ -183,6 +183,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     clock,
     { scope: 'main', level: app.isPackaged ? 'info' : 'debug' },
   );
+  // An error that no code catches goes to the log. Electron would show it in a box that stops
+  // the browser process, which then neither answers nor quits until someone closes the box.
+  process.on('uncaughtException', (error) => {
+    logger.error('An error in the browser process was not caught', error);
+  });
   logger.info('Starting', {
     version: app.getVersion(),
     electron: process.versions.electron,
