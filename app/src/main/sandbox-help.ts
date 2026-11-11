@@ -1,4 +1,5 @@
 import { app, BaseWindow, shell, WebContentsView } from 'electron';
+import { relaunch } from './relaunch.ts';
 import { spawn } from 'node:child_process';
 import { brand } from '../shared/brand.ts';
 import { InstallSandboxFix, OpenPackagesPage } from '../shared/ipc/sandbox-help-contracts.ts';
@@ -37,6 +38,8 @@ export function showSandboxHelp(options: {
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
+  /** The arguments that give the page the language of the settings. */
+  readonly languageArguments: readonly string[];
 }): WebContentsView {
   const window = new BaseWindow({
     width: 640,
@@ -49,7 +52,7 @@ export function showSandboxHelp(options: {
     webPreferences: {
       preload: options.preload,
       partition: options.partition,
-      additionalArguments: ['--bridge-scope=sandboxHelp'],
+      additionalArguments: ['--bridge-scope=sandboxHelp', ...options.languageArguments],
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -82,9 +85,7 @@ export function showSandboxHelp(options: {
     });
     options.logger.info('Sandbox fix finished', { ok });
     if (ok) {
-      app.relaunch({
-        args: process.argv.slice(1).filter((a) => a !== '--no-sandbox' && a !== '--sandbox-help'),
-      });
+      relaunch(process.argv.slice(1).filter((a) => a !== '--no-sandbox' && a !== '--sandbox-help'));
       app.exit(0);
     }
     return { ok };

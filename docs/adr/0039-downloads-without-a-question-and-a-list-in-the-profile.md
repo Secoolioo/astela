@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Since 0.1.0-beta.5, the settings `downloads.folder` and `downloads.ask` choose another folder and a question for each file; without them, downloads are saved as this record decides.
 
 ## Date
 

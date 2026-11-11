@@ -1,9 +1,10 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
-import { secureDnsProviders, secureDnsTemplatesPattern } from '../../shared/secure-dns.ts';
-import { contrastRatio, hexFromOklch, parseColor } from '../../shared/color.ts';
+import { areSecureDnsTemplates, secureDnsProviders } from '../../shared/secure-dns.ts';
+import { contrastRatio, formatRatio, hexFromOklch, parseColor } from '../../shared/color.ts';
 import {
   builtInThemes,
   isThemeId,
@@ -13,7 +14,12 @@ import {
   type PaletteToken,
   type ThemeId,
 } from '../../shared/themes.ts';
-import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
+import {
+  displayShortcut,
+  windowCommands,
+  type KeyNames,
+  type WindowCommand,
+} from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
@@ -36,6 +42,12 @@ const choices = {
 } as const;
 
 /**
+ * How far below the top of the window a heading may be for its section to be the one in view,
+ * in CSS pixels. The heading after even a short section stays below it.
+ */
+const sectionLine = 64;
+
+/**
  * The settings page: every setting that has a place on it, grouped in sections. Changes
  * apply at once; values that a policy sets are shown but cannot be changed.
  */
@@ -47,7 +59,6 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
-    cookieSiteError: { state: true },
     imageError: { state: true },
     themeMessage: { state: true },
     shortcuts: { state: true },
@@ -518,8 +529,6 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
-  /** Whether the last site for third-party cookies was not a site. */
-  declare cookieSiteError: boolean;
   /** Whether the chosen image could not be the background of the new tab page. */
   declare imageError: boolean;
   /** What the last import or export of a theme did. */
@@ -572,7 +581,6 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
-    this.cookieSiteError = false;
     this.imageError = false;
     this.themeMessage = undefined;
     this.shortcuts = undefined;
@@ -612,6 +620,8 @@ export class SettingsPage extends LitElement {
       document.documentElement.dataset['ready'] = 'true';
     });
     addEventListener('hashchange', this.onHashChange);
+    addEventListener('scroll', this.onScroll, { passive: true });
+    addEventListener('resize', this.onScroll, { passive: true });
     void this.bridge
       .invoke('settings.getBlockerStatus', {})
       .then((result) => {
@@ -627,7 +637,9 @@ export class SettingsPage extends LitElement {
     super.disconnectedCallback();
     this.unsubscribeShortcuts?.();
     removeEventListener('hashchange', this.onHashChange);
-    this.spy?.disconnect();
+    removeEventListener('scroll', this.onScroll);
+    removeEventListener('resize', this.onScroll);
+    cancelAnimationFrame(this.scrollFrame);
     this.client?.dispose();
   }
 
@@ -635,42 +647,79 @@ export class SettingsPage extends LitElement {
     this.focusMovedToolbarItem();
     paintSwatches(this.renderRoot, this.client?.accents ?? []);
     this.paintThemes();
-    // The navigation marks the section whose heading is in the upper part of the window.
-    this.spy?.disconnect();
-    this.spy = new IntersectionObserver(
-      (entries) => {
-        const shown = entries.find((entry) => entry.isIntersecting);
-        if (shown !== undefined) this.current = shown.target.id;
-      },
-      { rootMargin: '0px 0px -70% 0px' },
-    );
-    for (const heading of this.renderRoot.querySelectorAll('h2')) this.spy.observe(heading);
+    this.markSection();
   }
 
-  private spy: IntersectionObserver | undefined;
+  /** The frame that marks the section after a scroll, or 0 when none is waiting. */
+  private scrollFrame = 0;
+  /** Where the page stood when the navigation showed a section, until it scrolls. */
+  private chosenTop: number | undefined;
 
-  /** The button that sets a changed setting back to its default. */
+  private readonly onScroll = (): void => {
+    if (this.scrollFrame !== 0) return;
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = 0;
+      this.markSection();
+    });
+  };
+
+  /**
+   * Marks the section in view in the navigation: the last one whose heading is at the top of
+   * the window or above it, and the last section at the end of the page, which may be too
+   * short to reach the top. A section that the navigation showed stays marked until the page
+   * scrolls, because a short one may stop below the top as well.
+   */
+  private markSection(): void {
+    const page = document.scrollingElement ?? document.documentElement;
+    if (this.chosenTop !== undefined) {
+      if (Math.abs(page.scrollTop - this.chosenTop) < 1) return;
+      this.chosenTop = undefined;
+    }
+    const headings = [...this.renderRoot.querySelectorAll<HTMLElement>('h2[id]')];
+    let marked = headings[0]?.id;
+    if (page.scrollTop > 0 && page.scrollTop + page.clientHeight >= page.scrollHeight - 1) {
+      marked = headings.at(-1)?.id;
+    } else {
+      for (const heading of headings) {
+        if (heading.getBoundingClientRect().top > sectionLine) break;
+        marked = heading.id;
+      }
+    }
+    if (marked !== undefined && marked !== this.current) this.current = marked;
+  }
+
+  /** The settings of a row that differ from their defaults. */
+  private changedOf(row: PageRow): string[] {
+    return (row.settings ?? [row.id]).filter((key) => this.client?.get(key)?.changed === true);
+  }
+
+  /** Whether a row differs from its defaults. */
+  private rowChanged(row: PageRow): boolean {
+    return row.changed?.() ?? this.changedOf(row).length > 0;
+  }
+
+  /** The button that sets the changed settings of a row back to their defaults. */
   private renderReset(row: PageRow): TemplateResult | typeof nothing {
     const title = row.keys[0];
-    if (this.client?.get(row.id)?.changed !== true || title === undefined) return nothing;
+    const keys = row.changed === undefined ? this.changedOf(row) : [];
+    if (keys.length === 0 || title === undefined) return nothing;
     return html`<button
       type="button"
       class="reset"
       aria-label=${this.t('settings.resetOne', { setting: this.t(title) })}
-      @click=${() => void this.bridge?.invoke('settings.reset', { keys: [row.id] })}
+      @click=${() => void this.bridge?.invoke('settings.reset', { keys })}
     >
       ${this.t('settings.resetShort')}
     </button>`;
   }
 
-  /** Sets every setting that differs from its default back, after the question. */
+  /**
+   * Sets every setting that differs from its default back, after the question, also those
+   * that no row shows at the moment.
+   */
   private async resetAll(): Promise<void> {
     this.renderRoot.querySelector('dialog')?.close();
-    const keys = this.sections()
-      .flatMap((section) => section.rows)
-      .map((row) => row.id)
-      .filter((id) => this.client?.get(id)?.changed === true);
-    await this.bridge?.invoke('settings.reset', { keys });
+    await this.bridge?.invoke('settings.reset', { keys: this.client?.changedKeys() ?? [] });
   }
 
   private async exportFile(): Promise<void> {
@@ -723,8 +772,9 @@ export class SettingsPage extends LitElement {
       return;
     }
     if (id === '') return;
-    // A search could hide what the link names.
+    // A search, or the list of changed settings only, could hide what the link names.
     this.query = '';
+    this.changedOnly = false;
     void this.updateComplete.then(() => {
       const root = this.renderRoot;
       const row = root.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`);
@@ -734,7 +784,13 @@ export class SettingsPage extends LitElement {
       target.scrollIntoView({ block: 'start' });
       const control = row?.querySelector<HTMLElement>('input, select, button') ?? target;
       control.focus({ preventScroll: true });
-      if (heading !== null) this.current = id;
+      if (heading !== null) {
+        this.current = id;
+        this.chosenTop = (document.scrollingElement ?? document.documentElement).scrollTop;
+      } else {
+        this.chosenTop = undefined;
+        this.markSection();
+      }
     });
   }
 
@@ -757,6 +813,7 @@ export class SettingsPage extends LitElement {
           },
           {
             id: 'appearance.theme',
+            settings: ['appearance.theme', 'appearance.customTheme'],
             keys: [
               'settings.theme',
               'settings.themeNote',
@@ -1082,15 +1139,6 @@ export class SettingsPage extends LitElement {
               ),
           },
           {
-            id: 'privacy.thirdPartyCookieSites',
-            keys: [
-              'settings.cookieSites',
-              'settings.cookieSitesNote',
-              'settings.thirdPartyCookies.keywords',
-            ],
-            render: () => this.renderCookieSites(),
-          },
-          {
             id: 'privacy.httpsFirst',
             keys: [
               'settings.httpsFirst',
@@ -1106,6 +1154,7 @@ export class SettingsPage extends LitElement {
           },
           {
             id: 'network.secureDns',
+            settings: ['network.secureDns', 'network.secureDnsTemplates'],
             keys: ['settings.secureDns', 'settings.secureDnsNote', 'settings.secureDns.keywords'],
             words: secureDnsProviders.map((provider) => provider.name),
             render: () => this.renderSecureDns(),
@@ -1133,11 +1182,13 @@ export class SettingsPage extends LitElement {
           ...windowCommands.map((command) => ({
             id: `shortcut-${command}`,
             keys: [`shortcut.${command}` as const, 'settings.shortcuts' as const],
+            changed: () => this.hasOwnShortcut(command),
             render: () => this.renderShortcut(command),
           })),
           {
             id: 'shortcuts-reset',
             keys: ['settings.shortcuts', 'settings.shortcutsNote', 'settings.shortcuts.keywords'],
+            changed: () => this.client?.get('keys.shortcuts')?.changed === true,
             render: () => this.renderShortcutsReset(),
           },
         ],
@@ -1206,7 +1257,7 @@ export class SettingsPage extends LitElement {
           rows: section.rows.filter(
             (row) =>
               (all || matches(textOf(row.keys, row.words), words)) &&
-              (!this.changedOnly || this.client?.get(row.id)?.changed === true),
+              (!this.changedOnly || this.rowChanged(row)),
           ),
         };
       })
@@ -1410,76 +1461,6 @@ export class SettingsPage extends LitElement {
     </div>`;
   }
 
-  /** The sites on whose pages third-party cookies stay allowed, to remove and to add. */
-  private renderCookieSites(): TemplateResult {
-    const t = this.t;
-    const setting = this.client?.get('privacy.thirdPartyCookieSites');
-    const sites = Array.isArray(setting?.value)
-      ? setting.value.filter((site): site is string => typeof site === 'string')
-      : [];
-    const disabled = setting?.locked !== false;
-    const save = (next: readonly string[]): void =>
-      void this.client?.set('privacy.thirdPartyCookieSites', next);
-    return html`<div class="row stack">
-      <span class="label">
-        <span id="cookie-sites">${t('settings.cookieSites')}</span>
-        <span class="note">
-          ${setting?.locked === true ? t('settings.managed') : t('settings.cookieSitesNote')}
-        </span>
-      </span>
-      ${
-        sites.length === 0
-          ? html`<span class="note">${t('settings.cookieSitesNone')}</span>`
-          : html`<ul class="sites" aria-labelledby="cookie-sites">
-              ${sites.map(
-                (site) =>
-                  html`<li>
-                    <span>${site}</span>
-                    <button
-                      ?disabled=${disabled}
-                      aria-label=${t('settings.cookieSitesRemove', { site })}
-                      @click=${() => save(sites.filter((other) => other !== site))}
-                    >
-                      ${t('settings.remove')}
-                    </button>
-                  </li>`,
-              )}
-            </ul>`
-      }
-      <form
-        class="add-site"
-        @submit=${(event: SubmitEvent) => {
-          // The page cannot submit forms; it saves the setting instead.
-          event.preventDefault();
-          const form = event.currentTarget;
-          const field = form instanceof HTMLFormElement ? form.elements.namedItem('site') : null;
-          if (!(field instanceof HTMLInputElement)) return;
-          const site = hostOf(field.value);
-          this.cookieSiteError = site === undefined;
-          if (site === undefined) return;
-          field.value = '';
-          if (!sites.includes(site)) save([...sites, site].toSorted());
-        }}
-      >
-        <input
-          type="text"
-          name="site"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="example.com"
-          aria-label=${t('settings.cookieSitesAdd')}
-          ?disabled=${disabled}
-        />
-        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
-      </form>
-      ${
-        this.cookieSiteError
-          ? html`<span class="error" role="alert">${t('settings.allowedSitesInvalid')}</span>`
-          : nothing
-      }
-    </div>`;
-  }
-
   /** What sites may use, by site, with a way to change and to remove each decision. */
   private renderSitePermissions(): TemplateResult {
     const t = this.t;
@@ -1563,13 +1544,15 @@ export class SettingsPage extends LitElement {
 
   private renderToggle(key: string, label: MessageKey, note: MessageKey): TemplateResult {
     const setting = this.client?.get(key);
+    // A change that waits for a restart says so in place of the description.
+    const shown: MessageKey = setting?.restart === true ? 'settings.restartNote' : note;
     return html`<div class="row">
       <label class="label" for=${key}>
         <span>${this.t(label)}</span>
         ${
           setting?.locked === true || setting?.recommended === true
             ? this.managedNote(setting)
-            : html`<span class="note">${this.t(note)}</span>`
+            : html`<span class="note">${this.t(shown)}</span>`
         }
       </label>
       <input
@@ -1679,7 +1662,7 @@ export class SettingsPage extends LitElement {
     // Texts need a contrast of 4.5:1 on the surfaces they appear on, as WCAG requires.
     const problems = (['light', 'dark'] as const).flatMap((mode) =>
       (['text-1', 'text-2'] as const).flatMap((text) =>
-        (['surface-0', 'surface-1', 'surface-2'] as const).flatMap((surface) => {
+        (['surface-0', 'surface-1', 'surface-2', 'surface-hover'] as const).flatMap((surface) => {
           const ratio = contrastOf(
             this.customColor(theme, mode, text),
             this.customColor(theme, mode, surface),
@@ -1734,7 +1717,7 @@ export class SettingsPage extends LitElement {
               text: t(`settings.themeColor.${problem.text}`),
               surface: t(`settings.themeColor.${problem.surface}`),
               mode: t(`settings.themeMode.${problem.mode}`),
-              ratio: problem.ratio.toFixed(1),
+              ratio: formatRatio(problem.ratio, this.i18n?.language),
             })}
           </p>`,
       )}
@@ -2281,7 +2264,7 @@ export class SettingsPage extends LitElement {
               <input
                 type="radio"
                 name="newtab-background"
-                .checked=${kind === option}
+                .checked=${live(kind === option)}
                 ?disabled=${disabled}
                 @change=${() => {
                   if (option === 'none') set({ kind: 'none' });
@@ -2330,7 +2313,8 @@ export class SettingsPage extends LitElement {
     const result = await this.bridge?.invoke('settings.chooseNewTabImage', {});
     this.imageError =
       typeof result === 'object' && result !== null && Reflect.get(result, 'error') === 'invalid';
-    // Without an image, the radio buttons show the background that stays.
+    // Without an image, the radio buttons show the background that stays; live() makes them
+    // drop the click that opened the dialog.
     this.requestUpdate();
   }
 
@@ -2444,14 +2428,14 @@ export class SettingsPage extends LitElement {
     const templates = this.client?.get('network.secureDnsTemplates');
     const template = typeof templates?.value === 'string' ? templates.value : '';
     const provider = secureDnsProviders.find((known) => known.template === template);
-    const selected =
-      mode?.value === 'off'
+    // Choosing another service shows its field at once, also before it has an address.
+    const selected = this.customDns
+      ? 'custom'
+      : mode?.value === 'off'
         ? 'off'
         : mode?.value !== 'secure' || template === ''
           ? 'automatic'
-          : this.customDns || provider === undefined
-            ? 'custom'
-            : provider.template;
+          : (provider?.template ?? 'custom');
     const locked = mode?.locked !== false || templates?.locked !== false;
     const choose = async (value: string): Promise<void> => {
       this.dnsError = false;
@@ -2534,7 +2518,7 @@ export class SettingsPage extends LitElement {
     if (!(form instanceof HTMLFormElement)) return;
     const field = form.elements.namedItem('template');
     const value = field instanceof HTMLInputElement ? field.value.trim() : '';
-    if (value === '' || !secureDnsTemplatesPattern.test(value)) {
+    if (value === '' || !areSecureDnsTemplates(value)) {
       this.dnsError = true;
       return;
     }
@@ -2580,7 +2564,7 @@ export class SettingsPage extends LitElement {
             entry === undefined || entry.shortcuts.length === 0
               ? html`<span class="note">${t('settings.shortcutNone')}</span>`
               : entry.shortcuts.map(
-                  (shortcut) => html`<kbd>${displayShortcut(shortcut, mac)}</kbd>`,
+                  (shortcut) => html`<kbd>${displayShortcut(shortcut, mac, this.keyNames())}</kbd>`,
                 )
           }
         </span>
@@ -2616,7 +2600,7 @@ export class SettingsPage extends LitElement {
       const other = note.other;
       return html`<p class="row note" role="alert">
         ${t('settings.shortcutTaken', {
-          shortcut: displayShortcut(note.shortcut, mac),
+          shortcut: displayShortcut(note.shortcut, mac, this.keyNames()),
           command: t(`shortcut.${other}`),
         })}
         <button type="button" @click=${() => void this.setShortcut(note.command, [note.shortcut])}>
@@ -2624,8 +2608,9 @@ export class SettingsPage extends LitElement {
         </button>
       </p>`;
     }
+    const problem = note.problem ?? 'text';
     return html`<p class="row note problem" role="alert">
-      ${t(`settings.shortcutProblem.${note.problem ?? 'text'}`)}
+      ${t(problem === 'text' && mac ? 'settings.shortcutProblem.textMac' : `settings.shortcutProblem.${problem}`)}
     </p>`;
   }
 
@@ -2687,7 +2672,10 @@ export class SettingsPage extends LitElement {
     await this.setShortcut(command, [shortcut]);
   }
 
-  /** Gives a command its own shortcuts, or its default ones again. */
+  /**
+   * Gives a command its own shortcuts, or its default ones again. A shortcut that another
+   * command has moves: that command keeps the rest of its own shortcuts.
+   */
   private async setShortcut(
     command: WindowCommand,
     shortcuts: readonly string[] | undefined,
@@ -2696,11 +2684,54 @@ export class SettingsPage extends LitElement {
     const setting = this.client?.get('keys.shortcuts');
     const current =
       typeof setting?.value === 'object' && setting.value !== null ? setting.value : {};
-    const next = Object.fromEntries(Object.entries(current).filter(([known]) => known !== command));
-    await this.client?.set(
+    // Other commands' own shortcuts give up the ones that move here; their defaults give way
+    // by themselves, and come back when this command is reset.
+    const moved = shortcuts ?? [];
+    const next: Record<string, unknown> = {};
+    for (const [known, list] of Object.entries(current)) {
+      if (known === command) continue;
+      next[known] = Array.isArray(list)
+        ? list.filter((shortcut: unknown) => !moved.includes(String(shortcut)))
+        : list;
+    }
+    const saved = await this.client?.set(
       'keys.shortcuts',
       shortcuts === undefined ? next : { ...next, [command]: shortcuts },
     );
+    if (saved === false) {
+      this.shortcutNote = { command, shortcut: shortcuts?.[0] ?? '', problem: 'invalid' };
+    }
+  }
+
+  /** The names of keys in the language of the page. */
+  private keyNames(): KeyNames {
+    const t = this.t;
+    return {
+      ctrl: t('key.ctrl'),
+      alt: t('key.alt'),
+      shift: t('key.shift'),
+      win: t('key.win'),
+      keys: {
+        PageUp: t('key.pageUp'),
+        PageDown: t('key.pageDown'),
+        Home: t('key.home'),
+        End: t('key.end'),
+        Insert: t('key.insert'),
+        Delete: t('key.delete'),
+        Backspace: t('key.backspace'),
+        Space: t('key.space'),
+        Escape: t('key.escape'),
+        BrowserBack: t('key.back'),
+        BrowserForward: t('key.forward'),
+        '+': t('key.plus'),
+      },
+    };
+  }
+
+  /** Whether a command has shortcuts of people's own instead of its defaults. */
+  private hasOwnShortcut(command: WindowCommand): boolean {
+    const value = this.client?.get('keys.shortcuts')?.value;
+    return typeof value === 'object' && value !== null && Object.hasOwn(value, command);
   }
 
   /** Clearing the browsing data, with a question for the time range and the kinds of data. */
@@ -2810,6 +2841,12 @@ export class SettingsPage extends LitElement {
         <option value="system" ?selected=${value === 'system'}>
           ${this.t('settings.language.system')}
         </option>
+        ${
+          // A language that a policy sets without a translation shows as its code.
+          value !== 'system' && !Object.hasOwn(catalogs, value)
+            ? html`<option value=${value} selected>${value}</option>`
+            : nothing
+        }
         ${Object.keys(catalogs).map(
           (code) =>
             html`<option value=${code} lang=${code} ?selected=${value === code}>
@@ -3068,7 +3105,8 @@ interface ShortcutList {
 interface ShortcutNote {
   readonly command: WindowCommand;
   readonly shortcut: string;
-  readonly problem?: 'text' | 'altgr' | 'system';
+  /** Why the keys cannot be the shortcut, or that the setting refused them. */
+  readonly problem?: 'text' | 'altgr' | 'system' | 'invalid';
   readonly other?: WindowCommand;
 }
 
@@ -3119,6 +3157,10 @@ function hexTheme(id: ThemeId): CustomTheme {
 interface PageRow {
   /** The setting's key, or the part's name; links name it after `#`. */
   readonly id: string;
+  /** The settings that the row shows, when they are more than the one its id names. */
+  readonly settings?: readonly string[];
+  /** Whether the row differs from its defaults, for a row that resets in its own way. */
+  readonly changed?: () => boolean;
   /** The texts that find the row, in every language. */
   readonly keys: readonly MessageKey[];
   /** Words that find the row in every language, such as the names of search engines. */

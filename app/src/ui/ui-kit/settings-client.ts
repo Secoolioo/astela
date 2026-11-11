@@ -94,6 +94,11 @@ export class SettingsClient {
     return this.values.get(key);
   }
 
+  /** The keys of the settings that differ from their defaults by a value of the user. */
+  changedKeys(): string[] {
+    return [...this.values.values()].filter((view) => view.changed === true).map((v) => v.key);
+  }
+
   /**
    * Writes a setting.
    * @param key - Its key.

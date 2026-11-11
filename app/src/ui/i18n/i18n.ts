@@ -32,13 +32,12 @@ export function pickLanguage(preferred: readonly string[]): string {
 /**
  * Picks the language of one of the browser's own pages: the language of the settings, which
  * the preload puts on the root element, or else the best match for the system's languages.
+ * A chosen language without a translation shows English, as the menus and dialogs do.
  * @returns A key of {@link catalogs}.
  */
 export function pageLanguage(): string {
   const chosen = document.documentElement.dataset['language'];
-  return pickLanguage(
-    chosen === undefined ? navigator.languages : [chosen, ...navigator.languages],
-  );
+  return pickLanguage(chosen === undefined ? navigator.languages : [chosen]);
 }
 
 /** Translates the UI's message keys for one language, falling back to English. */

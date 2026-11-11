@@ -1,4 +1,4 @@
-import { app, dialog, type WebContents } from 'electron';
+import { dialog, type WebContents } from 'electron';
 import { uiLocale } from './ui-language.ts';
 import { join } from 'node:path';
 import type { Logger } from '../kernel/logging/logger.ts';
@@ -10,6 +10,8 @@ export interface PageToolDependencies {
   /** Whether a policy lets people open the developer tools. */
   readonly developerTools: () => boolean;
   readonly logger: Logger;
+  /** The folder of downloads, as the settings choose it, where a saved page goes first. */
+  readonly downloadFolder: () => string;
 }
 
 /**
@@ -38,7 +40,7 @@ export async function runPageCommand(
       const i18n = translatorFor(uiLocale(), process.platform);
       const name = `${safeFileName(contents.getTitle()) || 'page'}.html`;
       const { canceled, filePath } = await dialog.showSaveDialog(window.window, {
-        defaultPath: join(app.getPath('downloads'), name),
+        defaultPath: join(deps.downloadFolder(), name),
         filters: [{ name: i18n.t('dialog.webPage'), extensions: ['html', 'htm'] }],
       });
       if (!canceled && filePath !== undefined && !contents.isDestroyed()) {

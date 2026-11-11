@@ -16,9 +16,39 @@ export const secureDnsProviders = [
   { name: 'Mullvad', template: 'https://dns.mullvad.net/dns-query' },
 ] as const;
 
-/** One address of a DNS over HTTPS service, or several separated by spaces. */
-export const secureDnsTemplatesPattern =
-  /^(?:https:\/\/[^\s"<>\\^`|]+(?:\s+https:\/\/[^\s"<>\\^`|]+)*)?$/;
+/** A host name, an IPv4 address or an IPv6 address in brackets, with an optional port. */
+const authorityPattern =
+  /^(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?|\[[0-9a-f:.]+\])(?::(\d{1,5}))?$/i;
+
+/**
+ * Whether an address of a DNS over HTTPS service is one that Chromium takes: an https URI
+ * template with a host and a valid port, whose only expressions name the variable `dns`,
+ * such as `{?dns}`, outside the host. Chromium refuses other addresses.
+ * @param template - The address.
+ */
+export function isSecureDnsTemplate(template: string): boolean {
+  const match = /^https:\/\/([^/?#]*)(.*)$/is.exec(template);
+  if (match === null) return false;
+  const host = authorityPattern.exec(match[1] ?? '');
+  if (host === null) return false;
+  const port = host[1] === undefined ? 1 : Number(host[1]);
+  if (port < 1 || port > 65_535) return false;
+  // Braces outside such an expression would not expand.
+  const literal = (match[2] ?? '').replace(/\{[+#./;?&]?dns\}/g, '');
+  return !/[\s{}"<>\\^`|]/.test(literal);
+}
+
+/**
+ * Whether addresses of DNS over HTTPS services, separated by spaces, are all valid; none,
+ * for the provider of the system, is valid too.
+ * @param value - The addresses.
+ */
+export function areSecureDnsTemplates(value: string): boolean {
+  return value
+    .split(/\s+/)
+    .filter((part) => part !== '')
+    .every(isSecureDnsTemplate);
+}
 
 /**
  * The options of the host resolver for a mode and the addresses of DNS over HTTPS services.

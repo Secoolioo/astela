@@ -44,6 +44,9 @@ export class AppearanceController implements Disposable {
   private readonly router: IpcRouter;
   private readonly internal: Session;
   private css: string;
+  /** The colors of new windows, as JSON, to repaint open windows when the theme changes them. */
+  private windowColors = '';
+  private readonly onColorsChanged: () => void;
   /** Computes the colors of a custom accent, once its code has loaded. */
   private solve: ((accent: string) => AccentColors) | undefined;
 
@@ -65,6 +68,7 @@ export class AppearanceController implements Disposable {
     this.settings = settings;
     this.router = router;
     this.internal = internal;
+    this.onColorsChanged = onColorsChanged;
     this.solve = solve;
     this.css = this.currentCss();
     nativeTheme.themeSource = settings.get(ColorModeSetting);
@@ -117,11 +121,15 @@ export class AppearanceController implements Disposable {
     if (!isAccentPreset(accent) && this.solve === undefined) {
       this.solve = (await import('../domain/appearance/accent.ts')).accentColors;
     }
+    const before = this.windowColors;
     const css = this.currentCss();
     if (css !== this.css) {
       this.css = css;
       this.publish();
     }
+    // A theme changes the color of the windows without a change of the color mode, which
+    // repaints them otherwise.
+    if (this.windowColors !== before) this.onColorsChanged();
   }
 
   private currentCss(): string {
@@ -129,7 +137,9 @@ export class AppearanceController implements Disposable {
     const theme = this.settings.get(ThemeSetting);
     const custom = this.settings.get(CustomThemeSetting);
     // New windows paint the theme's color until their shell has painted.
-    setWindowColors(windowColors(theme, custom));
+    const colors = windowColors(theme, custom);
+    setWindowColors(colors);
+    this.windowColors = JSON.stringify(colors);
     return appearanceCss({
       theme: themeColors(theme, custom),
       accent: isAccentPreset(accent)

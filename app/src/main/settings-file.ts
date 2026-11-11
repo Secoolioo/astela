@@ -1,6 +1,8 @@
 import { BaseWindow, app, dialog, type WebContents } from 'electron';
 import { uiLocale } from './ui-language.ts';
+import { NewTabBackgroundSetting, ShortcutsSetting } from './core-settings.ts';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
@@ -58,25 +60,31 @@ export async function exportSettings(
   if (canceled || filePath === undefined || filePath === '') return false;
   const values: Record<string, unknown> = {};
   for (const definition of definitions) {
+    // A folder belongs to this computer, and its path names the account.
+    if (definition.ui?.control === 'folder') continue;
     const { userValue } = settings.inspect(definition);
     if (userValue !== undefined) values[definition.key] = userValue;
   }
-  const file = { $schemaVersion: fileVersion, settings: values };
+  // Shortcuts are written as their system writes them; another system reads them otherwise.
+  const file = { $schemaVersion: fileVersion, system: shortcutSystem(), settings: values };
   await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`);
   return true;
 }
 
 /**
  * Reads settings from a file that the user picks. Settings that a policy fixes, that the page
- * does not show or whose value is not valid are skipped; nothing else changes.
+ * does not show or whose value is not valid are skipped; nothing else changes. So is a
+ * background image of the new tab page that another profile keeps, as this one has no file.
  * @param sender - The settings page.
  * @param shown - The settings that the page shows, by key.
  * @param settings - The settings.
+ * @param newTabFolder - The folder in this profile of the background image of the new tab.
  */
 export async function importSettings(
   sender: WebContents,
   shown: ReadonlyMap<string, SettingDefinition<unknown>>,
   settings: SettingsService,
+  newTabFolder: string,
 ): Promise<
   | { readonly ok: true; readonly applied: number; readonly skipped: number }
   | { readonly ok: false; readonly error: 'canceled' | 'invalid' }
@@ -111,12 +119,26 @@ export async function importSettings(
   }
   let applied = 0;
   let skipped = 0;
+  const system: unknown =
+    typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'system') : undefined;
+  // A file from before the system was written keeps its shortcuts.
+  const otherKeys = typeof system === 'string' && system !== shortcutSystem();
   for (const [key, value] of Object.entries(values)) {
     const definition = shown.get(key);
-    // A folder of another computer has no place here; only the system's dialog sets one.
-    if (definition?.ui?.control !== 'folder' && definition !== undefined) {
-      if (settings.set(definition, value).ok) applied += 1;
-      else skipped += 1;
+    // Ctrl on Windows is Command on macOS; such shortcuts would mean other keys here.
+    if (key === ShortcutsSetting.key && otherKeys) {
+      skipped += 1;
+      continue;
+    }
+    // A folder of another computer has no place here, and files of this browser leave it
+    // out; only the system's dialog sets one.
+    if (definition?.ui?.control === 'folder') continue;
+    if (
+      definition !== undefined &&
+      (key !== NewTabBackgroundSetting.key || imageHere(value, newTabFolder)) &&
+      settings.set(definition, value).ok
+    ) {
+      applied += 1;
     } else {
       skipped += 1;
     }
@@ -237,6 +259,29 @@ function orderedPalette(palette: CustomTheme['light']): Record<string, string> {
       return value === undefined ? [] : [[token, value.toLowerCase()]];
     }),
   );
+}
+
+/**
+ * Whether a background of the new tab page can show in this profile: any background but an
+ * image, and an image whose file this profile keeps.
+ * @param value - The background, as a file of settings has it.
+ * @param folder - The folder of the background image in this profile.
+ */
+function imageHere(value: unknown, folder: string): boolean {
+  if (typeof value !== 'object' || value === null || Reflect.get(value, 'kind') !== 'image') {
+    return true;
+  }
+  const file: unknown = Reflect.get(value, 'file');
+  return (
+    typeof file === 'string' &&
+    /^background-[0-9a-f]{16}\.[a-z]{3,4}$/.test(file) &&
+    existsSync(join(folder, file))
+  );
+}
+
+/** The system whose notation of shortcuts this browser uses: macOS or the others. */
+function shortcutSystem(): 'macos' | 'pc' {
+  return process.platform === 'darwin' ? 'macos' : 'pc';
 }
 
 /** The largest image that the new tab page takes as its background. */

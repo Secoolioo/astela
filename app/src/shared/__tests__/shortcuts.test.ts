@@ -36,6 +36,23 @@ describe('shortcutProblem', () => {
     expect(shortcutProblem('Cmd+Q', 'darwin')).toBe('system');
   });
 
+  it('refuses keys that edit text or move in it, which pages need', () => {
+    for (const key of ['Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+Z', 'Ctrl+ArrowLeft', 'Ctrl+Backspace']) {
+      expect({ key, problem: shortcutProblem(key, 'win32') }).toEqual({ key, problem: 'text' });
+    }
+    for (const key of ['Cmd+ArrowLeft', 'Shift+Cmd+ArrowRight', 'Cmd+V', 'Cmd+Z', 'Ctrl+E']) {
+      expect({ key, problem: shortcutProblem(key, 'darwin') }).toEqual({ key, problem: 'text' });
+    }
+    // Shortcuts that other browsers give to their own commands stay possible.
+    expect(shortcutProblem('Ctrl+Shift+C', 'linux')).toBeUndefined();
+    expect(shortcutProblem('Ctrl+Shift+A', 'win32')).toBeUndefined();
+    expect(shortcutProblem('Shift+Cmd+C', 'darwin')).toBeUndefined();
+    expect(shortcutProblem('Alt+Cmd+ArrowLeft', 'darwin')).toBeUndefined();
+    expect(shortcutProblem('Ctrl+Space', 'linux')).toBeUndefined();
+    expect(shortcutProblem('Cmd+Space', 'darwin')).toBe('system');
+    expect(shortcutProblem('Alt+Space', 'win32')).toBe('system');
+  });
+
   it('accepts shortcuts with Ctrl, Alt or Command and function keys', () => {
     expect(shortcutProblem('Ctrl+Shift+K', 'linux')).toBeUndefined();
     expect(shortcutProblem('Alt+K', 'win32')).toBeUndefined();
@@ -56,5 +73,18 @@ describe('displayShortcut and acceleratorOf', () => {
     expect(acceleratorOf('Alt+Cmd+ArrowRight')).toBe('Alt+Cmd+Right');
     expect(acceleratorOf('Ctrl+PageDown')).toBe('Ctrl+PageDown');
     expect(acceleratorOf('BrowserBack')).toBeUndefined();
+    expect(displayShortcut('Ctrl+Space', false)).toBe('Ctrl+Space');
+    expect(displayShortcut('Shift+Cmd++', true)).toBe('⇧⌘+');
+    const german = {
+      ctrl: 'Strg',
+      alt: 'Alt',
+      shift: 'Umschalt',
+      win: 'Win',
+      keys: { PageDown: 'Bild ab', BrowserBack: 'Zurück', '+': 'Plus' },
+    };
+    expect(displayShortcut('Ctrl+Shift+PageDown', false, german)).toBe('Strg+Umschalt+Bild ab');
+    expect(displayShortcut('BrowserBack', false, german)).toBe('Zurück');
+    expect(displayShortcut('Ctrl++', false, german)).toBe('Strg+Plus');
+    expect(acceleratorOf('Ctrl+Space')).toBe('Ctrl+Space');
   });
 });

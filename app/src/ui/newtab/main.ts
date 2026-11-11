@@ -16,12 +16,21 @@ if (note !== null && document.documentElement.hasAttribute('data-private')) {
   note.hidden = false;
 }
 
+/**
+ * The locale of the clock: the system's own form of the page's language, such as en-GB with
+ * its 24-hour time for English, or else the language alone.
+ */
+function clockLocale(): string {
+  const system = document.documentElement.dataset['locale'];
+  return system?.split('-')[0]?.toLowerCase() === i18n.language ? system : i18n.language;
+}
+
 /** The time on the clock, which changes at the start of each minute while the page shows. */
 let tick: ReturnType<typeof setTimeout> | undefined;
 function showTime(): void {
   if (!(clock instanceof HTMLTimeElement) || clock.hidden) return;
   const now = new Date();
-  clock.textContent = new Intl.DateTimeFormat(i18n.language, { timeStyle: 'short' }).format(now);
+  clock.textContent = new Intl.DateTimeFormat(clockLocale(), { timeStyle: 'short' }).format(now);
   clock.dateTime = now.toISOString();
   clearTimeout(tick);
   if (document.visibilityState === 'visible') {

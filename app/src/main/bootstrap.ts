@@ -1,4 +1,9 @@
 import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
+import {
+  cookiesBlockedAtStart,
+  enableFeature,
+  thirdPartyCookieFeature,
+} from './cookie-blocking.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import { shortcutTable } from '../shared/shortcuts.ts';
 import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
@@ -7,8 +12,9 @@ import { app, Menu, session, webContents, type DownloadItem, type Session } from
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
-import { languageArguments } from '../shared/ui-language.ts';
+import { languageArguments, localeArguments } from '../shared/ui-language.ts';
 import { sameZoom } from '../shared/zoom.ts';
+import { inOrder } from '../shared/in-order.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
 import {
   GetNewTabState,
@@ -81,7 +87,6 @@ import {
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
   BlockThirdPartyCookiesSetting,
-  ThirdPartyCookieSitesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
@@ -232,6 +237,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // Whether the shell of the first window has loaded; until then, the policies that were
   // just read for the start are current.
   let shellLoaded = false;
+  // Chromium blocks third-party cookies itself, in every frame and worker, only with a
+  // feature that it reads as it starts, so the setting takes full effect at the next start.
+  // Until then, and in private windows without it, the request pipeline and the frames keep
+  // them away as well as they can.
+  const nativeCookieBlocking = cookiesBlockedAtStart({
+    settingsFile: join(userData, 'settings.json'),
+    key: BlockThirdPartyCookiesSetting.key,
+    mandatory: policies.getMandatory('BlockThirdPartyCookies')?.value,
+    recommended: policies.getRecommended('BlockThirdPartyCookies')?.value,
+    fallback: BlockThirdPartyCookiesSetting.default,
+  });
+  if (nativeCookieBlocking) enableFeature(app.commandLine, thirdPartyCookieFeature);
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -271,6 +288,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // menus, the dialogs and the browser's own views; the settings page compares with these.
   const language = settings.get(LanguageSetting);
   chooseLanguage(language);
+  // The browser's own views get the language of the settings and the locale of the system.
+  const viewArguments = [...languageArguments(language), ...localeArguments(app.getSystemLocale())];
   const definitions: readonly SettingDefinition<unknown>[] = coreSettings;
   const startValues = new Map(
     definitions
@@ -319,9 +338,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
   pipeline.add(httpsFirst);
   // Private windows always keep third-party cookies away; regular ones as the settings say.
+  // When Chromium blocks them since the start, it does so for every session more precisely,
+  // and leaves the partitioned cookies that cannot track across sites.
   const thirdPartyCookies = new ThirdPartyCookies({
-    blocked: (s) => privateSessions.has(s) || settings.get(BlockThirdPartyCookiesSetting),
-    allowedSites: () => settings.get(ThirdPartyCookieSitesSetting),
+    blocked: (s) =>
+      !nativeCookieBlocking &&
+      (privateSessions.has(s) || settings.get(BlockThirdPartyCookiesSetting)),
   });
   pipeline.add(thirdPartyCookies);
   // A blocker without filter data shows that it fails where it should block.
@@ -446,7 +468,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     blocker,
     (s) => webSessions.has(s),
     layout.framePreload,
-    (url, top, frameSession) => thirdPartyCookies.blocksFrame(url, top, frameSession),
+    (origin, topOrigin, frameSession) =>
+      thirdPartyCookies.blocksFrame(origin, topOrigin, frameSession),
   );
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
@@ -509,6 +532,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       gate,
       router,
       logger,
+      languageArguments: viewArguments,
     });
     app.on('window-all-closed', () => app.quit());
     const helpReport = app.commandLine.getSwitchValue('smoke-test');
@@ -578,7 +602,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     newTabUrl,
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
-    languageArguments: languageArguments(language),
+    languageArguments: viewArguments,
     webFonts: () =>
       webFontPreferences(settings.get(WebFontsSetting), settings.get(WebTextSizeSetting)),
     homeButton: () => settings.get(HomeButtonSetting),
@@ -633,7 +657,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
-    insecureAddressFor: (contents, failed) => httpsFirst.insecureAddressFor(contents, failed),
+    insecureAddressFor: (contents, failed, stopped) =>
+      httpsFirst.insecureAddressFor(contents, failed, stopped),
     shortcuts: () => shortcuts,
     shortcutRecorder,
     onPageCommand: (window, command, contents) =>
@@ -641,6 +666,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         runPageCommand(window, command, contents, {
           developerTools,
           logger,
+          downloadFolder,
         }),
       ),
     zoomFor: (url) => {
@@ -726,7 +752,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     preload: layout.pagePreload,
     partition: internalPartition,
     appearanceArgument: () => appearance.argument,
-    languageArguments: languageArguments(language),
+    languageArguments: viewArguments,
     gate,
     router,
   };
@@ -797,13 +823,31 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       background: settings.get(NewTabBackgroundSetting),
     };
   };
-  registerNewTabHandlers(router, windows, newTabState, searchTemplate, searchShortcuts);
+  // Each new tab page gets its states in the order of the changes, so that a state that
+  // waited for the history never replaces a newer one that did not.
+  const queueNewTab = inOrder();
+  const newTabStateOf = (contents: Electron.WebContents): Promise<NewTabState> =>
+    queueNewTab(contents, () => newTabState(windows.forTab(contents)?.isPrivate ?? false));
+  registerNewTabHandlers(router, windows, newTabStateOf, searchTemplate, searchShortcuts);
   // Electron starts without DNS over HTTPS, whatever its documentation says, so the browser
   // sets the mode of the host resolver itself, at the start and when the settings change.
-  const applySecureDns = (): void =>
-    app.configureHostResolver(
-      hostResolverOptions(settings.get(SecureDnsSetting), settings.get(SecureDnsTemplatesSetting)),
-    );
+  // Addresses that Chromium refuses must stop neither the start nor the saving of settings;
+  // the provider of the system applies instead.
+  const applySecureDns = (): void => {
+    try {
+      app.configureHostResolver(
+        hostResolverOptions(
+          settings.get(SecureDnsSetting),
+          settings.get(SecureDnsTemplatesSetting),
+        ),
+      );
+    } catch (error) {
+      logger.warn('The addresses for secure DNS were refused; the system provider applies', {
+        error: String(error),
+      });
+      app.configureHostResolver({ secureDnsMode: 'automatic', secureDnsServers: [] });
+    }
+  };
   applySecureDns();
   settings.onDidChange(({ keys }) => {
     if (keys.includes(SecureDnsSetting.key) || keys.includes(SecureDnsTemplatesSetting.key)) {
@@ -823,8 +867,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     if (!keys.some((key) => newTabKeys.has(key))) return;
     for (const contents of webContents.getAllWebContents()) {
       if (contents.session === internal && contents.getURL().startsWith(newTabUrl)) {
-        const privateWindow = windows.forTab(contents)?.isPrivate ?? false;
-        void newTabState(privateWindow).then((state) => {
+        void newTabStateOf(contents).then((state) => {
           if (!contents.isDestroyed()) router.publish(NewTabChanged, contents, state);
         });
       }
@@ -1039,13 +1082,11 @@ function registerShellHandlers(
 function registerNewTabHandlers(
   router: IpcRouter,
   windows: WindowManager,
-  newTabState: (privateWindow: boolean) => Promise<NewTabState>,
+  newTabState: (contents: Electron.WebContents) => Promise<NewTabState>,
   searchTemplate: () => Promise<string>,
   searchShortcuts: () => Promise<SearchSettings>,
 ): void {
-  router.handle(GetNewTabState, (_request, { sender }) =>
-    newTabState(windows.forTab(sender)?.isPrivate ?? false),
-  );
+  router.handle(GetNewTabState, (_request, { sender }) => newTabState(sender));
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);

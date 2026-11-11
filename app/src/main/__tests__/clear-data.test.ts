@@ -21,13 +21,17 @@ function fakes(): { data: DataClient; web: Session; cleared: unknown[][] } {
       cleared.push(['cache']);
       return Promise.resolve();
     },
+    clearAuthCache: () => {
+      cleared.push(['sign-ins']);
+      return Promise.resolve();
+    },
     cookies: { flushStore: () => Promise.resolve() },
   } as unknown as Session;
   return { data, web, cleared };
 }
 
 describe('clearBrowsingData', () => {
-  it('clears the history of the time range, and all cookies, site data and the cache', async () => {
+  it('clears the history of the time range, and all cookies, site data, sign-ins and the cache', async () => {
     const { data, web, cleared } = fakes();
     const now = 100_000_000;
     await clearBrowsingData(
@@ -49,6 +53,7 @@ describe('clearBrowsingData', () => {
           ]),
         },
       ],
+      ['sign-ins'],
       ['cache'],
     ]);
   });

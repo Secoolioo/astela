@@ -42,4 +42,15 @@ describe('ShortcutRecorder', () => {
     contents.emit('destroyed');
     await expect(second).resolves.toBeUndefined();
   });
+
+  it('leaves no listener on the view once a wait ends, and names the space bar', async () => {
+    const recorder = new ShortcutRecorder();
+    const contents = view(5);
+    for (let round = 0; round < 12; round += 1) {
+      const recorded = recorder.record(contents);
+      recorder.take(5, key({ key: ' ', code: 'Space', control: true }), 'linux');
+      await expect(recorded).resolves.toBe('Ctrl+Space');
+    }
+    expect((contents as unknown as EventEmitter).listenerCount('destroyed')).toBe(0);
+  });
 });

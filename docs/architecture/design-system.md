@@ -45,7 +45,7 @@ Every text and UI color pair has to meet these contrast minimums, in line with W
 | Text                           | 4.5:1            |
 | UI components and their states | 3:1              |
 
-The built-in themes (Light, Dark and three original themes) must all meet these minimums. The theme editor is designed to warn live when a custom theme falls below them. The UI is also designed to stay usable in Forced Colors mode, which is part of the accessibility baseline.
+The built-in themes, Astela, Paper, Forest, Ocean, Slate and True Dark, each with a light and a dark mode, meet these minimums, which a unit test checks for the text of every theme on every surface ([ADR 0043](../adr/0043-themes-as-palettes-edited-on-the-settings-page.md)). The settings page warns live when a custom theme falls below them. The UI is also designed to stay usable in Forced Colors mode, which is part of the accessibility baseline.
 
 ## Density
 
@@ -157,4 +157,4 @@ The three density levels, the text size, the font of the UI and the accent color
 
 The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area.
 
-Not implemented yet: `palette.json`, the banner and the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
+Not implemented yet: `palette.json`, the banner and the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.

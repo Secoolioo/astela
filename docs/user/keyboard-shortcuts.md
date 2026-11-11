@@ -8,7 +8,7 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 
 Under **Keyboard shortcuts** in the [settings](settings.md), every command shows its shortcuts. **Change** waits for the keys of a new one; press them together, or Esc to stop without a change. The new shortcut replaces those of the command. **Reset** brings back the defaults of a command, and **Reset all** those of every command. The menus show the shortcuts you chose.
 
-A shortcut needs Ctrl, Alt, or Command on macOS, or a function key, because other keys type text in pages. On Windows and Linux, Ctrl and Alt together are not possible either, because Windows types characters with them. Shortcuts that the system uses, such as `Alt+F4` or `Command+Q`, cannot be chosen. When another command has the keys already, the settings page asks before it moves them; that command then has no shortcut until you reset it.
+A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function key, because other keys type text in pages. Keys that edit text in pages are not possible either, such as copying and pasting, undoing, selecting all, and moving by words or to the start of a line, for example `Ctrl+V` or `Command+←`. On Windows and Linux, Ctrl and Alt together are not possible, because Windows types characters with them. Shortcuts that the system uses, such as `Alt+F4` or `Command+Q`, cannot be chosen. When another command has the keys already, the settings page asks before it moves them; the other command keeps its other shortcuts, and **Reset** on the command that took the keys gives them back.
 
 ## Windows and Linux
 
@@ -37,7 +37,7 @@ A shortcut needs Ctrl, Alt, or Command on macOS, or a function key, because othe
 | Previous match                 | `Shift+F3` or `Ctrl+Shift+G`                    |
 | Zoom in                        | `Ctrl+Plus` or `Ctrl+=`                         |
 | Zoom out                       | `Ctrl+-`                                        |
-| Actual size                    | `Ctrl+0`                                        |
+| Reset zoom                     | `Ctrl+0`                                        |
 | Full screen                    | `F11`                                           |
 | Print                          | `Ctrl+P`                                        |
 | Save the page                  | `Ctrl+S`                                        |
@@ -74,7 +74,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Previous match                 | `Command+Shift+G`                                                     |
 | Zoom in                        | `Command+Plus` or `Command+=`                                         |
 | Zoom out                       | `Command+-`                                                           |
-| Actual size                    | `Command+0`                                                           |
+| Reset zoom                     | `Command+0`                                                           |
 | Full screen                    | `Control+Command+F`                                                   |
 | Print                          | `Command+P`                                                           |
 | Save the page                  | `Command+S`                                                           |

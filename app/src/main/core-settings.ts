@@ -14,11 +14,8 @@ import {
   windowCommands,
   type ShortcutOverrides,
 } from '../shared/shortcuts.ts';
-import {
-  secureDnsModes,
-  secureDnsTemplatesPattern,
-  type SecureDnsMode,
-} from '../shared/secure-dns.ts';
+import { secureDnsModes, areSecureDnsTemplates, type SecureDnsMode } from '../shared/secure-dns.ts';
+import { isAbsolute } from 'node:path';
 import * as v from 'valibot';
 import { accentPresets } from '../domain/appearance/accent-presets.ts';
 import {
@@ -389,7 +386,11 @@ export const SecureDnsSetting = defineSetting<SecureDnsMode>({
 /** The addresses of the DNS over HTTPS services, separated by spaces; empty for the system's. */
 export const SecureDnsTemplatesSetting = defineSetting<string>({
   key: 'network.secureDnsTemplates',
-  schema: v.pipe(v.string(), v.maxLength(2048), v.regex(secureDnsTemplatesPattern)),
+  schema: v.pipe(
+    v.string(),
+    v.maxLength(2048),
+    v.check(areSecureDnsTemplates, 'Must be addresses of DNS over HTTPS services'),
+  ),
   default: '',
   scope: 'global',
   policy: { name: 'DnsOverHttpsTemplates', sensitive: true },
@@ -425,18 +426,8 @@ export const BlockThirdPartyCookiesSetting = defineSetting<boolean>({
   scope: 'global',
   policy: { name: 'BlockThirdPartyCookies', recommended: true },
   ui: { section: 'privacy', control: 'toggle', order: 9 },
-});
-
-/** Sites on whose pages third-party cookies stay allowed. */
-export const ThirdPartyCookieSitesSetting = defineSetting<string[]>({
-  key: 'privacy.thirdPartyCookieSites',
-  schema: v.pipe(
-    v.array(v.pipe(v.string(), v.regex(/^[a-z0-9.:[\]-]{1,253}$/i, 'Must be a host name'))),
-    v.maxLength(1000),
-  ),
-  default: [],
-  scope: 'global',
-  ui: { section: 'privacy', control: 'list', order: 10 },
+  // Chromium reads its own blocking as it starts; see cookie-blocking.ts.
+  restartRequired: true,
 });
 
 /** Whether the toolbar has a home button, which opens the home page. */
@@ -462,7 +453,12 @@ export const HomePageSetting = defineSetting<string>({
 /** The folder where downloads are saved; empty for the downloads folder of the system. */
 export const DownloadFolderSetting = defineSetting<string>({
   key: 'downloads.folder',
-  schema: v.pipe(v.string(), v.maxLength(4096)),
+  // A relative path would land wherever the browser was started from.
+  schema: v.pipe(
+    v.string(),
+    v.maxLength(4096),
+    v.check((folder) => folder === '' || isAbsolute(folder), 'Must be an absolute path'),
+  ),
   default: '',
   scope: 'global',
   policy: { name: 'DownloadDirectory', recommended: true },
@@ -607,7 +603,6 @@ export const coreSettings = [
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
   BlockThirdPartyCookiesSetting,
-  ThirdPartyCookieSitesSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,

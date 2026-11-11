@@ -178,18 +178,18 @@ GitHub and GitHub Pages see the IP address during update checks. The privacy sta
 - The WebRTC IP handling policy is `default_public_interface_only`.
 - Referrers will be trimmed.
 - Secrets are kept in the operating system's key store (see [data](data.md)).
+- Third-party cookies are blocked by default, by Chromium's own blocking from the start of the browser; the request pipeline and a script in the frames of other sites cover the time until a restart ([ADR 0044](../adr/0044-third-party-cookies-blocked-by-chromium.md)).
 
 ### Later privacy features
 
-| Feature                                                   | Milestone |
-| --------------------------------------------------------- | --------- |
-| Strict HTTPS-only mode                                    | M2        |
-| Blocking of third-party cookies through a Chromium switch | M2        |
-| Global Privacy Control (GPC) header                       | M2        |
-| Removal of tracking parameters                            | M2        |
-| Ad and tracker blocking with signed filter lists          | M2        |
-| Malware and phishing lists with an interstitial           | M2        |
-| Encrypted password vault                                  | M3        |
+| Feature                                          | Milestone |
+| ------------------------------------------------ | --------- |
+| Strict HTTPS-only mode                           | M2        |
+| Global Privacy Control (GPC) header              | M2        |
+| Removal of tracking parameters                   | M2        |
+| Ad and tracker blocking with signed filter lists | M2        |
+| Malware and phishing lists with an interstitial  | M2        |
+| Encrypted password vault                         | M3        |
 
 The [roadmap](../roadmap.md) lists the milestones.
 

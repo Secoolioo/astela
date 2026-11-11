@@ -24,7 +24,7 @@ Accepted. Amends [ADR 0013](0013-theme-system-and-design-tokens.md) on density a
 Positive:
 
 - **Visible density:** Compact and Comfortable change the whole interface, also the browser's own pages.
-- **Readable text:** larger text no longer needs the zoom of a page, and works in the shell and the menus too.
+- **Readable text:** larger text no longer needs the zoom of a page, and works in the shell, its popovers and the browser's own pages too; the native menus keep the size of the system.
 
 Negative:
 

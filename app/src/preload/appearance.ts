@@ -1,6 +1,6 @@
 import { ipcRenderer, webFrame } from 'electron';
 import { privateWindowArgument } from '../shared/private-window.ts';
-import { languageOfArguments } from '../shared/ui-language.ts';
+import { languageOfArguments, localeOfArguments } from '../shared/ui-language.ts';
 
 /**
  * Applies the browser's accent and density to the page before its first paint, and again
@@ -28,6 +28,9 @@ export function applyAppearance(): void {
   // The page translates itself with this language when it starts (ui/i18n).
   const language = languageOfArguments(process.argv);
   if (language !== undefined) markRoot('language', language);
+  // Dates and times take the regional form of the system, such as 24 hours in en-GB.
+  const locale = localeOfArguments(process.argv);
+  if (locale !== undefined) markRoot('locale', locale);
 }
 
 /** Sets a data attribute of the page's root element, as soon as the element exists. */
