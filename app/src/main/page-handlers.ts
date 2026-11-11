@@ -34,6 +34,8 @@ export interface PageDependencies {
   readonly startValues: ReadonlyMap<string, string>;
   /** The session of web pages in regular windows. */
   readonly webSession: () => Session;
+  /** The folder in the profile of the background image of the new tab page. */
+  readonly newTabFolder: string;
   /** The shortcuts of the windows, and a way to wait for a key press of a page. */
   readonly shortcuts: {
     /** The shortcuts of the windows, by key press. */
@@ -61,6 +63,7 @@ export function connectPages(dependencies: PageDependencies): void {
     dependencies.startValues,
     { data, web: dependencies.webSession },
     dependencies.shortcuts,
+    dependencies.newTabFolder,
   );
   connectHistoryPage(router, data, windows);
   connectBookmarksPage(router, data, bookmarks, windows);

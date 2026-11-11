@@ -65,5 +65,7 @@
   "settings.fileType": "Einstellungen",
   "settings.themeFileType": "Theme",
   "settings.themeExportTitle": "Theme exportieren",
-  "settings.themeImportTitle": "Theme importieren"
+  "settings.themeImportTitle": "Theme importieren",
+  "settings.newTabImageTitle": "Hintergrundbild wählen",
+  "settings.imageFileType": "Bilder"
 }

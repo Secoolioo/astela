@@ -1,3 +1,4 @@
+import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import { shortcutTable } from '../shared/shortcuts.ts';
 import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
@@ -81,6 +82,8 @@ import {
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
+  NewTabMostVisitedSetting,
+  NewTabBackgroundSetting,
   StartupPagesSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
@@ -271,9 +274,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       .filter((definition) => definition.restartRequired === true)
       .map((definition) => [definition.key, JSON.stringify(settings.get(definition))]),
   );
+  // The background image of the new tab page lives in the profile; its folder exists from
+  // the start, so the route that serves it has a place to look.
+  const newTabFolder = join(userData, 'newtab');
+  mkdirSync(newTabFolder, { recursive: true });
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
     new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
+    [newTabBackgroundRoute(newTabFolder)],
   );
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
@@ -662,6 +670,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
           webSession: () => session.fromPartition(webPartition),
+          newTabFolder,
           shortcuts: {
             table: () => shortcuts,
             overrides: () => settings.get(ShortcutsSetting),
@@ -751,15 +760,31 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     ),
   );
-  // What the new tab page shows besides the search engine, as the settings say.
-  const newTabState = async (): Promise<NewTabState> => {
+  // What the new tab page shows besides the search engine, as the settings say. A private
+  // window shows no sites from the history.
+  const newTabState = async (privateWindow: boolean): Promise<NewTabState> => {
     const template = await searchTemplate();
     const custom = (await searchShortcuts()).engines.find((engine) => engine.url === template);
+    const tiles = settings.get(NewTabTilesSetting);
+    const mostVisited =
+      settings.get(NewTabMostVisitedSetting) && !privateWindow
+        ? (await data.call('topSites', 24).catch(() => []))
+            .filter(
+              (site) =>
+                /^https?:\/\/\S+$/i.test(site.url) &&
+                site.url.length <= 8192 &&
+                !tiles.some((tile) => tile.url === site.url),
+            )
+            .slice(0, 8)
+            .map((site) => ({ title: site.title.slice(0, 64), url: site.url }))
+        : [];
     return {
       engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null,
       search: settings.get(NewTabSearchSetting),
       clock: settings.get(NewTabClockSetting),
-      tiles: settings.get(NewTabTilesSetting),
+      tiles,
+      mostVisited,
+      background: settings.get(NewTabBackgroundSetting),
     };
   };
   registerNewTabHandlers(router, windows, newTabState, searchTemplate, searchShortcuts);
@@ -779,18 +804,21 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     NewTabSearchSetting.key,
     NewTabClockSetting.key,
     NewTabTilesSetting.key,
+    NewTabMostVisitedSetting.key,
+    NewTabBackgroundSetting.key,
     SearchUrlTemplate.key,
     SearchEnginesSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (!keys.some((key) => newTabKeys.has(key))) return;
-    void newTabState().then((state) => {
-      for (const contents of webContents.getAllWebContents()) {
-        if (contents.session === internal && contents.getURL().startsWith(newTabUrl)) {
-          router.publish(NewTabChanged, contents, state);
-        }
+    for (const contents of webContents.getAllWebContents()) {
+      if (contents.session === internal && contents.getURL().startsWith(newTabUrl)) {
+        const privateWindow = windows.forTab(contents)?.isPrivate ?? false;
+        void newTabState(privateWindow).then((state) => {
+          if (!contents.isDestroyed()) router.publish(NewTabChanged, contents, state);
+        });
       }
-    });
+    }
   });
   const shellSettings = new Set([
     BookmarksBarSetting.key,
@@ -1001,11 +1029,13 @@ function registerShellHandlers(
 function registerNewTabHandlers(
   router: IpcRouter,
   windows: WindowManager,
-  newTabState: () => Promise<NewTabState>,
+  newTabState: (privateWindow: boolean) => Promise<NewTabState>,
   searchTemplate: () => Promise<string>,
   searchShortcuts: () => Promise<SearchSettings>,
 ): void {
-  router.handle(GetNewTabState, () => newTabState());
+  router.handle(GetNewTabState, (_request, { sender }) =>
+    newTabState(windows.forTab(sender)?.isPrivate ?? false),
+  );
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);

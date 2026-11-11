@@ -1,4 +1,4 @@
-import { CustomThemeSetting, ThemeSetting } from './core-settings.ts';
+import { CustomThemeSetting, NewTabBackgroundSetting, ThemeSetting } from './core-settings.ts';
 import { app, webContents, type Session, type WebContents } from 'electron';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import { restartArguments } from '../domain/navigation/restart.ts';
@@ -10,6 +10,7 @@ import {
   ClearBrowsingData,
   GetShortcuts,
   RecordShortcut,
+  ChooseNewTabImage,
   ExportTheme,
   ImportTheme,
   ShortcutRecorded,
@@ -57,6 +58,7 @@ function fromSettingsPage(sender: WebContents): boolean {
  * @param browsingData - The data service and the session of web pages, whose data the page
  *   clears.
  * @param shortcuts - The shortcuts of the windows, and a way to wait for a key press of a page.
+ * @param newTabFolder - The folder in the profile of the background image of the new tab page.
  * @returns A disposable that stops publishing changes.
  */
 export function connectSettingsPage(
@@ -71,6 +73,7 @@ export function connectSettingsPage(
     readonly overrides: () => ShortcutOverrides;
     readonly record: (contents: WebContents) => Promise<string | undefined>;
   },
+  newTabFolder: string,
 ): Disposable {
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
@@ -187,6 +190,16 @@ export function connectSettingsPage(
     const saved =
       settings.set(CustomThemeSetting, result.theme).ok && settings.set(ThemeSetting, 'custom').ok;
     return saved ? { ok: true } : { ok: false, error: 'invalid' as const };
+  });
+  router.handle(ChooseNewTabImage, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page chooses images');
+    const { chooseNewTabImage } = await import('./settings-file.ts');
+    const image = await chooseNewTabImage(sender, newTabFolder);
+    if (image === 'invalid') return { chosen: false, error: 'invalid' as const };
+    if (image === undefined) return { chosen: false };
+    return {
+      chosen: settings.set(NewTabBackgroundSetting, { kind: 'image', file: image.file }).ok,
+    };
   });
   router.handle(ClearBrowsingData, async (request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page clears data');

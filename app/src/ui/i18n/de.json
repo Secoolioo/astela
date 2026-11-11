@@ -462,5 +462,20 @@
   "settings.themeImported": "Das Theme ist importiert.",
   "settings.themeInvalid": "Die Datei ist kein Theme dieses Browsers.",
   "settings.themeMode.light": "hellen",
-  "settings.themeMode.dark": "dunklen"
+  "settings.themeMode.dark": "dunklen",
+  "settings.newTabMostVisited": "Meistbesuchte Websites",
+  "settings.newTabMostVisitedNote": "Zeigt die Websites, die du am häufigsten öffnest, aus dem Verlauf normaler Fenster. Private Fenster zeigen keine.",
+  "settings.newTabBackground": "Hintergrund",
+  "settings.newTabBackgroundNote": "Der Hintergrund der neuen Tab-Seite: eine Farbe, ein Verlauf aus zwei Farben oder ein eigenes Bild.",
+  "settings.newTabBackground.keywords": "Hintergrundbild Bild Foto Verlauf Farbe Hintergrund",
+  "settings.newTabBackground.none": "Keiner",
+  "settings.newTabBackground.color": "Farbe",
+  "settings.newTabBackground.gradient": "Verlauf",
+  "settings.newTabBackground.image": "Bild",
+  "settings.newTabBackgroundColor": "Farbe",
+  "settings.newTabBackgroundFrom": "Von",
+  "settings.newTabBackgroundTo": "Nach",
+  "settings.newTabBackgroundChoose": "Bild wählen…",
+  "settings.newTabBackgroundInvalid": "Wähle ein PNG-, JPEG-, WebP-, GIF- oder AVIF-Bild mit höchstens 10 MB.",
+  "newtab.mostVisited": "Meistbesucht"
 }

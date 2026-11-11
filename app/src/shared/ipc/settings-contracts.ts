@@ -187,3 +187,15 @@ export const ImportTheme = defineRequest({
   capability: 'page:settings',
   ratePerSecond: 2,
 });
+
+/**
+ * Asks for an image in the system's dialog and makes it the background of the new tab page;
+ * the page never names a file itself.
+ */
+export const ChooseNewTabImage = defineRequest({
+  channel: 'settings.chooseNewTabImage',
+  request: v.strictObject({}),
+  response: v.strictObject({ chosen: v.boolean(), error: v.optional(v.literal('invalid')) }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});

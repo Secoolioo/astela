@@ -75,3 +75,15 @@ export function appSourceRoutes(root: string, hosts: Iterable<string>): AppSourc
     },
   ]);
 }
+
+/**
+ * The route of the background image of the new tab page, which the browser copied into the
+ * profile; it comes before the new tab page's own route.
+ * @param folder - The folder of the image in the profile.
+ */
+export function newTabBackgroundRoute(folder: string): AppSourceRoute {
+  return {
+    match: { host: 'newtab', path: '/background/' },
+    source: { type: 'directory', root: folder, index: '', headers: { ...appResponseHeaders } },
+  };
+}

@@ -7,6 +7,7 @@ export type DatabaseApi = Pick<
   | 'addVisit'
   | 'setTitle'
   | 'history'
+  | 'topSites'
   | 'deleteHistory'
   | 'clearHistory'
   | 'clearHistorySince'
@@ -39,6 +40,7 @@ const databaseMethods: readonly string[] = [
   'addVisit',
   'setTitle',
   'history',
+  'topSites',
   'deleteHistory',
   'clearHistory',
   'clearHistorySince',

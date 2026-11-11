@@ -1,6 +1,6 @@
 import { protocol, type Session } from 'electron';
 import { resourceScheme } from '../blocker/resource-protocol.ts';
-import { appScheme, appSourceRoutes } from './app-protocol-routes.ts';
+import { appScheme, appSourceRoutes, type AppSourceRoute } from './app-protocol-routes.ts';
 
 /**
  * Registers the browser's schemes as privileged, standard and secure; Electron allows one
@@ -37,14 +37,18 @@ export function registerAppScheme(): void {
 export class AppProtocol {
   private readonly root: string;
   private readonly hosts: ReadonlySet<string>;
+  private readonly before: readonly AppSourceRoute[];
 
   /**
    * @param root - Directory of the bundled renderer files.
    * @param hosts - Internal hosts, such as `shell`.
+   * @param before - Routes that come before those of the renderer files, such as the
+   *   background image of the new tab page.
    */
-  constructor(root: string, hosts: ReadonlySet<string>) {
+  constructor(root: string, hosts: ReadonlySet<string>, before: readonly AppSourceRoute[] = []) {
     this.root = root;
     this.hosts = hosts;
+    this.before = before;
   }
 
   /**
@@ -53,7 +57,7 @@ export class AppProtocol {
    */
   serve(session: Session): void {
     session.protocol.registerSource(appScheme, {
-      routes: appSourceRoutes(this.root, this.hosts),
+      routes: [...this.before, ...appSourceRoutes(this.root, this.hosts)],
     });
   }
 

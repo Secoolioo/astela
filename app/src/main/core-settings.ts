@@ -1,4 +1,8 @@
 import {
+  NewTabBackground,
+  type NewTabBackground as NewTabBackgroundValue,
+} from '../shared/ipc/newtab-contracts.ts';
+import {
   CustomTheme,
   themeIds,
   type CustomTheme as CustomThemeColors,
@@ -488,6 +492,24 @@ export const NewTabTilesSetting = defineSetting<{ title: string; url: string }[]
   ui: { section: 'newtab', control: 'list', order: 3 },
 });
 
+/** Whether the new tab page shows the sites opened most often, from the history. */
+export const NewTabMostVisitedSetting = defineSetting<boolean>({
+  key: 'newtab.mostVisited',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  ui: { section: 'newtab', control: 'toggle', order: 4 },
+});
+
+/** The background of the new tab page. */
+export const NewTabBackgroundSetting = defineSetting<NewTabBackgroundValue>({
+  key: 'newtab.background',
+  schema: NewTabBackground,
+  default: { kind: 'none' },
+  scope: 'global',
+  ui: { section: 'newtab', control: 'color', order: 5 },
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -553,6 +575,8 @@ export const coreSettings = [
   NewTabSearchSetting,
   NewTabClockSetting,
   NewTabTilesSetting,
+  NewTabMostVisitedSetting,
+  NewTabBackgroundSetting,
   HomeButtonSetting,
   HomePageSetting,
   HttpsFirstSetting,

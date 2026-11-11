@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 import {
   FixtureServer,
   launch,
@@ -60,6 +61,8 @@ test('opens new tabs on the new tab page with the search engine', async () => {
     search: true,
     clock: false,
     tiles: [],
+    mostVisited: [],
+    background: { kind: 'none' },
   });
   const shellCall = await page.evaluate(() =>
     window.bridge.invoke('shell.getState', {}).then(
@@ -138,4 +141,71 @@ test('shows changes of the settings on an open new tab page', async () => {
   await browser.shell.getByRole('tab', { name: 'New tab' }).click();
   await expect(page.locator('#clock')).toBeVisible();
   await expect(page.getByRole('searchbox')).toBeHidden();
+});
+
+test('shows the sites opened most often, and none in a private window', async () => {
+  await browser.close();
+  browser = await launch([], { settings: { 'newtab.mostVisited': true } });
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  for (const page of ['index.html', 'second.html', 'index.html']) {
+    await address.fill(`${server.origin}/${page}`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith(`/${page}`));
+    await expect.poll(activeTitle).toMatch(/^Fixture/);
+  }
+  await pressNative(browser, 'T', ['primary']);
+  const top = (await newTabPage()).getByRole('list', { name: 'Most visited' });
+  await expect(top.getByRole('link')).toHaveCount(2);
+  await expect(top.getByRole('link').nth(0)).toHaveAccessibleName('Fixture home');
+  await expect(top.getByRole('link').nth(1)).toHaveAccessibleName('Fixture second');
+  // A private window shows no sites from the history.
+  await pressNative(browser, 'N', ['primary', 'shift']);
+  const newTabPages = (): Page[] =>
+    browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => page.url().startsWith('app://newtab'));
+  await expect.poll(() => newTabPages().length).toBe(2);
+  const kinds = await Promise.all(
+    newTabPages().map((page) =>
+      page.evaluate(() => document.documentElement.hasAttribute('data-private')),
+    ),
+  );
+  const privatePage = newTabPages()[kinds.indexOf(true)];
+  expect(privatePage).toBeDefined();
+  await expect(privatePage?.locator('#top') ?? top).toBeHidden();
+  await expect(privatePage?.locator('#search') ?? top).toBeVisible();
+});
+
+test('paints the background of the settings: a color and an image', async () => {
+  await browser.close();
+  browser = await launch([], {
+    settings: { 'newtab.background': { kind: 'color', color: '#123456' } },
+  });
+  const page = await newTabPage();
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor))
+    .toBe('rgb(18, 52, 86)');
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await address.fill('app://settings');
+  await address.press('Enter');
+  const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  const image = fileURLToPath(new URL('./fixtures/image.png', import.meta.url));
+  await browser.main.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });
+  }, image);
+  await settings.getByRole('radio', { name: 'Image' }).check();
+  await expect(settings.getByRole('button', { name: 'Choose image…' })).toBeVisible();
+  await pressNative(browser, 'T', ['primary']);
+  const tab = await newTabPage();
+  await expect
+    .poll(() => tab.evaluate(() => getComputedStyle(document.documentElement).backgroundImage))
+    .toMatch(/^url\("app:\/\/newtab\/background\/background-[0-9a-f]{16}\.png"\)$/);
+  const loaded = await tab.evaluate(async () => {
+    const url =
+      /url\("(.*)"\)/.exec(getComputedStyle(document.documentElement).backgroundImage)?.[1] ?? '';
+    const response = await fetch(url);
+    return [response.status, response.headers.get('content-type')];
+  });
+  expect(loaded).toEqual([200, 'image/png']);
 });
