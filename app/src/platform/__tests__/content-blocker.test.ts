@@ -204,6 +204,7 @@ describe('RequestPipeline', () => {
     const session = {
       webRequest: {
         onBeforeRequest: (fn: typeof listener) => (listener = fn),
+        onBeforeSendHeaders: () => undefined,
         onHeadersReceived: () => undefined,
       },
     } as unknown as Session;
@@ -225,6 +226,64 @@ describe('RequestPipeline', () => {
     expect(await new Promise((done) => listener?.({ url: 'https://a.example/' }, done))).toEqual(
       {},
     );
+  });
+
+  it('removes the headers that the interceptors name from requests and responses', async () => {
+    type Listener = (details: unknown, callback: (response: unknown) => void) => void;
+    const listeners: { send?: Listener; received?: Listener } = {};
+    const sessionOf = (): Session =>
+      ({
+        webRequest: {
+          onBeforeRequest: () => undefined,
+          onBeforeSendHeaders: (fn: Listener) => (listeners.send = fn),
+          onHeadersReceived: (fn: Listener) => (listeners.received = fn),
+        },
+      }) as unknown as Session;
+    const call = (to: Listener | undefined, details: unknown): Promise<unknown> =>
+      new Promise((done) => to?.(details, done));
+    const pipeline = new RequestPipeline();
+    pipeline.add({
+      beforeRequest: () => undefined,
+      removedRequestHeaders: () => Promise.resolve(['cookie']),
+      removedResponseHeaders: () => ['Set-Cookie'],
+      headersReceived: () => ({ 'content-security-policy': ["script-src 'none'"] }),
+    });
+    pipeline.add({ beforeRequest: () => undefined, removedRequestHeaders: () => undefined });
+    pipeline.attach(sessionOf());
+    const url = 'https://a.example/';
+    expect(
+      await call(listeners.send, { url, requestHeaders: { Cookie: 'a=1', Accept: '*/*' } }),
+    ).toEqual({ requestHeaders: { Accept: '*/*' } });
+    expect(await call(listeners.send, { url, requestHeaders: { Accept: '*/*' } })).toEqual({
+      requestHeaders: { Accept: '*/*' },
+    });
+    expect(
+      await call(listeners.received, {
+        url,
+        responseHeaders: { 'set-cookie': ['a=1'], 'Content-Type': ['text/html'] },
+      }),
+    ).toEqual({
+      responseHeaders: {
+        'Content-Type': ['text/html'],
+        'content-security-policy': ["script-src 'none'"],
+      },
+    });
+    // An interceptor that fails at once lets the request go on as it was, instead of holding it.
+    const failing = new RequestPipeline();
+    failing.add({
+      beforeRequest: () => undefined,
+      removedRequestHeaders: () => {
+        throw new Error('broken');
+      },
+      removedResponseHeaders: () => {
+        throw new Error('broken');
+      },
+    });
+    failing.attach(sessionOf());
+    expect(await call(listeners.send, { url, requestHeaders: { Cookie: 'a=1' } })).toEqual({});
+    expect(
+      await call(listeners.received, { url, responseHeaders: { 'set-cookie': ['a=1'] } }),
+    ).toEqual({});
   });
 });
 

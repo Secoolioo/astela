@@ -477,5 +477,13 @@
   "settings.newTabBackgroundTo": "Nach",
   "settings.newTabBackgroundChoose": "Bild wählen…",
   "settings.newTabBackgroundInvalid": "Wähle ein PNG-, JPEG-, WebP-, GIF- oder AVIF-Bild mit höchstens 10 MB.",
-  "newtab.mostVisited": "Meistbesucht"
+  "newtab.mostVisited": "Meistbesucht",
+  "settings.thirdPartyCookies": "Drittanbieter-Cookies blockieren",
+  "settings.thirdPartyCookiesNote": "Verhindert, dass andere Websites als die besuchte auf ihren Seiten Cookies speichern und lesen, wie es Tracker tun. Private Fenster blockieren sie immer.",
+  "settings.thirdPartyCookies.keywords": "Cookies Drittanbieter Tracking websiteübergreifend Datenschutz",
+  "settings.cookieSites": "Websites mit Drittanbieter-Cookies",
+  "settings.cookieSitesNote": "Auf den Seiten dieser Websites und ihrer Subdomains dürfen andere Websites Cookies verwenden, etwa für eine Anmeldung.",
+  "settings.cookieSitesNone": "Keine",
+  "settings.cookieSitesAdd": "Website, die Drittanbieter-Cookies behält",
+  "settings.cookieSitesRemove": "{site} entfernen"
 }

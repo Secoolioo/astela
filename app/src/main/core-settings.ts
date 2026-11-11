@@ -417,6 +417,28 @@ export const ShortcutsSetting = defineSetting<ShortcutOverrides>({
   ui: { section: 'shortcuts', control: 'list', order: 1 },
 });
 
+/** Whether pages keep the cookies of other sites away, in requests, responses and frames. */
+export const BlockThirdPartyCookiesSetting = defineSetting<boolean>({
+  key: 'privacy.blockThirdPartyCookies',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'BlockThirdPartyCookies', recommended: true },
+  ui: { section: 'privacy', control: 'toggle', order: 9 },
+});
+
+/** Sites on whose pages third-party cookies stay allowed. */
+export const ThirdPartyCookieSitesSetting = defineSetting<string[]>({
+  key: 'privacy.thirdPartyCookieSites',
+  schema: v.pipe(
+    v.array(v.pipe(v.string(), v.regex(/^[a-z0-9.:[\]-]{1,253}$/i, 'Must be a host name'))),
+    v.maxLength(1000),
+  ),
+  default: [],
+  scope: 'global',
+  ui: { section: 'privacy', control: 'list', order: 10 },
+});
+
 /** Whether the toolbar has a home button, which opens the home page. */
 export const HomeButtonSetting = defineSetting<boolean>({
   key: 'home.button',
@@ -584,6 +606,8 @@ export const coreSettings = [
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
+  BlockThirdPartyCookiesSetting,
+  ThirdPartyCookieSitesSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,

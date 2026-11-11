@@ -18,31 +18,37 @@ const FrameElements = v.strictObject({
  * @param blocker - The content blocker.
  * @param isWebSession - Tells whether a session holds web content.
  * @param preload - Path of the frame preload.
+ * @param blocksCookies - Whether an embedded frame of another site than its page gets no
+ *   cookies.
  * @returns A function that adds the frame preload to a web session.
  */
 export function connectBlockerFrames(
   blocker: ContentBlocker,
   isWebSession: (session: Session) => boolean,
   preload: string,
+  blocksCookies: (url: string, top: string, session: Session) => Promise<boolean>,
 ): (session: Session) => void {
   ipcMain.on('blocker.frame', (event) => {
     const frame = isWebSession(event.sender.session) ? event.senderFrame : null;
     const url = frame?.url ?? '';
     const top = topUrl(frame);
+    // Only an embedded frame can be another site than its page.
+    const cookies =
+      frame === null || frame.parent === null || url === ''
+        ? Promise.resolve(false)
+        : blocksCookies(url, top, event.sender.session).catch(() => false);
     // The first page after the start can come before the engine has loaded. Its frame waits
     // for the engine, at most a second, so that its rules apply before its own scripts run.
     const loading = url === '' ? undefined : blocker.loading();
-    if (loading === undefined) {
-      event.returnValue = blocker.frameRules(url, top);
-      return;
-    }
     let timer: NodeJS.Timeout | undefined;
-    void Promise.race([loading, new Promise((done) => (timer = setTimeout(done, 1000)))]).then(
-      () => {
-        clearTimeout(timer);
-        event.returnValue = blocker.frameRules(url, top);
-      },
-    );
+    const ready =
+      loading === undefined
+        ? Promise.resolve()
+        : Promise.race([loading, new Promise((done) => (timer = setTimeout(done, 1000)))]);
+    void Promise.all([ready, cookies]).then(([, blockCookies]) => {
+      clearTimeout(timer);
+      event.returnValue = { ...blocker.frameRules(url, top), blockCookies };
+    });
   });
   ipcMain.handle('blocker.elements', async (event, payload: unknown) => {
     const elements = v.safeParse(FrameElements, payload);

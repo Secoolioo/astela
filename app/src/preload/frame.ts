@@ -27,6 +27,8 @@ interface FrameRules {
   readonly extended: readonly ExtendedRule[];
   /** Whether rules for the page's elements may apply, so the frame should report them. */
   readonly elements: boolean;
+  /** Whether the frame belongs to another site than its page and finds no cookies. */
+  readonly blockCookies?: boolean;
 }
 
 const isFrameRules = (value: unknown): value is FrameRules =>
@@ -56,8 +58,18 @@ function scoped(script: string): string {
   return `(() => { try {\n${script}\n} catch (error) { console.warn('[astela scriptlet]', error); } })();`;
 }
 
+/**
+ * Hides cookies from the scripts of an embedded frame of another site, before they run: the
+ * browser already sends its requests without cookies.
+ */
+const cookieGuard = `(() => {
+  Object.defineProperty(Document.prototype, 'cookie', { configurable: false, get: () => '', set: () => {} });
+  if ('cookieStore' in globalThis) Object.defineProperty(globalThis, 'cookieStore', { configurable: false, get: () => undefined });
+})();`;
+
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');
 if (isFrameRules(rules)) {
+  if (rules.blockCookies === true) void webFrame.executeJavaScript(cookieGuard);
   // A user style sheet: its !important rules beat the page's own.
   if (rules.styles !== '') webFrame.insertCSS(rules.styles, { cssOrigin: 'user' });
   for (const script of rules.scripts) {
