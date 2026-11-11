@@ -451,3 +451,36 @@ test('chooses the folder of downloads only in the dialog of the system', async (
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test('adds a search engine with a keyword and makes it the default', async () => {
+  const page = await openSettings();
+  const field = (name: string) => page.getByRole('textbox', { name, exact: true });
+  await field('Name').fill('Example');
+  await field('Keyword').fill('@ex');
+  await field('Address with %s').fill('https://search.example/?q=%s');
+  await page.getByRole('button', { name: 'Add', exact: true }).first().click();
+  await expect(page.getByRole('alert')).toContainText('starts with neither ! nor @');
+  await field('Keyword').fill('ex');
+  await field('Address with %s').press('Enter');
+  const engines = page.getByRole('list', { name: 'Search engines and keywords' });
+  await expect(engines.getByRole('listitem').filter({ hasText: 'Example' })).toContainText('ex');
+  await page
+    .getByRole('combobox', { name: 'Search engine', exact: true })
+    .selectOption({ label: 'Example' });
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'search.urlTemplate',
+          value: 'https://search.example/?q=%s',
+        }),
+        expect.objectContaining({
+          key: 'search.engines',
+          value: [{ name: 'Example', keyword: 'ex', url: 'https://search.example/?q=%s' }],
+        }),
+      ]),
+    });
+  await engines.getByRole('button', { name: 'Remove Example' }).click();
+  await expect(engines.getByRole('listitem').filter({ hasText: 'Example' })).toHaveCount(0);
+});

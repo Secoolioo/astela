@@ -56,6 +56,8 @@ The language changes when the browser starts again. Until then, the settings pag
 
 - **Search engine:** DuckDuckGo, Google, Bing, Startpage, Ecosia, Brave Search or Qwant. The address bar and the [new tab page](new-tab-page.md) search with it.
 - **Custom:** any search address that starts with `https://` and contains `%s` where the search terms go, for example `https://search.example/?q=%s`.
+- **Search engines and keywords:** from 0.1.0-beta.5, a keyword and a space before a search in the address bar search with that engine, such as `@google astela`. The built-in engines have the keywords `@duckduckgo`, `@google`, `@bing`, `@startpage`, `@ecosia`, `@brave` and `@qwant`. Add an engine with a name, a keyword that starts with neither `!` nor `@`, and its search address with `%s`; it can then also be the search engine above.
+- **Search sites with !shortcuts:** from 0.1.0-beta.5, a `!bang` at the start or the end of a search searches a site instead, such as `!w astela` on Wikipedia or `astela !gh` on GitHub. **All shortcuts** lists them; an unknown one searches with the search engine. It is on by default.
 
 ## Privacy
 

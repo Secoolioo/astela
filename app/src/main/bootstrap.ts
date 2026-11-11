@@ -24,6 +24,8 @@ import {
   type Logger,
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
+import type { SearchShortcuts } from '../domain/navigation/omnibox.ts';
+import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-engines.ts';
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { webFontPreferences } from '../domain/appearance/appearance.ts';
@@ -72,6 +74,8 @@ import {
   LanguageSetting,
   WebFontsSetting,
   WebTextSizeSetting,
+  SearchBangsSetting,
+  SearchEnginesSetting,
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
@@ -463,6 +467,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     await settingsLoaded;
     return settings.get(SearchUrlTemplate);
   };
+  const searchShortcuts = async (): Promise<SearchSettings> => {
+    await settingsLoaded;
+    return { engines: settings.get(SearchEnginesSetting), bangs: settings.get(SearchBangsSetting) };
+  };
   // Every tab that a page opens, from a script or from the context menu, takes this path.
   const openFromPage = (url: string, opener: Electron.WebContents, activate = true): void => {
     if (mayOpenInNewTab(url)) windows.forTab(opener)?.tabs.open(url, { activate });
@@ -647,7 +655,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     logger,
   });
-  registerShellHandlers(router, windows, searchTemplate);
+  registerShellHandlers(router, windows, searchTemplate, searchShortcuts);
   const overlayOptions = {
     url: 'app://overlay/',
     preload: layout.pagePreload,
@@ -696,7 +704,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     ),
   );
-  registerNewTabHandlers(router, windows, searchTemplate);
+  registerNewTabHandlers(router, windows, searchTemplate, searchShortcuts);
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
@@ -850,10 +858,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
 }
 
+/** The searches of the address bar and the new tab page, besides the default engine. */
+interface SearchSettings extends SearchShortcuts {
+  readonly engines: readonly CustomSearchEngine[];
+  readonly bangs: boolean;
+}
+
 function registerShellHandlers(
   router: IpcRouter,
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchSettings>,
 ): void {
   const windowOf = (sender: Electron.WebContents): BrowserWindowController => {
     const window = windows.forShell(sender);
@@ -863,7 +878,7 @@ function registerShellHandlers(
     return window;
   };
   const target = (input: string): Promise<string | undefined> =>
-    resolveInput(input, searchTemplate);
+    resolveInput(input, searchTemplate, searchShortcuts);
   router.handle(GetShellState, (_request, { sender }) => windowOf(sender).state());
   router.handle(OpenTab, async ({ input }, { sender }) => {
     const url = input === undefined ? undefined : await target(input);
@@ -891,15 +906,17 @@ function registerNewTabHandlers(
   router: IpcRouter,
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchSettings>,
 ): void {
   router.handle(GetNewTabState, async () => {
-    const { engineForSearchUrl } = await import('../shared/search-engines.ts');
-    return { engine: engineForSearchUrl(await searchTemplate())?.name ?? null };
+    const template = await searchTemplate();
+    const custom = (await searchShortcuts()).engines.find((engine) => engine.url === template);
+    return { engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null };
   });
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);
-    const url = await resolveInput(input, searchTemplate);
+    const url = await resolveInput(input, searchTemplate, searchShortcuts);
     if (window !== undefined && tabId !== undefined && url !== undefined) {
       window.tabs.navigate(tabId, url);
     }
@@ -912,13 +929,15 @@ function registerNewTabHandlers(
  * leads to. Its parser loads with the first text, not before the first window.
  * @param input - The text.
  * @param searchTemplate - The address of the search engine.
+ * @param searchShortcuts - The engines of keywords, and whether `!bangs` work.
  */
 async function resolveInput(
   input: string,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchShortcuts>,
 ): Promise<string | undefined> {
   const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
-  return resolveOmniboxInput(input, await searchTemplate())?.url;
+  return resolveOmniboxInput(input, await searchTemplate(), await searchShortcuts())?.url;
 }
 
 /**
