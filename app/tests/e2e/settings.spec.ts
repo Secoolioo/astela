@@ -421,3 +421,33 @@ test('chooses the pages to open at start and the home page', async () => {
       ]),
     });
 });
+
+test('chooses the folder of downloads only in the dialog of the system', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'settings-downloads-'));
+  try {
+    const page = await openSettings();
+    await expect(page.getByText('The downloads folder of the system')).toBeVisible();
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, folder);
+    await page.getByRole('button', { name: 'Change…' }).click();
+    await expect(page.getByText(folder)).toBeVisible();
+    // The page cannot name a folder itself.
+    expect(
+      await page.evaluate(() =>
+        window.bridge.invoke('settings.set', { key: 'downloads.folder', value: '/' }),
+      ),
+    ).toEqual({ ok: false, error: 'invalid' });
+    await page.getByRole('switch', { name: /Ask where to save each file/ }).check();
+    await expect
+      .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+      .toMatchObject({
+        settings: expect.arrayContaining([
+          expect.objectContaining({ key: 'downloads.folder', value: folder }),
+          expect.objectContaining({ key: 'downloads.ask', value: true }),
+        ]),
+      });
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});

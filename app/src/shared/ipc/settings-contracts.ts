@@ -90,3 +90,15 @@ export const RestartBrowser = defineRequest({
   capability: 'page:settings',
   ratePerSecond: 1,
 });
+
+/**
+ * Asks for the folder of downloads in the system's dialog and sets it; the page never names
+ * a folder itself.
+ */
+export const ChooseDownloadFolder = defineRequest({
+  channel: 'settings.chooseDownloadFolder',
+  request: v.strictObject({}),
+  response: v.strictObject({ chosen: v.boolean() }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});

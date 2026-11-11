@@ -318,5 +318,12 @@
   "shell.home": "Startseite",
   "settings.pageZoom": "Seitenzoom",
   "settings.pageZoomNote": "Für Websites, die du nicht selbst gezoomt hast.",
-  "settings.pageZoom.keywords": "Zoom Größe größer kleiner vergrößern skalieren"
+  "settings.pageZoom.keywords": "Zoom Größe größer kleiner vergrößern skalieren",
+  "settings.downloads": "Downloads",
+  "settings.downloadFolder": "Downloads speichern in",
+  "settings.downloadFolder.keywords": "Speicherort Verzeichnis Pfad speichern Ordner",
+  "settings.downloadFolderSystem": "Der Download-Ordner des Systems",
+  "settings.downloadFolderChange": "Ändern…",
+  "settings.downloadAsk": "Bei jeder Datei fragen, wo sie gespeichert wird",
+  "settings.downloadAskNote": "Der Browser fragt, bevor er einen Download speichert, und schlägt den Ordner oben vor."
 }

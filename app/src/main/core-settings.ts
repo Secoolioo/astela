@@ -267,6 +267,26 @@ export const HomePageSetting = defineSetting<string>({
   ui: { section: 'startup', control: 'text', order: 4 },
 });
 
+/** The folder where downloads are saved; empty for the downloads folder of the system. */
+export const DownloadFolderSetting = defineSetting<string>({
+  key: 'downloads.folder',
+  schema: v.pipe(v.string(), v.maxLength(4096)),
+  default: '',
+  scope: 'global',
+  policy: { name: 'DownloadDirectory', recommended: true },
+  ui: { section: 'downloads', control: 'folder', order: 1 },
+});
+
+/** Whether the browser asks where to save each download. */
+export const AskDownloadSetting = defineSetting<boolean>({
+  key: 'downloads.ask',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'PromptForDownloadLocation', recommended: true },
+  ui: { section: 'downloads', control: 'toggle', order: 2 },
+});
+
 /** Whether this profile has shown the setup guide; it opens once per profile. */
 export const SetupShownSetting = defineSetting<boolean>({
   key: 'setup.shown',
@@ -322,6 +342,8 @@ export const coreSettings = [
   SitePermissionsSetting,
   StartupSetting,
   StartupPagesSetting,
+  DownloadFolderSetting,
+  AskDownloadSetting,
   HomeButtonSetting,
   HomePageSetting,
   SetupShownSetting,

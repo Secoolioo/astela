@@ -41,6 +41,11 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Show home button:** from 0.1.0-beta.5, a home button next to Reload, which opens the home page in the current tab. `Alt+Home` (`Command+Shift+H` on macOS) does the same, also without the button.
 - **Home page:** the page of the home button. An empty field opens the new tab page.
 
+## Downloads
+
+- **Save downloads in:** from 0.1.0-beta.5, the folder where downloads are saved; by default the downloads folder of the system. **Change…** picks another one in the dialog of the system.
+- **Ask where to save each file:** asks before each download where to save it and suggests that folder. The download starts meanwhile under the name of the file with `.part` added; a cancelled question cancels it.
+
 ## Languages
 
 - **Language of the browser:** from 0.1.0-beta.5, the language of the menus, the dialogs and the pages of Astela, such as the settings and the new tab page. Same as the system follows the language of your operating system; English and Deutsch set one. Websites keep their own language.

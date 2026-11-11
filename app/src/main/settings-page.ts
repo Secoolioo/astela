@@ -5,6 +5,7 @@ import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
 import {
+  ChooseDownloadFolder,
   ExportSettings,
   GetSettings,
   ImportSettings,
@@ -79,6 +80,8 @@ export function connectSettingsPage(
     if (definition === undefined) {
       return { ok: false, error: 'unknown' } as const;
     }
+    // Only the system's dialog sets a folder.
+    if (definition.ui?.control === 'folder') return { ok: false, error: 'invalid' } as const;
     const result = settings.set(definition, value);
     if (result.ok) {
       return { ok: true } as const;
@@ -107,6 +110,18 @@ export function connectSettingsPage(
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page imports settings');
     const { importSettings } = await import('./settings-file.ts');
     return importSettings(sender, shown, settings);
+  });
+  router.handle(ChooseDownloadFolder, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page chooses folders');
+    const definition = shown.get('downloads.folder');
+    if (definition === undefined || settings.inspect(definition).locked) return { chosen: false };
+    const current = settings.get(definition);
+    const { chooseFolder } = await import('./settings-file.ts');
+    const folder = await chooseFolder(
+      sender,
+      typeof current === 'string' && current !== '' ? current : app.getPath('downloads'),
+    );
+    return { chosen: folder !== undefined && settings.set(definition, folder).ok };
   });
   router.handle(RestartBrowser, (_request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page restarts the browser');
