@@ -1,3 +1,4 @@
+import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import { shortcutTable } from '../shared/shortcuts.ts';
 import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
@@ -79,6 +80,8 @@ import {
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
+  BlockThirdPartyCookiesSetting,
+  ThirdPartyCookieSitesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
@@ -315,6 +318,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     allowlist: () => settings.get(HttpAllowlistSetting),
   });
   pipeline.add(httpsFirst);
+  // Private windows always keep third-party cookies away; regular ones as the settings say.
+  const thirdPartyCookies = new ThirdPartyCookies({
+    blocked: (s) => privateSessions.has(s) || settings.get(BlockThirdPartyCookiesSetting),
+    allowedSites: () => settings.get(ThirdPartyCookieSitesSetting),
+  });
+  pipeline.add(thirdPartyCookies);
   // A blocker without filter data shows that it fails where it should block.
   const blocking = (url: string): Blocking => {
     const value = blockingFor(
@@ -437,6 +446,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     blocker,
     (s) => webSessions.has(s),
     layout.framePreload,
+    (url, top, frameSession) => thirdPartyCookies.blocksFrame(url, top, frameSession),
   );
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {

@@ -400,8 +400,12 @@ test('lists the sites without blocking in the settings, to remove and to add the
     let sites = settings.getByRole('list', { name: 'Sites without blocking' });
     await expect(sites.getByRole('listitem')).toHaveText(['news.localhost Remove']);
     await settings.getByRole('button', { name: 'Remove news.localhost' }).click();
+    // The row of the list says so once its last site is gone.
     await expect(
-      settings.getByRole('region', { name: 'Privacy' }).getByText('None', { exact: true }),
+      settings
+        .locator('.row')
+        .filter({ has: settings.locator('#allowed-sites') })
+        .getByText('None', { exact: true }),
     ).toBeVisible();
     await open(`http://www.news.localhost:${port}/blocker.html`);
     await expect(

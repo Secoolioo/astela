@@ -47,6 +47,7 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    cookieSiteError: { state: true },
     imageError: { state: true },
     themeMessage: { state: true },
     shortcuts: { state: true },
@@ -517,6 +518,8 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** Whether the last site for third-party cookies was not a site. */
+  declare cookieSiteError: boolean;
   /** Whether the chosen image could not be the background of the new tab page. */
   declare imageError: boolean;
   /** What the last import or export of a theme did. */
@@ -569,6 +572,7 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.cookieSiteError = false;
     this.imageError = false;
     this.themeMessage = undefined;
     this.shortcuts = undefined;
@@ -1064,6 +1068,29 @@ export class SettingsPage extends LitElement {
             render: () => this.renderAllowedSites(),
           },
           {
+            id: 'privacy.blockThirdPartyCookies',
+            keys: [
+              'settings.thirdPartyCookies',
+              'settings.thirdPartyCookiesNote',
+              'settings.thirdPartyCookies.keywords',
+            ],
+            render: () =>
+              this.renderToggle(
+                'privacy.blockThirdPartyCookies',
+                'settings.thirdPartyCookies',
+                'settings.thirdPartyCookiesNote',
+              ),
+          },
+          {
+            id: 'privacy.thirdPartyCookieSites',
+            keys: [
+              'settings.cookieSites',
+              'settings.cookieSitesNote',
+              'settings.thirdPartyCookies.keywords',
+            ],
+            render: () => this.renderCookieSites(),
+          },
+          {
             id: 'privacy.httpsFirst',
             keys: [
               'settings.httpsFirst',
@@ -1380,6 +1407,76 @@ export class SettingsPage extends LitElement {
         <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
       </form>
       ${this.siteError ? html`<span class="error" role="alert">${t('settings.allowedSitesInvalid')}</span>` : nothing}
+    </div>`;
+  }
+
+  /** The sites on whose pages third-party cookies stay allowed, to remove and to add. */
+  private renderCookieSites(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('privacy.thirdPartyCookieSites');
+    const sites = Array.isArray(setting?.value)
+      ? setting.value.filter((site): site is string => typeof site === 'string')
+      : [];
+    const disabled = setting?.locked !== false;
+    const save = (next: readonly string[]): void =>
+      void this.client?.set('privacy.thirdPartyCookieSites', next);
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="cookie-sites">${t('settings.cookieSites')}</span>
+        <span class="note">
+          ${setting?.locked === true ? t('settings.managed') : t('settings.cookieSitesNote')}
+        </span>
+      </span>
+      ${
+        sites.length === 0
+          ? html`<span class="note">${t('settings.cookieSitesNone')}</span>`
+          : html`<ul class="sites" aria-labelledby="cookie-sites">
+              ${sites.map(
+                (site) =>
+                  html`<li>
+                    <span>${site}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.cookieSitesRemove', { site })}
+                      @click=${() => save(sites.filter((other) => other !== site))}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form
+        class="add-site"
+        @submit=${(event: SubmitEvent) => {
+          // The page cannot submit forms; it saves the setting instead.
+          event.preventDefault();
+          const form = event.currentTarget;
+          const field = form instanceof HTMLFormElement ? form.elements.namedItem('site') : null;
+          if (!(field instanceof HTMLInputElement)) return;
+          const site = hostOf(field.value);
+          this.cookieSiteError = site === undefined;
+          if (site === undefined) return;
+          field.value = '';
+          if (!sites.includes(site)) save([...sites, site].toSorted());
+        }}
+      >
+        <input
+          type="text"
+          name="site"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="example.com"
+          aria-label=${t('settings.cookieSitesAdd')}
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${
+        this.cookieSiteError
+          ? html`<span class="error" role="alert">${t('settings.allowedSitesInvalid')}</span>`
+          : nothing
+      }
     </div>`;
   }
 

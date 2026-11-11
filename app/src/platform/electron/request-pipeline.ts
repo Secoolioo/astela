@@ -1,5 +1,6 @@
 import type {
   OnBeforeRequestListenerDetails,
+  OnBeforeSendHeadersListenerDetails,
   OnHeadersReceivedListenerDetails,
   Session,
 } from 'electron';
@@ -29,6 +30,21 @@ export interface RequestInterceptor {
    * @returns The headers to add, or `undefined` for none.
    */
   headersReceived?(details: OnHeadersReceivedListenerDetails): HeaderAdditions | undefined;
+  /**
+   * Names of request headers to remove before the request is sent, such as `cookie`.
+   * @returns The names, or `undefined` for none.
+   */
+  removedRequestHeaders?(
+    details: OnBeforeSendHeadersListenerDetails,
+  ): readonly string[] | undefined | Promise<readonly string[] | undefined>;
+  /**
+   * Names of response headers to remove before the page sees the response, such as
+   * `set-cookie`.
+   * @returns The names, or `undefined` for none.
+   */
+  removedResponseHeaders?(
+    details: OnHeadersReceivedListenerDetails,
+  ): readonly string[] | undefined | Promise<readonly string[] | undefined>;
 }
 
 /**
@@ -53,10 +69,26 @@ export function addHeaders(
 }
 
 /**
- * Owns the one `onBeforeRequest` and the one `onHeadersReceived` listener that Electron
- * allows per session and asks its interceptors in order: the first decision about a request
- * wins, and every interceptor may add response headers. Requests of the browser's own pages
- * never pass here, because the pipeline only serves web sessions.
+ * The headers without some of them, whatever their spelling.
+ * @param headers - The headers.
+ * @param names - The names of the headers to remove.
+ */
+export function withoutHeaders<T>(
+  headers: Readonly<Record<string, T>>,
+  names: readonly string[],
+): Record<string, T> {
+  const removed = new Set(names.map((name) => name.toLowerCase()));
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !removed.has(name.toLowerCase())),
+  );
+}
+
+/**
+ * Owns the one `onBeforeRequest`, `onBeforeSendHeaders` and `onHeadersReceived` listener
+ * that Electron allows per session and asks its interceptors in order: the first decision
+ * about a request wins, every interceptor may add response headers, and the headers that any
+ * of them names are removed. Requests of the browser's own pages never pass here, because the
+ * pipeline only serves web sessions.
  */
 export class RequestPipeline {
   private readonly interceptors: RequestInterceptor[] = [];
@@ -80,6 +112,17 @@ export class RequestPipeline {
         () => callback({}),
       );
     });
+    session.webRequest.onBeforeSendHeaders((details, callback) => {
+      void this.removals((interceptor) => interceptor.removedRequestHeaders?.(details)).then(
+        (names) =>
+          callback(
+            names.length === 0
+              ? {}
+              : { requestHeaders: withoutHeaders(details.requestHeaders, names) },
+          ),
+        () => callback({}),
+      );
+    });
     session.webRequest.onHeadersReceived((details, callback) => {
       let headers: Record<string, string[]> | undefined;
       for (const interceptor of this.interceptors) {
@@ -88,8 +131,34 @@ export class RequestPipeline {
           headers = addHeaders(headers ?? details.responseHeaders ?? {}, additions);
         }
       }
-      callback(headers === undefined ? {} : { responseHeaders: headers });
+      void this.removals((interceptor) => interceptor.removedResponseHeaders?.(details)).then(
+        (names) => {
+          if (names.length > 0) {
+            headers = withoutHeaders(headers ?? details.responseHeaders ?? {}, names);
+          }
+          callback(headers === undefined ? {} : { responseHeaders: headers });
+        },
+        () => callback(headers === undefined ? {} : { responseHeaders: headers }),
+      );
     });
+  }
+
+  /**
+   * The names of the headers that the interceptors remove, from all of them. An interceptor
+   * that fails, also at once, rejects the result, so that the request goes on unchanged
+   * instead of waiting forever.
+   */
+  private async removals(
+    ask: (
+      interceptor: RequestInterceptor,
+    ) => readonly string[] | undefined | Promise<readonly string[] | undefined>,
+  ): Promise<string[]> {
+    const names: string[] = [];
+    for (const interceptor of this.interceptors) {
+      const removed = await ask(interceptor);
+      if (removed !== undefined) names.push(...removed);
+    }
+    return names;
   }
 
   private async decide(
