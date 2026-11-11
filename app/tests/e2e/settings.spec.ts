@@ -629,3 +629,37 @@ test('keeps the data when the question is cancelled', async () => {
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveCount(0);
 });
+
+test('applies the secure DNS provider that is chosen, and turns it off', async () => {
+  const page = await openSettings();
+  // The host resolver gives nothing back, so the test records how the browser sets it.
+  await browser.main.evaluate(({ app }) => {
+    const calls: unknown[] = [];
+    Reflect.set(globalThis, 'resolverCalls', calls);
+    app.configureHostResolver = (options) => {
+      calls.push(options);
+    };
+  });
+  const lastCall = (): Promise<unknown> =>
+    browser.main.evaluate(() => (Reflect.get(globalThis, 'resolverCalls') as unknown[]).at(-1));
+  const dns = page.getByRole('combobox', { name: 'Use secure DNS' });
+  await expect(dns).toHaveValue('automatic');
+  await dns.selectOption({ label: 'Quad9 (9.9.9.9)' });
+  await expect.poll(lastCall).toEqual({
+    secureDnsMode: 'secure',
+    secureDnsServers: ['https://dns.quad9.net/dns-query'],
+  });
+  await dns.selectOption({ label: 'Other service' });
+  const service = page.getByRole('textbox', { name: 'Address of the DNS over HTTPS service' });
+  await service.fill('dns.example');
+  await service.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Enter the https address');
+  await service.fill('https://dns.example/dns-query');
+  await service.press('Enter');
+  await expect.poll(lastCall).toEqual({
+    secureDnsMode: 'secure',
+    secureDnsServers: ['https://dns.example/dns-query'],
+  });
+  await dns.selectOption({ label: 'Off' });
+  await expect.poll(lastCall).toEqual({ secureDnsMode: 'off', secureDnsServers: [] });
+});

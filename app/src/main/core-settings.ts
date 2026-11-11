@@ -1,3 +1,8 @@
+import {
+  secureDnsModes,
+  secureDnsTemplatesPattern,
+  type SecureDnsMode,
+} from '../shared/secure-dns.ts';
 import * as v from 'valibot';
 import { accentPresets } from '../domain/appearance/accent-presets.ts';
 import {
@@ -336,6 +341,27 @@ export const HttpAllowlistSetting = defineSetting<string[]>({
   policy: { name: 'HttpAllowlist' },
 });
 
+/** How the browser looks up the addresses of sites: with DNS over HTTPS or without. */
+export const SecureDnsSetting = defineSetting<SecureDnsMode>({
+  key: 'network.secureDns',
+  schema: v.picklist(secureDnsModes),
+  default: 'automatic',
+  scope: 'global',
+  // A policy of the user could send every look-up elsewhere, so only the machine's counts.
+  policy: { name: 'DnsOverHttpsMode', sensitive: true },
+  ui: { section: 'privacy', control: 'select', order: 7 },
+});
+
+/** The addresses of the DNS over HTTPS services, separated by spaces; empty for the system's. */
+export const SecureDnsTemplatesSetting = defineSetting<string>({
+  key: 'network.secureDnsTemplates',
+  schema: v.pipe(v.string(), v.maxLength(2048), v.regex(secureDnsTemplatesPattern)),
+  default: '',
+  scope: 'global',
+  policy: { name: 'DnsOverHttpsTemplates', sensitive: true },
+  ui: { section: 'privacy', control: 'text', order: 8 },
+});
+
 /** Whether the toolbar has a home button, which opens the home page. */
 export const HomeButtonSetting = defineSetting<boolean>({
   key: 'home.button',
@@ -478,6 +504,8 @@ export const coreSettings = [
   HomePageSetting,
   HttpsFirstSetting,
   HttpAllowlistSetting,
+  SecureDnsSetting,
+  SecureDnsTemplatesSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,

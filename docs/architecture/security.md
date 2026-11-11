@@ -87,10 +87,11 @@ There is one mode: Chromium's HTTPS upgrades that fall back without a warning ar
 
 ### DNS over HTTPS
 
-Contrary to its documentation, Electron starts with DNS over HTTPS turned off (as of October 2026). Astela will therefore call `configureHostResolver` explicitly:
+Contrary to its documentation, Electron starts with DNS over HTTPS turned off (as of October 2026). Astela therefore calls `configureHostResolver` itself when it starts and whenever the settings change (from 0.1.0-beta.5):
 
-- Default: `automatic` mode with a list of providers.
-- The `DnsOverHttpsMode` policy can switch to `off` or `secure`; `DnsOverHttpsTemplates` sets custom resolver templates (see [enterprise](enterprise.md)).
+- Default: `automatic` mode without a list, so Chromium uses DNS over HTTPS where the system's provider offers it and falls back to plain DNS elsewhere.
+- The setting `network.secureDns` and the `DnsOverHttpsMode` policy switch to `off` or `secure`; `network.secureDnsTemplates` and `DnsOverHttpsTemplates` name the services (see [enterprise](enterprise.md)). `secure` without a service falls back to `automatic`, so names never stop resolving for want of a service.
+- Both policies are sensitive: a policy of the user could send every look-up to another server, so only machine-wide mandatory sources count.
 
 ### Malware and phishing protection
 
@@ -208,4 +209,4 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 - Every package sets the fuses listed above; the package smoke test reads them back from the installed binary.
 - The [content blocker](../user/content-blocker.md) cancels requests of web pages that the default lists of uBlock Origin name, including the Badware risks list and the Online Malicious URL Blocklist ([ADR 0027](../adr/0027-blocker-with-the-default-lists-of-ublock-origin.md)). Its data is built in CI from the lists and from scriptlet sources whose hashes are recorded in the repository, and ships with the package; the browser downloads no lists. A frame preload hides elements, applies procedural rules and runs scriptlets in every web frame ([ADR 0028](../adr/0028-content-blocker-rules-through-a-frame-preload.md), [ADR 0033](../adr/0033-procedural-and-popup-filters-and-exceptions-per-domain.md)), and popups that the lists name do not open. The shield in the toolbar counts the blocked requests of the page and turns the blocker off for a site's registrable domain (`contentBlocker.allowedSites`); the decision for a request depends on the site of the page it belongs to.
 
-Not implemented yet: DNS over HTTPS, the warning page for malware and phishing sites, the signed filter feed, and the web platform API inventory in CI.
+Not implemented yet: the warning page for malware and phishing sites, the signed filter feed, and the web platform API inventory in CI.

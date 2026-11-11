@@ -1,3 +1,4 @@
+import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -72,6 +73,8 @@ import {
   HomePageSetting,
   HttpAllowlistSetting,
   HttpsFirstSetting,
+  SecureDnsSetting,
+  SecureDnsTemplatesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
   NewTabTilesSetting,
@@ -738,6 +741,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     };
   };
   registerNewTabHandlers(router, windows, newTabState, searchTemplate, searchShortcuts);
+  // Electron starts without DNS over HTTPS, whatever its documentation says, so the browser
+  // sets the mode of the host resolver itself, at the start and when the settings change.
+  const applySecureDns = (): void =>
+    app.configureHostResolver(
+      hostResolverOptions(settings.get(SecureDnsSetting), settings.get(SecureDnsTemplatesSetting)),
+    );
+  applySecureDns();
+  settings.onDidChange(({ keys }) => {
+    if (keys.includes(SecureDnsSetting.key) || keys.includes(SecureDnsTemplatesSetting.key)) {
+      applySecureDns();
+    }
+  });
   const newTabKeys = new Set([
     NewTabSearchSetting.key,
     NewTabClockSetting.key,

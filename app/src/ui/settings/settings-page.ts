@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
+import { secureDnsProviders, secureDnsTemplatesPattern } from '../../shared/secure-dns.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
@@ -35,6 +36,8 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    dnsError: { state: true },
+    customDns: { state: true },
     dataCleared: { state: true },
     homeError: { state: true },
     webFontError: { state: true },
@@ -399,6 +402,10 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** Whether the address of a DNS over HTTPS service was not valid. */
+  declare dnsError: boolean;
+  /** Whether the field for the address of another DNS over HTTPS service shows. */
+  declare customDns: boolean;
   /** Whether the browsing data was just cleared. */
   declare dataCleared: boolean;
   /** Whether the last home page was not a web address. */
@@ -433,6 +440,8 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.dnsError = false;
+    this.customDns = false;
     this.dataCleared = false;
     this.homeError = false;
     this.webFontError = false;
@@ -894,6 +903,12 @@ export class SettingsPage extends LitElement {
                 'settings.httpsFirst',
                 'settings.httpsFirstNote',
               ),
+          },
+          {
+            id: 'network.secureDns',
+            keys: ['settings.secureDns', 'settings.secureDnsNote', 'settings.secureDns.keywords'],
+            words: secureDnsProviders.map((provider) => provider.name),
+            render: () => this.renderSecureDns(),
           },
           {
             id: 'clear-data',
@@ -1819,6 +1834,118 @@ export class SettingsPage extends LitElement {
       (await this.client?.set('newtab.tiles', [...tiles, { title, url }])) === true;
     this.tileError = !saved;
     if (saved) form.reset();
+  }
+
+  /**
+   * DNS over HTTPS: with the provider of the system, with a provider from the list or another
+   * service, or off.
+   */
+  private renderSecureDns(): TemplateResult {
+    const t = this.t;
+    const mode = this.client?.get('network.secureDns');
+    const templates = this.client?.get('network.secureDnsTemplates');
+    const template = typeof templates?.value === 'string' ? templates.value : '';
+    const provider = secureDnsProviders.find((known) => known.template === template);
+    const selected =
+      mode?.value === 'off'
+        ? 'off'
+        : mode?.value !== 'secure' || template === ''
+          ? 'automatic'
+          : this.customDns || provider === undefined
+            ? 'custom'
+            : provider.template;
+    const locked = mode?.locked !== false || templates?.locked !== false;
+    const choose = async (value: string): Promise<void> => {
+      this.dnsError = false;
+      this.customDns = value === 'custom';
+      if (value === 'custom') return;
+      // The services first, so that the browser never runs only DNS over HTTPS without one.
+      await this.client?.set(
+        'network.secureDnsTemplates',
+        value === 'off' || value === 'automatic' ? '' : value,
+      );
+      await this.client?.set(
+        'network.secureDns',
+        value === 'off' ? 'off' : value === 'automatic' ? 'automatic' : 'secure',
+      );
+    };
+    return html`<div class="row">
+        <span class="label">
+          <span>${t('settings.secureDns')}</span>
+          ${
+            mode?.locked === true || templates?.locked === true
+              ? this.managedNote(mode?.locked === true ? mode : templates)
+              : html`<span class="note">${t('settings.secureDnsNote')}</span>`
+          }
+        </span>
+        <select
+          aria-label=${t('settings.secureDns')}
+          ?disabled=${locked}
+          @change=${(event: Event) => {
+            const select = event.target;
+            if (select instanceof HTMLSelectElement) void choose(select.value);
+          }}
+        >
+          <option value="automatic" ?selected=${selected === 'automatic'}>
+            ${t('settings.secureDnsAutomatic')}
+          </option>
+          ${secureDnsProviders.map(
+            (known) =>
+              html`<option value=${known.template} ?selected=${selected === known.template}>
+                ${known.name}
+              </option>`,
+          )}
+          <option value="custom" ?selected=${selected === 'custom'}>
+            ${t('settings.secureDnsCustom')}
+          </option>
+          <option value="off" ?selected=${selected === 'off'}>${t('settings.secureDnsOff')}</option>
+        </select>
+      </div>
+      ${
+        selected === 'custom'
+          ? html`<form
+              class="row add-site"
+              @submit=${(event: SubmitEvent) => void this.setCustomDns(event)}
+            >
+              <input
+                type="text"
+                inputmode="url"
+                name="template"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label=${t('settings.secureDnsTemplate')}
+                placeholder="https://dns.example/dns-query"
+                .value=${provider === undefined ? template : ''}
+                ?disabled=${locked}
+              />
+              <button type="submit" ?disabled=${locked}>${t('settings.save')}</button>
+              ${
+                this.dnsError
+                  ? html`<span class="error" role="alert">${t('settings.secureDnsInvalid')}</span>`
+                  : nothing
+              }
+            </form>`
+          : nothing
+      }`;
+  }
+
+  private async setCustomDns(event: SubmitEvent): Promise<void> {
+    // The page cannot submit forms; it asks the browser instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = form.elements.namedItem('template');
+    const value = field instanceof HTMLInputElement ? field.value.trim() : '';
+    if (value === '' || !secureDnsTemplatesPattern.test(value)) {
+      this.dnsError = true;
+      return;
+    }
+    const saved = (await this.client?.set('network.secureDnsTemplates', value)) === true;
+    this.dnsError = !saved;
+    if (saved) {
+      await this.client?.set('network.secureDns', 'secure');
+      this.customDns = false;
+    }
   }
 
   /** Clearing the browsing data, with a question for the time range and the kinds of data. */
