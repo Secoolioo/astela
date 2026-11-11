@@ -336,5 +336,13 @@
   "settings.searchEngineInvalid": "Gib einen Namen an, ein freies Kürzel ohne Leerzeichen, das weder mit ! noch mit @ beginnt, und eine https-Adresse mit %s für die Suche.",
   "settings.bangs": "Websites mit !Kürzeln durchsuchen",
   "settings.bangsNote": "Etwa !w für Wikipedia oder !gh für GitHub, am Anfang oder Ende einer Suche in der Adressleiste.",
-  "settings.bangsAll": "Alle Kürzel"
+  "settings.bangsAll": "Alle Kürzel",
+  "settings.toolbar": "Symbolleiste",
+  "settings.toolbarNote": "Die Schaltflächen neben der Adressleiste, in dieser Reihenfolge. Downloads erscheint nach dem ersten Download.",
+  "settings.toolbar.keywords": "Schaltflächen anpassen Stern Schild Downloads",
+  "settings.toolbar.bookmark": "Lesezeichen-Stern",
+  "settings.toolbar.shield": "Inhaltsblocker",
+  "settings.toolbar.downloads": "Downloads",
+  "settings.toolbarUp": "{item} nach links",
+  "settings.toolbarDown": "{item} nach rechts"
 }

@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { tabStripPositions } from '../layout.ts';
+import { tabStripPositions, toolbarItems } from '../layout.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 /** The id of a tab. */
@@ -78,8 +78,9 @@ const DownloadsSummary = v.strictObject({
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
- * the window is a private window, `home` whether the toolbar has a home button, and
- * `defaultZoom` the zoom of sites without a zoom of their own.
+ * the window is a private window, `home` whether the toolbar has a home button,
+ * `defaultZoom` the zoom of sites without a zoom of their own, and `toolbar` the buttons
+ * next to the address bar in their order.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -91,6 +92,7 @@ export const ShellState = v.strictObject({
   private: v.boolean(),
   home: v.boolean(),
   defaultZoom: v.number(),
+  toolbar: v.array(v.picklist(toolbarItems)),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

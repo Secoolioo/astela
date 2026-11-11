@@ -409,6 +409,7 @@ export class AppShell extends LitElement {
       private: false,
       home: false,
       defaultZoom: 1,
+      toolbar: ['bookmark', 'shield', 'downloads'],
     };
     this.editing = undefined;
   }
@@ -592,47 +593,13 @@ export class AppShell extends LitElement {
                 ${percent(active.zoom, this.i18n?.language)}
               </button>`
         }
-        ${
-          active === undefined || !/^https?:/i.test(active.url)
-            ? nothing
-            : html`<button
-                class="icon bookmark"
-                title=${t('shell.bookmark')}
-                aria-label=${t('shell.bookmark')}
-                aria-pressed=${active.bookmarked ? 'true' : 'false'}
-                @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
-              >
-                ${icons.star}
-              </button>`
-        }
-        ${
-          active === undefined || active.blocking === 'none'
-            ? nothing
-            : html`<button
-                class="icon blocker"
-                data-state=${active.blocking}
-                title=${this.blockerLabel(active)}
-                aria-label=${this.blockerLabel(active)}
-                aria-haspopup="dialog"
-                @click=${this.openBlockerPopover}
-              >
-                ${
-                  active.blocking === 'on'
-                    ? icons.shield
-                    : active.blocking === 'failed'
-                      ? icons.shieldAlert
-                      : icons.shieldOff
-                }
-                ${
-                  active.blocking === 'on' && active.blocked > 0
-                    ? html`<span class="count" aria-hidden="true"
-                        >${active.blocked > 99 ? '99+' : active.blocked}</span
-                      >`
-                    : nothing
-                }
-              </button>`
-        }
-        ${this.renderDownloadsButton()}
+        ${this.state.toolbar.map((item) =>
+          item === 'bookmark'
+            ? this.renderBookmarkButton(active)
+            : item === 'shield'
+              ? this.renderShieldButton(active)
+              : this.renderDownloadsButton(),
+        )}
         ${
           this.state.private
             ? html`<span class="private" title=${t('shell.privateHint')}
@@ -641,7 +608,7 @@ export class AppShell extends LitElement {
             : nothing
         }
         <button
-          class="icon"
+          class="icon menu-button"
           title=${t('shell.menu')}
           aria-label=${t('shell.menu')}
           aria-haspopup="menu"
@@ -801,6 +768,51 @@ export class AppShell extends LitElement {
   };
 
   /** Opens the browser menu below the button. */
+  /** The star that bookmarks a web page; the browser's own pages have none. */
+  private renderBookmarkButton(active: TabView | undefined): TemplateResult | typeof nothing {
+    const t = this.tp.bind(this);
+    return active === undefined || !/^https?:/i.test(active.url)
+      ? nothing
+      : html`<button
+          class="icon bookmark"
+          title=${t('shell.bookmark')}
+          aria-label=${t('shell.bookmark')}
+          aria-pressed=${active.bookmarked ? 'true' : 'false'}
+          @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
+        >
+          ${icons.star}
+        </button>`;
+  }
+
+  /** The shield of the content blocker, on pages that it works on. */
+  private renderShieldButton(active: TabView | undefined): TemplateResult | typeof nothing {
+    return active === undefined || active.blocking === 'none'
+      ? nothing
+      : html`<button
+          class="icon blocker"
+          data-state=${active.blocking}
+          title=${this.blockerLabel(active)}
+          aria-label=${this.blockerLabel(active)}
+          aria-haspopup="dialog"
+          @click=${this.openBlockerPopover}
+        >
+          ${
+            active.blocking === 'on'
+              ? icons.shield
+              : active.blocking === 'failed'
+                ? icons.shieldAlert
+                : icons.shieldOff
+          }
+          ${
+            active.blocking === 'on' && active.blocked > 0
+              ? html`<span class="count" aria-hidden="true"
+                  >${active.blocked > 99 ? '99+' : active.blocked}</span
+                >`
+              : nothing
+          }
+        </button>`;
+  }
+
   /** The downloads button, once the browser downloaded something, with the progress around it. */
   private renderDownloadsButton(): TemplateResult | typeof nothing {
     const downloads = this.state.downloads;
@@ -837,6 +849,11 @@ export class AppShell extends LitElement {
 
   /** Opens the list of downloads at the button, once the shortcut showed the button. */
   private openDownloadsAtButton(): void {
+    // Without its button, the list opens at the menu button.
+    if (!this.state.toolbar.includes('downloads')) {
+      this.openDownloads(this.renderRoot.querySelector('.menu-button'));
+      return;
+    }
     this.downloadsPending = true;
     this.takeDownloadsOpening();
   }

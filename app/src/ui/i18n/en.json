@@ -336,5 +336,13 @@
   "settings.searchEngineInvalid": "Give a name, a keyword that is free, has no spaces and starts with neither ! nor @, and an https address with %s for the search.",
   "settings.bangs": "Search sites with !shortcuts",
   "settings.bangsNote": "Such as !w for Wikipedia or !gh for GitHub, at the start or the end of a search in the address bar.",
-  "settings.bangsAll": "All shortcuts"
+  "settings.bangsAll": "All shortcuts",
+  "settings.toolbar": "Toolbar",
+  "settings.toolbarNote": "The buttons next to the address bar, in this order. Downloads shows after the first download.",
+  "settings.toolbar.keywords": "buttons customize star shield downloads",
+  "settings.toolbar.bookmark": "Bookmark star",
+  "settings.toolbar.shield": "Content blocker",
+  "settings.toolbar.downloads": "Downloads",
+  "settings.toolbarUp": "Move {item} to the left",
+  "settings.toolbarDown": "Move {item} to the right"
 }

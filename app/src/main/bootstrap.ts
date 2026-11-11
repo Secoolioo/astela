@@ -81,6 +81,7 @@ import {
   SiteZoomSetting,
   SitePermissionsSetting,
   TabStripPositionSetting,
+  ToolbarItemsSetting,
   coreSettings,
 } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
@@ -531,6 +532,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     defaultZoom: () => settings.get(DefaultZoomSetting),
     homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
+    toolbar: () => settings.get(ToolbarItemsSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.
     onVisit: (url, title, titleOnly) => {
@@ -709,6 +711,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
     DefaultZoomSetting.key,
+    ToolbarItemsSetting.key,
     TabStripPositionSetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,

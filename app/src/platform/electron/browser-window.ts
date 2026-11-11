@@ -10,7 +10,7 @@ import {
 import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
-import type { TabStripPosition } from '../../shared/layout.ts';
+import { type TabStripPosition, type ToolbarItem, toolbarItems } from '../../shared/layout.ts';
 import {
   type BarItem,
   type FindState,
@@ -94,6 +94,8 @@ export interface BrowserWindowOptions {
   readonly webFonts?: () => Pick<Electron.WebPreferences, 'defaultFontFamily' | 'defaultFontSize'>;
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
+  /** The buttons of the toolbar next to the address bar, in their order. */
+  readonly toolbar?: () => readonly ToolbarItem[];
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
   readonly blocking: (url: string) => Blocking;
   /** Called when a tab shows a web page, and again when its title changes. */
@@ -338,6 +340,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       private: this.isPrivate,
       home: this.options.homeButton?.() ?? false,
       defaultZoom: this.options.defaultZoom?.() ?? 1,
+      toolbar: [...(this.options.toolbar?.() ?? toolbarItems)],
     };
   }
 
