@@ -57,6 +57,9 @@ import { JsonFilePolicyCache } from '../platform/policy/policy-cache.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
   BookmarksBarSetting,
+  HomeButtonSetting,
+  HomePageSetting,
+  StartupPagesSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
   BlockerAnnoyancesSetting,
@@ -503,6 +506,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     languageArguments: languageArguments(language),
     webFonts: () =>
       webFontPreferences(settings.get(WebFontsSetting), settings.get(WebTextSizeSetting)),
+    homeButton: () => settings.get(HomeButtonSetting),
+    homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.
@@ -678,6 +683,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   registerNewTabHandlers(router, windows, searchTemplate);
   const shellSettings = new Set([
     BookmarksBarSetting.key,
+    HomeButtonSetting.key,
     TabStripPositionSetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
@@ -710,17 +716,27 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     settings.set(SetupShownSetting, true);
   }
   // A restart from the settings page brings the tabs back, whatever the startup setting says.
+  const startup = settings.get(StartupSetting);
   const lastSession =
-    !showSetup &&
-    (settings.get(StartupSetting) === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
+    !showSetup && (startup === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
       ? parseSession(await savedSession)
       : undefined;
+  // The pages of the settings open like a session: in one window, and only the first loads.
+  const startPages = startup === 'pages' && !showSetup ? settings.get(StartupPagesSetting) : [];
+  const startSession =
+    lastSession ??
+    (startPages.length === 0
+      ? undefined
+      : {
+          version: 1 as const,
+          windows: [{ tabs: startPages.map((url) => ({ url, title: url })), active: 0 }],
+        });
   // Links from other apps open in tabs; a start without a session or the guide shows only them.
   const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
   const first =
-    lastSession === undefined
+    startSession === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
-      : windows.restore(lastSession);
+      : windows.restore(startSession);
   // Later links open in the window used last, which comes to the front, also without links;
   // without a window, the first link opens one.
   openLinks = (links) => {
@@ -843,10 +859,11 @@ function registerShellHandlers(
     if (url !== undefined) windowOf(sender).tabs.navigate(tabId, url);
     return null;
   });
-  router.handle(
-    TabAction,
-    ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
-  );
+  router.handle(TabAction, ({ tabId, action }, { sender }) => {
+    if (action === 'home') windowOf(sender).goHome(tabId);
+    else windowOf(sender).tabs.run(tabId, action);
+    return null;
+  });
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
 }
 

@@ -301,5 +301,19 @@
   "settings.webFont.serif": "Serif",
   "settings.webFont.sansSerif": "Sans serif",
   "settings.webFont.fixed": "Fixed width",
-  "settings.webFontDefault": "Default"
+  "settings.webFontDefault": "Default",
+  "settings.startupPage.pages": "Specific pages",
+  "settings.startupPages": "Pages to open",
+  "settings.startupPagesNote": "They open in this order, and only the first loads before you show the others.",
+  "settings.startupPagesNone": "None yet. Without pages, the browser starts with a new tab page.",
+  "settings.startupPagesAdd": "Page to add",
+  "settings.startupPagesRemove": "Remove {page}",
+  "settings.addressInvalid": "Enter a web address, such as example.com or https://example.com/page.",
+  "settings.homeButton": "Show home button",
+  "settings.homeButtonNote": "A button next to Reload opens the home page in the current tab.",
+  "settings.homePage": "Home page",
+  "settings.homePageNote": "The page of the home button and its shortcut. Empty opens the new tab page.",
+  "settings.homePageNewTab": "New tab page",
+  "settings.home.keywords": "homepage start house",
+  "shell.home": "Home"
 }

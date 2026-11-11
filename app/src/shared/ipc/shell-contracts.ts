@@ -78,7 +78,7 @@ const DownloadsSummary = v.strictObject({
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
- * the window is a private window.
+ * the window is a private window, and `home` whether the toolbar has a home button.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -88,6 +88,7 @@ export const ShellState = v.strictObject({
   find: v.nullable(FindState),
   downloads: v.nullable(DownloadsSummary),
   private: v.boolean(),
+  home: v.boolean(),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -137,12 +138,12 @@ export const NavigateTab = defineRequest({
   capability: 'shell',
 });
 
-/** History and loading actions of a tab. */
+/** History and loading actions of a tab; `home` opens the home page in it. */
 export const TabAction = defineRequest({
   channel: 'tabs.action',
   request: v.strictObject({
     tabId: TabId,
-    action: v.picklist(['back', 'forward', 'reload', 'stop']),
+    action: v.picklist(['back', 'forward', 'reload', 'stop', 'home']),
   }),
   response: Done,
   capability: 'shell',

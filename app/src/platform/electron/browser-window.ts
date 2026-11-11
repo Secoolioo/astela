@@ -85,6 +85,10 @@ export interface BrowserWindowOptions {
   readonly appearanceArgument: () => string;
   /** Command line arguments that give the views of the browser's own UI their language. */
   readonly languageArguments: readonly string[];
+  /** Whether the toolbar has a home button. */
+  readonly homeButton?: () => boolean;
+  /** The address of the home page; empty for the new tab page. */
+  readonly homePage?: () => string;
   /** The default fonts and text size of web pages, which a new web page gets. */
   readonly webFonts?: () => Pick<Electron.WebPreferences, 'defaultFontFamily' | 'defaultFontSize'>;
   /** Where the shell shows the tab strip. */
@@ -334,7 +338,17 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       find: this.finding,
       downloads: this.options.downloads?.(this.isPrivate) ?? null,
       private: this.isPrivate,
+      home: this.options.homeButton?.() ?? false,
     };
+  }
+
+  /**
+   * Opens the home page in a tab: the page of the settings, or the new tab page.
+   * @param id - The tab.
+   */
+  goHome(id: TabId): void {
+    const page = this.options.homePage?.() ?? '';
+    this.tabs.navigate(id, page === '' ? this.options.newTabUrl : page);
   }
 
   /** Sends the shell its state again, for example after the layout settings changed. */
@@ -610,6 +624,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
             command === 'page.reload' ? 'reload' : command === 'page.back' ? 'back' : 'forward';
           this.tabs.run(active.id, action);
         }
+        break;
+      case 'page.home':
+        if (active !== undefined) this.goHome(active.id);
         break;
       case 'omnibox.focus':
         this.shell.webContents.focus();

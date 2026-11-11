@@ -15,6 +15,12 @@ export interface SettingPolicy {
    * machine-wide, mandatory sources.
    */
   readonly sensitive?: boolean;
+  /**
+   * The values of the policy, when they differ from those of the setting, such as the
+   * numbers that Chromium's policy uses for a choice. Its output must be a valid value of the
+   * setting.
+   */
+  readonly schema?: v.GenericSchema<unknown, unknown>;
 }
 
 /** How the settings page presents a setting. Texts come from the module's locale catalog. */

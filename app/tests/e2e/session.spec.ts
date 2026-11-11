@@ -61,3 +61,51 @@ test('opens a new tab page instead when the setting says so', async () => {
     await second.close();
   }
 });
+
+test('opens the pages of the settings at start, and loads only the first', async () => {
+  const pages = [`${server.origin}/index.html`, `${server.origin}/second.html`];
+  const browser = await launch([], {
+    settings: { 'startup.page': 'pages', 'startup.urls': pages },
+  });
+  try {
+    const state = await shellState(browser.shell);
+    expect(state.tabs.map((tab) => tab.url)).toEqual(pages);
+    expect(state.activeTabId).toBe(state.tabs[0]?.id);
+    const loaded = (): Promise<number> =>
+      browser.main.evaluate(
+        ({ webContents }, origin) =>
+          webContents.getAllWebContents().filter((c) => c.getURL().startsWith(origin)).length,
+        server.origin,
+      );
+    await expect.poll(loaded).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens the home page from the home button and its shortcut, which are off by default', async () => {
+  const plain = await launch();
+  try {
+    await expect(plain.shell.getByRole('button', { name: 'Home' })).toHaveCount(0);
+  } finally {
+    await plain.close();
+  }
+  const browser = await launch([], {
+    settings: { 'home.button': true, 'home.page': `${server.origin}/second.html` },
+  });
+  try {
+    await browser.shell.getByRole('button', { name: 'Home' }).click();
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    if (process.platform === 'darwin') await pressNative(browser, 'H', ['primary', 'shift']);
+    else await pressNative(browser, 'Home', ['alt']);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/second.html`]);
+  } finally {
+    await browser.close();
+  }
+});

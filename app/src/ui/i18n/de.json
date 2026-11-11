@@ -301,5 +301,19 @@
   "settings.webFont.serif": "Mit Serifen",
   "settings.webFont.sansSerif": "Ohne Serifen",
   "settings.webFont.fixed": "Feste Breite",
-  "settings.webFontDefault": "Vorgabe"
+  "settings.webFontDefault": "Vorgabe",
+  "settings.startupPage.pages": "Bestimmte Seiten",
+  "settings.startupPages": "Zu öffnende Seiten",
+  "settings.startupPagesNote": "Sie öffnen in dieser Reihenfolge, und nur die erste lädt, bevor du die anderen zeigst.",
+  "settings.startupPagesNone": "Noch keine. Ohne Seiten startet der Browser mit einem neuen Tab.",
+  "settings.startupPagesAdd": "Hinzuzufügende Seite",
+  "settings.startupPagesRemove": "{page} entfernen",
+  "settings.addressInvalid": "Gib eine Webadresse ein, etwa example.com oder https://example.com/seite.",
+  "settings.homeButton": "Startseiten-Schaltfläche anzeigen",
+  "settings.homeButtonNote": "Eine Schaltfläche neben Neu laden öffnet die Startseite im aktuellen Tab.",
+  "settings.homePage": "Startseite",
+  "settings.homePageNote": "Die Seite der Startseiten-Schaltfläche und ihres Tastenkürzels. Leer öffnet einen neuen Tab.",
+  "settings.homePageNewTab": "Neuer Tab",
+  "settings.home.keywords": "Homepage Start Haus",
+  "shell.home": "Startseite"
 }

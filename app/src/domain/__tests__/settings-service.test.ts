@@ -144,6 +144,57 @@ describe('SettingsService', () => {
     });
   });
 
+  it('maps the values of a policy that has values of its own', async () => {
+    const sink = new RingBufferLogSink();
+    const logger = new SinkLogger(sink, new ManualClock(), { scope: 'test' });
+    const Startup = defineSetting<'restore' | 'newtab' | 'pages'>({
+      key: 'startup.page',
+      schema: v.picklist(['restore', 'newtab', 'pages']),
+      default: 'restore',
+      scope: 'global',
+      policy: {
+        name: 'RestoreOnStartup',
+        recommended: true,
+        schema: v.pipe(
+          v.picklist([1, 4, 5]),
+          v.transform((value) => (value === 1 ? 'restore' : value === 4 ? 'pages' : 'newtab')),
+        ),
+      },
+    });
+    const provider = new FakeProvider();
+    const policies = new PolicyService(settingPolicies([Startup]), [provider], logger);
+    const settings = new SettingsService([Startup], policies, new MemoryStore(), logger);
+    provider.result = {
+      values: [
+        {
+          name: 'RestoreOnStartup',
+          value: 4,
+          level: 'mandatory',
+          scope: 'machine',
+          source: 'test',
+        },
+      ],
+      errors: [],
+    };
+    await policies.refresh();
+    expect(settings.get(Startup)).toBe('pages');
+    provider.result = {
+      values: [
+        {
+          name: 'RestoreOnStartup',
+          value: 'pages',
+          level: 'mandatory',
+          scope: 'machine',
+          source: 'test',
+        },
+      ],
+      errors: [],
+    };
+    await policies.refresh();
+    // The setting's own value is not a value of the policy.
+    expect(settings.get(Startup)).toBe('restore');
+  });
+
   it('refuses invalid, locked and wrongly scoped writes', async () => {
     const { settings, provider, policies } = setup();
     expect(settings.set(TabPosition, 'diagonal')).toEqual({
