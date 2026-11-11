@@ -70,6 +70,7 @@ The language changes when the browser starts again. Until then, the settings pag
 - **Block ads and trackers:** turns the [content blocker](content-blocker.md) on or off. It is on by default.
 - **Hide cookie notices** and **Hide annoyances:** add the lists of EasyList and uBlock Origin against cookie notices, or against newsletter boxes, chat and social widgets, notifications and other annoyances. Both are off by default.
 - **Sites without blocking:** the sites on which the content blocker is off, each with the button **Remove**. Type a site's name or address in the field below the list and choose **Add** to add one.
+- **Clear browsing data:** from 0.1.0-beta.5, **Clear…** asks for a time range and what to clear: the history of the pages you opened in that time, cookies and other site data, and cached images and files. Cookies, site data and the cache are always cleared completely, because the engine keeps no time for them; clearing cookies signs you out of most sites. Private windows keep nothing to clear.
 - **Site permissions:** what each site may use after you answered its question, such as the camera or notifications. Change an answer between **Allowed** and **Blocked**, or choose **Remove**, and the site asks again. See [Site permissions](site-permissions.md).
 
 ## Default browser

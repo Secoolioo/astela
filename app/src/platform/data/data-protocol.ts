@@ -9,6 +9,7 @@ export type DatabaseApi = Pick<
   | 'history'
   | 'deleteHistory'
   | 'clearHistory'
+  | 'clearHistorySince'
   | 'importHistory'
   | 'bookmarks'
   | 'bookmarkList'
@@ -40,6 +41,7 @@ const databaseMethods: readonly string[] = [
   'history',
   'deleteHistory',
   'clearHistory',
+  'clearHistorySince',
   'importHistory',
   'bookmarks',
   'bookmarkList',

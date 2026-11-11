@@ -356,5 +356,21 @@
   "settings.newTab.keywords": "Kacheln Schnellwahl Startseite Favoriten",
   "settings.newTabTileTitle": "Titel",
   "settings.newTabTileAddress": "Adresse der Verknüpfung",
-  "settings.newTabTileRemove": "{tile} entfernen"
+  "settings.newTabTileRemove": "{tile} entfernen",
+  "settings.clearData": "Browserdaten löschen",
+  "settings.clearDataNote": "Den Verlauf, Cookies und Websitedaten sowie den Cache normaler Fenster.",
+  "settings.clearData.keywords": "löschen entfernen Verlauf Cookies Cache Datenschutz",
+  "settings.clearDataOpen": "Löschen…",
+  "settings.clearDataRange": "Zeitraum",
+  "settings.clearDataRange.hour": "Letzte Stunde",
+  "settings.clearDataRange.day": "Letzte 24 Stunden",
+  "settings.clearDataRange.week": "Letzte 7 Tage",
+  "settings.clearDataRange.month": "Letzte 4 Wochen",
+  "settings.clearDataRange.all": "Gesamte Zeit",
+  "settings.clearDataHistory": "Verlauf",
+  "settings.clearDataCookies": "Cookies und andere Websitedaten, was dich bei den meisten Websites abmeldet",
+  "settings.clearDataCache": "Bilder und Dateien im Cache",
+  "settings.clearDataAll": "Der Zeitraum gilt für den Verlauf; Cookies, Websitedaten und der Cache werden immer ganz gelöscht.",
+  "settings.clearDataConfirm": "Daten löschen",
+  "settings.clearDataDone": "Die Browserdaten sind gelöscht."
 }

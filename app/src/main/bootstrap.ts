@@ -631,6 +631,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
+          webSession: () => session.fromPartition(webPartition),
         });
         pages = true;
       })

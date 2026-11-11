@@ -102,3 +102,23 @@ export const ChooseDownloadFolder = defineRequest({
   capability: 'page:settings',
   ratePerSecond: 2,
 });
+
+/** How far back clearing the browsing data goes: the last hour, day, week or four weeks, or all. */
+export const clearRanges = ['hour', 'day', 'week', 'month', 'all'] as const;
+
+/**
+ * Clears browsing data: the history of a time range, and all cookies and site data, and the
+ * cache, of web pages in regular windows.
+ */
+export const ClearBrowsingData = defineRequest({
+  channel: 'settings.clearData',
+  request: v.strictObject({
+    range: v.picklist(clearRanges),
+    history: v.boolean(),
+    cookies: v.boolean(),
+    cache: v.boolean(),
+  }),
+  response: v.null(),
+  capability: 'page:settings',
+  ratePerSecond: 1,
+});

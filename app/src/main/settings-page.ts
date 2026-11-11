@@ -6,6 +6,7 @@ import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
 import {
   ChooseDownloadFolder,
+  ClearBrowsingData,
   ExportSettings,
   GetSettings,
   ImportSettings,
@@ -15,6 +16,7 @@ import {
   SettingsChanged,
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
+import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
 /**
@@ -39,6 +41,8 @@ function fromSettingsPage(sender: WebContents): boolean {
  * @param internal - Session of the browser's own views, whose pages receive changes.
  * @param startValues - The values, as JSON, that the settings which need a restart had when
  *   the browser started.
+ * @param browsingData - The data service and the session of web pages, whose data the page
+ *   clears.
  * @returns A disposable that stops publishing changes.
  */
 export function connectSettingsPage(
@@ -47,6 +51,7 @@ export function connectSettingsPage(
   definitions: readonly SettingDefinition<unknown>[],
   internal: Session,
   startValues: ReadonlyMap<string, string>,
+  browsingData: { readonly data: Pick<DataClient, 'call'>; readonly web: () => Session },
 ): Disposable {
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
@@ -122,6 +127,12 @@ export function connectSettingsPage(
       typeof current === 'string' && current !== '' ? current : app.getPath('downloads'),
     );
     return { chosen: folder !== undefined && settings.set(definition, folder).ok };
+  });
+  router.handle(ClearBrowsingData, async (request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page clears data');
+    const { clearBrowsingData } = await import('./clear-data.ts');
+    await clearBrowsingData(request, browsingData.data, browsingData.web(), Date.now());
+    return null;
   });
   router.handle(RestartBrowser, (_request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page restarts the browser');
