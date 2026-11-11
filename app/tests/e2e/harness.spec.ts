@@ -87,10 +87,13 @@ test('connects to a browser whose first page fails to load while the harness att
   // to the pages, and an attachment at that moment would wait for that page forever.
   for (const delay of [0, 10, 20]) {
     const sockets: Socket[] = [];
+    let released = false;
     const server = createServer((socket) => {
       // The browser resets the connection when its request fails, which is no error here.
       socket.on('error', () => undefined);
-      sockets.push(socket);
+      // The browser can try the request once more, as on Windows; that try fails at once.
+      if (released) socket.destroy();
+      else sockets.push(socket);
     });
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
     const { port } = server.address() as AddressInfo;
@@ -98,6 +101,7 @@ test('connects to a browser whose first page fails to load while the harness att
       const browser = await launch(['--', `http://127.0.0.1:${String(port)}/fails`], {
         onMain: () => {
           setTimeout(() => {
+            released = true;
             for (const socket of sockets) socket.destroy();
           }, delay);
           return Promise.resolve();
