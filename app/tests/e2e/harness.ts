@@ -326,7 +326,7 @@ export async function launch(
           }, 15_000);
         }),
       ]).finally(() => clearTimeout(timer));
-      if (closeOptions.keepProfile !== true) rmSync(profile, { recursive: true, force: true });
+      if (closeOptions.keepProfile !== true) removeAfterExit(profile);
       if (!answered) throw new Error('The shell did not answer at the end of the test');
     },
   };
@@ -437,7 +437,7 @@ async function reportFailedStart(
       : Promise.resolve();
   child.kill('SIGKILL');
   await within(exited, answerTime, 'The browser process').catch(() => undefined);
-  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  removeAfterExit(profile);
   try {
     const info = test.info();
     const file = info.outputPath('failed-start.txt');
@@ -760,6 +760,16 @@ export async function startAgain(
 }
 
 /**
+ * Removes a folder that a browser used. On Windows, the helper processes of a browser can still
+ * hold its files for a moment after its main process exited, so removing them fails with EPERM
+ * or EBUSY; the removal is then tried again for up to about ten seconds.
+ * @param path - The folder.
+ */
+function removeAfterExit(path: string): void {
+  rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+}
+
+/**
  * A copy of the test package without the content blocker's filter data, for a test of a
  * browser whose blocker has nothing to load. The copy is made of hard links, so it is quick
  * and leaves the package itself as it is; it lies next to the package, because hard links
@@ -789,6 +799,6 @@ export function packageWithoutBlockerData(): { app: string; remove: () => void }
   rmSync(join(resources, 'blocker'), { recursive: true, force: true });
   return {
     app: join(target, relative(root, packaged)),
-    remove: () => rmSync(copy, { recursive: true, force: true }),
+    remove: () => removeAfterExit(copy),
   };
 }
