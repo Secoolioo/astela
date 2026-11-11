@@ -129,7 +129,7 @@
   "find.previous": "Vorheriger Treffer",
   "find.next": "Nächster Treffer",
   "find.close": "Suchleiste schließen",
-  "shell.zoom": "Zoom {zoom}, wählen für 100 %",
+  "shell.zoom": "Zoom {zoom}, wählen für {reset}",
   "shell.blocker": "Inhaltsblocker",
   "shell.blockerOn": "Inhaltsblocker: {count} blockiert",
   "shell.blockerOff": "Inhaltsblocker: auf dieser Website aus",
@@ -315,5 +315,8 @@
   "settings.homePageNote": "Die Seite der Startseiten-Schaltfläche und ihres Tastenkürzels. Leer öffnet einen neuen Tab.",
   "settings.homePageNewTab": "Neuer Tab",
   "settings.home.keywords": "Homepage Start Haus",
-  "shell.home": "Startseite"
+  "shell.home": "Startseite",
+  "settings.pageZoom": "Seitenzoom",
+  "settings.pageZoomNote": "Für Websites, die du nicht selbst gezoomt hast.",
+  "settings.pageZoom.keywords": "Zoom Größe größer kleiner vergrößern skalieren"
 }

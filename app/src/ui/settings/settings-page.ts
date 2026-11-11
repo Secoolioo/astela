@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
+import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
@@ -559,6 +560,11 @@ export class SettingsPage extends LitElement {
               'settings.webFont.fixed',
             ],
             render: () => this.renderWebFonts(),
+          },
+          {
+            id: 'zoom.default',
+            keys: ['settings.pageZoom', 'settings.pageZoomNote', 'settings.pageZoom.keywords'],
+            render: () => this.renderPageZoom(),
           },
           {
             id: 'tabs.position',
@@ -1315,6 +1321,40 @@ export class SettingsPage extends LitElement {
         ${sizes.map(
           (size) =>
             html`<option value=${String(size)} ?selected=${size === value}>${label(size)}</option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /** The zoom of sites without a zoom of their own. */
+  private renderPageZoom(): TemplateResult {
+    const setting = this.client?.get('zoom.default');
+    const value = typeof setting?.value === 'number' ? setting.value : 1;
+    const format = new Intl.NumberFormat(this.i18n?.language, { style: 'percent' });
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.pageZoom')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.pageZoomNote')}</span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.pageZoom')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement) {
+            void this.client?.set('zoom.default', Number(select.value));
+          }
+        }}
+      >
+        ${zoomFactors.map(
+          (factor) =>
+            html`<option value=${String(factor)} ?selected=${factor === value}>
+              ${format.format(factor)}
+            </option>`,
         )}
       </select>
     </div>`;
