@@ -200,13 +200,61 @@ export const SitePermissionsSetting = defineSetting<SitePermissions>({
   ui: { section: 'privacy', control: 'list', order: 5 },
 });
 
-/** What the browser shows when it starts: the tabs of the last session, or a new tab page. */
-export const StartupSetting = defineSetting<'restore' | 'newtab'>({
+/** A web address, such as a page to open at start. */
+const WebAddress = v.pipe(
+  v.string(),
+  v.maxLength(8192),
+  v.regex(/^https?:\/\/\S+$/i, 'Must be a web address'),
+);
+
+/**
+ * What the browser shows when it starts: the tabs of the last session, a new tab page, or
+ * the pages of `startup.urls`. The policy takes Chromium's numbers: 1, 5 and 4.
+ */
+export const StartupSetting = defineSetting<'restore' | 'newtab' | 'pages'>({
   key: 'startup.page',
-  schema: v.picklist(['restore', 'newtab']),
+  schema: v.picklist(['restore', 'newtab', 'pages']),
   default: 'restore',
   scope: 'global',
+  policy: {
+    name: 'RestoreOnStartup',
+    recommended: true,
+    schema: v.pipe(
+      v.picklist([1, 4, 5]),
+      v.transform((value) => (value === 1 ? 'restore' : value === 4 ? 'pages' : 'newtab')),
+    ),
+  },
   ui: { section: 'startup', control: 'select', order: 1 },
+});
+
+/** The pages that open at start when `startup.page` is `pages`, in this order. */
+export const StartupPagesSetting = defineSetting<string[]>({
+  key: 'startup.urls',
+  schema: v.pipe(v.array(WebAddress), v.maxLength(100)),
+  default: [],
+  scope: 'global',
+  policy: { name: 'RestoreOnStartupURLs', recommended: true },
+  ui: { section: 'startup', control: 'list', order: 2 },
+});
+
+/** Whether the toolbar has a home button, which opens the home page. */
+export const HomeButtonSetting = defineSetting<boolean>({
+  key: 'home.button',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'ShowHomeButton', recommended: true },
+  ui: { section: 'startup', control: 'toggle', order: 3 },
+});
+
+/** The page of the home button; empty for the new tab page. */
+export const HomePageSetting = defineSetting<string>({
+  key: 'home.page',
+  schema: v.union([v.literal(''), WebAddress]),
+  default: '',
+  scope: 'global',
+  policy: { name: 'HomepageLocation', recommended: true },
+  ui: { section: 'startup', control: 'text', order: 4 },
 });
 
 /** Whether this profile has shown the setup guide; it opens once per profile. */
@@ -262,6 +310,9 @@ export const coreSettings = [
   SiteZoomSetting,
   SitePermissionsSetting,
   StartupSetting,
+  StartupPagesSetting,
+  HomeButtonSetting,
+  HomePageSetting,
   SetupShownSetting,
   BookmarksBarSetting,
   LanguageSetting,

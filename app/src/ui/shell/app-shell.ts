@@ -404,6 +404,7 @@ export class AppShell extends LitElement {
       find: null,
       downloads: null,
       private: false,
+      home: false,
     };
     this.editing = undefined;
   }
@@ -532,6 +533,18 @@ export class AppShell extends LitElement {
               >
                 ${icons.reload}
               </button>`
+        }
+        ${
+          this.state.home
+            ? html`<button
+                class="icon"
+                title=${t('shell.home')}
+                aria-label=${t('shell.home')}
+                @click=${() => this.action('home')}
+              >
+                ${icons.home}
+              </button>`
+            : nothing
         }
         <input
           type="text"
@@ -985,7 +998,7 @@ export class AppShell extends LitElement {
     return this.i18n?.t(key, params) ?? key;
   }
 
-  private action(action: 'back' | 'forward' | 'reload' | 'stop'): void {
+  private action(action: 'back' | 'forward' | 'reload' | 'stop' | 'home'): void {
     const tabId = this.state.activeTabId;
     if (tabId !== null) {
       void this.bridge?.invoke('tabs.action', { tabId, action });
@@ -1082,6 +1095,12 @@ const icons = {
     <path d="M21 3v5h-5" />
   </svg>`,
   stop: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
+  home: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+    <path
+      d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+    />
+  </svg>`,
   shield: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"

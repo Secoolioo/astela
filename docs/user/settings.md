@@ -35,7 +35,10 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 
 ## On startup
 
-- **Open:** Last session reopens the windows and tabs you had open when the browser closed; New tab page starts with a single new tab. Restored tabs load when you first open them, so a start with many tabs stays fast.
+- **Open:** Last session reopens the windows and tabs you had open when the browser closed; New tab page starts with a single new tab; Specific pages, from 0.1.0-beta.5, opens the pages of the list below it in one window. Restored tabs load when you first open them, so a start with many tabs stays fast.
+- **Pages to open:** the pages that Specific pages opens, in their order. Type an address in the field below the list and press Enter to add one, or choose **Remove**. As with a restored session, only the first page loads at once; the others load when you show them.
+- **Show home button:** from 0.1.0-beta.5, a home button next to Reload, which opens the home page in the current tab. `Alt+Home` (`Command+Shift+H` on macOS) does the same, also without the button.
+- **Home page:** the page of the home button. An empty field opens the new tab page.
 
 ## Languages
 

@@ -213,6 +213,10 @@ Also implemented:
 - `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.
 - `ContentBlockerCookieNoticesEnabled` and `ContentBlockerAnnoyancesEnabled` (boolean): turn the optional lists of the content blocker against cookie notices and against annoyances on or off, as mandatory or recommended policy, like the settings `contentBlocker.cookieNotices` and `contentBlocker.annoyances`.
 - `TabStripPosition` (`top`, `bottom`, `left` or `right`): sets or recommends where the tab strip is, like the setting `tabs.position`.
+- `RestoreOnStartup` (`1`, `4` or `5`): sets or recommends what the browser opens when it starts, like the setting `startup.page`, with Chromium's numbers: `1` the last session, `4` the pages of `RestoreOnStartupURLs`, `5` a new tab page.
+- `RestoreOnStartupURLs` (list of web addresses): the pages that open at start with `RestoreOnStartup` set to `4`, like the setting `startup.urls`; at most 100 http and https addresses.
+- `ShowHomeButton` (boolean): shows or hides the home button of the toolbar, like the setting `home.button`.
+- `HomepageLocation` (web address, or empty for the new tab page): the page of the home button and of its shortcut, like the setting `home.page`.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
 
 The MSI package (x64, per machine, with the fixed upgrade code) is built for every pull request and installed and removed silently in CI.

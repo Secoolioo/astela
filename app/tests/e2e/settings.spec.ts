@@ -392,3 +392,32 @@ test('gives web pages that open after a change the text size and the fonts of th
     await server.stop();
   }
 });
+
+test('chooses the pages to open at start and the home page', async () => {
+  const page = await openSettings();
+  await expect(page.getByRole('textbox', { name: 'Page to add' })).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Specific pages' }).check();
+  const add = page.getByRole('textbox', { name: 'Page to add' });
+  await add.fill('example.com');
+  await add.press('Enter');
+  const list = page.getByRole('list', { name: 'Pages to open' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list).toContainText('https://example.com/');
+  await add.fill('not a page');
+  await add.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Enter a web address, such as example.com or https://example.com/page.',
+  );
+  const home = page.getByRole('textbox', { name: 'Home page' });
+  await home.fill('example.org');
+  await home.blur();
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'startup.page', value: 'pages' }),
+        expect.objectContaining({ key: 'startup.urls', value: ['https://example.com/'] }),
+        expect.objectContaining({ key: 'home.page', value: 'https://example.org/' }),
+      ]),
+    });
+});

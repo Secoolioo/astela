@@ -16,7 +16,7 @@ const choices = {
   'appearance.density': ['compact', 'normal', 'comfortable'],
   'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
-  'startup.page': ['restore', 'newtab'],
+  'startup.page': ['restore', 'newtab', 'pages'],
 } as const;
 
 /**
@@ -28,6 +28,8 @@ export class SettingsPage extends LitElement {
     revision: { state: true },
     searchError: { state: true },
     fontError: { state: true },
+    pageError: { state: true },
+    homeError: { state: true },
     webFontError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
@@ -315,6 +317,10 @@ export class SettingsPage extends LitElement {
   declare searchError: boolean;
   /** Whether the last font name was not one. */
   declare fontError: boolean;
+  /** Whether the last page to add at start was not a web address. */
+  declare pageError: boolean;
+  /** Whether the last home page was not a web address. */
+  declare homeError: boolean;
   /** Whether the last name of a font for web pages was not one. */
   declare webFontError: boolean;
   declare customSearch: boolean;
@@ -339,6 +345,8 @@ export class SettingsPage extends LitElement {
     this.revision = 0;
     this.searchError = false;
     this.fontError = false;
+    this.pageError = false;
+    this.homeError = false;
     this.webFontError = false;
     this.customSearch = false;
     this.blockerFailed = false;
@@ -585,6 +593,27 @@ export class SettingsPage extends LitElement {
               ...optionKeys('startup.page', 'settings.startupPage'),
             ],
             render: () => this.renderChoice('startup.page', 'settings.startupPage'),
+          },
+          // The list shows when the browser opens specific pages at start.
+          ...(this.client?.get('startup.page')?.value === 'pages'
+            ? [
+                {
+                  id: 'startup.urls',
+                  keys: ['settings.startupPages', 'settings.startupPagesNote'],
+                  render: () => this.renderStartupPages(),
+                } satisfies PageRow,
+              ]
+            : []),
+          {
+            id: 'home.button',
+            keys: ['settings.homeButton', 'settings.homeButtonNote', 'settings.home.keywords'],
+            render: () =>
+              this.renderToggle('home.button', 'settings.homeButton', 'settings.homeButtonNote'),
+          },
+          {
+            id: 'home.page',
+            keys: ['settings.homePage', 'settings.homePageNote', 'settings.home.keywords'],
+            render: () => this.renderHomePage(),
           },
         ],
       },
@@ -1139,6 +1168,121 @@ export class SettingsPage extends LitElement {
     }
   }
 
+  /** The pages that open at start, in their order, with a way to remove and to add them. */
+  private renderStartupPages(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('startup.urls');
+    const pages = Array.isArray(setting?.value)
+      ? setting.value.filter((url): url is string => typeof url === 'string')
+      : [];
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="startup-pages">${t('settings.startupPages')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.startupPagesNote')}</span>`
+        }
+      </span>
+      ${
+        pages.length === 0
+          ? html`<span class="note">${t('settings.startupPagesNone')}</span>`
+          : html`<ul class="sites" aria-labelledby="startup-pages">
+              ${pages.map(
+                (url, index) =>
+                  html`<li>
+                    <span>${url}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.startupPagesRemove', { page: url })}
+                      @click=${() =>
+                        void this.client?.set(
+                          'startup.urls',
+                          pages.filter((_page, other) => other !== index),
+                        )}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form class="add-site" @submit=${(event: SubmitEvent) => this.addStartupPage(event, pages)}>
+        <input
+          type="text"
+          inputmode="url"
+          name="page"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="https://example.com"
+          aria-label=${t('settings.startupPagesAdd')}
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${
+        this.pageError
+          ? html`<span class="error" role="alert">${t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private addStartupPage(event: SubmitEvent, pages: readonly string[]): void {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = form.elements.namedItem('page');
+    if (!(field instanceof HTMLInputElement)) return;
+    const url = webAddressOf(field.value);
+    this.pageError = url === undefined;
+    if (url === undefined) return;
+    field.value = '';
+    if (!pages.includes(url)) void this.client?.set('startup.urls', [...pages, url]);
+  }
+
+  /** The page of the home button; an empty field opens the new tab page. */
+  private renderHomePage(): TemplateResult {
+    const setting = this.client?.get('home.page');
+    return html`<div class="row stack">
+      <label class="label" for="home-page">
+        <span>${this.t('settings.homePage')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.homePageNote')}</span>`
+        }
+      </label>
+      <input
+        id="home-page"
+        type="text"
+        inputmode="url"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder=${this.t('settings.homePageNewTab')}
+        .value=${typeof setting?.value === 'string' ? setting.value : ''}
+        ?disabled=${setting?.locked !== false}
+        aria-invalid=${this.homeError ? 'true' : 'false'}
+        @change=${(event: Event) => void this.setHomePage(event)}
+      />
+      ${
+        this.homeError
+          ? html`<span class="error" role="alert">${this.t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setHomePage(event: Event): Promise<void> {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || this.client === undefined) return;
+    const text = input.value.trim();
+    const url = text === '' ? '' : webAddressOf(text);
+    this.homeError = url === undefined || !(await this.client.set('home.page', url));
+  }
+
   /** The size of the text of web pages, from a list of sizes; new tabs use it. */
   private renderWebTextSize(): TemplateResult {
     const setting = this.client?.get('fonts.size');
@@ -1461,6 +1605,17 @@ function withoutDecision(sites: Decisions, origin: string, name: PermissionName)
   const { [name]: _removed, ...rest } = sites[origin] ?? {};
   const { [origin]: _site, ...others } = sites;
   return Object.keys(rest).length === 0 ? others : { ...others, [origin]: rest };
+}
+
+/** A web address that someone typed, with `https://` added when it has no scheme. */
+function webAddressOf(input: string): string | undefined {
+  const text = input.trim();
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`);
+    return /^https?:$/.test(url.protocol) && url.hostname.includes('.') ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function hostOf(input: string): string | undefined {
