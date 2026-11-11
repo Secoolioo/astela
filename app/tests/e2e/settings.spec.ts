@@ -484,3 +484,74 @@ test('adds a search engine with a keyword and makes it the default', async () =>
   await engines.getByRole('button', { name: 'Remove Example' }).click();
   await expect(engines.getByRole('listitem').filter({ hasText: 'Example' })).toHaveCount(0);
 });
+
+test('shows, hides and moves the buttons of the toolbar', async () => {
+  const page = await openSettings();
+  const buttons = (): Promise<string[]> =>
+    browser.shell.evaluate(() =>
+      [...(document.querySelector('app-shell')?.shadowRoot?.querySelectorAll('nav .icon') ?? [])]
+        .map((button) => [...button.classList].find((name) => name !== 'icon') ?? '')
+        .filter((name) => name === 'bookmark' || name === 'blocker' || name === 'downloads'),
+    );
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await pressNative(browser, 'T', ['primary']);
+  await address.fill('http://127.0.0.1:9/');
+  await address.press('Enter');
+  await expect.poll(buttons).toEqual(['bookmark', 'blocker']);
+  await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Move Content blocker to the left' }).click();
+  await page.getByRole('checkbox', { name: 'Bookmark star' }).uncheck();
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'toolbar.items', value: ['shield', 'downloads'] }),
+      ]),
+    });
+  await page.getByRole('checkbox', { name: 'Bookmark star' }).check();
+  await page.getByRole('checkbox', { name: 'Downloads' }).uncheck();
+  await browser.shell.getByRole('tab', { name: /127\.0\.0\.1/ }).click();
+  await expect.poll(buttons).toEqual(['blocker', 'bookmark']);
+  // Without its button, the shortcut opens the list of downloads at the menu.
+  await pressNative(
+    browser,
+    process.platform === 'darwin' ? 'L' : 'J',
+    process.platform === 'darwin' ? ['primary', 'alt'] : ['primary'],
+  );
+  const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+  await expect(overlay.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+});
+
+test('keeps the focus on a toolbar button while it moves', async () => {
+  const page = await openSettings();
+  const items = (): Promise<unknown> =>
+    page.evaluate(async () => {
+      const result = await window.bridge.invoke('settings.getAll', {});
+      const settings: unknown[] =
+        typeof result === 'object' && result !== null && 'settings' in result
+          ? [result.settings].flat()
+          : [];
+      return settings.find(
+        (setting) =>
+          typeof setting === 'object' &&
+          setting !== null &&
+          'key' in setting &&
+          setting.key === 'toolbar.items',
+      );
+    });
+  await page.evaluate(() => window.bridge.invoke('settings.reset', { keys: ['toolbar.items'] }));
+  await expect.poll(items).toMatchObject({ value: ['bookmark', 'shield', 'downloads'] });
+  const rows = page.getByRole('list', { name: 'Toolbar' }).getByRole('listitem');
+  const right = page.getByRole('button', { name: 'Move Bookmark star to the right' });
+  await right.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(items).toMatchObject({ value: ['shield', 'bookmark', 'downloads'] });
+  await expect(rows).toHaveText([/Content blocker/, /Bookmark star/, /Downloads/]);
+  await expect(right).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(items).toMatchObject({ value: ['shield', 'downloads', 'bookmark'] });
+  await expect(rows).toHaveText([/Content blocker/, /Downloads/, /Bookmark star/]);
+  // At the end of the list, the focus moves to the other button of the same item.
+  await expect(right).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Move Bookmark star to the left' })).toBeFocused();
+});

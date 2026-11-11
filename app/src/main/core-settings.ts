@@ -12,7 +12,12 @@ import {
 } from '../domain/appearance/appearance.ts';
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
-import { tabStripPositions, type TabStripPosition } from '../shared/layout.ts';
+import {
+  tabStripPositions,
+  toolbarItems,
+  type TabStripPosition,
+  type ToolbarItem,
+} from '../shared/layout.ts';
 import type { CustomSearchEngine } from '../shared/search-engines.ts';
 import { zoomFactors } from '../shared/zoom.ts';
 
@@ -143,6 +148,18 @@ export const WebTextSizeSetting = defineSetting<number>({
   default: 16,
   scope: 'global',
   ui: { section: 'appearance', control: 'select', order: 8 },
+});
+
+/** The buttons of the toolbar that show next to the address bar, in their order. */
+export const ToolbarItemsSetting = defineSetting<ToolbarItem[]>({
+  key: 'toolbar.items',
+  schema: v.pipe(
+    v.array(v.picklist(toolbarItems)),
+    v.check((items) => new Set(items).size === items.length, 'Each button can show once'),
+  ),
+  default: [...toolbarItems],
+  scope: 'global',
+  ui: { section: 'appearance', control: 'list', order: 11 },
 });
 
 /** Where the tab strip is; vertical positions show the tabs as a list at the side. */
@@ -377,6 +394,7 @@ export const coreSettings = [
   UiFontSetting,
   WebTextSizeSetting,
   WebFontsSetting,
+  ToolbarItemsSetting,
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,

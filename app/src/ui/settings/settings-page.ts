@@ -1,6 +1,8 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
+import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
@@ -150,6 +152,15 @@ export class SettingsPage extends LitElement {
       }
       .path {
         overflow-wrap: anywhere;
+      }
+      .toolbar-items li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .toolbar-items .buttons {
+        display: flex;
+        gap: var(--space-1);
       }
       .keyword {
         color: var(--text-2);
@@ -379,6 +390,9 @@ export class SettingsPage extends LitElement {
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
+  /** The toolbar button that moved, to focus again once the list shows its new place. */
+  private toolbarFocus:
+    { readonly item: ToolbarItem; readonly index: number; readonly step: -1 | 1 } | undefined;
 
   constructor() {
     super();
@@ -429,6 +443,7 @@ export class SettingsPage extends LitElement {
   }
 
   protected override updated(): void {
+    this.focusMovedToolbarItem();
     paintSwatches(this.renderRoot, this.client?.accents ?? []);
     // The navigation marks the section whose heading is in the upper part of the window.
     this.spy?.disconnect();
@@ -605,6 +620,18 @@ export class SettingsPage extends LitElement {
             id: 'zoom.default',
             keys: ['settings.pageZoom', 'settings.pageZoomNote', 'settings.pageZoom.keywords'],
             render: () => this.renderPageZoom(),
+          },
+          {
+            id: 'toolbar.items',
+            keys: [
+              'settings.toolbar',
+              'settings.toolbarNote',
+              'settings.toolbar.keywords',
+              'settings.toolbar.bookmark',
+              'settings.toolbar.shield',
+              'settings.toolbar.downloads',
+            ],
+            render: () => this.renderToolbar(),
           },
           {
             id: 'tabs.position',
@@ -1518,6 +1545,101 @@ export class SettingsPage extends LitElement {
         ${this.t('settings.downloadFolderChange')}
       </button>
     </div>`;
+  }
+
+  /** The buttons next to the address bar: which ones show, and in which order. */
+  private renderToolbar(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('toolbar.items');
+    const shown = Array.isArray(setting?.value)
+      ? setting.value.filter((item): item is ToolbarItem =>
+          toolbarItems.some((known) => known === item),
+        )
+      : [...toolbarItems];
+    const items = [...shown, ...toolbarItems.filter((item) => !shown.includes(item))];
+    const disabled = setting?.locked !== false;
+    const save = (next: readonly ToolbarItem[]): void =>
+      void this.client?.set('toolbar.items', next);
+    const move = (item: ToolbarItem, step: -1 | 1): void => {
+      const next = [...shown];
+      const index = next.indexOf(item);
+      const other = index + step;
+      if (index < 0 || other < 0 || other >= next.length) return;
+      [next[index], next[other]] = [next[other] ?? item, item];
+      // The focus stays with the item that moved, so that the same button moves it on.
+      this.toolbarFocus = { item, index: other, step };
+      void this.client?.set('toolbar.items', next).then((saved) => {
+        if (!saved) this.toolbarFocus = undefined;
+      });
+    };
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="toolbar-items">${t('settings.toolbar')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.toolbarNote')}</span>`
+        }
+      </span>
+      <ul class="sites toolbar-items" aria-labelledby="toolbar-items">
+        ${repeat(
+          items,
+          (item) => item,
+          (item) => {
+            const name = t(`settings.toolbar.${item}`);
+            const index = shown.indexOf(item);
+            return html`<li data-item=${item}>
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${index >= 0}
+                  ?disabled=${disabled}
+                  @change=${(event: Event) => {
+                    const box = event.target;
+                    if (!(box instanceof HTMLInputElement)) return;
+                    save(box.checked ? [...shown, item] : shown.filter((other) => other !== item));
+                  }}
+                />
+                ${name}
+              </label>
+              <span class="buttons">
+                <button
+                  type="button"
+                  aria-label=${t('settings.toolbarUp', { item: name })}
+                  ?disabled=${disabled || index <= 0}
+                  @click=${() => move(item, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label=${t('settings.toolbarDown', { item: name })}
+                  ?disabled=${disabled || index < 0 || index >= shown.length - 1}
+                  @click=${() => move(item, 1)}
+                >
+                  ↓
+                </button>
+              </span>
+            </li>`;
+          },
+        )}
+      </ul>
+    </div>`;
+  }
+
+  /** Focuses the button that moved a toolbar item once the list shows the item in its new place. */
+  private focusMovedToolbarItem(): void {
+    const focus = this.toolbarFocus;
+    const value = this.client?.get('toolbar.items')?.value;
+    if (focus === undefined || !Array.isArray(value) || value.indexOf(focus.item) !== focus.index) {
+      return;
+    }
+    this.toolbarFocus = undefined;
+    const [left, right] = this.renderRoot.querySelectorAll<HTMLButtonElement>(
+      `.toolbar-items [data-item="${focus.item}"] button`,
+    );
+    const target = focus.step < 0 ? left : right;
+    (target?.disabled === true ? (focus.step < 0 ? right : left) : target)?.focus();
   }
 
   /** The language of the browser, which takes effect after a restart. */

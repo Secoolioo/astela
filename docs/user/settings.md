@@ -31,6 +31,7 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Page zoom:** from 0.1.0-beta.5, the zoom of sites that you have not zoomed yourself, from 25 to 500 %. A site that you zoomed keeps its zoom; choosing its zoom in the address bar sets it back to this one.
 - **Text size of web pages** and **Fonts of web pages:** from 0.1.0-beta.5, the size of text and the standard, serif, sans serif and fixed width fonts of web pages that set none themselves, as in other browsers. Tabs that open after a change use them; tabs that are open keep what they had. An empty font field keeps the default.
 - **Font of the browser:** from 0.1.0-beta.5, the name of a font installed on your computer, such as Inter, for the text of the browser itself. An empty field, the default, uses the font of the system.
+- **Toolbar:** from 0.1.0-beta.5, which of the bookmark star, the content blocker and downloads show next to the address bar, and in which order; the arrows move a button to the left or the right. Downloads shows after the first download. Without the downloads button, `Ctrl+J` opens the list of downloads at the menu button. Hiding the content blocker's button keeps the blocker on; **Sites without blocking** below turns it off for a site.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
 - **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 
