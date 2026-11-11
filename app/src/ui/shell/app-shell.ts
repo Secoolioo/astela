@@ -381,6 +381,8 @@ export class AppShell extends LitElement {
 
   declare state: ShellState;
   declare editing: string | undefined;
+  /** Whether the focused address bar had all of its text selected before an update. */
+  private addressSelected = false;
   bridge: ShellBridge | undefined;
   i18n: Translator | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -453,9 +455,21 @@ export class AppShell extends LitElement {
     if (changed.has('state')) {
       this.dataset['tabs'] = this.state.tabStrip;
     }
+    // Typing replaces an address that is selected as a whole, also when the page changes its
+    // address meanwhile; setting the new address would put the caret at its end instead.
+    const input = this.renderRoot.querySelector('input');
+    this.addressSelected =
+      input !== null &&
+      this.editing === undefined &&
+      this.shadowRoot?.activeElement === input &&
+      input.selectionStart === 0 &&
+      input.selectionEnd === input.value.length;
   }
 
   protected override updated(changed: PropertyValues<this>): void {
+    if (this.addressSelected) {
+      this.renderRoot.querySelector('input')?.select();
+    }
     if (changed.has('state')) {
       this.reportInsets();
       this.layoutBookmarksBar();
