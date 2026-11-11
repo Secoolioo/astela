@@ -223,6 +223,19 @@ export class ProfileDatabase {
     this.transaction(() => ids.forEach((id) => statement.run(id)));
   }
 
+  /**
+   * Removes the pages that were visited since a time, with their earlier visits.
+   * @param since - The time in milliseconds since 1970; 0 removes the whole history.
+   */
+  clearHistorySince(since: number): void {
+    if (since <= 0) {
+      this.clearHistory();
+      return;
+    }
+    this.writable();
+    this.db.prepare('DELETE FROM places WHERE last_visit >= ?').run(since);
+  }
+
   /** Removes the whole history. */
   clearHistory(): void {
     this.writable();

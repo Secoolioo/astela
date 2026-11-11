@@ -1,8 +1,8 @@
 import { brand } from '../../shared/brand.ts';
-import { Translator, isMessageKey, pickLanguage } from '../i18n/i18n.ts';
+import { Translator, isMessageKey, pageLanguage } from '../i18n/i18n.ts';
 
 const bridge = window.bridge;
-const i18n = new Translator(pickLanguage(navigator.languages));
+const i18n = new Translator(pageLanguage());
 document.documentElement.lang = i18n.language;
 document.title = brand.productName;
 for (const element of document.querySelectorAll<HTMLElement>('[data-i18n]')) {

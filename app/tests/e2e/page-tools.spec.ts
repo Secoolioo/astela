@@ -405,3 +405,35 @@ test('shows PDF documents in the tab', async () => {
     await browser.close();
   }
 });
+
+test('gives sites without a zoom of their own the default zoom of the settings', async () => {
+  const browser = await launch([], { settings: { 'zoom.default': 1.25 } });
+  try {
+    const url = `${server.origin}/find.html`;
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(url);
+    await address.press('Enter');
+    await waitForPage(browser, (shown) => shown === url);
+    const factor = (): Promise<unknown> =>
+      browser.main.evaluate(
+        ({ webContents }, wanted) =>
+          webContents
+            .getAllWebContents()
+            .find((c) => c.getURL() === wanted)
+            ?.getZoomFactor(),
+        url,
+      );
+    await expect.poll(factor).toBeCloseTo(1.25);
+    const badge = browser.shell.getByRole('button', { name: /^Zoom / });
+    await expect(badge).toHaveCount(0);
+    await withContents(browser, url, 'zoomIn');
+    await expect(
+      browser.shell.getByRole('button', { name: /^Zoom 150\s?%, choose for 125\s?%/ }),
+    ).toBeVisible();
+    await badge.click();
+    await expect.poll(factor).toBeCloseTo(1.25);
+    await expect(badge).toHaveCount(0);
+  } finally {
+    await browser.close();
+  }
+});

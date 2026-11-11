@@ -54,10 +54,18 @@ fi
 
 # The Ubuntu containers use the mirror of the runner, where it has one of its own: the default
 # archive can be slow or out of reach from the runner while that mirror is close to it. Newer
-# runner images list their mirrors in apt-mirrors.txt instead of the sources.
-ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
+# runner images list their mirrors in apt-mirrors.txt instead of the sources. When the runner
+# had to leave the Ubuntu mirrors (tools/ci/apt-install.sh), the containers use the mirror it
+# chose, over plain HTTP since the images carry no certificates; apt checks the signatures.
+if [ -n "${UBUNTU_MIRROR:-}" ]; then
+  ubuntu_mirror=${UBUNTU_MIRROR/#https:/http:}
+else
+  ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
+  [ -z "$ubuntu_mirror" ] || ubuntu_mirror="$ubuntu_mirror/ubuntu"
+fi
 
 for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
+  "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
   # The lists of a distribution mirror fail to load for a while when the mirror is being
@@ -69,7 +77,7 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   }
   inside "echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries"
   if [ -n "$ubuntu_mirror" ]; then
-    inside "sed -i -E 's#https?://(archive|security)\.ubuntu\.com#$ubuntu_mirror#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true"
+    inside "sed -i -E 's#https?://(archive|security)\.ubuntu\.com/ubuntu#$ubuntu_mirror#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true"
   fi
   publish 0
   inside "refresh && retry env ${env_prefix}_REPO_URL=$base apt-get install -y -qq /packages/*.deb >/dev/null"
@@ -86,8 +94,10 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
   check "$image removes the repository" "gone" "$(inside "test -e /etc/apt/sources.list.d/$slug.sources && echo present || echo gone")"
 done
 
+"$root/tools/ci/pull-images.sh" fedora:latest
 latest=$(docker run --rm fedora:latest bash -c '. /etc/os-release; echo "$VERSION_ID"')
 for image in "fedora:$latest" "fedora:$((latest - 1))"; do
+  "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
   inside() { docker exec repo-test bash -c "$1"; }

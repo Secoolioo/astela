@@ -86,7 +86,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install rpm tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: tools/ci/apt-install.sh rpm
       - name: Build the content blocker data
         run: node tools/blocker/build.ts --out app/build/blocker
       - name: Build packages
@@ -182,8 +182,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2t64 xvfb
+          tools/ci/apt-install.sh libfuse2t64 xvfb
           # Ubuntu restricts unprivileged user namespaces; the packages must cope with that.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
           Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
@@ -234,6 +233,7 @@ jobs:
       - name: Install and start the rpm on Fedora
         if: matrix.name == 'linux-x64'
         run: |
+          tools/ci/pull-images.sh fedora:latest
           docker run --rm -v "$RUNNER_TEMP/packages:/packages" fedora:latest bash -c '
             dnf install -y -q /packages/*-x86_64.rpm xorg-x11-server-Xvfb xorg-x11-xauth >/dev/null &&
             xvfb-run -a /opt/*/astela --no-sandbox --smoke-test=/packages/rpm-report.json'
@@ -281,8 +281,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          tools/ci/apt-install.sh xvfb
           # The unpacked test build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run end-to-end tests
@@ -343,8 +342,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          tools/ci/apt-install.sh xvfb xdotool
           # The unpacked build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Turn the update check off
@@ -377,9 +375,9 @@ jobs:
       - name: Measure against the bare reference
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off
+            xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
           else
-            node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off
+            node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -429,8 +427,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libfuse2t64
+          tools/ci/apt-install.sh xvfb libfuse2t64
           # The AppImage sandbox needs user namespaces; the packages job tests the AppArmor fix.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Update build 1 to build 2, then roll back from build 3
@@ -465,8 +462,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install the repository tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm createrepo-c apt-utils
+          tools/ci/apt-install.sh rpm createrepo-c apt-utils
       - name: Build three releases that carry a test repository key
         env:
           GNUPGHOME: ${{ runner.temp }}/gnupg

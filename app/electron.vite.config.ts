@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
+import { minifySync, type Plugin } from 'vite';
 
 const brand: unknown = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../brand.json'), 'utf8'),
@@ -19,6 +20,28 @@ const define = { BUILD_BRAND: JSON.stringify(brand) };
 // and in the main process every byte of the start-up path is read before the first window.
 const comments = { legal: true, annotation: false, jsdoc: false };
 
+/**
+ * Minifies the chunks of the main process, whose start-up path is read before the first
+ * window (ADR 0045). The names of functions and classes stay, so stack traces still name
+ * them, and so do the licence notices of the dependencies, which their licences, such as the
+ * MPL-2.0 of the content blocker's engine, require.
+ */
+const minifyMain: Plugin = {
+  name: 'minify-main',
+  generateBundle(_options, bundle) {
+    const keepNames = { function: true, class: true };
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type !== 'chunk') continue;
+      chunk.code = minifySync(chunk.fileName, chunk.code, {
+        module: true,
+        compress: { keepNames },
+        mangle: { keepNames },
+        codegen: { legalComments: 'inline' },
+      }).code;
+    }
+  },
+};
+
 export default defineConfig({
   main: {
     define: {
@@ -27,6 +50,7 @@ export default defineConfig({
       // Only the rollback test builds a version that fails to start on purpose.
       BUILD_TEST_BOOT_FAILURE: JSON.stringify(process.env['TEST_BOOT_FAILURE'] === '1'),
     },
+    plugins: [minifyMain],
     build: {
       outDir: 'out/main',
       lib: {

@@ -1,4 +1,5 @@
 import { app, dialog, type WebContents } from 'electron';
+import { uiLocale } from './ui-language.ts';
 import { join } from 'node:path';
 import type { Logger } from '../kernel/logging/logger.ts';
 import type { BrowserWindowController, PageCommand } from '../platform/electron/browser-window.ts';
@@ -34,7 +35,7 @@ export async function runPageCommand(
       });
       break;
     case 'page.save': {
-      const i18n = translatorFor(app.getLocale(), process.platform);
+      const i18n = translatorFor(uiLocale(), process.platform);
       const name = `${safeFileName(contents.getTitle()) || 'page'}.html`;
       const { canceled, filePath } = await dialog.showSaveDialog(window.window, {
         defaultPath: join(app.getPath('downloads'), name),

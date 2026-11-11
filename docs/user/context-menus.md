@@ -1,6 +1,6 @@
 # Context menus
 
-A right-click opens a context menu with the commands that fit what you clicked. It is the menu of your operating system, so it looks and works like the other menus there. On macOS, a Control-click opens it as well. On Windows and Linux, the context menu key and `Shift+F10` open it next to the focused element, and each command has an access key, such as T for Open link in new tab. The menus follow the language of the system, English or German.
+A right-click opens a context menu with the commands that fit what you clicked. It is the menu of your operating system, so it looks and works like the other menus there. On macOS, a Control-click opens it as well. On Windows and Linux, the context menu key and `Shift+F10` open it next to the focused element, and each command has an access key, such as T for Open link in new tab. The menus follow the [language of the browser](settings.md#languages), English or German, which is the language of the system unless you choose another.
 
 ## In a web page
 

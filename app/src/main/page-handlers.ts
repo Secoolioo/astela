@@ -29,6 +29,10 @@ export interface PageDependencies {
   readonly defaultBrowserAllowed: () => boolean;
   /** Whether this installation can become the default browser. */
   readonly canBeDefaultBrowser: boolean;
+  /** The values, as JSON, that the settings which need a restart had when the browser started. */
+  readonly startValues: ReadonlyMap<string, string>;
+  /** The session of web pages in regular windows. */
+  readonly webSession: () => Session;
 }
 
 /**
@@ -44,6 +48,8 @@ export function connectPages(dependencies: PageDependencies): void {
     dependencies.settings,
     dependencies.definitions,
     dependencies.internal,
+    dependencies.startValues,
+    { data, web: dependencies.webSession },
   );
   connectHistoryPage(router, data, windows);
   connectBookmarksPage(router, data, bookmarks, windows);

@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { launch, pressNative, waitForPage, type Browser } from './harness.ts';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  FixtureServer,
+  launch,
+  pressNative,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 
 let browser: Browser;
 
@@ -78,7 +88,14 @@ test('chooses the search engine of the new tab page and the address bar', async 
   await expect(page.getByRole('alert')).toHaveCount(0);
   expect(await page.evaluate(() => window.bridge.invoke('settings.getAll', {}))).toMatchObject({
     settings: expect.arrayContaining([
-      { key: 'search.urlTemplate', value: 'https://search.example/?q=%s', locked: false },
+      {
+        key: 'search.urlTemplate',
+        value: 'https://search.example/?q=%s',
+        locked: false,
+        changed: true,
+        recommended: false,
+        restart: false,
+      },
     ]),
   });
 });
@@ -189,4 +206,460 @@ test('opens a setting from its link and marks the section of the page in the nav
     location.hash = '#appearance.density';
   });
   await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
+});
+
+test('shows the changed settings and resets one or all of them', async () => {
+  await browser.close();
+  browser = await launch([], {
+    settings: { 'tabs.position': 'left', 'appearance.density': 'compact' },
+  });
+  const page = await openSettings();
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Density' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset Tabs' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset all settings…' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reset all' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'No setting differs' })).toHaveText(
+    'No setting differs from its default.',
+  );
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radio', { name: 'Top' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Normal' })).toBeChecked();
+});
+
+test('exports the settings to a file and imports them again', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'settings-file-'));
+  const file = join(folder, 'settings.json');
+  try {
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, file);
+    const page = await openSettings();
+    await page.getByRole('radio', { name: 'Left' }).check();
+    await page.getByRole('button', { name: 'Export settings…' }).click();
+    await expect
+      .poll(() => {
+        try {
+          return JSON.parse(readFileSync(file, 'utf8')) as unknown;
+        } catch {
+          return undefined;
+        }
+      })
+      .toEqual({ $schemaVersion: 1, settings: { 'tabs.position': 'left' } });
+    await page.getByRole('radio', { name: 'Top' }).check();
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Imported settings' })).toHaveText(
+      'Imported settings: 1',
+    );
+    // A file that is not a settings file changes nothing.
+    writeFileSync(file, '{"tabs.position": "right"}');
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('alert')).toHaveText('This file holds no settings of Astela.');
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('switches the language of the browser with a restart that brings the tabs back', async () => {
+  await browser.close();
+  // A link that this start opened does not open again after the restart.
+  browser = await launch(['--', 'http://127.0.0.1:9/link']);
+  const page = await openSettings();
+  const language = page.getByRole('combobox', { name: 'Language of the browser' });
+  const hint = page.getByRole('status').filter({ hasText: 'after a restart' });
+  await language.selectOption('de');
+  await expect(hint).toBeVisible();
+  await language.selectOption('system');
+  await expect(hint).toBeHidden();
+  await language.selectOption('de');
+  await page.getByRole('radio', { name: 'New tab page' }).check();
+  await browser.main.evaluate(({ app }) => {
+    const calls: unknown[] = [];
+    Reflect.set(globalThis, 'restartCalls', calls);
+    const quit = app.quit.bind(app);
+    app.relaunch = (options) => {
+      calls.push(options?.args);
+    };
+    app.quit = () => {
+      calls.push('quit');
+      app.quit = quit;
+    };
+  });
+  await page.getByRole('button', { name: 'Restart now' }).click();
+  const calls = (): Promise<unknown> =>
+    browser.main.evaluate(() => Reflect.get(globalThis, 'restartCalls') as unknown);
+  await expect
+    .poll(calls)
+    .toEqual([expect.arrayContaining(['--lang=en-US', '--restore-last-session']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['http://127.0.0.1:9/link']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['--']), 'quit']);
+
+  // The browser starts again as the restart starts it: in German, and with the tabs of
+  // before, although it starts with a new tab page otherwise.
+  const { profile } = browser;
+  await browser.close({ keepProfile: true });
+  browser = await launch(['--restore-last-session'], { profile });
+  await expect(
+    browser.shell.getByRole('textbox', { name: 'Adress- und Suchleiste' }),
+  ).toBeVisible();
+  expect((await shellState(browser.shell)).tabs.map((tab) => tab.url)).toEqual(['app://settings/']);
+  const restored = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(restored.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
+  await expect(restored.getByRole('status').filter({ hasText: 'Neustart' })).toHaveCount(0);
+  // The dialogs of the browser speak German too.
+  await browser.main.evaluate(({ dialog }) => {
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      Reflect.set(globalThis, 'dialogTitle', Reflect.get(Object(args.at(-1)), 'title'));
+      return Promise.resolve({ canceled: true, filePath: '' });
+    };
+  });
+  await restored.getByRole('button', { name: 'Einstellungen exportieren…' }).click();
+  await expect
+    .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'dialogTitle') as unknown))
+    .toBe('Einstellungen exportieren');
+});
+
+test('scales the controls with the density, and the text with the text size and the font', async () => {
+  const page = await openSettings();
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  const height = (): Promise<string> => address.evaluate((input) => getComputedStyle(input).height);
+  expect(await height()).toBe('28px');
+  await page.getByRole('radio', { name: 'Compact' }).check();
+  await expect.poll(height).toBe('24px');
+  await page.getByRole('radio', { name: 'Comfortable' }).check();
+  await expect.poll(height).toBe('32px');
+  const body = (property: 'fontSize' | 'fontFamily') => () =>
+    page.evaluate((name) => getComputedStyle(document.body)[name], property);
+  expect(await body('fontSize')()).toBe('13px');
+  await page.getByRole('radio', { name: 'Larger' }).check();
+  await expect.poll(body('fontSize')).toBe('16px');
+  await expect.poll(() => browser.shell.evaluate(token, '--font-size-ui')).toBe('16px');
+  const font = page.getByRole('textbox', { name: 'Font of the browser' });
+  await font.fill('Inter Display');
+  await font.blur();
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+  await font.fill('x";} body{color:red');
+  await font.blur();
+  await expect(page.getByRole('alert')).toHaveText(
+    'Use letters, digits, spaces, dots, hyphens and underscores only.',
+  );
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+});
+
+test('gives web pages that open after a change the text size and the fonts of the settings', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const page = await openSettings();
+    await page.getByRole('combobox', { name: 'Text size of web pages' }).selectOption('Very large');
+    const standard = page.getByRole('textbox', { name: 'Standard' });
+    await standard.fill('DejaVu Serif');
+    await standard.blur();
+    await expect
+      .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+      .toMatchObject({
+        settings: expect.arrayContaining([
+          expect.objectContaining({ key: 'fonts.size', value: 24 }),
+          expect.objectContaining({
+            key: 'fonts.web',
+            value: { standard: 'DejaVu Serif', serif: '', sansSerif: '', fixed: '' },
+          }),
+        ]),
+      });
+    await pressNative(browser, 'T', ['primary']);
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    const web = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    const style = await web.evaluate(() => {
+      const body = getComputedStyle(document.body);
+      return { size: body.fontSize, family: body.fontFamily };
+    });
+    expect(style).toEqual({ size: '24px', family: '"DejaVu Serif"' });
+    // A name that is not one is refused.
+    await standard.fill('x";}');
+    await standard.blur();
+    await expect(page.getByRole('alert')).toHaveText(
+      'Use letters, digits, spaces, dots, hyphens and underscores only.',
+    );
+  } finally {
+    await server.stop();
+  }
+});
+
+test('chooses the pages to open at start and the home page', async () => {
+  const page = await openSettings();
+  await expect(page.getByRole('textbox', { name: 'Page to add' })).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Specific pages' }).check();
+  const add = page.getByRole('textbox', { name: 'Page to add' });
+  await add.fill('example.com');
+  await add.press('Enter');
+  const list = page.getByRole('list', { name: 'Pages to open' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list).toContainText('https://example.com/');
+  await add.fill('not a page');
+  await add.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Enter a web address, such as example.com or https://example.com/page.',
+  );
+  const home = page.getByRole('textbox', { name: 'Home page' });
+  await home.fill('example.org');
+  await home.blur();
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'startup.page', value: 'pages' }),
+        expect.objectContaining({ key: 'startup.urls', value: ['https://example.com/'] }),
+        expect.objectContaining({ key: 'home.page', value: 'https://example.org/' }),
+      ]),
+    });
+});
+
+test('chooses the folder of downloads only in the dialog of the system', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'settings-downloads-'));
+  try {
+    const page = await openSettings();
+    await expect(page.getByText('The downloads folder of the system')).toBeVisible();
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, folder);
+    await page.getByRole('button', { name: 'Change…' }).click();
+    await expect(page.getByText(folder)).toBeVisible();
+    // The page cannot name a folder itself.
+    expect(
+      await page.evaluate(() =>
+        window.bridge.invoke('settings.set', { key: 'downloads.folder', value: '/' }),
+      ),
+    ).toEqual({ ok: false, error: 'invalid' });
+    await page.getByRole('switch', { name: /Ask where to save each file/ }).check();
+    await expect
+      .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+      .toMatchObject({
+        settings: expect.arrayContaining([
+          expect.objectContaining({ key: 'downloads.folder', value: folder }),
+          expect.objectContaining({ key: 'downloads.ask', value: true }),
+        ]),
+      });
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('adds a search engine with a keyword and makes it the default', async () => {
+  const page = await openSettings();
+  const field = (name: string) => page.getByRole('textbox', { name, exact: true });
+  await field('Name').fill('Example');
+  await field('Keyword').fill('@ex');
+  await field('Address with %s').fill('https://search.example/?q=%s');
+  await page.locator('form.add-engine').getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('starts with neither ! nor @');
+  await field('Keyword').fill('ex');
+  await field('Address with %s').press('Enter');
+  const engines = page.getByRole('list', { name: 'Search engines and keywords' });
+  await expect(engines.getByRole('listitem').filter({ hasText: 'Example' })).toContainText('ex');
+  await page
+    .getByRole('combobox', { name: 'Search engine', exact: true })
+    .selectOption({ label: 'Example' });
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'search.urlTemplate',
+          value: 'https://search.example/?q=%s',
+        }),
+        expect.objectContaining({
+          key: 'search.engines',
+          value: [{ name: 'Example', keyword: 'ex', url: 'https://search.example/?q=%s' }],
+        }),
+      ]),
+    });
+  await engines.getByRole('button', { name: 'Remove Example' }).click();
+  await expect(engines.getByRole('listitem').filter({ hasText: 'Example' })).toHaveCount(0);
+});
+
+test('shows, hides and moves the buttons of the toolbar', async () => {
+  const page = await openSettings();
+  const buttons = (): Promise<string[]> =>
+    browser.shell.evaluate(() =>
+      [...(document.querySelector('app-shell')?.shadowRoot?.querySelectorAll('nav .icon') ?? [])]
+        .map((button) => [...button.classList].find((name) => name !== 'icon') ?? '')
+        .filter((name) => name === 'bookmark' || name === 'blocker' || name === 'downloads'),
+    );
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await pressNative(browser, 'T', ['primary']);
+  await address.fill('http://127.0.0.1:9/');
+  await address.press('Enter');
+  await expect.poll(buttons).toEqual(['bookmark', 'blocker']);
+  await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Move Content blocker to the left' }).click();
+  await page.getByRole('checkbox', { name: 'Bookmark star' }).uncheck();
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'toolbar.items', value: ['shield', 'downloads'] }),
+      ]),
+    });
+  await page.getByRole('checkbox', { name: 'Bookmark star' }).check();
+  await page.getByRole('checkbox', { name: 'Downloads' }).uncheck();
+  await browser.shell.getByRole('tab', { name: /127\.0\.0\.1/ }).click();
+  await expect.poll(buttons).toEqual(['blocker', 'bookmark']);
+  // Without its button, the shortcut opens the list of downloads at the menu.
+  await pressNative(
+    browser,
+    process.platform === 'darwin' ? 'L' : 'J',
+    process.platform === 'darwin' ? ['primary', 'alt'] : ['primary'],
+  );
+  const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+  await expect(overlay.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+});
+
+test('keeps the focus on a toolbar button while it moves', async () => {
+  const page = await openSettings();
+  const items = (): Promise<unknown> =>
+    page.evaluate(async () => {
+      const result = await window.bridge.invoke('settings.getAll', {});
+      const settings: unknown[] =
+        typeof result === 'object' && result !== null && 'settings' in result
+          ? [result.settings].flat()
+          : [];
+      return settings.find(
+        (setting) =>
+          typeof setting === 'object' &&
+          setting !== null &&
+          'key' in setting &&
+          setting.key === 'toolbar.items',
+      );
+    });
+  await page.evaluate(() => window.bridge.invoke('settings.reset', { keys: ['toolbar.items'] }));
+  await expect.poll(items).toMatchObject({ value: ['bookmark', 'shield', 'downloads'] });
+  const rows = page.getByRole('list', { name: 'Toolbar' }).getByRole('listitem');
+  const right = page.getByRole('button', { name: 'Move Bookmark star to the right' });
+  await right.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(items).toMatchObject({ value: ['shield', 'bookmark', 'downloads'] });
+  await expect(rows).toHaveText([/Content blocker/, /Bookmark star/, /Downloads/]);
+  await expect(right).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(items).toMatchObject({ value: ['shield', 'downloads', 'bookmark'] });
+  await expect(rows).toHaveText([/Content blocker/, /Downloads/, /Bookmark star/]);
+  // At the end of the list, the focus moves to the other button of the same item.
+  await expect(right).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Move Bookmark star to the left' })).toBeFocused();
+});
+
+test('adds and removes shortcuts of the new tab page', async () => {
+  const page = await openSettings();
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill('Example');
+  const shortcut = page.getByRole('textbox', { name: 'Address of the shortcut' });
+  await shortcut.fill('example.com');
+  await shortcut.press('Enter');
+  const list = page.getByRole('list', { name: 'Shortcuts' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await shortcut.fill('javascript:alert(1)');
+  await shortcut.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Enter a web address, such as example.com or https://example.com/page.',
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'newtab.tiles',
+          value: [{ title: 'Example', url: 'https://example.com/' }],
+        }),
+      ]),
+    });
+  await list.getByRole('button', { name: 'Remove Example' }).click();
+  await expect(list).toHaveCount(0);
+});
+
+test('clears the history, the cookies and the cache of web pages', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    const web = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await web.evaluate(() => {
+      document.cookie = 'kept=yes; max-age=3600';
+    });
+    const stored = (): Promise<{ cookies: number; cache: number }> =>
+      browser.main.evaluate(async ({ session }) => {
+        const pages = session.fromPartition('persist:default');
+        return { cookies: (await pages.cookies.get({})).length, cache: await pages.getCacheSize() };
+      });
+    await expect.poll(async () => (await stored()).cookies).toBe(1);
+    const page = await openSettings();
+    await page.getByRole('button', { name: 'Clear…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
+    await dialog.getByRole('combobox', { name: 'Time range' }).selectOption('all');
+    await dialog.getByRole('button', { name: 'Clear data' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveText(
+      'The browsing data is cleared.',
+    );
+    expect(await stored()).toEqual({ cookies: 0, cache: 0 });
+    await address.fill('app://history');
+    await address.press('Enter');
+    const history = await waitForPage(browser, (url) => url.startsWith('app://history'));
+    await expect(history.getByRole('button', { name: /^Fixture home/ })).toHaveCount(0);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('keeps the data when the question is cancelled', async () => {
+  const page = await openSettings();
+  await page.getByRole('button', { name: 'Clear…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
+  await expect(dialog.getByRole('combobox', { name: 'Time range' })).toHaveValue('hour');
+  await expect(dialog.getByRole('checkbox', { name: 'History' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveCount(0);
+});
+
+test('applies the secure DNS provider that is chosen, and turns it off', async () => {
+  const page = await openSettings();
+  // The host resolver gives nothing back, so the test records how the browser sets it.
+  await browser.main.evaluate(({ app }) => {
+    const calls: unknown[] = [];
+    Reflect.set(globalThis, 'resolverCalls', calls);
+    app.configureHostResolver = (options) => {
+      calls.push(options);
+    };
+  });
+  const lastCall = (): Promise<unknown> =>
+    browser.main.evaluate(() => (Reflect.get(globalThis, 'resolverCalls') as unknown[]).at(-1));
+  const dns = page.getByRole('combobox', { name: 'Use secure DNS' });
+  await expect(dns).toHaveValue('automatic');
+  await dns.selectOption({ label: 'Quad9 (9.9.9.9)' });
+  await expect.poll(lastCall).toEqual({
+    secureDnsMode: 'secure',
+    secureDnsServers: ['https://dns.quad9.net/dns-query'],
+  });
+  await dns.selectOption({ label: 'Other service' });
+  const service = page.getByRole('textbox', { name: 'Address of the DNS over HTTPS service' });
+  await service.fill('dns.example');
+  await service.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Enter the https address');
+  await service.fill('https://dns.example/dns-query');
+  await service.press('Enter');
+  await expect.poll(lastCall).toEqual({
+    secureDnsMode: 'secure',
+    secureDnsServers: ['https://dns.example/dns-query'],
+  });
+  await dns.selectOption({ label: 'Off' });
+  await expect.poll(lastCall).toEqual({ secureDnsMode: 'off', secureDnsServers: [] });
 });

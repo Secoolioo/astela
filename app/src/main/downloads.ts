@@ -1,5 +1,6 @@
-import { app, shell, type DownloadItem, type Session } from 'electron';
-import { existsSync } from 'node:fs';
+import { app, BaseWindow, dialog, shell, type DownloadItem, type Session } from 'electron';
+import { existsSync, renameSync } from 'node:fs';
+import { copyFile, rm } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { progressOf, type DownloadState } from '../domain/downloads/downloads.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
@@ -28,6 +29,8 @@ export interface DownloadsDependencies {
   readonly overlay: OverlayOptions;
   readonly router: IpcRouter;
   readonly logger: Logger;
+  /** The folder where downloads are saved. */
+  readonly folder: () => string;
 }
 
 /** A download of the list, and the running download of this session, if it has one. */
@@ -76,7 +79,7 @@ export class Downloads {
     deps.router.handle(DownloadAction, ({ id, action }) => (this.act(id, action), null));
     deps.router.handle(OpenDownloadsFolder, (_request, { sender }) => {
       overlayBySender(sender.id)?.close();
-      void shell.openPath(app.getPath('downloads'));
+      void shell.openPath(this.deps.folder());
       return null;
     });
   }
@@ -109,18 +112,66 @@ export class Downloads {
   }
 
   /**
+   * Asks where to save a download, which goes on under a name of its own meanwhile, and
+   * follows it under the chosen name; a cancelled question cancels the download.
+   * @param item - Electron's download, saved under its working name.
+   * @param privateWindow - Whether a page of a private window started it.
+   * @param suggested - Where the question suggests to save it.
+   */
+  async ask(item: DownloadItem, privateWindow: boolean, suggested: string): Promise<void> {
+    const working = item.getSavePath();
+    const window = BaseWindow.getFocusedWindow() ?? undefined;
+    const options = { defaultPath: suggested };
+    const { canceled, filePath } =
+      window === undefined
+        ? await dialog.showSaveDialog(options)
+        : await dialog.showSaveDialog(window, options);
+    if (canceled || filePath === undefined || filePath === '') {
+      item.cancel();
+      if (item.getState() === 'completed') await rm(working, { force: true });
+      return;
+    }
+    const chosen = filePath;
+    // The file moves to its place before the list marks it as finished.
+    if (item.getState() === 'completed') this.move(working, chosen);
+    else {
+      item.once('done', (_event, state) => {
+        if (state === 'completed') this.move(working, chosen);
+      });
+    }
+    this.track(item, privateWindow, chosen);
+  }
+
+  /**
+   * Moves a finished download from its working name to the file that was chosen for it: at
+   * once by a rename, so the list marks the file where it is, or by a copy to another drive.
+   */
+  private move(from: string, to: string): void {
+    try {
+      renameSync(from, to);
+    } catch {
+      void copyFile(from, to)
+        .then(() => rm(from, { force: true }))
+        .catch((error: unknown) => {
+          this.deps.logger.warn('A download could not be moved', { error: String(error) });
+        });
+    }
+  }
+
+  /**
    * Follows a download that started, whose file was chosen already.
    * @param item - Electron's download.
    * @param privateWindow - Whether a page of a private window started it.
+   * @param path - Where the file is, once it finished; the download's own path by default.
    */
-  track(item: DownloadItem, privateWindow: boolean): void {
+  track(item: DownloadItem, privateWindow: boolean, path = item.getSavePath()): void {
     // A small download can finish while the list loads; it sends no events any more.
     const state = item.getState();
     const entry: Entry = {
       id: this.nextId,
       dbId: undefined,
       url: item.getURL(),
-      path: item.getSavePath(),
+      path,
       total: item.getTotalBytes(),
       received: item.getReceivedBytes(),
       state,
@@ -260,7 +311,7 @@ export class Downloads {
         break;
       case 'folder':
         if (existsSync(entry.path)) shell.showItemInFolder(entry.path);
-        else void shell.openPath(app.getPath('downloads'));
+        else void shell.openPath(this.deps.folder());
         break;
       case 'retry':
         if (entry.state === 'cancelled' || entry.state === 'interrupted') {

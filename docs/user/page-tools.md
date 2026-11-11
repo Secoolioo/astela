@@ -10,7 +10,7 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 
 ## Zoom
 
-`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), and on Windows and Linux Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to 100 %. The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at 100 %, the address bar shows its zoom; a click on it returns to 100 %.
+`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), and on Windows and Linux Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to the default zoom, which is 100 % unless you choose another in the [settings](settings.md#appearance). The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at the default zoom, the address bar shows its zoom; a click on it returns to the default zoom.
 
 ## Full screen
 

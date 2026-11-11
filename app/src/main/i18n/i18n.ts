@@ -23,7 +23,7 @@ const macosCatalogs: Catalogs<MessageKey> = { ...catalogs, en: macosEn };
  * Creates the translator for the application locale. Chromium derives that locale from the
  * system language and reports it to every view as `navigator.languages`, so the browser
  * process speaks the same language as the shell.
- * @param locale - The application locale, `app.getLocale()`.
+ * @param locale - The locale of the browser's menus and dialogs, `uiLocale()`.
  * @param platform - `process.platform`; macOS gets its own English texts.
  */
 export function translatorFor(locale: string, platform: string): Translator<MessageKey> {

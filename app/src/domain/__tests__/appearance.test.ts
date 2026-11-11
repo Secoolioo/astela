@@ -7,7 +7,7 @@ import {
   oklchFromHex,
 } from '../appearance/accent.ts';
 import { isAccentPreset, presetAccentColors } from '../appearance/accent-presets.ts';
-import { appearanceCss } from '../appearance/appearance.ts';
+import { appearanceCss, webFontPreferences } from '../appearance/appearance.ts';
 
 const parse = (css: string): { l: number; c: number; h: number } => {
   const match = /^oklch\(([\d.]+)% ([\d.]+) ([\d.]+)\)$/.exec(css);
@@ -57,14 +57,61 @@ describe('accent colors', () => {
 });
 
 describe('appearanceCss', () => {
-  it('sets the accent of both modes and the sizes of the density', () => {
-    const css = appearanceCss({ accent: accentColors('green'), density: 'compact' });
+  it('sets the accent of both modes and the sizes of the density and the text size', () => {
+    const css = appearanceCss({
+      accent: accentColors('green'),
+      density: 'compact',
+      textSize: 'medium',
+      font: '',
+    });
     expect(css).toMatch(/^:root:root\{/);
     expect(css).toContain(`--accent-light:${accentColors('green').light}`);
     expect(css).toContain(`--accent-dark:${accentColors('green').dark}`);
     expect(css).toContain('--toolbar-height:32px;--tab-height:28px');
-    expect(appearanceCss({ accent: accentColors('blue'), density: 'comfortable' })).toContain(
-      '--toolbar-height:48px;--tab-height:40px',
-    );
+    expect(css).toContain('--control-height:24px');
+    expect(css).toContain('--space-2:4px');
+    expect(css).toContain('--font-size-ui:13px');
+    expect(css).not.toContain('--font-ui');
+    const roomy = appearanceCss({
+      accent: accentColors('blue'),
+      density: 'comfortable',
+      textSize: 'larger',
+      font: ' Inter Display ',
+    });
+    expect(roomy).toContain('--toolbar-height:48px;--tab-height:40px');
+    expect(roomy).toContain('--space-7:56px');
+    expect(roomy).toContain('--font-size-ui:16px');
+    expect(roomy).toContain('--line-height-ui:20px');
+    expect(roomy).toContain('--font-ui:"Inter Display",var(--font-system)');
+    expect(roomy.length).toBeLessThan(4096);
+  });
+
+  it('keeps the font of the system for a name that could break out of the style sheet', () => {
+    const css = appearanceCss({
+      accent: accentColors('blue'),
+      density: 'normal',
+      textSize: 'medium',
+      font: 'x";}body{color:red',
+    });
+    expect(css).not.toContain('--font-ui');
+    expect(css).not.toContain('color:red');
+  });
+});
+
+describe('webFontPreferences', () => {
+  it('gives web pages the named fonts and the text size, and keeps the others', () => {
+    expect(
+      webFontPreferences(
+        { standard: 'DejaVu Serif', serif: '', sansSerif: '', fixed: 'Fira Code' },
+        20,
+      ),
+    ).toEqual({
+      defaultFontFamily: { standard: 'DejaVu Serif', monospace: 'Fira Code' },
+      defaultFontSize: 20,
+    });
+    expect(webFontPreferences({ standard: '', serif: '', sansSerif: '', fixed: '' }, 16)).toEqual({
+      defaultFontFamily: {},
+      defaultFontSize: 16,
+    });
   });
 });

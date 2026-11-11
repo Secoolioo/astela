@@ -46,7 +46,7 @@ export const StopFinding = defineRequest({
   capability: 'shell',
 });
 
-/** Sets the zoom of a tab's page back to 100 %. */
+/** Sets the zoom of a tab's page back to the default zoom. */
 export const ResetZoom = defineRequest({
   channel: 'tabs.resetZoom',
   request: v.strictObject({ tabId: TabId }),
@@ -57,6 +57,14 @@ export const ResetZoom = defineRequest({
 /** Accepts the certificate that a tab's page was refused, for this session, and reloads it. */
 export const ProceedUnsafely = defineRequest({
   channel: 'tabs.proceedUnsafely',
+  request: v.strictObject({ tabId: TabId }),
+  response: Done,
+  capability: 'shell',
+});
+
+/** Loads the insecure address of a site without a secure connection, for this session. */
+export const ProceedInsecurely = defineRequest({
+  channel: 'tabs.proceedInsecurely',
   request: v.strictObject({ tabId: TabId }),
   response: Done,
   capability: 'shell',
@@ -108,6 +116,7 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   StopFinding,
   ResetZoom,
   ProceedUnsafely,
+  ProceedInsecurely,
   OpenDownloads,
   OpenBlockerPopover,
   OpenBookmarkFolder,

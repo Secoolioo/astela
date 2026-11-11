@@ -54,6 +54,7 @@ async function downloadsList(): Promise<{
     overlay: {} as OverlayOptions,
     router: { handle: () => undefined } as unknown as IpcRouter,
     logger: new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' }),
+    folder: () => '/downloads',
   });
   return { list, calls };
 }

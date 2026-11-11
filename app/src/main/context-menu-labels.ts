@@ -4,7 +4,7 @@ import { translatorFor } from './i18n/i18n.ts';
 /**
  * The texts of the context menus in the language of the application, as each system writes
  * its menus: with access keys on Windows and Linux, and English in title case on macOS.
- * @param locale - The application locale, `app.getLocale()`.
+ * @param locale - The locale of the browser's menus and dialogs, `uiLocale()`.
  * @param platform - `process.platform`.
  */
 export function contextMenuLabels(locale: string, platform: string): ContextMenuLabels {
