@@ -183,6 +183,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     clock,
     { scope: 'main', level: app.isPackaged ? 'info' : 'debug' },
   );
+  // An error that no code catches goes to the log. Electron would show it in a box that stops
+  // the browser process, which then neither answers nor quits until someone closes the box.
+  process.on('uncaughtException', (error) => {
+    logger.error('An error in the browser process was not caught', error);
+  });
+  // A promise that fails without a handler only warns on the console, which nobody reads.
+  process.on('unhandledRejection', (reason) => {
+    logger.error('A promise of the browser process failed and no code handled it', reason);
+  });
   logger.info('Starting', {
     version: app.getVersion(),
     electron: process.versions.electron,
