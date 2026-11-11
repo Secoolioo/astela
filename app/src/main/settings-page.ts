@@ -7,6 +7,9 @@ import type { Disposable } from '../shared/disposable.ts';
 import {
   ChooseDownloadFolder,
   ClearBrowsingData,
+  GetShortcuts,
+  RecordShortcut,
+  ShortcutRecorded,
   ExportSettings,
   GetSettings,
   ImportSettings,
@@ -17,6 +20,13 @@ import {
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
 import type { DataClient } from '../platform/electron/data-service-client.ts';
+import {
+  shortcutProblem,
+  shortcutsOf,
+  windowCommands,
+  type ShortcutOverrides,
+  type WindowCommand,
+} from '../shared/shortcuts.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
 /**
@@ -43,6 +53,7 @@ function fromSettingsPage(sender: WebContents): boolean {
  *   the browser started.
  * @param browsingData - The data service and the session of web pages, whose data the page
  *   clears.
+ * @param shortcuts - The shortcuts of the windows, and a way to wait for a key press of a page.
  * @returns A disposable that stops publishing changes.
  */
 export function connectSettingsPage(
@@ -52,6 +63,11 @@ export function connectSettingsPage(
   internal: Session,
   startValues: ReadonlyMap<string, string>,
   browsingData: { readonly data: Pick<DataClient, 'call'>; readonly web: () => Session },
+  shortcuts: {
+    readonly table: () => ReadonlyMap<string, WindowCommand>;
+    readonly overrides: () => ShortcutOverrides;
+    readonly record: (contents: WebContents) => Promise<string | undefined>;
+  },
 ): Disposable {
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
@@ -127,6 +143,32 @@ export function connectSettingsPage(
       typeof current === 'string' && current !== '' ? current : app.getPath('downloads'),
     );
     return { chosen: folder !== undefined && settings.set(definition, folder).ok };
+  });
+  router.handle(GetShortcuts, (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page reads the shortcuts');
+    const table = shortcuts.table();
+    const overrides = shortcuts.overrides();
+    return {
+      mac: process.platform === 'darwin',
+      commands: windowCommands.map((command) => ({
+        command,
+        shortcuts: shortcutsOf(table, command),
+        changed: overrides[command] !== undefined,
+      })),
+    };
+  });
+  router.handle(RecordShortcut, (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page records shortcuts');
+    // The answer tells the page that the browser waits; the key press follows as an event.
+    void shortcuts.record(sender).then((shortcut) => {
+      if (sender.isDestroyed()) return;
+      router.publish(ShortcutRecorded, sender, {
+        shortcut: shortcut ?? null,
+        problem:
+          shortcut === undefined ? null : (shortcutProblem(shortcut, process.platform) ?? null),
+      });
+    });
+    return null;
   });
   router.handle(ClearBrowsingData, async (request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page clears data');

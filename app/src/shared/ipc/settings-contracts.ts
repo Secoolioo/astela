@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { windowCommands } from '../shortcuts.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 
 const SettingKey = v.pipe(v.string(), v.regex(/^[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+$/));
@@ -121,4 +122,47 @@ export const ClearBrowsingData = defineRequest({
   response: v.null(),
   capability: 'page:settings',
   ratePerSecond: 1,
+});
+
+/** The keyboard shortcuts of every command, as the window uses them. */
+export const GetShortcuts = defineRequest({
+  channel: 'settings.getShortcuts',
+  request: v.strictObject({}),
+  response: v.strictObject({
+    mac: v.boolean(),
+    commands: v.array(
+      v.strictObject({
+        command: v.picklist(windowCommands),
+        shortcuts: v.array(v.string()),
+        changed: v.boolean(),
+      }),
+    ),
+  }),
+  capability: 'page:settings',
+  ratePerSecond: 10,
+});
+
+/**
+ * Starts waiting for the next key press of the settings page. It answers once the browser
+ * waits, and `settings.shortcutRecorded` tells the key press.
+ */
+export const RecordShortcut = defineRequest({
+  channel: 'settings.recordShortcut',
+  request: v.strictObject({}),
+  response: v.null(),
+  capability: 'page:settings',
+  ratePerSecond: 10,
+});
+
+/**
+ * The key press that the settings page waited for, as a shortcut, with the reason why it
+ * cannot be one; no shortcut when the wait ended without one, such as with Escape.
+ */
+export const ShortcutRecorded = defineEvent({
+  channel: 'settings.shortcutRecorded',
+  payload: v.strictObject({
+    shortcut: v.nullable(v.string()),
+    problem: v.nullable(v.picklist(['text', 'altgr', 'system'])),
+  }),
+  capability: 'page:settings',
 });

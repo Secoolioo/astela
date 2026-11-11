@@ -3,6 +3,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
 import { secureDnsProviders, secureDnsTemplatesPattern } from '../../shared/secure-dns.ts';
+import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
@@ -36,6 +37,9 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    shortcuts: { state: true },
+    recording: { state: true },
+    shortcutNote: { state: true },
     dnsError: { state: true },
     customDns: { state: true },
     dataCleared: { state: true },
@@ -180,6 +184,23 @@ export class SettingsPage extends LitElement {
       }
       .engines li button {
         justify-self: end;
+      }
+      .shortcut .label {
+        flex: 1;
+      }
+      .shortcut .keys {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        justify-content: flex-end;
+      }
+      .shortcut kbd {
+        font: inherit;
+        font-size: var(--font-size-small);
+        padding: 0 var(--space-1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-1);
+        background: var(--surface-2);
       }
       #clear-data form {
         display: grid;
@@ -402,6 +423,12 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** The shortcuts of every command, as the window uses them, once loaded. */
+  declare shortcuts: ShortcutList | undefined;
+  /** The command whose new shortcut the page waits for. */
+  declare recording: WindowCommand | undefined;
+  /** Why the last shortcut was not taken, or which command it would take it from. */
+  declare shortcutNote: ShortcutNote | undefined;
   /** Whether the address of a DNS over HTTPS service was not valid. */
   declare dnsError: boolean;
   /** Whether the field for the address of another DNS over HTTPS service shows. */
@@ -428,6 +455,10 @@ export class SettingsPage extends LitElement {
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
+  /** Stops listening for recorded shortcuts. */
+  private unsubscribeShortcuts: (() => void) | undefined;
+  /** The value of the shortcut setting, as JSON, that the shortcuts were loaded for. */
+  private shortcutsLoaded: string | undefined;
   /** The toolbar button that moved, to focus again once the list shows its new place. */
   private toolbarFocus:
     { readonly item: ToolbarItem; readonly index: number; readonly step: -1 | 1 } | undefined;
@@ -440,6 +471,9 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.shortcuts = undefined;
+    this.recording = undefined;
+    this.shortcutNote = undefined;
     this.dnsError = false;
     this.customDns = false;
     this.dataCleared = false;
@@ -459,7 +493,15 @@ export class SettingsPage extends LitElement {
     if (this.bridge === undefined) {
       return;
     }
-    this.client = new SettingsClient(this.bridge, () => (this.revision += 1));
+    this.unsubscribeShortcuts = this.bridge.on(
+      'settings.shortcutRecorded',
+      (payload) => void this.takeShortcut(payload),
+    );
+    this.client = new SettingsClient(this.bridge, () => {
+      this.revision += 1;
+      // The shortcuts depend on the setting and on the defaults of the system.
+      this.loadShortcuts();
+    });
     void this.client.load().then(() => {
       this.customSearch = this.engineId() === 'custom';
       this.reveal(location.hash);
@@ -479,6 +521,7 @@ export class SettingsPage extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.unsubscribeShortcuts?.();
     removeEventListener('hashchange', this.onHashChange);
     this.spy?.disconnect();
     this.client?.dispose();
@@ -923,6 +966,22 @@ export class SettingsPage extends LitElement {
               'settings.sitePermissions.keywords',
             ],
             render: () => this.renderSitePermissions(),
+          },
+        ],
+      },
+      {
+        id: 'shortcuts',
+        title: 'settings.shortcuts',
+        rows: [
+          ...windowCommands.map((command) => ({
+            id: `shortcut-${command}`,
+            keys: [`shortcut.${command}` as const, 'settings.shortcuts' as const],
+            render: () => this.renderShortcut(command),
+          })),
+          {
+            id: 'shortcuts-reset',
+            keys: ['settings.shortcuts', 'settings.shortcutsNote', 'settings.shortcuts.keywords'],
+            render: () => this.renderShortcutsReset(),
           },
         ],
       },
@@ -1948,6 +2007,163 @@ export class SettingsPage extends LitElement {
     }
   }
 
+  /**
+   * Loads the shortcuts of every command, as the window uses them, for the value of the
+   * setting: once, and again after it changed.
+   */
+  private loadShortcuts(): void {
+    const value = JSON.stringify(this.client?.get('keys.shortcuts')?.value ?? null);
+    if (value === this.shortcutsLoaded) return;
+    this.shortcutsLoaded = value;
+    void this.bridge?.invoke('settings.getShortcuts', {}).then(
+      (result) => {
+        if (isShortcutList(result)) this.shortcuts = result;
+      },
+      () => {
+        // Asked too often; the next change of the settings asks again.
+        this.shortcutsLoaded = undefined;
+      },
+    );
+  }
+
+  /** A command with its shortcuts, a way to record another and to go back to the default. */
+  private renderShortcut(command: WindowCommand): TemplateResult {
+    const t = this.t;
+    const entry = this.shortcuts?.commands.find((known) => known.command === command);
+    const mac = this.shortcuts?.mac ?? false;
+    const name = t(`shortcut.${command}`);
+    const note = this.shortcutNote?.command === command ? this.shortcutNote : undefined;
+    const locked = this.client?.get('keys.shortcuts')?.locked !== false;
+    return html`<div class="row shortcut" data-command=${command}>
+        <span class="label"><span>${name}</span></span>
+        <span class="keys">
+          ${
+            entry === undefined || entry.shortcuts.length === 0
+              ? html`<span class="note">${t('settings.shortcutNone')}</span>`
+              : entry.shortcuts.map(
+                  (shortcut) => html`<kbd>${displayShortcut(shortcut, mac)}</kbd>`,
+                )
+          }
+        </span>
+        <span class="buttons">
+          <button
+            type="button"
+            aria-label=${t('settings.shortcutChange', { command: name })}
+            ?disabled=${locked}
+            @click=${() => void this.recordShortcut(command)}
+          >
+            ${this.recording === command ? t('settings.shortcutPress') : t('settings.shortcutChangeShort')}
+          </button>
+          ${
+            entry?.changed === true
+              ? html`<button
+                  type="button"
+                  aria-label=${t('settings.shortcutReset', { command: name })}
+                  ?disabled=${locked}
+                  @click=${() => void this.setShortcut(command, undefined)}
+                >
+                  ${t('settings.shortcutResetShort')}
+                </button>`
+              : nothing
+          }
+        </span>
+      </div>
+      ${note === undefined ? nothing : this.renderShortcutNote(note, name, mac)}`;
+  }
+
+  private renderShortcutNote(note: ShortcutNote, name: string, mac: boolean): TemplateResult {
+    const t = this.t;
+    if (note.other !== undefined) {
+      const other = note.other;
+      return html`<p class="row note" role="alert">
+        ${t('settings.shortcutTaken', {
+          shortcut: displayShortcut(note.shortcut, mac),
+          command: t(`shortcut.${other}`),
+        })}
+        <button type="button" @click=${() => void this.setShortcut(note.command, [note.shortcut])}>
+          ${t('settings.shortcutUseHere', { command: name })}
+        </button>
+      </p>`;
+    }
+    return html`<p class="row note problem" role="alert">
+      ${t(`settings.shortcutProblem.${note.problem ?? 'text'}`)}
+    </p>`;
+  }
+
+  /** Goes back to the default shortcuts of every command. */
+  private renderShortcutsReset(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('keys.shortcuts');
+    const changed =
+      typeof setting?.value === 'object' &&
+      setting.value !== null &&
+      Object.keys(setting.value).length > 0;
+    return html`<div class="row">
+      <span class="label">
+        <span>${t('settings.shortcutsResetAll')}</span>
+        <span class="note">${t('settings.shortcutsNote')}</span>
+      </span>
+      <button
+        type="button"
+        ?disabled=${setting?.locked !== false || !changed}
+        @click=${() => void this.client?.set('keys.shortcuts', {})}
+      >
+        ${t('settings.shortcutsResetAllShort')}
+      </button>
+    </div>`;
+  }
+
+  /** Starts waiting for the keys of a new shortcut of a command. */
+  private async recordShortcut(command: WindowCommand): Promise<void> {
+    this.shortcutNote = undefined;
+    try {
+      await this.bridge?.invoke('settings.recordShortcut', {});
+    } catch {
+      // The browser refused to wait, for example after many clicks in a row.
+      return;
+    }
+    // The browser waits for the keys now, and the button says so.
+    this.recording = command;
+  }
+
+  /** Takes the keys that the browser recorded for the command that waits, if they can be one. */
+  private async takeShortcut(payload: unknown): Promise<void> {
+    const command = this.recording;
+    this.recording = undefined;
+    if (command === undefined || typeof payload !== 'object' || payload === null) return;
+    const shortcut: unknown = Reflect.get(payload, 'shortcut');
+    if (typeof shortcut !== 'string') return;
+    const problem: unknown = Reflect.get(payload, 'problem');
+    if (problem === 'text' || problem === 'altgr' || problem === 'system') {
+      this.shortcutNote = { command, shortcut, problem };
+      return;
+    }
+    const other = this.shortcuts?.commands.find(
+      (entry) => entry.command !== command && entry.shortcuts.includes(shortcut),
+    );
+    if (other !== undefined) {
+      this.shortcutNote = { command, shortcut, other: other.command };
+      return;
+    }
+    await this.setShortcut(command, [shortcut]);
+  }
+
+  /** Gives a command its own shortcuts, or its default ones again. */
+  private async setShortcut(
+    command: WindowCommand,
+    shortcuts: readonly string[] | undefined,
+  ): Promise<void> {
+    this.shortcutNote = undefined;
+    const setting = this.client?.get('keys.shortcuts');
+    const current =
+      typeof setting?.value === 'object' && setting.value !== null ? setting.value : {};
+    const next = Object.fromEntries(Object.entries(current).filter(([known]) => known !== command));
+    await this.client?.set(
+      'keys.shortcuts',
+      shortcuts === undefined ? next : { ...next, [command]: shortcuts },
+    );
+  }
+
   /** Clearing the browsing data, with a question for the time range and the kinds of data. */
   private renderClearData(): TemplateResult {
     const t = this.t;
@@ -2299,6 +2515,47 @@ const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
 </svg>`;
 
 /** A row of the settings page: a setting, or a part such as the import. */
+/** The shortcuts of every command, as the browser tells them. */
+interface ShortcutList {
+  readonly mac: boolean;
+  readonly commands: readonly {
+    readonly command: WindowCommand;
+    readonly shortcuts: readonly string[];
+    readonly changed: boolean;
+  }[];
+}
+
+/** A shortcut that was not taken: why, or which command has it. */
+interface ShortcutNote {
+  readonly command: WindowCommand;
+  readonly shortcut: string;
+  readonly problem?: 'text' | 'altgr' | 'system';
+  readonly other?: WindowCommand;
+}
+
+function isShortcutList(value: unknown): value is ShortcutList {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'mac' in value &&
+    typeof value.mac === 'boolean' &&
+    'commands' in value &&
+    Array.isArray(value.commands) &&
+    value.commands.every(
+      (entry: unknown) =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        'command' in entry &&
+        windowCommands.some((command) => command === entry.command) &&
+        'shortcuts' in entry &&
+        Array.isArray(entry.shortcuts) &&
+        entry.shortcuts.every((shortcut: unknown) => typeof shortcut === 'string') &&
+        'changed' in entry &&
+        typeof entry.changed === 'boolean',
+    )
+  );
+}
+
 interface PageRow {
   /** The setting's key, or the part's name; links name it after `#`. */
   readonly id: string;

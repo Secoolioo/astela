@@ -1,157 +1,88 @@
-import type { Input } from 'electron';
+import type { Input, WebContents } from 'electron';
+import { shortcutTable, type WindowCommand } from '../../shared/shortcuts.ts';
 
-/** Keyboard shortcuts the window handles itself, also while web content has focus. */
-export type WindowCommand =
-  | 'tab.new'
-  | 'window.new'
-  | 'window.newPrivate'
-  | 'tab.close'
-  | 'tab.reopen'
-  | 'tab.next'
-  | 'tab.previous'
-  | 'page.reload'
-  | 'page.back'
-  | 'page.forward'
-  | 'page.home'
-  | 'omnibox.focus'
-  | 'settings.open'
-  | 'history.open'
-  | 'downloads.open'
-  | 'bookmark.toggle'
-  | 'bookmarks.open'
-  | 'bookmarks.toggleBar'
-  | 'find.open'
-  | 'find.next'
-  | 'find.previous'
-  | 'zoom.in'
-  | 'zoom.out'
-  | 'zoom.reset'
-  | 'window.fullscreen'
-  | 'page.reloadHard'
-  | 'page.print'
-  | 'page.save'
-  | 'page.source'
-  | 'devtools.toggle';
+export type { WindowCommand } from '../../shared/shortcuts.ts';
 
-// The tables write a key press as `Modifiers+Key`: the modifiers in the order Ctrl, Alt,
-// Shift, Cmd (the meta key: Command on macOS, Windows or Super elsewhere), then the key as
-// `KeyboardEvent.key` names it, letters in upper case. The browser process sees each key
-// before the page and cannot tell whether a text field has focus, so no shortcut may be a
-// key that edits text.
+/** The default shortcuts of each system, made once. */
+const defaults = new Map<string, Map<string, WindowCommand>>();
 
 /**
- * macOS. Cmd+Left and Cmd+Right are left out on purpose: they move the caret to the start
- * and the end of a line. Cmd+Tab belongs to the app switcher of the system.
- */
-const macShortcuts = new Map<string, WindowCommand>([
-  ['Cmd+T', 'tab.new'],
-  ['Cmd+N', 'window.new'],
-  ['Shift+Cmd+N', 'window.newPrivate'],
-  ['Cmd+W', 'tab.close'],
-  ['Shift+Cmd+T', 'tab.reopen'],
-  ['Ctrl+Tab', 'tab.next'],
-  ['Alt+Cmd+ArrowRight', 'tab.next'],
-  ['Shift+Cmd+]', 'tab.next'],
-  ['Ctrl+Shift+Tab', 'tab.previous'],
-  ['Alt+Cmd+ArrowLeft', 'tab.previous'],
-  ['Shift+Cmd+[', 'tab.previous'],
-  ['Cmd+R', 'page.reload'],
-  ['Shift+Cmd+H', 'page.home'],
-  ['Shift+Cmd+R', 'page.reloadHard'],
-  ['Cmd+[', 'page.back'],
-  ['Cmd+]', 'page.forward'],
-  ['Cmd+L', 'omnibox.focus'],
-  ['Cmd+,', 'settings.open'],
-  ['Cmd+Y', 'history.open'],
-  ['Alt+Cmd+L', 'downloads.open'],
-  ['Cmd+D', 'bookmark.toggle'],
-  ['Shift+Cmd+O', 'bookmarks.open'],
-  ['Shift+Cmd+B', 'bookmarks.toggleBar'],
-  ['Cmd+F', 'find.open'],
-  ['Cmd+G', 'find.next'],
-  ['Shift+Cmd+G', 'find.previous'],
-  ['Cmd+=', 'zoom.in'],
-  ['Cmd++', 'zoom.in'],
-  ['Shift+Cmd++', 'zoom.in'],
-  ['Cmd+-', 'zoom.out'],
-  ['Cmd+0', 'zoom.reset'],
-  ['Ctrl+Cmd+F', 'window.fullscreen'],
-  ['Cmd+P', 'page.print'],
-  ['Cmd+S', 'page.save'],
-  ['Alt+Cmd+U', 'page.source'],
-  ['Alt+Cmd+I', 'devtools.toggle'],
-]);
-
-/**
- * Windows and Linux. No shortcut combines Ctrl and Alt: Windows reports AltGr, which types
- * characters on many layouts, as Ctrl+Alt. The Back and Forward keys of some keyboards
- * arrive as key presses.
- */
-const pcShortcuts = new Map<string, WindowCommand>([
-  ['Ctrl+T', 'tab.new'],
-  ['Ctrl+N', 'window.new'],
-  ['Ctrl+Shift+N', 'window.newPrivate'],
-  ['Ctrl+W', 'tab.close'],
-  ['Ctrl+F4', 'tab.close'],
-  ['Ctrl+Shift+T', 'tab.reopen'],
-  ['Ctrl+Tab', 'tab.next'],
-  ['Ctrl+PageDown', 'tab.next'],
-  ['Ctrl+Shift+Tab', 'tab.previous'],
-  ['Ctrl+PageUp', 'tab.previous'],
-  ['F5', 'page.reload'],
-  ['Alt+Home', 'page.home'],
-  ['Ctrl+R', 'page.reload'],
-  ['Ctrl+F5', 'page.reloadHard'],
-  ['Shift+F5', 'page.reloadHard'],
-  ['Ctrl+Shift+R', 'page.reloadHard'],
-  ['Alt+ArrowLeft', 'page.back'],
-  ['BrowserBack', 'page.back'],
-  ['Alt+ArrowRight', 'page.forward'],
-  ['BrowserForward', 'page.forward'],
-  ['Ctrl+L', 'omnibox.focus'],
-  ['Alt+D', 'omnibox.focus'],
-  ['F6', 'omnibox.focus'],
-  ['Ctrl+H', 'history.open'],
-  ['Ctrl+J', 'downloads.open'],
-  ['Ctrl+D', 'bookmark.toggle'],
-  ['Ctrl+Shift+O', 'bookmarks.open'],
-  ['Ctrl+Shift+B', 'bookmarks.toggleBar'],
-  ['Ctrl+F', 'find.open'],
-  ['F3', 'find.next'],
-  ['Ctrl+G', 'find.next'],
-  ['Shift+F3', 'find.previous'],
-  ['Ctrl+Shift+G', 'find.previous'],
-  ['Ctrl+=', 'zoom.in'],
-  ['Ctrl++', 'zoom.in'],
-  ['Ctrl+Shift++', 'zoom.in'],
-  ['Ctrl+-', 'zoom.out'],
-  ['Ctrl+0', 'zoom.reset'],
-  ['F11', 'window.fullscreen'],
-  ['Ctrl+P', 'page.print'],
-  ['Ctrl+S', 'page.save'],
-  ['Ctrl+U', 'page.source'],
-  ['F12', 'devtools.toggle'],
-  ['Ctrl+Shift+I', 'devtools.toggle'],
-]);
-
-/**
- * Maps a key press to a window command. The default bindings follow the conventions of
- * each system; customizable shortcuts replace these tables in a later module.
+ * Maps a key press to a window command.
  * @param input - The key event.
  * @param platform - `process.platform`.
+ * @param table - The shortcuts of the window; the defaults of the system when left out.
  */
-export function commandForInput(input: Input, platform: string): WindowCommand | undefined {
+export function commandForInput(
+  input: Input,
+  platform: string,
+  table?: ReadonlyMap<string, WindowCommand>,
+): WindowCommand | undefined {
   // While an input method composes text, its keys belong to it: Japanese input methods,
   // for example, convert the text with F6 to F10 and Ctrl+T.
   if (input.type !== 'keyDown' || input.isComposing) {
     return undefined;
   }
-  const mac = platform === 'darwin';
-  return (mac ? macShortcuts : pcShortcuts).get(shortcutOf(input, mac));
+  let shortcuts = table ?? defaults.get(platform);
+  if (shortcuts === undefined) {
+    shortcuts = shortcutTable(platform);
+    defaults.set(platform, shortcutTable(platform));
+  }
+  return shortcuts.get(shortcutOf(input, platform === 'darwin'));
 }
 
-/** Writes a key press in the notation of the tables. */
-function shortcutOf(input: Input, mac: boolean): string {
+/**
+ * Waits for the next key press of a view, for the editor of shortcuts on the settings page.
+ * The key press runs no command and does not reach the page; Escape alone ends the wait
+ * without a shortcut, and a key press of modifiers alone is not one yet.
+ */
+export class ShortcutRecorder {
+  private readonly waiting = new Map<number, (shortcut: string | undefined) => void>();
+
+  /**
+   * Waits for a key press of a view. A new wait ends the one before without a shortcut.
+   * @param contents - The view.
+   * @param timeout - How long to wait at most, in milliseconds.
+   */
+  record(contents: WebContents, timeout = 30_000): Promise<string | undefined> {
+    this.waiting.get(contents.id)?.(undefined);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => done(undefined), timeout);
+      const done = (shortcut: string | undefined): void => {
+        clearTimeout(timer);
+        if (this.waiting.get(contents.id) === done) this.waiting.delete(contents.id);
+        resolve(shortcut);
+      };
+      this.waiting.set(contents.id, done);
+      contents.once('destroyed', () => done(undefined));
+    });
+  }
+
+  /**
+   * Takes a key press of a view that waits for one.
+   * @param contentsId - The id of the view's web contents.
+   * @param input - The key event.
+   * @param platform - `process.platform`.
+   * @returns Whether the view waited, so the key press belongs to the editor.
+   */
+  take(contentsId: number, input: Input, platform: string): boolean {
+    const done = this.waiting.get(contentsId);
+    if (done === undefined) return false;
+    if (input.type !== 'keyDown' || input.isComposing) return true;
+    if (['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'Fn'].includes(input.key)) {
+      return true;
+    }
+    const plain = !input.control && !input.alt && !input.shift && !input.meta;
+    done(plain && input.key === 'Escape' ? undefined : shortcutOf(input, platform === 'darwin'));
+    return true;
+  }
+}
+
+/**
+ * Writes a key press in the notation of the tables.
+ * @param input - The key event.
+ * @param mac - Whether the browser runs on macOS.
+ */
+export function shortcutOf(input: Input, mac: boolean): string {
   let { key, alt, shift } = input;
   // A letter, or a vowel sign, which Devanagari layouts type on some letter keys.
   const letter = /^[\p{L}\p{M}]$/u.test(key);
