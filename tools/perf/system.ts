@@ -8,7 +8,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 
 /** One process of a sample. */
-interface ProcessInfo {
+export interface ProcessInfo {
   readonly pid: number;
   readonly ppid: number;
   /** User and kernel CPU time in milliseconds. */
@@ -17,14 +17,51 @@ interface ProcessInfo {
   readonly memoryBytes?: number;
   /** The kind of process, from its command line, such as `renderer` or `main`. */
   readonly label?: string;
+  /** When the process started, in milliseconds, where the platform reuses the ids of parents. */
+  readonly startedMs?: number;
 }
 
-/** The kind of a process from its command line, as Chromium passes it with `--type`. */
-function labelOf(commandLine: string): string {
+/**
+ * The kind of a process, from the `--type` that Chromium gives its helper processes.
+ * @param commandLine - The command line of the process.
+ */
+export function labelOf(commandLine: string): string {
   const type = /--type=(\S+)/.exec(commandLine)?.[1];
   if (type === undefined) return 'main';
   const sub = /--utility-sub-type=(\S+)/.exec(commandLine)?.[1];
   return sub === undefined ? type : `${type}:${sub}`;
+}
+
+/**
+ * A process and all its descendants. Windows keeps the id of a parent in a process after the
+ * parent ended and gives the id to new processes, so a process that started before the one
+ * whose id it names as its parent is not its child.
+ * @param all - Every process, by id.
+ * @param rootPid - The process at the root.
+ */
+export function treeOf(all: ReadonlyMap<number, ProcessInfo>, rootPid: number): ProcessInfo[] {
+  const children = new Map<number, ProcessInfo[]>();
+  for (const info of all.values()) {
+    const list = children.get(info.ppid) ?? [];
+    list.push(info);
+    children.set(info.ppid, list);
+  }
+  const tree: ProcessInfo[] = [];
+  const root = all.get(rootPid);
+  const queue = root === undefined ? [] : [root];
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (next === undefined || tree.includes(next)) continue;
+    tree.push(next);
+    for (const child of children.get(next.pid) ?? []) {
+      const older =
+        child.startedMs !== undefined &&
+        next.startedMs !== undefined &&
+        child.startedMs < next.startedMs;
+      if (!older && child.pid !== next.pid) queue.push(child);
+    }
+  }
+  return tree;
 }
 
 /** Totals for a process and all its descendants. */
@@ -32,7 +69,7 @@ export interface TreeSample {
   readonly processes: number;
   readonly cpuMs: number;
   readonly memoryBytes: number;
-  /** CPU time of each process of the tree. */
+  /** The CPU time of each process of the tree. */
   readonly perProcess: readonly {
     readonly pid: number;
     readonly label: string;
@@ -105,22 +142,7 @@ export async function stopTree(child: ChildProcess): Promise<void> {
  * @param rootPid - The root process.
  */
 export function sampleTree(rootPid: number): TreeSample {
-  const all = listProcesses();
-  const children = new Map<number, ProcessInfo[]>();
-  for (const info of all.values()) {
-    const list = children.get(info.ppid) ?? [];
-    list.push(info);
-    children.set(info.ppid, list);
-  }
-  const tree: ProcessInfo[] = [];
-  const root = all.get(rootPid);
-  const queue = root === undefined ? [] : [root];
-  while (queue.length > 0) {
-    const next = queue.shift();
-    if (next === undefined || tree.includes(next)) continue;
-    tree.push(next);
-    queue.push(...(children.get(next.pid) ?? []));
-  }
+  const tree = treeOf(listProcesses(), rootPid);
   const memory =
     process.platform === 'linux'
       ? linuxPss(tree.map((p) => p.pid))
@@ -129,7 +151,7 @@ export function sampleTree(rootPid: number): TreeSample {
     processes: tree.length,
     cpuMs: tree.reduce((sum, p) => sum + p.cpuMs, 0),
     memoryBytes: memory,
-    perProcess: tree.map((p) => ({ pid: p.pid, label: p.label ?? '?', cpuMs: p.cpuMs })),
+    perProcess: tree.map((p) => ({ pid: p.pid, label: p.label ?? 'main', cpuMs: p.cpuMs })),
   };
 }
 
@@ -161,7 +183,7 @@ function linuxProcesses(): Map<number, ProcessInfo> {
     try {
       commandLine = readFileSync(`/proc/${name}/cmdline`, 'utf8').replaceAll('\0', ' ');
     } catch {
-      // Gone meanwhile.
+      // The process ended meanwhile.
     }
     result.set(Number(name), {
       pid: Number(name),
@@ -199,7 +221,8 @@ function linuxPss(pids: readonly number[]): number {
 function windowsProcesses(): Map<number, ProcessInfo> {
   const script =
     'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) ' +
-    '$($_.PrivatePageCount) $($_.KernelModeTime) $($_.UserModeTime) $($_.CommandLine)" }';
+    '$($_.PrivatePageCount) $($_.KernelModeTime) $($_.UserModeTime) ' +
+    '$([long]($_.CreationDate.ToFileTimeUtc() / 10000)) $($_.CommandLine)" }';
   const output = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf8',
     windowsHide: true,
@@ -207,7 +230,7 @@ function windowsProcesses(): Map<number, ProcessInfo> {
   const result = new Map<number, ProcessInfo>();
   for (const line of output.split(/\r?\n/)) {
     const words = line.trim().split(' ');
-    const [pid, ppid, privateBytes, kernel, user] = words.slice(0, 5).map(Number);
+    const [pid, ppid, privateBytes, kernel, user, started] = words.slice(0, 6).map(Number);
     if (pid === undefined || Number.isNaN(pid) || ppid === undefined) continue;
     result.set(pid, {
       pid,
@@ -215,7 +238,8 @@ function windowsProcesses(): Map<number, ProcessInfo> {
       // Kernel and user times are counted in units of 100 ns.
       cpuMs: ((kernel ?? 0) + (user ?? 0)) / 10_000,
       memoryBytes: privateBytes ?? 0,
-      label: labelOf(words.slice(5).join(' ')),
+      label: labelOf(words.slice(6).join(' ')),
+      ...(started === undefined || Number.isNaN(started) ? {} : { startedMs: started }),
     });
   }
   return result;

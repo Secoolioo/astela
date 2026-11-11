@@ -1,10 +1,16 @@
-import { app, Menu, session, type DownloadItem, type Session } from 'electron';
+import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
 import { languageArguments } from '../shared/ui-language.ts';
+import { sameZoom } from '../shared/zoom.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
-import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
+import {
+  GetNewTabState,
+  NavigateFromNewTab,
+  NewTabChanged,
+  type NewTabState,
+} from '../shared/ipc/newtab-contracts.ts';
 import {
   ActivateTab,
   CloseTab,
@@ -23,8 +29,11 @@ import {
   type Logger,
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
+import type { SearchShortcuts } from '../domain/navigation/omnibox.ts';
+import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-engines.ts';
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
+import { webFontPreferences } from '../domain/appearance/appearance.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
@@ -39,6 +48,7 @@ import {
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
+import { HttpsFirst } from '../platform/electron/https-first.ts';
 import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import { serveResources } from '../platform/blocker/resource-protocol.ts';
@@ -55,18 +65,34 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-cache.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
+  AskDownloadSetting,
   BookmarksBarSetting,
+  DownloadFolderSetting,
+  HomeButtonSetting,
+  HomePageSetting,
+  HttpAllowlistSetting,
+  HttpsFirstSetting,
+  NewTabClockSetting,
+  NewTabSearchSetting,
+  NewTabTilesSetting,
+  StartupPagesSetting,
   StartupSetting,
   BlockerAllowedSitesSetting,
   BlockerAnnoyancesSetting,
   BlockerCookieNoticesSetting,
   ContentBlockerSetting,
+  DefaultZoomSetting,
   LanguageSetting,
+  WebFontsSetting,
+  WebTextSizeSetting,
+  SearchBangsSetting,
+  SearchEnginesSetting,
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
   SitePermissionsSetting,
   TabStripPositionSetting,
+  ToolbarItemsSetting,
   coreSettings,
 } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
@@ -157,6 +183,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     clock,
     { scope: 'main', level: app.isPackaged ? 'info' : 'debug' },
   );
+  // An error that no code catches goes to the log. Electron would show it in a box that stops
+  // the browser process, which then neither answers nor quits until someone closes the box.
+  process.on('uncaughtException', (error) => {
+    logger.error('An error in the browser process was not caught', error);
+  });
+  // A promise that fails without a handler only warns on the console, which nobody reads.
+  process.on('unhandledRejection', (reason) => {
+    logger.error('A promise of the browser process failed and no code handled it', reason);
+  });
   logger.info('Starting', {
     version: app.getVersion(),
     electron: process.versions.electron,
@@ -254,9 +289,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     dispose: () => startedClient?.dispose(),
   };
-  // Every request of web content passes the request pipeline; the content blocker is its
-  // first step. Its engine loads with the first web page.
+  // Every request of web content passes the request pipeline. HTTPS-First sends pages to the
+  // secure address first; the content blocker follows, and its engine loads with the first
+  // web page.
   const pipeline = new RequestPipeline();
+  const httpsFirst = new HttpsFirst({
+    enabled: () => settings.get(HttpsFirstSetting),
+    allowlist: () => settings.get(HttpAllowlistSetting),
+  });
+  pipeline.add(httpsFirst);
   // A blocker without filter data shows that it fails where it should block.
   const blocking = (url: string): Blocking => {
     const value = blockingFor(
@@ -313,11 +354,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // also from downloads that still run; the list and its panel load with the first download.
   let downloads: Downloads | undefined;
   let downloadsLoaded: Promise<Downloads> | undefined;
+  const downloadFolder = (): string =>
+    settings.get(DownloadFolderSetting) || app.getPath('downloads');
   const loadDownloads = (): Promise<Downloads> => {
     downloadsLoaded ??= import('./downloads.ts').then(({ Downloads: List }) => {
       downloads = new List({
         data,
         windows,
+        folder: downloadFolder,
         webSession: (privateWindow) =>
           privateWindow ? privateWeb() : session.fromPartition(webPartition),
         overlay: overlayOptions,
@@ -330,12 +374,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   };
   const reservedPaths = new Set<string>();
   const saveDownload = (item: DownloadItem, privateWindow: boolean): void => {
-    const folder = app.getPath('downloads');
+    const folder = downloadFolder();
+    const ask = settings.get(AskDownloadSetting);
+    // While the browser asks where to save a download, it goes on under a name of its own.
+    const working = (path: string): string => (ask ? `${path}.part` : path);
     const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
       const path = join(folder, candidate);
-      return reservedPaths.has(pathKey(path, process.platform)) || existsSync(path);
+      return [path, working(path)].some(
+        (taken) => reservedPaths.has(pathKey(taken, process.platform)) || existsSync(taken),
+      );
     });
-    const path = join(folder, name);
+    const suggested = join(folder, name);
+    const path = working(suggested);
     const reserved = pathKey(path, process.platform);
     try {
       mkdirSync(folder, { recursive: true });
@@ -346,7 +396,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     item.once('done', () => reservedPaths.delete(reserved));
     item.setSavePath(path);
     loadDownloads().then(
-      (list) => list.track(item, privateWindow),
+      (list) => (ask ? list.ask(item, privateWindow, suggested) : list.track(item, privateWindow)),
       (error: unknown) => logger.error('The list of downloads failed', error),
     );
   };
@@ -444,6 +494,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     await settingsLoaded;
     return settings.get(SearchUrlTemplate);
   };
+  const searchShortcuts = async (): Promise<SearchSettings> => {
+    await settingsLoaded;
+    return { engines: settings.get(SearchEnginesSetting), bangs: settings.get(SearchBangsSetting) };
+  };
   // Every tab that a page opens, from a script or from the context menu, takes this path.
   const openFromPage = (url: string, opener: Electron.WebContents, activate = true): void => {
     if (mayOpenInNewTab(url)) windows.forTab(opener)?.tabs.open(url, { activate });
@@ -498,7 +552,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
     languageArguments: languageArguments(language),
+    webFonts: () =>
+      webFontPreferences(settings.get(WebFontsSetting), settings.get(WebTextSizeSetting)),
+    homeButton: () => settings.get(HomeButtonSetting),
+    defaultZoom: () => settings.get(DefaultZoomSetting),
+    homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
+    toolbar: () => settings.get(ToolbarItemsSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.
     onVisit: (url, title, titleOnly) => {
@@ -546,6 +606,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+    insecureAddressFor: (contents, failed) => httpsFirst.insecureAddressFor(contents, failed),
     onPageCommand: (window, command, contents) =>
       void import('./page-tools.ts').then(({ runPageCommand }) =>
         runPageCommand(window, command, contents, {
@@ -561,7 +622,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       const host = siteOf(url);
       if (host === undefined) return;
       const { [host]: _old, ...others } = settings.get(SiteZoomSetting);
-      void settings.set(SiteZoomSetting, factor === 1 ? others : { ...others, [host]: factor });
+      // A site at the default zoom has no zoom of its own.
+      const plain = sameZoom(factor, settings.get(DefaultZoomSetting));
+      void settings.set(SiteZoomSetting, plain ? others : { ...others, [host]: factor });
     },
     onUnresponsive: (window, tabId, contents) =>
       void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
@@ -587,6 +650,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
+          webSession: () => session.fromPartition(webPartition),
         });
         pages = true;
       })
@@ -621,7 +685,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     logger,
   });
-  registerShellHandlers(router, windows, searchTemplate);
+  registerShellHandlers(router, windows, searchTemplate, searchShortcuts);
   const overlayOptions = {
     url: 'app://overlay/',
     preload: layout.pagePreload,
@@ -655,6 +719,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         openDownloads: (window, anchor) =>
           void loadDownloads().then((list) => list.open(window, anchor)),
         allowCertificate: (contents) => certificates.allow(contents),
+        allowInsecure: (contents, address) => httpsFirst.allow(contents, address),
         folderContents: (folder) => bookmarks?.contents(folder) ?? [],
         openShieldPopover: async (window, anchor) => {
           const { openShieldPopover } = await import('./shield-popover.ts');
@@ -670,14 +735,48 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     ),
   );
-  registerNewTabHandlers(router, windows, searchTemplate);
+  // What the new tab page shows besides the search engine, as the settings say.
+  const newTabState = async (): Promise<NewTabState> => {
+    const template = await searchTemplate();
+    const custom = (await searchShortcuts()).engines.find((engine) => engine.url === template);
+    return {
+      engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null,
+      search: settings.get(NewTabSearchSetting),
+      clock: settings.get(NewTabClockSetting),
+      tiles: settings.get(NewTabTilesSetting),
+    };
+  };
+  registerNewTabHandlers(router, windows, newTabState, searchTemplate, searchShortcuts);
+  const newTabKeys = new Set([
+    NewTabSearchSetting.key,
+    NewTabClockSetting.key,
+    NewTabTilesSetting.key,
+    SearchUrlTemplate.key,
+    SearchEnginesSetting.key,
+  ]);
+  settings.onDidChange(({ keys }) => {
+    if (!keys.some((key) => newTabKeys.has(key))) return;
+    void newTabState().then((state) => {
+      for (const contents of webContents.getAllWebContents()) {
+        if (contents.session === internal && contents.getURL().startsWith(newTabUrl)) {
+          router.publish(NewTabChanged, contents, state);
+        }
+      }
+    });
+  });
   const shellSettings = new Set([
     BookmarksBarSetting.key,
+    HomeButtonSetting.key,
+    DefaultZoomSetting.key,
+    ToolbarItemsSetting.key,
     TabStripPositionSetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
+    if (keys.includes(DefaultZoomSetting.key)) {
+      windows.applyDefaultZoom(settings.get(DefaultZoomSetting));
+    }
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
     // Optional lists that were turned on load at once, so the next page has them.
     if (
@@ -705,17 +804,27 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     settings.set(SetupShownSetting, true);
   }
   // A restart from the settings page brings the tabs back, whatever the startup setting says.
+  const startup = settings.get(StartupSetting);
   const lastSession =
-    !showSetup &&
-    (settings.get(StartupSetting) === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
+    !showSetup && (startup === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
       ? parseSession(await savedSession)
       : undefined;
+  // The pages of the settings open like a session: in one window, and only the first loads.
+  const startPages = startup === 'pages' && !showSetup ? settings.get(StartupPagesSetting) : [];
+  const startSession =
+    lastSession ??
+    (startPages.length === 0
+      ? undefined
+      : {
+          version: 1 as const,
+          windows: [{ tabs: startPages.map((url) => ({ url, title: url })), active: 0 }],
+        });
   // Links from other apps open in tabs; a start without a session or the guide shows only them.
   const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
   const first =
-    lastSession === undefined
+    startSession === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
-      : windows.restore(lastSession);
+      : windows.restore(startSession);
   // Later links open in the window used last, which comes to the front, also without links;
   // without a window, the first link opens one.
   openLinks = (links) => {
@@ -809,10 +918,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   });
 }
 
+/** The searches of the address bar and the new tab page, besides the default engine. */
+interface SearchSettings extends SearchShortcuts {
+  readonly engines: readonly CustomSearchEngine[];
+  readonly bangs: boolean;
+}
+
 function registerShellHandlers(
   router: IpcRouter,
   windows: WindowManager,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchSettings>,
 ): void {
   const windowOf = (sender: Electron.WebContents): BrowserWindowController => {
     const window = windows.forShell(sender);
@@ -822,7 +938,7 @@ function registerShellHandlers(
     return window;
   };
   const target = (input: string): Promise<string | undefined> =>
-    resolveInput(input, searchTemplate);
+    resolveInput(input, searchTemplate, searchShortcuts);
   router.handle(GetShellState, (_request, { sender }) => windowOf(sender).state());
   router.handle(OpenTab, async ({ input }, { sender }) => {
     const url = input === undefined ? undefined : await target(input);
@@ -838,26 +954,26 @@ function registerShellHandlers(
     if (url !== undefined) windowOf(sender).tabs.navigate(tabId, url);
     return null;
   });
-  router.handle(
-    TabAction,
-    ({ tabId, action }, { sender }) => (windowOf(sender).tabs.run(tabId, action), null),
-  );
+  router.handle(TabAction, ({ tabId, action }, { sender }) => {
+    if (action === 'home') windowOf(sender).goHome(tabId);
+    else windowOf(sender).tabs.run(tabId, action);
+    return null;
+  });
   router.handle(SetShellInsets, (insets, { sender }) => (windowOf(sender).setInsets(insets), null));
 }
 
 function registerNewTabHandlers(
   router: IpcRouter,
   windows: WindowManager,
+  newTabState: () => Promise<NewTabState>,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchSettings>,
 ): void {
-  router.handle(GetNewTabState, async () => {
-    const { engineForSearchUrl } = await import('../shared/search-engines.ts');
-    return { engine: engineForSearchUrl(await searchTemplate())?.name ?? null };
-  });
+  router.handle(GetNewTabState, () => newTabState());
   router.handle(NavigateFromNewTab, async ({ input }, { sender }) => {
     const window = windows.forTab(sender);
     const tabId = window?.tabIdOf(sender);
-    const url = await resolveInput(input, searchTemplate);
+    const url = await resolveInput(input, searchTemplate, searchShortcuts);
     if (window !== undefined && tabId !== undefined && url !== undefined) {
       window.tabs.navigate(tabId, url);
     }
@@ -870,13 +986,15 @@ function registerNewTabHandlers(
  * leads to. Its parser loads with the first text, not before the first window.
  * @param input - The text.
  * @param searchTemplate - The address of the search engine.
+ * @param searchShortcuts - The engines of keywords, and whether `!bangs` work.
  */
 async function resolveInput(
   input: string,
   searchTemplate: () => Promise<string>,
+  searchShortcuts: () => Promise<SearchShortcuts>,
 ): Promise<string | undefined> {
   const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
-  return resolveOmniboxInput(input, await searchTemplate())?.url;
+  return resolveOmniboxInput(input, await searchTemplate(), await searchShortcuts())?.url;
 }
 
 /**

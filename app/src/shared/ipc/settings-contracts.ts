@@ -90,3 +90,35 @@ export const RestartBrowser = defineRequest({
   capability: 'page:settings',
   ratePerSecond: 1,
 });
+
+/**
+ * Asks for the folder of downloads in the system's dialog and sets it; the page never names
+ * a folder itself.
+ */
+export const ChooseDownloadFolder = defineRequest({
+  channel: 'settings.chooseDownloadFolder',
+  request: v.strictObject({}),
+  response: v.strictObject({ chosen: v.boolean() }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});
+
+/** How far back clearing the browsing data goes: the last hour, day, week or four weeks, or all. */
+export const clearRanges = ['hour', 'day', 'week', 'month', 'all'] as const;
+
+/**
+ * Clears browsing data: the history of a time range, and all cookies and site data, and the
+ * cache, of web pages in regular windows.
+ */
+export const ClearBrowsingData = defineRequest({
+  channel: 'settings.clearData',
+  request: v.strictObject({
+    range: v.picklist(clearRanges),
+    history: v.boolean(),
+    cookies: v.boolean(),
+    cache: v.boolean(),
+  }),
+  response: v.null(),
+  capability: 'page:settings',
+  ratePerSecond: 1,
+});

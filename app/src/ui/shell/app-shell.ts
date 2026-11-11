@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
@@ -380,6 +381,8 @@ export class AppShell extends LitElement {
 
   declare state: ShellState;
   declare editing: string | undefined;
+  /** Whether the focused address bar had all of its text selected before an update. */
+  private addressSelected = false;
   bridge: ShellBridge | undefined;
   i18n: Translator | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -404,6 +407,9 @@ export class AppShell extends LitElement {
       find: null,
       downloads: null,
       private: false,
+      home: false,
+      defaultZoom: 1,
+      toolbar: ['bookmark', 'shield', 'downloads'],
     };
     this.editing = undefined;
   }
@@ -450,9 +456,21 @@ export class AppShell extends LitElement {
     if (changed.has('state')) {
       this.dataset['tabs'] = this.state.tabStrip;
     }
+    // Typing replaces an address that is selected as a whole, also when the page changes its
+    // address meanwhile; setting the new address would put the caret at its end instead.
+    const input = this.renderRoot.querySelector('input');
+    this.addressSelected =
+      input !== null &&
+      this.editing === undefined &&
+      this.shadowRoot?.activeElement === input &&
+      input.selectionStart === 0 &&
+      input.selectionEnd === input.value.length;
   }
 
   protected override updated(changed: PropertyValues<this>): void {
+    if (this.addressSelected) {
+      this.renderRoot.querySelector('input')?.select();
+    }
     if (changed.has('state')) {
       this.reportInsets();
       this.layoutBookmarksBar();
@@ -533,71 +551,61 @@ export class AppShell extends LitElement {
                 ${icons.reload}
               </button>`
         }
+        ${
+          this.state.home
+            ? html`<button
+                class="icon"
+                title=${t('shell.home')}
+                aria-label=${t('shell.home')}
+                @click=${() => this.action('home')}
+              >
+                ${icons.home}
+              </button>`
+            : nothing
+        }
         <input
           type="text"
           spellcheck="false"
           autocomplete="off"
           aria-label=${t('shell.address')}
           placeholder=${t('shell.addressPlaceholder')}
-          .value=${this.editing ?? displayUrl(active?.url)}
+          .value=${
+            this.editing ??
+            displayUrl(
+              // A site without a secure connection shows the insecure address that was asked for.
+              active?.problem?.kind === 'insecure' ? active.problem.url : active?.url,
+            )
+          }
           @focus=${(e: FocusEvent) => inputOf(e)?.select()}
           @input=${(e: InputEvent) => (this.editing = inputOf(e)?.value)}
           @keydown=${this.onAddressKey}
           @blur=${() => (this.editing = undefined)}
         />
         ${
-          active === undefined || active.zoom === 1
+          active === undefined || sameZoom(active.zoom, this.state.defaultZoom)
             ? nothing
             : html`<button
                 class="zoom"
-                title=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
-                aria-label=${this.tp('shell.zoom', { zoom: percent(active.zoom, this.i18n?.language) })}
+                title=${this.tp('shell.zoom', {
+                  zoom: percent(active.zoom, this.i18n?.language),
+                  reset: percent(this.state.defaultZoom, this.i18n?.language),
+                })}
+                aria-label=${this.tp('shell.zoom', {
+                  zoom: percent(active.zoom, this.i18n?.language),
+                  reset: percent(this.state.defaultZoom, this.i18n?.language),
+                })}
                 @click=${() => void this.bridge?.invoke('tabs.resetZoom', { tabId: active.id })}
               >
                 ${percent(active.zoom, this.i18n?.language)}
               </button>`
         }
-        ${
-          active === undefined || !/^https?:/i.test(active.url)
-            ? nothing
-            : html`<button
-                class="icon bookmark"
-                title=${t('shell.bookmark')}
-                aria-label=${t('shell.bookmark')}
-                aria-pressed=${active.bookmarked ? 'true' : 'false'}
-                @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
-              >
-                ${icons.star}
-              </button>`
-        }
-        ${
-          active === undefined || active.blocking === 'none'
-            ? nothing
-            : html`<button
-                class="icon blocker"
-                data-state=${active.blocking}
-                title=${this.blockerLabel(active)}
-                aria-label=${this.blockerLabel(active)}
-                aria-haspopup="dialog"
-                @click=${this.openBlockerPopover}
-              >
-                ${
-                  active.blocking === 'on'
-                    ? icons.shield
-                    : active.blocking === 'failed'
-                      ? icons.shieldAlert
-                      : icons.shieldOff
-                }
-                ${
-                  active.blocking === 'on' && active.blocked > 0
-                    ? html`<span class="count" aria-hidden="true"
-                        >${active.blocked > 99 ? '99+' : active.blocked}</span
-                      >`
-                    : nothing
-                }
-              </button>`
-        }
-        ${this.renderDownloadsButton()}
+        ${this.state.toolbar.map((item) =>
+          item === 'bookmark'
+            ? this.renderBookmarkButton(active)
+            : item === 'shield'
+              ? this.renderShieldButton(active)
+              : this.renderDownloadsButton(),
+        )}
         ${
           this.state.private
             ? html`<span class="private" title=${t('shell.privateHint')}
@@ -606,7 +614,7 @@ export class AppShell extends LitElement {
             : nothing
         }
         <button
-          class="icon"
+          class="icon menu-button"
           title=${t('shell.menu')}
           aria-label=${t('shell.menu')}
           aria-haspopup="menu"
@@ -766,6 +774,51 @@ export class AppShell extends LitElement {
   };
 
   /** Opens the browser menu below the button. */
+  /** The star that bookmarks a web page; the browser's own pages have none. */
+  private renderBookmarkButton(active: TabView | undefined): TemplateResult | typeof nothing {
+    const t = this.tp.bind(this);
+    return active === undefined || !/^https?:/i.test(active.url)
+      ? nothing
+      : html`<button
+          class="icon bookmark"
+          title=${t('shell.bookmark')}
+          aria-label=${t('shell.bookmark')}
+          aria-pressed=${active.bookmarked ? 'true' : 'false'}
+          @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
+        >
+          ${icons.star}
+        </button>`;
+  }
+
+  /** The shield of the content blocker, on pages that it works on. */
+  private renderShieldButton(active: TabView | undefined): TemplateResult | typeof nothing {
+    return active === undefined || active.blocking === 'none'
+      ? nothing
+      : html`<button
+          class="icon blocker"
+          data-state=${active.blocking}
+          title=${this.blockerLabel(active)}
+          aria-label=${this.blockerLabel(active)}
+          aria-haspopup="dialog"
+          @click=${this.openBlockerPopover}
+        >
+          ${
+            active.blocking === 'on'
+              ? icons.shield
+              : active.blocking === 'failed'
+                ? icons.shieldAlert
+                : icons.shieldOff
+          }
+          ${
+            active.blocking === 'on' && active.blocked > 0
+              ? html`<span class="count" aria-hidden="true"
+                  >${active.blocked > 99 ? '99+' : active.blocked}</span
+                >`
+              : nothing
+          }
+        </button>`;
+  }
+
   /** The downloads button, once the browser downloaded something, with the progress around it. */
   private renderDownloadsButton(): TemplateResult | typeof nothing {
     const downloads = this.state.downloads;
@@ -802,6 +855,11 @@ export class AppShell extends LitElement {
 
   /** Opens the list of downloads at the button, once the shortcut showed the button. */
   private openDownloadsAtButton(): void {
+    // Without its button, the list opens at the menu button.
+    if (!this.state.toolbar.includes('downloads')) {
+      this.openDownloads(this.renderRoot.querySelector('.menu-button'));
+      return;
+    }
     this.downloadsPending = true;
     this.takeDownloadsOpening();
   }
@@ -965,6 +1023,23 @@ export class AppShell extends LitElement {
         }
       </section>`;
     }
+    if (problem.kind === 'insecure') {
+      return html`<section class="problem" aria-labelledby="problem-title">
+        <h1 id="problem-title">${this.tp('problem.insecureTitle')}</h1>
+        <p>${this.tp('problem.insecure', { site })}</p>
+        <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
+        ${
+          tab.canGoBack
+            ? html`<button @click=${() => this.action('back')}>${this.tp('problem.back')}</button>`
+            : nothing
+        }
+        <button
+          @click=${() => void this.bridge?.invoke('tabs.proceedInsecurely', { tabId: tab.id })}
+        >
+          ${this.tp('problem.proceed', { site })}
+        </button>
+      </section>`;
+    }
     const crashed = problem.kind === 'crashed';
     return html`<section class="problem" aria-labelledby="problem-title">
       <h1 id="problem-title">
@@ -985,7 +1060,7 @@ export class AppShell extends LitElement {
     return this.i18n?.t(key, params) ?? key;
   }
 
-  private action(action: 'back' | 'forward' | 'reload' | 'stop'): void {
+  private action(action: 'back' | 'forward' | 'reload' | 'stop' | 'home'): void {
     const tabId = this.state.activeTabId;
     if (tabId !== null) {
       void this.bridge?.invoke('tabs.action', { tabId, action });
@@ -1082,6 +1157,12 @@ const icons = {
     <path d="M21 3v5h-5" />
   </svg>`,
   stop: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>`,
+  home: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+    <path
+      d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+    />
+  </svg>`,
   shield: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"

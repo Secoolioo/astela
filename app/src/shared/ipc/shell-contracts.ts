@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { tabStripPositions } from '../layout.ts';
+import { tabStripPositions, toolbarItems } from '../layout.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 /** The id of a tab. */
@@ -11,12 +11,13 @@ export const Done = v.null();
 
 /**
  * Why a tab shows no page: it could not be loaded (`error`), the certificate of its site is
- * not trusted (`certificate`), or its renderer is gone (`crashed`). `code` is Chromium's
+ * not trusted (`certificate`), its site has no secure connection (`insecure`), or its
+ * renderer is gone (`crashed`). `code` is Chromium's
  * name for the cause, such as `ERR_CONNECTION_REFUSED`; `proceed` tells whether the user
  * may continue to the page after the warning.
  */
 export const TabProblem = v.strictObject({
-  kind: v.picklist(['error', 'certificate', 'crashed']),
+  kind: v.picklist(['error', 'certificate', 'insecure', 'crashed']),
   code: v.pipe(v.string(), v.regex(/^[A-Z0-9_]{1,64}$/)),
   url: v.pipe(v.string(), v.maxLength(8192)),
   proceed: v.boolean(),
@@ -78,7 +79,9 @@ const DownloadsSummary = v.strictObject({
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
- * the window is a private window.
+ * the window is a private window, `home` whether the toolbar has a home button,
+ * `defaultZoom` the zoom of sites without a zoom of their own, and `toolbar` the buttons
+ * next to the address bar in their order.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -88,6 +91,9 @@ export const ShellState = v.strictObject({
   find: v.nullable(FindState),
   downloads: v.nullable(DownloadsSummary),
   private: v.boolean(),
+  home: v.boolean(),
+  defaultZoom: v.number(),
+  toolbar: v.array(v.picklist(toolbarItems)),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -137,12 +143,12 @@ export const NavigateTab = defineRequest({
   capability: 'shell',
 });
 
-/** History and loading actions of a tab. */
+/** History and loading actions of a tab; `home` opens the home page in it. */
 export const TabAction = defineRequest({
   channel: 'tabs.action',
   request: v.strictObject({
     tabId: TabId,
-    action: v.picklist(['back', 'forward', 'reload', 'stop']),
+    action: v.picklist(['back', 'forward', 'reload', 'stop', 'home']),
   }),
   response: Done,
   capability: 'shell',

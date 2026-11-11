@@ -63,6 +63,26 @@ test('navigates from the address bar and updates the tab', async () => {
     .toBe('Fixture home');
 });
 
+test('replaces a selected address with what is typed, also after the page changed it', async () => {
+  await navigate(`${server.origin}/index.html`);
+  const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  // Focusing the address bar selects the whole address, as a click does.
+  await address.focus();
+  await expect
+    .poll(() =>
+      address.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd]),
+    )
+    .toEqual([0, `${server.origin}/index.html`.length]);
+  // The page goes elsewhere before anything is typed.
+  await page.evaluate(() => {
+    location.href = '/second.html';
+  });
+  await expect(address).toHaveValue(`${server.origin}/second.html`);
+  await browser.shell.keyboard.type('typed words');
+  await expect(address).toHaveValue('typed words');
+});
+
 test('opens, closes and reopens tabs with keyboard shortcuts', async () => {
   await navigate(`${server.origin}/index.html`);
   await expect(browser.shell.getByRole('tab', { name: 'Fixture home' })).toBeVisible();

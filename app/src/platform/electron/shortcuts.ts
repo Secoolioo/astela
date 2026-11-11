@@ -12,6 +12,7 @@ export type WindowCommand =
   | 'page.reload'
   | 'page.back'
   | 'page.forward'
+  | 'page.home'
   | 'omnibox.focus'
   | 'settings.open'
   | 'history.open'
@@ -55,6 +56,7 @@ const macShortcuts = new Map<string, WindowCommand>([
   ['Alt+Cmd+ArrowLeft', 'tab.previous'],
   ['Shift+Cmd+[', 'tab.previous'],
   ['Cmd+R', 'page.reload'],
+  ['Shift+Cmd+H', 'page.home'],
   ['Shift+Cmd+R', 'page.reloadHard'],
   ['Cmd+[', 'page.back'],
   ['Cmd+]', 'page.forward'],
@@ -97,6 +99,7 @@ const pcShortcuts = new Map<string, WindowCommand>([
   ['Ctrl+Shift+Tab', 'tab.previous'],
   ['Ctrl+PageUp', 'tab.previous'],
   ['F5', 'page.reload'],
+  ['Alt+Home', 'page.home'],
   ['Ctrl+R', 'page.reload'],
   ['Ctrl+F5', 'page.reloadHard'],
   ['Shift+F5', 'page.reloadHard'],

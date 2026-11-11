@@ -7,7 +7,7 @@ import {
   oklchFromHex,
 } from '../appearance/accent.ts';
 import { isAccentPreset, presetAccentColors } from '../appearance/accent-presets.ts';
-import { appearanceCss } from '../appearance/appearance.ts';
+import { appearanceCss, webFontPreferences } from '../appearance/appearance.ts';
 
 const parse = (css: string): { l: number; c: number; h: number } => {
   const match = /^oklch\(([\d.]+)% ([\d.]+) ([\d.]+)\)$/.exec(css);
@@ -95,5 +95,23 @@ describe('appearanceCss', () => {
     });
     expect(css).not.toContain('--font-ui');
     expect(css).not.toContain('color:red');
+  });
+});
+
+describe('webFontPreferences', () => {
+  it('gives web pages the named fonts and the text size, and keeps the others', () => {
+    expect(
+      webFontPreferences(
+        { standard: 'DejaVu Serif', serif: '', sansSerif: '', fixed: 'Fira Code' },
+        20,
+      ),
+    ).toEqual({
+      defaultFontFamily: { standard: 'DejaVu Serif', monospace: 'Fira Code' },
+      defaultFontSize: 20,
+    });
+    expect(webFontPreferences({ standard: '', serif: '', sansSerif: '', fixed: '' }, 16)).toEqual({
+      defaultFontFamily: {},
+      defaultFontSize: 16,
+    });
   });
 });

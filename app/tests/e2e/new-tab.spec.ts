@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { FixtureServer, launch, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  FixtureServer,
+  launch,
+  pressNative,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 
 const server = new FixtureServer();
 let browser: Browser;
@@ -50,6 +57,9 @@ test('opens new tabs on the new tab page with the search engine', async () => {
   // The page only reaches its own channels; the browser process checks them again.
   expect(await page.evaluate(() => window.bridge.invoke('newtab.getState', {}))).toEqual({
     engine: 'DuckDuckGo',
+    search: true,
+    clock: false,
+    tiles: [],
   });
   const shellCall = await page.evaluate(() =>
     window.bridge.invoke('shell.getState', {}).then(
@@ -95,4 +105,37 @@ test('goes back from a web page to the new tab page and forward again', async ()
   await expect.poll(activeTitle).toBe('Fixture home');
   await back.click();
   await expect.poll(activeTitle).toBe('New tab');
+});
+
+test('shows the search field, a clock and shortcuts as the settings say', async () => {
+  await browser.close();
+  const url = `${server.origin}/index.html`;
+  browser = await launch([], {
+    settings: {
+      'newtab.search': false,
+      'newtab.clock': true,
+      'newtab.tiles': [{ title: 'Fixture', url }],
+    },
+  });
+  const page = await newTabPage();
+  await expect(page.getByRole('searchbox')).toBeHidden();
+  await expect(page.locator('#clock')).toHaveText(/\d/);
+  const shortcuts = page.getByRole('list', { name: 'Shortcuts' });
+  await shortcuts.getByRole('link', { name: 'Fixture' }).click();
+  await expect.poll(activeTitle).toBe('Fixture home');
+});
+
+test('shows changes of the settings on an open new tab page', async () => {
+  const page = await newTabPage();
+  await expect(page.locator('#clock')).toBeHidden();
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await pressNative(browser, 'T', ['primary']);
+  await address.fill('app://settings/#newtab');
+  await address.press('Enter');
+  const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await settings.getByRole('switch', { name: /Show a clock/ }).check();
+  await settings.getByRole('switch', { name: /Show the search field/ }).uncheck();
+  await browser.shell.getByRole('tab', { name: 'New tab' }).click();
+  await expect(page.locator('#clock')).toBeVisible();
+  await expect(page.getByRole('searchbox')).toBeHidden();
 });

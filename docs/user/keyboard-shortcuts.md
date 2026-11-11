@@ -18,6 +18,7 @@ Astela uses the shortcuts that are usual on each operating system. They work the
 | Back                           | `Alt+Left Arrow` or the keyboard's Back key     |
 | Forward                        | `Alt+Right Arrow` or the keyboard's Forward key |
 | Reload                         | `F5` or `Ctrl+R`                                |
+| Open the home page             | `Alt+Home`                                      |
 | Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
 | Open the history               | `Ctrl+H`                                        |
 | Open the downloads             | `Ctrl+J`                                        |
@@ -53,6 +54,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Back                           | `Command+[`                                                           |
 | Forward                        | `Command+]`                                                           |
 | Reload                         | `Command+R`                                                           |
+| Open the home page             | `Command+Shift+H`                                                     |
 | Go to the address bar          | `Command+L`                                                           |
 | Open the settings              | `Command+,`                                                           |
 | Open the history               | `Command+Y`                                                           |

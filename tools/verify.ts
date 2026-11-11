@@ -86,6 +86,7 @@ const checks: readonly Check[] = [
       'tools/release/import-mac-certificate.sh',
       'app/tests/linux-repos/run.sh',
       'app/tests/linux-repos/live.sh',
+      'tools/ci/apt-install.sh',
       'tools/ci/pull-images.sh',
     ],
     optionalLocally: true,

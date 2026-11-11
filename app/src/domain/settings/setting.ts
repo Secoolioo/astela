@@ -15,6 +15,12 @@ export interface SettingPolicy {
    * machine-wide, mandatory sources.
    */
   readonly sensitive?: boolean;
+  /**
+   * The values of the policy, when they differ from those of the setting, such as the
+   * numbers that Chromium's policy uses for a choice. Its output must be a valid value of the
+   * setting.
+   */
+  readonly schema?: v.GenericSchema<unknown, unknown>;
 }
 
 /** How the settings page presents a setting. Texts come from the module's locale catalog. */
@@ -22,7 +28,16 @@ export interface SettingUi {
   /** Section id on the settings page, such as `appearance`. */
   readonly section: string;
   /** Control used to edit the value. */
-  readonly control: 'toggle' | 'select' | 'text' | 'number' | 'color' | 'list' | 'shortcut';
+  readonly control:
+    | 'toggle'
+    | 'select'
+    | 'text'
+    | 'number'
+    | 'color'
+    | 'list'
+    | 'shortcut'
+    /** A folder, which only the system's dialog sets, never a page or an imported file. */
+    | 'folder';
   /** Sort order inside the section; lower comes first. */
   readonly order?: number;
 }

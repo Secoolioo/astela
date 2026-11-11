@@ -15,6 +15,7 @@ import type {
   OpenBookmarkFolder,
   OpenDownloads,
   OpenMenu,
+  ProceedInsecurely,
   ProceedUnsafely,
   ReopenClosedTab,
   ResetZoom,
@@ -35,6 +36,7 @@ interface Requests {
   'shell.openBlockerPopover': typeof OpenBlockerPopover;
   'shell.openDownloads': typeof OpenDownloads;
   'tabs.proceedUnsafely': typeof ProceedUnsafely;
+  'tabs.proceedInsecurely': typeof ProceedInsecurely;
   'tabs.find': typeof FindInPage;
   'tabs.stopFind': typeof StopFinding;
   'tabs.resetZoom': typeof ResetZoom;

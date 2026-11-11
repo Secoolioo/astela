@@ -233,3 +233,59 @@ test('opens the list with its shortcut and keeps it for the next start', async (
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test('saves downloads in the folder of the settings', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'downloads-chosen-'));
+  const browser = await launch([], { settings: { 'downloads.folder': folder } });
+  try {
+    const page = await openPage(browser);
+    await page.getByRole('link', { name: 'Report' }).click();
+    await expect.poll(() => existsSync(join(folder, 'report.txt'))).toBe(true);
+  } finally {
+    await browser.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('asks where to save each download when the setting says so', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'downloads-asked-'));
+  const elsewhere = mkdtempSync(join(tmpdir(), 'downloads-elsewhere-'));
+  const target = join(elsewhere, 'saved report.txt');
+  const browser = await launch([], {
+    settings: { 'downloads.folder': folder, 'downloads.ask': true },
+  });
+  try {
+    // The first question gets an answer, the second is cancelled.
+    await browser.main.evaluate(({ dialog }, path) => {
+      const asked: unknown[] = [];
+      Reflect.set(globalThis, 'asked', asked);
+      dialog.showSaveDialog = (...args: unknown[]) => {
+        asked.push(Reflect.get(Object(args.at(-1)), 'defaultPath'));
+        return Promise.resolve(
+          asked.length === 1
+            ? { canceled: false, filePath: path }
+            : { canceled: true, filePath: '' },
+        );
+      };
+    }, target);
+    const asked = (): Promise<unknown> =>
+      browser.main.evaluate(() => Reflect.get(globalThis, 'asked'));
+    const page = await openPage(browser);
+    await page.getByRole('link', { name: 'Report' }).click();
+    await expect.poll(() => existsSync(target)).toBe(true);
+    await expect.poll(() => readFileSync(target, 'utf8')).toBe('Fixture report\n');
+    expect(await asked()).toEqual([join(folder, 'report.txt')]);
+    const downloads = await openList(browser);
+    await expect(downloads.getByRole('listitem')).toHaveCount(1);
+    await expect(downloads.getByRole('listitem')).toContainText('saved report.txt');
+    await page.getByRole('link', { name: 'Report' }).click();
+    await expect.poll(asked).toHaveLength(2);
+    // A cancelled question leaves neither a file nor an entry.
+    await expect.poll(() => readdirSync(folder)).toEqual([]);
+    await expect(downloads.getByRole('listitem')).toHaveCount(1);
+  } finally {
+    await browser.close();
+    rmSync(folder, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});

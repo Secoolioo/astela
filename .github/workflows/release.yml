@@ -161,8 +161,7 @@ jobs:
         env:
           E2E_APP: ${{ runner.temp }}/e2e/linux-unpacked/astela
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick
+          tools/ci/apt-install.sh xvfb imagemagick
           # The unpacked test build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           xvfb-run -a -s '-screen 0 3000x2000x24 -nocursor' \
@@ -227,7 +226,7 @@ jobs:
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: tools/ci/apt-install.sh rpm
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: packages-*
@@ -365,8 +364,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libfuse2t64
+          tools/ci/apt-install.sh xvfb libfuse2t64
           # The AppImage sandbox needs user namespaces; the packages job tests the AppArmor fix.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Update the previous release through the live feed

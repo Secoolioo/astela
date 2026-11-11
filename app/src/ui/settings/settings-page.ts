@@ -1,5 +1,10 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
-import { searchEngines } from '../../shared/search-engines.ts';
+import { repeat } from 'lit/directives/repeat.js';
+import { bangs } from '../../shared/bangs.ts';
+import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
+import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
+import { webTextSizes } from '../../shared/web-text-sizes.ts';
+import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
@@ -15,7 +20,7 @@ const choices = {
   'appearance.density': ['compact', 'normal', 'comfortable'],
   'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
-  'startup.page': ['restore', 'newtab'],
+  'startup.page': ['restore', 'newtab', 'pages'],
 } as const;
 
 /**
@@ -27,6 +32,12 @@ export class SettingsPage extends LitElement {
     revision: { state: true },
     searchError: { state: true },
     fontError: { state: true },
+    pageError: { state: true },
+    engineError: { state: true },
+    tileError: { state: true },
+    dataCleared: { state: true },
+    homeError: { state: true },
+    webFontError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
     siteError: { state: true },
@@ -124,6 +135,91 @@ export class SettingsPage extends LitElement {
       .message {
         margin: var(--space-2) 0 0;
         color: var(--text-2);
+      }
+      .fonts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2) var(--space-3);
+      }
+      .font {
+        display: grid;
+        gap: var(--space-1);
+        color: var(--text-2);
+        font-size: var(--font-size-small);
+      }
+      .font input {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+      }
+      .path {
+        overflow-wrap: anywhere;
+      }
+      .toolbar-items li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .toolbar-items .buttons {
+        display: flex;
+        gap: var(--space-1);
+      }
+      .keyword {
+        color: var(--text-2);
+        font-family: ui-monospace, monospace;
+        font-size: var(--font-size-small);
+      }
+      .engines li {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(8em, auto) 6em;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .engines li button {
+        justify-self: end;
+      }
+      #clear-data form {
+        display: grid;
+        gap: var(--space-2);
+      }
+      #clear-data h3 {
+        margin: 0;
+        font-size: var(--font-size-large);
+      }
+      #clear-data .field {
+        display: grid;
+        gap: var(--space-1);
+      }
+      #clear-data .check {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .add-tile {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+        gap: var(--space-2);
+      }
+      .add-tile input {
+        min-width: 0;
+      }
+      .add-engine {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 2fr) auto;
+        gap: var(--space-2);
+      }
+      .add-engine input {
+        min-width: 0;
+      }
+      .bangs {
+        padding: 0 var(--space-3) var(--space-2);
+        color: var(--text-2);
+      }
+      .bangs ul {
+        columns: 2;
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        list-style: none;
       }
       /* The hint stays in view at the bottom while the page scrolls. */
       .restart {
@@ -297,6 +393,18 @@ export class SettingsPage extends LitElement {
   declare searchError: boolean;
   /** Whether the last font name was not one. */
   declare fontError: boolean;
+  /** Whether the last page to add at start was not a web address. */
+  declare pageError: boolean;
+  /** Whether the last search engine to add was not valid. */
+  declare engineError: boolean;
+  /** Whether the last tile to add had no web address. */
+  declare tileError: boolean;
+  /** Whether the browsing data was just cleared. */
+  declare dataCleared: boolean;
+  /** Whether the last home page was not a web address. */
+  declare homeError: boolean;
+  /** Whether the last name of a font for web pages was not one. */
+  declare webFontError: boolean;
   declare customSearch: boolean;
   /** Whether the content blocker has no usable filter data. */
   declare blockerFailed: boolean;
@@ -313,12 +421,21 @@ export class SettingsPage extends LitElement {
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
+  /** The toolbar button that moved, to focus again once the list shows its new place. */
+  private toolbarFocus:
+    { readonly item: ToolbarItem; readonly index: number; readonly step: -1 | 1 } | undefined;
 
   constructor() {
     super();
     this.revision = 0;
     this.searchError = false;
     this.fontError = false;
+    this.pageError = false;
+    this.engineError = false;
+    this.tileError = false;
+    this.dataCleared = false;
+    this.homeError = false;
+    this.webFontError = false;
     this.customSearch = false;
     this.blockerFailed = false;
     this.siteError = false;
@@ -359,6 +476,7 @@ export class SettingsPage extends LitElement {
   }
 
   protected override updated(): void {
+    this.focusMovedToolbarItem();
     paintSwatches(this.renderRoot, this.client?.accents ?? []);
     // The navigation marks the section whose heading is in the upper part of the window.
     this.spy?.disconnect();
@@ -505,6 +623,50 @@ export class SettingsPage extends LitElement {
             render: () => this.renderFont(),
           },
           {
+            id: 'fonts.size',
+            keys: [
+              'settings.webTextSize',
+              'settings.webTextSizeNote',
+              'settings.webTextSize.keywords',
+              'settings.webTextSize.9',
+              'settings.webTextSize.12',
+              'settings.webTextSize.16',
+              'settings.webTextSize.20',
+              'settings.webTextSize.24',
+            ],
+            render: () => this.renderWebTextSize(),
+          },
+          {
+            id: 'fonts.web',
+            keys: [
+              'settings.webFonts',
+              'settings.webFontsNote',
+              'settings.webFonts.keywords',
+              'settings.webFont.standard',
+              'settings.webFont.serif',
+              'settings.webFont.sansSerif',
+              'settings.webFont.fixed',
+            ],
+            render: () => this.renderWebFonts(),
+          },
+          {
+            id: 'zoom.default',
+            keys: ['settings.pageZoom', 'settings.pageZoomNote', 'settings.pageZoom.keywords'],
+            render: () => this.renderPageZoom(),
+          },
+          {
+            id: 'toolbar.items',
+            keys: [
+              'settings.toolbar',
+              'settings.toolbarNote',
+              'settings.toolbar.keywords',
+              'settings.toolbar.bookmark',
+              'settings.toolbar.shield',
+              'settings.toolbar.downloads',
+            ],
+            render: () => this.renderToolbar(),
+          },
+          {
             id: 'tabs.position',
             keys: [
               'settings.tabPosition',
@@ -538,6 +700,79 @@ export class SettingsPage extends LitElement {
             ],
             render: () => this.renderChoice('startup.page', 'settings.startupPage'),
           },
+          // The list shows when the browser opens specific pages at start.
+          ...(this.client?.get('startup.page')?.value === 'pages'
+            ? [
+                {
+                  id: 'startup.urls',
+                  keys: ['settings.startupPages', 'settings.startupPagesNote'],
+                  render: () => this.renderStartupPages(),
+                } satisfies PageRow,
+              ]
+            : []),
+          {
+            id: 'home.button',
+            keys: ['settings.homeButton', 'settings.homeButtonNote', 'settings.home.keywords'],
+            render: () =>
+              this.renderToggle('home.button', 'settings.homeButton', 'settings.homeButtonNote'),
+          },
+          {
+            id: 'home.page',
+            keys: ['settings.homePage', 'settings.homePageNote', 'settings.home.keywords'],
+            render: () => this.renderHomePage(),
+          },
+        ],
+      },
+      {
+        id: 'newtab',
+        title: 'settings.newTab',
+        rows: [
+          {
+            id: 'newtab.search',
+            keys: ['settings.newTabSearch', 'settings.newTabSearchNote'],
+            render: () =>
+              this.renderToggle(
+                'newtab.search',
+                'settings.newTabSearch',
+                'settings.newTabSearchNote',
+              ),
+          },
+          {
+            id: 'newtab.clock',
+            keys: ['settings.newTabClock', 'settings.newTabClockNote'],
+            render: () =>
+              this.renderToggle('newtab.clock', 'settings.newTabClock', 'settings.newTabClockNote'),
+          },
+          {
+            id: 'newtab.tiles',
+            keys: ['settings.newTabTiles', 'settings.newTabTilesNote', 'settings.newTab.keywords'],
+            render: () => this.renderTiles(),
+          },
+        ],
+      },
+      {
+        id: 'downloads',
+        title: 'settings.downloads',
+        rows: [
+          {
+            id: 'downloads.folder',
+            keys: [
+              'settings.downloadFolder',
+              'settings.downloadFolder.keywords',
+              'settings.downloadFolderSystem',
+            ],
+            render: () => this.renderDownloadFolder(),
+          },
+          {
+            id: 'downloads.ask',
+            keys: ['settings.downloadAsk', 'settings.downloadAskNote'],
+            render: () =>
+              this.renderToggle(
+                'downloads.ask',
+                'settings.downloadAsk',
+                'settings.downloadAskNote',
+              ),
+          },
         ],
       },
       {
@@ -566,6 +801,22 @@ export class SettingsPage extends LitElement {
             keys: ['settings.searchEngine', 'settings.searchEngine.keywords'],
             words: searchEngines.map((engine) => engine.name),
             render: () => this.renderSearch(),
+          },
+          {
+            id: 'search.engines',
+            keys: [
+              'settings.searchEngines',
+              'settings.searchEnginesNote',
+              'settings.searchEngines.keywords',
+            ],
+            words: searchEngines.map((engine) => engine.keyword),
+            render: () => this.renderSearchEngines(),
+          },
+          {
+            id: 'search.bangs',
+            keys: ['settings.bangs', 'settings.bangsNote'],
+            words: bangs.map((site) => site.name),
+            render: () => this.renderBangs(),
           },
         ],
       },
@@ -629,6 +880,25 @@ export class SettingsPage extends LitElement {
               'settings.contentBlocker.keywords',
             ],
             render: () => this.renderAllowedSites(),
+          },
+          {
+            id: 'privacy.httpsFirst',
+            keys: [
+              'settings.httpsFirst',
+              'settings.httpsFirstNote',
+              'settings.httpsFirst.keywords',
+            ],
+            render: () =>
+              this.renderToggle(
+                'privacy.httpsFirst',
+                'settings.httpsFirst',
+                'settings.httpsFirstNote',
+              ),
+          },
+          {
+            id: 'clear-data',
+            keys: ['settings.clearData', 'settings.clearDataNote', 'settings.clearData.keywords'],
+            render: () => this.renderClearData(),
           },
           {
             id: 'permissions.sites',
@@ -1091,6 +1361,546 @@ export class SettingsPage extends LitElement {
     }
   }
 
+  /** The pages that open at start, in their order, with a way to remove and to add them. */
+  private renderStartupPages(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('startup.urls');
+    const pages = Array.isArray(setting?.value)
+      ? setting.value.filter((url): url is string => typeof url === 'string')
+      : [];
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="startup-pages">${t('settings.startupPages')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.startupPagesNote')}</span>`
+        }
+      </span>
+      ${
+        pages.length === 0
+          ? html`<span class="note">${t('settings.startupPagesNone')}</span>`
+          : html`<ul class="sites" aria-labelledby="startup-pages">
+              ${pages.map(
+                (url, index) =>
+                  html`<li>
+                    <span>${url}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.startupPagesRemove', { page: url })}
+                      @click=${() =>
+                        void this.client?.set(
+                          'startup.urls',
+                          pages.filter((_page, other) => other !== index),
+                        )}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form class="add-site" @submit=${(event: SubmitEvent) => this.addStartupPage(event, pages)}>
+        <input
+          type="text"
+          inputmode="url"
+          name="page"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="https://example.com"
+          aria-label=${t('settings.startupPagesAdd')}
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${
+        this.pageError
+          ? html`<span class="error" role="alert">${t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private addStartupPage(event: SubmitEvent, pages: readonly string[]): void {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = form.elements.namedItem('page');
+    if (!(field instanceof HTMLInputElement)) return;
+    const url = webAddressOf(field.value);
+    this.pageError = url === undefined;
+    if (url === undefined) return;
+    field.value = '';
+    if (!pages.includes(url)) void this.client?.set('startup.urls', [...pages, url]);
+  }
+
+  /** The page of the home button; an empty field opens the new tab page. */
+  private renderHomePage(): TemplateResult {
+    const setting = this.client?.get('home.page');
+    return html`<div class="row stack">
+      <label class="label" for="home-page">
+        <span>${this.t('settings.homePage')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.homePageNote')}</span>`
+        }
+      </label>
+      <input
+        id="home-page"
+        type="text"
+        inputmode="url"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder=${this.t('settings.homePageNewTab')}
+        .value=${typeof setting?.value === 'string' ? setting.value : ''}
+        ?disabled=${setting?.locked !== false}
+        aria-invalid=${this.homeError ? 'true' : 'false'}
+        @change=${(event: Event) => void this.setHomePage(event)}
+      />
+      ${
+        this.homeError
+          ? html`<span class="error" role="alert">${this.t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setHomePage(event: Event): Promise<void> {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || this.client === undefined) return;
+    const text = input.value.trim();
+    const url = text === '' ? '' : webAddressOf(text);
+    this.homeError = url === undefined || !(await this.client.set('home.page', url));
+  }
+
+  /** The size of the text of web pages, from a list of sizes; new tabs use it. */
+  private renderWebTextSize(): TemplateResult {
+    const setting = this.client?.get('fonts.size');
+    const value = typeof setting?.value === 'number' ? setting.value : 16;
+    // A size from a policy or an import that the list does not offer is shown as well.
+    const sizes = [...new Set([...webTextSizes, value])].toSorted((a, b) => a - b);
+    const label = (size: number): string => {
+      const key = `settings.webTextSize.${String(size)}`;
+      return isMessageKey(key) ? this.t(key) : `${String(size)} px`;
+    };
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.webTextSize')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.webTextSizeNote')}</span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.webTextSize')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement) {
+            void this.client?.set('fonts.size', Number(select.value));
+          }
+        }}
+      >
+        ${sizes.map(
+          (size) =>
+            html`<option value=${String(size)} ?selected=${size === value}>${label(size)}</option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /** The zoom of sites without a zoom of their own. */
+  private renderPageZoom(): TemplateResult {
+    const setting = this.client?.get('zoom.default');
+    const value = typeof setting?.value === 'number' ? setting.value : 1;
+    const format = new Intl.NumberFormat(this.i18n?.language, { style: 'percent' });
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.pageZoom')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.pageZoomNote')}</span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.pageZoom')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement) {
+            void this.client?.set('zoom.default', Number(select.value));
+          }
+        }}
+      >
+        ${zoomFactors.map(
+          (factor) =>
+            html`<option value=${String(factor)} ?selected=${factor === value}>
+              ${format.format(factor)}
+            </option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /** The fonts of web pages that name none; an empty field keeps the default. */
+  private renderWebFonts(): TemplateResult {
+    const setting = this.client?.get('fonts.web');
+    const fonts = typeof setting?.value === 'object' && setting.value !== null ? setting.value : {};
+    const disabled = setting?.locked !== false;
+    const field = (name: 'standard' | 'serif' | 'sansSerif' | 'fixed'): TemplateResult => {
+      const value: unknown = Reflect.get(fonts, name);
+      return html`<label class="font">
+        <span>${this.t(`settings.webFont.${name}`)}</span>
+        <input
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          maxlength="64"
+          placeholder=${this.t('settings.webFontDefault')}
+          .value=${typeof value === 'string' ? value : ''}
+          ?disabled=${disabled}
+          @change=${(event: Event) => void this.setWebFont(name, event)}
+        />
+      </label>`;
+    };
+    return html`<div class="row stack">
+      <span class="label">
+        <span>${this.t('settings.webFonts')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.webFontsNote')}</span>`
+        }
+      </span>
+      <div class="fonts">
+        ${field('standard')}${field('serif')}${field('sansSerif')}${field('fixed')}
+      </div>
+      ${
+        this.webFontError
+          ? html`<span class="error" role="alert">${this.t('settings.fontInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setWebFont(
+    name: 'standard' | 'serif' | 'sansSerif' | 'fixed',
+    event: Event,
+  ): Promise<void> {
+    const input = event.target;
+    const current = this.client?.get('fonts.web')?.value;
+    if (!(input instanceof HTMLInputElement) || typeof current !== 'object' || current === null) {
+      return;
+    }
+    const value = { ...current, [name]: input.value.trim() };
+    this.webFontError = !(await this.client?.set('fonts.web', value));
+  }
+
+  /** The folder of downloads, which only the system's dialog changes. */
+  private renderDownloadFolder(): TemplateResult {
+    const setting = this.client?.get('downloads.folder');
+    const folder = typeof setting?.value === 'string' ? setting.value : '';
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.downloadFolder')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note path">
+                ${folder === '' ? this.t('settings.downloadFolderSystem') : folder}
+              </span>`
+        }
+      </span>
+      <button
+        type="button"
+        ?disabled=${setting?.locked !== false}
+        @click=${() => void this.bridge?.invoke('settings.chooseDownloadFolder', {})}
+      >
+        ${this.t('settings.downloadFolderChange')}
+      </button>
+    </div>`;
+  }
+
+  /** The buttons next to the address bar: which ones show, and in which order. */
+  private renderToolbar(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('toolbar.items');
+    const shown = Array.isArray(setting?.value)
+      ? setting.value.filter((item): item is ToolbarItem =>
+          toolbarItems.some((known) => known === item),
+        )
+      : [...toolbarItems];
+    const items = [...shown, ...toolbarItems.filter((item) => !shown.includes(item))];
+    const disabled = setting?.locked !== false;
+    const save = (next: readonly ToolbarItem[]): void =>
+      void this.client?.set('toolbar.items', next);
+    const move = (item: ToolbarItem, step: -1 | 1): void => {
+      const next = [...shown];
+      const index = next.indexOf(item);
+      const other = index + step;
+      if (index < 0 || other < 0 || other >= next.length) return;
+      [next[index], next[other]] = [next[other] ?? item, item];
+      // The focus stays with the item that moved, so that the same button moves it on.
+      this.toolbarFocus = { item, index: other, step };
+      void this.client?.set('toolbar.items', next).then((saved) => {
+        if (!saved) this.toolbarFocus = undefined;
+      });
+    };
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="toolbar-items">${t('settings.toolbar')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.toolbarNote')}</span>`
+        }
+      </span>
+      <ul class="sites toolbar-items" aria-labelledby="toolbar-items">
+        ${repeat(
+          items,
+          (item) => item,
+          (item) => {
+            const name = t(`settings.toolbar.${item}`);
+            const index = shown.indexOf(item);
+            return html`<li data-item=${item}>
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${index >= 0}
+                  ?disabled=${disabled}
+                  @change=${(event: Event) => {
+                    const box = event.target;
+                    if (!(box instanceof HTMLInputElement)) return;
+                    save(box.checked ? [...shown, item] : shown.filter((other) => other !== item));
+                  }}
+                />
+                ${name}
+              </label>
+              <span class="buttons">
+                <button
+                  type="button"
+                  aria-label=${t('settings.toolbarUp', { item: name })}
+                  ?disabled=${disabled || index <= 0}
+                  @click=${() => move(item, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label=${t('settings.toolbarDown', { item: name })}
+                  ?disabled=${disabled || index < 0 || index >= shown.length - 1}
+                  @click=${() => move(item, 1)}
+                >
+                  ↓
+                </button>
+              </span>
+            </li>`;
+          },
+        )}
+      </ul>
+    </div>`;
+  }
+
+  /** Focuses the button that moved a toolbar item once the list shows the item in its new place. */
+  private focusMovedToolbarItem(): void {
+    const focus = this.toolbarFocus;
+    const value = this.client?.get('toolbar.items')?.value;
+    if (focus === undefined || !Array.isArray(value) || value.indexOf(focus.item) !== focus.index) {
+      return;
+    }
+    this.toolbarFocus = undefined;
+    const [left, right] = this.renderRoot.querySelectorAll<HTMLButtonElement>(
+      `.toolbar-items [data-item="${focus.item}"] button`,
+    );
+    const target = focus.step < 0 ? left : right;
+    (target?.disabled === true ? (focus.step < 0 ? right : left) : target)?.focus();
+  }
+
+  /** The tiles of the new tab page, with a way to add and to remove them. */
+  private renderTiles(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('newtab.tiles');
+    const tiles = Array.isArray(setting?.value)
+      ? setting.value.filter(
+          (tile): tile is { title: string; url: string } =>
+            typeof tile === 'object' &&
+            tile !== null &&
+            typeof Reflect.get(tile, 'title') === 'string' &&
+            typeof Reflect.get(tile, 'url') === 'string',
+        )
+      : [];
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="newtab-tiles">${t('settings.newTabTiles')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.newTabTilesNote')}</span>`
+        }
+      </span>
+      ${
+        tiles.length === 0
+          ? nothing
+          : html`<ul class="sites" aria-labelledby="newtab-tiles">
+              ${tiles.map(
+                (tile, index) =>
+                  html`<li>
+                    <span>${tile.title}</span>
+                    <span class="keyword">${tile.url}</span>
+                    <button
+                      ?disabled=${disabled}
+                      aria-label=${t('settings.newTabTileRemove', { tile: tile.title })}
+                      @click=${() =>
+                        void this.client?.set(
+                          'newtab.tiles',
+                          tiles.filter((_tile, other) => other !== index),
+                        )}
+                    >
+                      ${t('settings.remove')}
+                    </button>
+                  </li>`,
+              )}
+            </ul>`
+      }
+      <form class="add-tile" @submit=${(event: SubmitEvent) => void this.addTile(event, tiles)}>
+        <input
+          type="text"
+          name="title"
+          autocomplete="off"
+          maxlength="64"
+          aria-label=${t('settings.newTabTileTitle')}
+          placeholder=${t('settings.newTabTileTitle')}
+          ?disabled=${disabled || tiles.length >= 12}
+        />
+        <input
+          type="text"
+          inputmode="url"
+          name="url"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.newTabTileAddress')}
+          placeholder="https://example.com"
+          ?disabled=${disabled || tiles.length >= 12}
+        />
+        <button type="submit" ?disabled=${disabled || tiles.length >= 12}>
+          ${t('settings.add')}
+        </button>
+      </form>
+      ${
+        this.tileError
+          ? html`<span class="error" role="alert">${t('settings.addressInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async addTile(
+    event: SubmitEvent,
+    tiles: readonly { title: string; url: string }[],
+  ): Promise<void> {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = (name: string): string => {
+      const input = form.elements.namedItem(name);
+      return input instanceof HTMLInputElement ? input.value.trim() : '';
+    };
+    const url = webAddressOf(field('url'));
+    const title = field('title') || (url === undefined ? '' : new URL(url).hostname);
+    const saved =
+      url !== undefined &&
+      (await this.client?.set('newtab.tiles', [...tiles, { title, url }])) === true;
+    this.tileError = !saved;
+    if (saved) form.reset();
+  }
+
+  /** Clearing the browsing data, with a question for the time range and the kinds of data. */
+  private renderClearData(): TemplateResult {
+    const t = this.t;
+    const dialog = (): HTMLDialogElement | null => this.renderRoot.querySelector('#clear-data');
+    return html`<div class="row">
+        <span class="label">
+          <span>${t('settings.clearData')}</span>
+          <span class="note">${t('settings.clearDataNote')}</span>
+        </span>
+        <button
+          type="button"
+          @click=${() => {
+            this.dataCleared = false;
+            dialog()?.showModal();
+          }}
+        >
+          ${t('settings.clearDataOpen')}
+        </button>
+      </div>
+      ${
+        this.dataCleared
+          ? html`<p class="row note" role="status">${t('settings.clearDataDone')}</p>`
+          : nothing
+      }
+      <dialog id="clear-data" aria-labelledby="clear-data-title">
+        <form method="dialog" @submit=${(event: SubmitEvent) => void this.clearData(event)}>
+          <h3 id="clear-data-title">${t('settings.clearData')}</h3>
+          <label class="field">
+            <span>${t('settings.clearDataRange')}</span>
+            <select name="range">
+              ${(['hour', 'day', 'week', 'month', 'all'] as const).map(
+                (range) =>
+                  html`<option value=${range} ?selected=${range === 'hour'}>
+                    ${t(`settings.clearDataRange.${range}`)}
+                  </option>`,
+              )}
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="history" checked />
+            ${t('settings.clearDataHistory')}
+          </label>
+          <label class="check">
+            <input type="checkbox" name="cookies" checked />
+            ${t('settings.clearDataCookies')}
+          </label>
+          <label class="check">
+            <input type="checkbox" name="cache" checked />
+            ${t('settings.clearDataCache')}
+          </label>
+          <p class="note">${t('settings.clearDataAll')}</p>
+          <div class="buttons">
+            <button type="button" @click=${() => dialog()?.close()}>${t('settings.cancel')}</button>
+            <button type="submit" class="primary">${t('settings.clearDataConfirm')}</button>
+          </div>
+        </form>
+      </dialog>`;
+  }
+
+  private async clearData(event: SubmitEvent): Promise<void> {
+    // The page cannot submit forms; it asks the browser instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const checked = (name: string): boolean => {
+      const box = form.elements.namedItem(name);
+      return box instanceof HTMLInputElement && box.checked;
+    };
+    const select = form.elements.namedItem('range');
+    const range = select instanceof HTMLSelectElement ? select.value : 'hour';
+    this.renderRoot.querySelector<HTMLDialogElement>('#clear-data')?.close();
+    await this.bridge?.invoke('settings.clearData', {
+      range,
+      history: checked('history'),
+      cookies: checked('cookies'),
+      cache: checked('cache'),
+    });
+    this.dataCleared = true;
+  }
+
   /** The language of the browser, which takes effect after a restart. */
   private renderLanguage(): TemplateResult {
     const setting = this.client?.get('i18n.language');
@@ -1146,6 +1956,15 @@ export class SettingsPage extends LitElement {
                 ${option.name}
               </option>`,
           )}
+          ${this.customEngines().map(
+            (option) =>
+              html`<option
+                value=${`engine:${option.keyword}`}
+                ?selected=${!custom && engine === `engine:${option.keyword}`}
+              >
+                ${option.name}
+              </option>`,
+          )}
           <option value="custom" ?selected=${custom}>
             ${this.t('settings.searchEngine.custom')}
           </option>
@@ -1183,7 +2002,139 @@ export class SettingsPage extends LitElement {
 
   private engineId(): string {
     const value = this.client?.get('search.urlTemplate')?.value;
-    return searchEngines.find((engine) => engine.searchUrl === value)?.id ?? 'custom';
+    const added = this.customEngines().find((engine) => engine.url === value);
+    return (
+      searchEngines.find((engine) => engine.searchUrl === value)?.id ??
+      (added === undefined ? 'custom' : `engine:${added.keyword}`)
+    );
+  }
+
+  /** The search engines that someone added, as the setting holds them. */
+  private customEngines(): CustomSearchEngine[] {
+    const value = this.client?.get('search.engines')?.value;
+    return Array.isArray(value)
+      ? value.filter(
+          (engine): engine is CustomSearchEngine =>
+            typeof engine === 'object' &&
+            engine !== null &&
+            typeof Reflect.get(engine, 'name') === 'string' &&
+            typeof Reflect.get(engine, 'keyword') === 'string' &&
+            typeof Reflect.get(engine, 'url') === 'string',
+        )
+      : [];
+  }
+
+  /** The engines and their keywords, with a way to add and to remove engines. */
+  private renderSearchEngines(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('search.engines');
+    const added = this.customEngines();
+    const disabled = setting?.locked !== false;
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="search-engines">${t('settings.searchEngines')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.searchEnginesNote')}</span>`
+        }
+      </span>
+      <ul class="sites engines" aria-labelledby="search-engines">
+        ${searchEngines.map(
+          (engine) =>
+            html`<li>
+              <span>${engine.name}</span>
+              <span class="keyword">${engine.keyword}</span>
+            </li>`,
+        )}
+        ${added.map(
+          (engine) =>
+            html`<li>
+              <span>${engine.name}</span>
+              <span class="keyword">${engine.keyword}</span>
+              <button
+                ?disabled=${disabled}
+                aria-label=${t('settings.searchEngineRemove', { name: engine.name })}
+                @click=${() =>
+                  void this.client?.set(
+                    'search.engines',
+                    added.filter((other) => other.keyword !== engine.keyword),
+                  )}
+              >
+                ${t('settings.remove')}
+              </button>
+            </li>`,
+        )}
+      </ul>
+      <form class="add-engine" @submit=${(event: SubmitEvent) => void this.addEngine(event, added)}>
+        <input
+          type="text"
+          name="name"
+          autocomplete="off"
+          aria-label=${t('settings.searchEngineName')}
+          placeholder=${t('settings.searchEngineName')}
+          ?disabled=${disabled}
+        />
+        <input
+          type="text"
+          name="keyword"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.searchEngineKeyword')}
+          placeholder=${t('settings.searchEngineKeyword')}
+          ?disabled=${disabled}
+        />
+        <input
+          type="text"
+          inputmode="url"
+          name="url"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label=${t('settings.searchEngineAddress')}
+          placeholder="https://search.example/?q=%s"
+          ?disabled=${disabled}
+        />
+        <button type="submit" ?disabled=${disabled}>${t('settings.add')}</button>
+      </form>
+      ${
+        this.engineError
+          ? html`<span class="error" role="alert">${t('settings.searchEngineInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async addEngine(event: SubmitEvent, added: readonly CustomSearchEngine[]): Promise<void> {
+    // The page cannot submit forms; it saves the setting instead.
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const field = (name: string): string => {
+      const input = form.elements.namedItem(name);
+      return input instanceof HTMLInputElement ? input.value.trim() : '';
+    };
+    const engine = { name: field('name'), keyword: field('keyword'), url: field('url') };
+    const taken = searchEngines.some(
+      (other) => other.keyword.toLowerCase() === engine.keyword.toLowerCase(),
+    );
+    const saved = !taken && (await this.client?.set('search.engines', [...added, engine])) === true;
+    this.engineError = !saved;
+    if (saved) form.reset();
+  }
+
+  /** Whether `!bangs` search their sites, with the list of them. */
+  private renderBangs(): TemplateResult {
+    const setting = this.client?.get('search.bangs');
+    return html`${this.renderToggle('search.bangs', 'settings.bangs', 'settings.bangsNote')}
+      <details class="bangs">
+        <summary>${this.t('settings.bangsAll')}</summary>
+        <ul>
+          ${bangs.map(
+            (site) => html`<li><span class="keyword">!${site.bang}</span> ${site.name}</li>`,
+          )}
+        </ul>
+      </details>
+      ${setting === undefined ? nothing : nothing}`;
   }
 
   private async chooseEngine(event: Event): Promise<void> {
@@ -1191,11 +2142,13 @@ export class SettingsPage extends LitElement {
     if (!(select instanceof HTMLSelectElement)) {
       return;
     }
-    const engine = searchEngines.find((option) => option.id === select.value);
-    this.customSearch = engine === undefined;
+    const url =
+      searchEngines.find((option) => option.id === select.value)?.searchUrl ??
+      this.customEngines().find((option) => `engine:${option.keyword}` === select.value)?.url;
+    this.customSearch = url === undefined;
     this.searchError = false;
-    if (engine !== undefined) {
-      await this.client?.set('search.urlTemplate', engine.searchUrl);
+    if (url !== undefined) {
+      await this.client?.set('search.urlTemplate', url);
     }
   }
 
@@ -1322,6 +2275,17 @@ function withoutDecision(sites: Decisions, origin: string, name: PermissionName)
   const { [name]: _removed, ...rest } = sites[origin] ?? {};
   const { [origin]: _site, ...others } = sites;
   return Object.keys(rest).length === 0 ? others : { ...others, [origin]: rest };
+}
+
+/** A web address that someone typed, with `https://` added when it has no scheme. */
+function webAddressOf(input: string): string | undefined {
+  const text = input.trim();
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`);
+    return /^https?:$/.test(url.protocol) && url.hostname.includes('.') ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function hostOf(input: string): string | undefined {

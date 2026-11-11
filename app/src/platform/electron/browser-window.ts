@@ -7,9 +7,10 @@ import {
   type Rectangle,
   type WebContents,
 } from 'electron';
+import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
-import type { TabStripPosition } from '../../shared/layout.ts';
+import { type TabStripPosition, type ToolbarItem, toolbarItems } from '../../shared/layout.ts';
 import {
   type BarItem,
   type FindState,
@@ -85,8 +86,16 @@ export interface BrowserWindowOptions {
   readonly appearanceArgument: () => string;
   /** Command line arguments that give the views of the browser's own UI their language. */
   readonly languageArguments: readonly string[];
+  /** Whether the toolbar has a home button. */
+  readonly homeButton?: () => boolean;
+  /** The address of the home page; empty for the new tab page. */
+  readonly homePage?: () => string;
+  /** The default fonts and text size of web pages, which a new web page gets. */
+  readonly webFonts?: () => Pick<Electron.WebPreferences, 'defaultFontFamily' | 'defaultFontSize'>;
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
+  /** The buttons of the toolbar next to the address bar, in their order. */
+  readonly toolbar?: () => readonly ToolbarItem[];
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
   readonly blocking: (url: string) => Blocking;
   /** Called when a tab shows a web page, and again when its title changes. */
@@ -118,12 +127,19 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
   /** Whether people may continue to a site whose certificate is not trusted. */
   readonly certificateOverride?: () => boolean;
+  /**
+   * The insecure address to offer in place of a page that did not load securely, when
+   * HTTPS-First sent the page to the secure address.
+   */
+  readonly insecureAddressFor?: (contents: WebContents, failed: string) => string | undefined;
   /** Prints, saves or shows the source of a web page, or opens its developer tools. */
   readonly onPageCommand?: (
     window: BrowserWindowController,
     command: PageCommand,
     contents: WebContents,
   ) => void;
+  /** The zoom of pages whose site has no zoom of its own. */
+  readonly defaultZoom?: () => number;
   /** The zoom factor that a site was left at, to give its pages again. */
   readonly zoomFor?: (url: string) => number | undefined;
   /** Remembers the zoom factor of a site. */
@@ -143,11 +159,6 @@ export interface BrowserWindowOptions {
 
 /** The commands that tools outside the window carry out on a web page. */
 export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools.toggle';
-
-/** The zoom factors that zooming in and out steps through, as in other browsers. */
-const zoomFactors = [
-  0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5,
-];
 
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
@@ -332,7 +343,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       find: this.finding,
       downloads: this.options.downloads?.(this.isPrivate) ?? null,
       private: this.isPrivate,
+      home: this.options.homeButton?.() ?? false,
+      defaultZoom: this.options.defaultZoom?.() ?? 1,
+      toolbar: [...(this.options.toolbar?.() ?? toolbarItems)],
     };
+  }
+
+  /**
+   * Opens the home page in a tab: the page of the settings, or the new tab page.
+   * @param id - The tab.
+   */
+  goHome(id: TabId): void {
+    const page = this.options.homePage?.() ?? '';
+    this.tabs.navigate(id, page === '' ? this.options.newTabUrl : page);
   }
 
   /** Sends the shell its state again, for example after the layout settings changed. */
@@ -449,6 +472,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.problemOf(id)?.kind === 'certificate' && contents !== undefined && accept(contents)) {
       contents.reload();
     }
+  }
+
+  /**
+   * Loads the insecure address of a site without a secure connection, once it is allowed.
+   * @param id - The tab.
+   * @param allow - Allows the site's insecure address for the session of the tab's page.
+   */
+  proceedInsecurely(id: TabId, allow: (contents: WebContents, address: string) => void): void {
+    const problem = this.problemOf(id);
+    const contents = this.entries.get(id)?.view.webContents;
+    if (problem?.kind !== 'insecure' || contents === undefined) return;
+    allow(contents, problem.url);
+    contents.loadURL(problem.url).catch(() => undefined);
   }
 
   /** Why a tab shows no page, or `null` when it shows one. */
@@ -609,6 +645,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           this.tabs.run(active.id, action);
         }
         break;
+      case 'page.home':
+        if (active !== undefined) this.goHome(active.id);
+        break;
       case 'omnibox.focus':
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
@@ -718,10 +757,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
-   * Zooms a tab's page in or out by one step, or back to 100 %. The zoom holds for the
-   * page's site, in every tab, and is remembered for the next visit.
+   * Zooms a tab's page in or out by one step, or back to the default zoom. The zoom holds
+   * for the page's site, in every tab, and is remembered for the next visit.
    * @param id - The tab.
-   * @param direction - 1 to zoom in, -1 to zoom out, 0 for 100 %.
+   * @param direction - 1 to zoom in, -1 to zoom out, 0 for the default zoom.
    */
   zoom(id: TabId, direction: 1 | -1 | 0): void {
     const contents = this.webContentsOf(id);
@@ -729,7 +768,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const current = contents.getZoomFactor();
     const factor =
       direction === 0
-        ? 1
+        ? (this.options.defaultZoom?.() ?? 1)
         : direction > 0
           ? (zoomFactors.find((step) => step > current + 0.001) ?? current)
           : (zoomFactors.toReversed().find((step) => step < current - 0.001) ?? current);
@@ -744,6 +783,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     // A private window keeps no zoom for later visits.
     if (!this.isPrivate) this.options.onZoom?.(contents.getURL(), factor);
+  }
+
+  /**
+   * Gives the pages of sites without a zoom of their own a new default zoom.
+   * @param factor - The new default zoom.
+   */
+  applyDefaultZoom(factor: number): void {
+    for (const [id, entry] of this.entries) {
+      const contents = entry.view.webContents;
+      if (entry.page !== undefined || contents.isDestroyed()) continue;
+      if (this.options.zoomFor?.(contents.getURL()) !== undefined) continue;
+      contents.setZoomFactor(factor);
+      this.tabs.update(id, { zoom: factor });
+    }
   }
 
   /** The web contents of a tab that shows a web page, and no internal page or problem. */
@@ -814,6 +867,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               // The window takes the screen for a page in full screen itself, so the page
               // leaves full screen at once and never waits for the window's animation.
               disableHtmlFullscreenWindowResize: true,
+              ...this.options.webFonts?.(),
+              zoomFactor: this.options.defaultZoom?.() ?? 1,
             }
           : {
               preload: this.options.pagePreload,
@@ -890,6 +945,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
         if (!isMainFrame || code === -3) return;
         const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
+        // A site that HTTPS-First could not load securely offers its insecure address after a
+        // warning. Without a name or a network, the insecure address would not load either.
+        const insecure =
+          code === -105 || code === -106
+            ? undefined
+            : this.options.insecureAddressFor?.(contents, failed);
+        if (insecure !== undefined) {
+          this.setProblem(id, { kind: 'insecure', code: name, url: insecure, proceed: true });
+          return;
+        }
         const certificate = code <= -200 && code > -300;
         this.setProblem(id, {
           kind: certificate ? 'certificate' : 'error',
@@ -916,7 +981,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.setProblem(id, null);
         // A site keeps the zoom it was left at, also after the browser restarts.
         const saved = this.options.zoomFor?.(address);
-        if (saved !== undefined && contents.getZoomFactor() === 1) contents.setZoomFactor(saved);
+        const base = this.options.defaultZoom?.() ?? 1;
+        if (saved !== undefined && sameZoom(contents.getZoomFactor(), base)) {
+          contents.setZoomFactor(saved);
+        }
       });
       contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));
       contents.on('found-in-page', (_event, result) => {
@@ -1336,6 +1404,16 @@ export class WindowManager implements Disposable {
   refreshShells(): void {
     for (const window of this.windows) {
       window.refreshShell();
+    }
+  }
+
+  /**
+   * Gives the pages of sites without a zoom of their own a new default zoom, in every window.
+   * @param factor - The new default zoom.
+   */
+  applyDefaultZoom(factor: number): void {
+    for (const window of this.windows) {
+      window.applyDefaultZoom(factor);
     }
   }
 

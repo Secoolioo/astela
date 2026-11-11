@@ -97,7 +97,7 @@ export function settingPolicies(
       : [
           definePolicy({
             name: d.policy.name,
-            schema: d.schema,
+            schema: d.policy.schema ?? d.schema,
             setting: d.key,
             recommended: d.policy.recommended ?? false,
             sensitive: d.policy.sensitive ?? false,
