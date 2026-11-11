@@ -21,22 +21,22 @@ const define = { BUILD_BRAND: JSON.stringify(brand) };
 const comments = { legal: true, annotation: false, jsdoc: false };
 
 /**
- * Minifies the chunks of the main bundle that hold only dependencies, such as valibot, which
- * the start-up path reads before the first window. Astela's own code stays as written, so its
- * stack traces stay readable; names of functions and classes stay as well.
+ * Minifies the chunks of the main process, whose start-up path is read before the first
+ * window (ADR 0045). The names of functions and classes stay, so stack traces still name
+ * them, and so do the licence notices of the dependencies, which their licences, such as the
+ * MPL-2.0 of the content blocker's engine, require.
  */
-const minifyDependencies: Plugin = {
-  name: 'minify-dependencies',
+const minifyMain: Plugin = {
+  name: 'minify-main',
   generateBundle(_options, bundle) {
     const keepNames = { function: true, class: true };
     for (const chunk of Object.values(bundle)) {
       if (chunk.type !== 'chunk') continue;
-      const ids = chunk.moduleIds;
-      if (ids.length === 0 || !ids.every((id) => id.includes('/node_modules/'))) continue;
       chunk.code = minifySync(chunk.fileName, chunk.code, {
         module: true,
         compress: { keepNames },
         mangle: { keepNames },
+        codegen: { legalComments: 'inline' },
       }).code;
     }
   },
@@ -50,7 +50,7 @@ export default defineConfig({
       // Only the rollback test builds a version that fails to start on purpose.
       BUILD_TEST_BOOT_FAILURE: JSON.stringify(process.env['TEST_BOOT_FAILURE'] === '1'),
     },
-    plugins: [minifyDependencies],
+    plugins: [minifyMain],
     build: {
       outDir: 'out/main',
       lib: {
