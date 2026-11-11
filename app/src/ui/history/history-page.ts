@@ -41,26 +41,26 @@ export class HistoryPage extends LitElement {
       box-sizing: border-box;
       max-width: 760px;
       margin: 0 auto;
-      padding: var(--space-3) var(--space-3) 48px;
+      padding: var(--space-3) var(--space-3) var(--space-7);
     }
     header {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      margin: 24px 0 16px;
+      margin: var(--space-5) 0 var(--space-4);
     }
     h1 {
       flex: 1;
       margin: 0;
-      font-size: 20px;
-      line-height: 28px;
+      font-size: var(--font-size-title);
+      line-height: var(--line-height-title);
       font-weight: 600;
     }
     input[type='search'] {
       box-sizing: border-box;
       width: 100%;
-      height: 36px;
-      margin-bottom: 16px;
+      height: calc(var(--control-large) + 4px);
+      margin-bottom: var(--space-4);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -69,9 +69,9 @@ export class HistoryPage extends LitElement {
       font: inherit;
     }
     h2 {
-      margin: 16px 0 4px;
-      font-size: 12px;
-      line-height: 16px;
+      margin: var(--space-4) 0 var(--space-1);
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-ui);
       font-weight: 600;
       color: var(--text-2);
     }
@@ -87,7 +87,7 @@ export class HistoryPage extends LitElement {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      min-height: 36px;
+      min-height: calc(var(--control-height) + 8px);
       padding: 0 var(--space-1) 0 var(--space-3);
     }
     li + li {
@@ -95,7 +95,7 @@ export class HistoryPage extends LitElement {
     }
     time {
       flex: none;
-      width: 44px;
+      width: 3.75em;
       color: var(--text-2);
       font-variant-numeric: tabular-nums;
     }
@@ -124,7 +124,7 @@ export class HistoryPage extends LitElement {
       color: var(--text-2);
     }
     button {
-      height: 28px;
+      height: var(--control-height);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -136,7 +136,7 @@ export class HistoryPage extends LitElement {
       background: var(--surface-hover);
     }
     .remove {
-      width: 28px;
+      width: var(--control-height);
       padding: 0;
       border-color: transparent;
       background: transparent;
@@ -147,7 +147,7 @@ export class HistoryPage extends LitElement {
     }
     .more {
       display: block;
-      margin: 16px auto 0;
+      margin: var(--space-4) auto 0;
     }
     :focus-visible {
       outline: 2px solid var(--focus-ring);

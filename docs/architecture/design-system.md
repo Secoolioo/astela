@@ -49,15 +49,15 @@ The built-in themes (Light, Dark and three original themes) must all meet these 
 
 ## Density
 
-Astela is designed to offer three density levels. Density is a setting and changes the toolbar and tab heights; the spacing grid stays the same.
+Astela offers three density levels. Density is a setting; it sets the heights of the toolbar, the tabs, the controls and the rows of lists, and the steps of spacing, in the shell, the overlay and the browser's own pages ([ADR 0042](../adr/0042-density-and-text-size-scale-the-whole-interface.md)).
 
-| Density     | Toolbar height | Tab height | Spacing grid |
-| ----------- | -------------- | ---------- | ------------ |
-| Compact     | 32 px          | 28 px      | 4 px         |
-| Normal      | 40 px          | 32 px      | 4 px         |
-| Comfortable | 48 px          | 40 px      | 4 px         |
+| Density     | Toolbar | Tab   | Controls (small, regular, large) | Row   | Spacing steps `--space-1` to `--space-7` |
+| ----------- | ------- | ----- | -------------------------------- | ----- | ---------------------------------------- |
+| Compact     | 32 px   | 28 px | 24, 24, 28 px                    | 40 px | 2, 4, 8, 12, 16, 24, 32 px               |
+| Normal      | 40 px   | 32 px | 24, 28, 32 px                    | 48 px | 4, 8, 12, 16, 24, 32, 48 px              |
+| Comfortable | 48 px   | 40 px | 28, 32, 40 px                    | 56 px | 4, 12, 16, 20, 32, 40, 56 px             |
 
-At every density, click targets must be at least 24 × 24 px, as required by WCAG 2.2.
+Sizes follow the 4 px grid; only the smallest step of the compact density is 2 px. At every density, click targets are at least 24 × 24 px, as required by WCAG 2.2.
 
 ## Typography
 
@@ -70,7 +70,16 @@ The UI uses the system font stack. It costs no download size and looks native on
 | Linux    | Cantarell or Ubuntu |
 | Fallback | `system-ui`         |
 
-The size scale has five steps: 12, 13, 14, 16 and 20 px. The UI font and its size are settings; the default fonts for web content are separate settings. The wordmark on the website is an SVG.
+The font of the UI is a setting: the name of an installed font, or empty for the system font stack above. The text size is a setting too, independent of the density; it sets a scale of font sizes and line heights in px:
+
+| Text size | Tiny | Small | UI  | Large | Larger | Title | Display | Line heights       |
+| --------- | ---- | ----- | --- | ----- | ------ | ----- | ------- | ------------------ |
+| Small     | 10   | 11    | 12  | 13    | 15     | 18    | 24      | 16, 20, 20, 24, 32 |
+| Medium    | 11   | 12    | 13  | 14    | 16     | 20    | 28      | 16, 20, 24, 28, 36 |
+| Large     | 12   | 13    | 14  | 15    | 17     | 22    | 30      | 20, 20, 24, 28, 36 |
+| Larger    | 13   | 14    | 16  | 17    | 19     | 24    | 32      | 20, 24, 24, 32, 40 |
+
+Medium is the default. The line heights belong to the UI, Large, Larger, Title and Display text. The default fonts for web content are separate settings. The wordmark on the website is an SVG.
 
 ## Icons
 
@@ -144,8 +153,8 @@ How these checks fit into the overall test strategy is described in [Testing](te
 
 The first tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, spacing, radii and motion, with motion switched off for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The application icon, the single-color mark and the wordmark exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
 
-The three density levels and the accent color are settings; the accent presets are blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
+The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 
 The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area.
 
-Not implemented yet: `palette.json`, the banner and the social preview image, font settings, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.
+Not implemented yet: `palette.json`, the banner and the social preview image, the default fonts of web content, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, the built-in themes and the automated contrast, accessibility and screenshot checks.

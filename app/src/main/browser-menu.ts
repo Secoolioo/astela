@@ -1,4 +1,5 @@
 import { app, dialog, Menu } from 'electron';
+import { uiLocale } from './ui-language.ts';
 import type {
   BrowserWindowController,
   WindowManager,
@@ -18,7 +19,7 @@ export function popupBrowserMenu(
   position: { readonly x: number; readonly y: number },
   options: { readonly privateWindows: boolean },
 ): void {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   const mac = process.platform === 'darwin';
   const key = (macKey: string, otherKey: string): string => (mac ? macKey : otherKey);
   const item = (
@@ -78,7 +79,7 @@ export function popupBrowserMenu(
  * @param window - The window whose menu asked.
  */
 function showAbout(window: BrowserWindowController): void {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   void dialog.showMessageBox(window.window, {
     type: 'info',
     message: i18n.t('dialog.about', { name: app.getName(), version: app.getVersion() }),
@@ -96,7 +97,7 @@ function showAbout(window: BrowserWindowController): void {
  * @param managed - Whether a policy manages the exceptions.
  */
 export function showBlockerSaveError(window: BrowserWindowController, managed: boolean): void {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   void dialog.showMessageBox(window.window, {
     type: 'warning',
     message: i18n.t('menu.blockerSaveFailed'),
@@ -135,7 +136,7 @@ export function runFromMenuBar(
  * @param run - Runs a command in the frontmost window.
  */
 export function macMenuBar(run: (command: WindowCommand) => void): Menu {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   // The window handles the keys itself, also while a page has the focus.
   const command = (
     label: Parameters<typeof i18n.t>[0],
@@ -253,7 +254,7 @@ export function popupBookmarkFolder(
   contents: (folder: number) => readonly FolderEntry[],
   open: (url: string, newTab: boolean) => void,
 ): void {
-  const i18n = translatorFor(app.getLocale(), process.platform);
+  const i18n = translatorFor(uiLocale(), process.platform);
   const mac = process.platform === 'darwin';
   // Elsewhere, & marks the access key of a menu item; a title shows it as it is.
   const label = (title: string): string => (mac ? title : title.replaceAll('&', '&&'));

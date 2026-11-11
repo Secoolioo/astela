@@ -59,5 +59,8 @@
   "menu.hide": "Astela &ausblenden",
   "menu.hideOthers": "&Andere ausblenden",
   "menu.showAll": "Alle &einblenden",
-  "menu.quitApp": "Astela &beenden"
+  "menu.quitApp": "Astela &beenden",
+  "settings.exportTitle": "Einstellungen exportieren",
+  "settings.importTitle": "Einstellungen importieren",
+  "settings.fileType": "Einstellungen"
 }

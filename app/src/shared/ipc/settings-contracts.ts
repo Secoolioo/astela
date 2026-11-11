@@ -4,13 +4,19 @@ import { defineEvent, defineRequest } from './contract.ts';
 const SettingKey = v.pipe(v.string(), v.regex(/^[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+$/));
 
 /**
- * A setting as the settings page shows it: its key, its effective value, and whether a
- * mandatory policy sets the value, so it cannot be changed.
+ * A setting as the settings page shows it: its key, its effective value, whether a
+ * mandatory policy sets the value, so it cannot be changed, whether the user set a value
+ * other than the default, whether the value is the one that a recommended policy suggests,
+ * and whether the value differs from the one that the browser started with and takes effect
+ * only after a restart.
  */
 export const SettingView = v.strictObject({
   key: SettingKey,
   value: v.unknown(),
   locked: v.boolean(),
+  changed: v.boolean(),
+  recommended: v.boolean(),
+  restart: v.boolean(),
 });
 
 /** A setting as the settings page shows it. */
@@ -44,4 +50,43 @@ export const SettingsChanged = defineEvent({
   channel: 'settings.changed',
   payload: v.strictObject({ settings: v.array(SettingView) }),
   capability: 'page:settings',
+});
+
+/** Sets settings back to their defaults; settings that a policy fixes stay as they are. */
+export const ResetSettings = defineRequest({
+  channel: 'settings.reset',
+  request: v.strictObject({ keys: v.pipe(v.array(SettingKey), v.maxLength(200)) }),
+  response: v.null(),
+  capability: 'page:settings',
+  ratePerSecond: 5,
+});
+
+/** Saves the settings that the user changed to a file that the user picks. */
+export const ExportSettings = defineRequest({
+  channel: 'settings.export',
+  request: v.strictObject({}),
+  response: v.strictObject({ saved: v.boolean() }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});
+
+/** Reads settings from a file that the user picks, and tells what it changed. */
+export const ImportSettings = defineRequest({
+  channel: 'settings.import',
+  request: v.strictObject({}),
+  response: v.union([
+    v.strictObject({ ok: v.literal(true), applied: v.number(), skipped: v.number() }),
+    v.strictObject({ ok: v.literal(false), error: v.picklist(['canceled', 'invalid']) }),
+  ]),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});
+
+/** Quits the browser and starts it again with the open tabs, so changed settings take effect. */
+export const RestartBrowser = defineRequest({
+  channel: 'settings.restart',
+  request: v.strictObject({}),
+  response: v.null(),
+  capability: 'page:settings',
+  ratePerSecond: 1,
 });

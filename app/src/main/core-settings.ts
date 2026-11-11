@@ -3,8 +3,11 @@ import { accentPresets } from '../domain/appearance/accent-presets.ts';
 import {
   colorModes,
   densities,
+  fontNamePattern,
+  textSizes,
   type ColorMode,
   type Density,
+  type TextSize,
 } from '../domain/appearance/appearance.ts';
 import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
@@ -51,6 +54,24 @@ export const DensitySetting = defineSetting<Density>({
   default: 'normal',
   scope: 'global',
   ui: { section: 'appearance', control: 'select', order: 3 },
+});
+
+/** How large the text of the browser's own UI is; the density sets its spacing. */
+export const TextSizeSetting = defineSetting<TextSize>({
+  key: 'appearance.textSize',
+  schema: v.picklist(textSizes),
+  default: 'medium',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'select', order: 6 },
+});
+
+/** The font of the browser's own UI, by its name; empty keeps the font of the system. */
+export const UiFontSetting = defineSetting<string>({
+  key: 'appearance.font',
+  schema: v.pipe(v.string(), v.regex(fontNamePattern, 'Must be the name of a font')),
+  default: '',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'text', order: 7 },
 });
 
 /** Where the tab strip is; vertical positions show the tabs as a list at the side. */
@@ -179,12 +200,31 @@ export const BookmarksBarSetting = defineSetting<boolean>({
   ui: { section: 'appearance', control: 'toggle', order: 5 },
 });
 
+/**
+ * The language of the browser's menus, dialogs and own pages: `system` follows the language
+ * of the system, a language code such as `de` sets one. It takes effect after a restart.
+ */
+export const LanguageSetting = defineSetting<string>({
+  key: 'i18n.language',
+  schema: v.pipe(
+    v.string(),
+    v.regex(/^(?:system|[a-z]{2,3})$/, 'Must be system or a language code'),
+  ),
+  default: 'system',
+  scope: 'global',
+  policy: { name: 'ApplicationLocaleValue', recommended: true },
+  restartRequired: true,
+  ui: { section: 'languages', control: 'select', order: 1 },
+});
+
 /** Settings that exist before any feature module contributes its own. */
 export const coreSettings = [
   SearchUrlTemplate,
   ColorModeSetting,
   AccentSetting,
   DensitySetting,
+  TextSizeSetting,
+  UiFontSetting,
   TabStripPositionSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,
@@ -195,4 +235,5 @@ export const coreSettings = [
   StartupSetting,
   SetupShownSetting,
   BookmarksBarSetting,
+  LanguageSetting,
 ];

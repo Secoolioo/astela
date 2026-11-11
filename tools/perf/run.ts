@@ -7,8 +7,9 @@
  * Options: `--runs <n>` start-up runs (20), `--memory-runs <n>` (10), `--cpu-seconds <s>`
  * (60) and `--settle-seconds <s>` (15). `--updates-off` adds a check that the browser's
  * update service was off in every run, as the `UpdatePolicy` policy turns it off.
+ * `--background` measures the idle CPU with the window in the background (Linux, Xvfb).
  */
-import type { ChildProcess } from 'node:child_process';
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
@@ -86,6 +87,7 @@ function parseOptions(args: readonly string[]): {
   cpuSeconds: number;
   settleSeconds: number;
   updatesOff: boolean;
+  background: boolean;
 } {
   const value = (name: string, fallback?: string): string => {
     const index = args.indexOf(`--${name}`);
@@ -101,6 +103,7 @@ function parseOptions(args: readonly string[]): {
     cpuSeconds: Number(value('cpu-seconds', '60')),
     settleSeconds: Number(value('settle-seconds', '15')),
     updatesOff: args.includes('--updates-off'),
+    background: args.includes('--background'),
   };
 }
 
@@ -228,15 +231,44 @@ async function measureMemory(variants: readonly Variant[], m: Measurements): Pro
   }
 }
 
+/**
+ * With `--background` on Linux, takes the keyboard focus from the window that just opened,
+ * so that every idle CPU window measures a window in the background. Xvfb has no window
+ * manager: a window activates itself as it opens, and Electron then focuses each view
+ * whose page commits while its window is active. The browser's shell and its new tab page
+ * commit within the same millisecond; when the shell commits last, the address bar keeps
+ * the focus and its caret blinks twice a second, which the idle window measured in about
+ * one start of ten (0.42 instead of 0.08 % of one core). With the X input focus on no
+ * window, no window is active and no caret blinks, in the browser or the reference.
+ */
+function sendToBackground(): void {
+  if (!options.background || process.platform !== 'linux') return;
+  const result = spawnSync('xdotool', ['windowfocus', '0'], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`xdotool failed: ${result.stderr}`);
+}
+
 async function measureCpu(variants: readonly Variant[], m: Measurements): Promise<void> {
   for (const variant of variants) {
     const { value } = await launch(variant, async (child) => {
+      sendToBackground();
       await sleep(options.settleSeconds * 1000);
       const before = sample(child);
       const startedAt = performance.now();
       await sleep(options.cpuSeconds * 1000);
       const after = sample(child);
-      return ((after.cpuMs - before.cpuMs) / (performance.now() - startedAt)) * 100;
+      // Each process counts what it used in the window; one that ended meanwhile takes
+      // nothing away, and one that started counts all it used.
+      const earlier = new Map(before.perProcess.map((p) => [p.pid, p.cpuMs]));
+      const used = after.perProcess.map((p) => ({
+        label: p.label,
+        ms: Math.max(0, p.cpuMs - (earlier.get(p.pid) ?? 0)),
+      }));
+      const busiest = used.toSorted((a, b) => b.ms - a.ms).slice(0, 5);
+      console.log(
+        `CPU of ${variant.name}: ${busiest.map((p) => `${p.label} ${p.ms.toFixed(0)} ms`).join(', ')}`,
+      );
+      const ms = used.reduce((sum, p) => sum + p.ms, 0);
+      return (ms / (performance.now() - startedAt)) * 100;
     });
     m.cpuPercent[variant.name].push(value);
   }

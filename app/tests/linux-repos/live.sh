@@ -14,6 +14,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
+"$root/tools/ci/pull-images.sh" ubuntu:24.04 fedora:latest
 slug=$(node -p "require('$root/brand.json').slug")
 product=$(node -p "require('$root/brand.json').productName")
 failures=0

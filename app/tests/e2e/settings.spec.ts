@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
-import { launch, pressNative, waitForPage, type Browser } from './harness.ts';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
 
 let browser: Browser;
 
@@ -78,7 +81,14 @@ test('chooses the search engine of the new tab page and the address bar', async 
   await expect(page.getByRole('alert')).toHaveCount(0);
   expect(await page.evaluate(() => window.bridge.invoke('settings.getAll', {}))).toMatchObject({
     settings: expect.arrayContaining([
-      { key: 'search.urlTemplate', value: 'https://search.example/?q=%s', locked: false },
+      {
+        key: 'search.urlTemplate',
+        value: 'https://search.example/?q=%s',
+        locked: false,
+        changed: true,
+        recommended: false,
+        restart: false,
+      },
     ]),
   });
 });
@@ -189,4 +199,148 @@ test('opens a setting from its link and marks the section of the page in the nav
     location.hash = '#appearance.density';
   });
   await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
+});
+
+test('shows the changed settings and resets one or all of them', async () => {
+  await browser.close();
+  browser = await launch([], {
+    settings: { 'tabs.position': 'left', 'appearance.density': 'compact' },
+  });
+  const page = await openSettings();
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Density' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset Tabs' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeHidden();
+  await page.getByRole('button', { name: 'Reset all settings…' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reset all' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'No setting differs' })).toHaveText(
+    'No setting differs from its default.',
+  );
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
+  await expect(page.getByRole('radio', { name: 'Top' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Normal' })).toBeChecked();
+});
+
+test('exports the settings to a file and imports them again', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'settings-file-'));
+  const file = join(folder, 'settings.json');
+  try {
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, file);
+    const page = await openSettings();
+    await page.getByRole('radio', { name: 'Left' }).check();
+    await page.getByRole('button', { name: 'Export settings…' }).click();
+    await expect
+      .poll(() => {
+        try {
+          return JSON.parse(readFileSync(file, 'utf8')) as unknown;
+        } catch {
+          return undefined;
+        }
+      })
+      .toEqual({ $schemaVersion: 1, settings: { 'tabs.position': 'left' } });
+    await page.getByRole('radio', { name: 'Top' }).check();
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Imported settings' })).toHaveText(
+      'Imported settings: 1',
+    );
+    // A file that is not a settings file changes nothing.
+    writeFileSync(file, '{"tabs.position": "right"}');
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('alert')).toHaveText('This file holds no settings of Astela.');
+    await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('switches the language of the browser with a restart that brings the tabs back', async () => {
+  await browser.close();
+  // A link that this start opened does not open again after the restart.
+  browser = await launch(['--', 'http://127.0.0.1:9/link']);
+  const page = await openSettings();
+  const language = page.getByRole('combobox', { name: 'Language of the browser' });
+  const hint = page.getByRole('status').filter({ hasText: 'after a restart' });
+  await language.selectOption('de');
+  await expect(hint).toBeVisible();
+  await language.selectOption('system');
+  await expect(hint).toBeHidden();
+  await language.selectOption('de');
+  await page.getByRole('radio', { name: 'New tab page' }).check();
+  await browser.main.evaluate(({ app }) => {
+    const calls: unknown[] = [];
+    Reflect.set(globalThis, 'restartCalls', calls);
+    const quit = app.quit.bind(app);
+    app.relaunch = (options) => {
+      calls.push(options?.args);
+    };
+    app.quit = () => {
+      calls.push('quit');
+      app.quit = quit;
+    };
+  });
+  await page.getByRole('button', { name: 'Restart now' }).click();
+  const calls = (): Promise<unknown> =>
+    browser.main.evaluate(() => Reflect.get(globalThis, 'restartCalls') as unknown);
+  await expect
+    .poll(calls)
+    .toEqual([expect.arrayContaining(['--lang=en-US', '--restore-last-session']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['http://127.0.0.1:9/link']), 'quit']);
+  expect(await calls()).not.toEqual([expect.arrayContaining(['--']), 'quit']);
+
+  // The browser starts again as the restart starts it: in German, and with the tabs of
+  // before, although it starts with a new tab page otherwise.
+  const { profile } = browser;
+  await browser.close({ keepProfile: true });
+  browser = await launch(['--restore-last-session'], { profile });
+  await expect(
+    browser.shell.getByRole('textbox', { name: 'Adress- und Suchleiste' }),
+  ).toBeVisible();
+  expect((await shellState(browser.shell)).tabs.map((tab) => tab.url)).toEqual(['app://settings/']);
+  const restored = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(restored.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
+  await expect(restored.getByRole('status').filter({ hasText: 'Neustart' })).toHaveCount(0);
+  // The dialogs of the browser speak German too.
+  await browser.main.evaluate(({ dialog }) => {
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      Reflect.set(globalThis, 'dialogTitle', Reflect.get(Object(args.at(-1)), 'title'));
+      return Promise.resolve({ canceled: true, filePath: '' });
+    };
+  });
+  await restored.getByRole('button', { name: 'Einstellungen exportieren…' }).click();
+  await expect
+    .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'dialogTitle') as unknown))
+    .toBe('Einstellungen exportieren');
+});
+
+test('scales the controls with the density, and the text with the text size and the font', async () => {
+  const page = await openSettings();
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  const height = (): Promise<string> => address.evaluate((input) => getComputedStyle(input).height);
+  expect(await height()).toBe('28px');
+  await page.getByRole('radio', { name: 'Compact' }).check();
+  await expect.poll(height).toBe('24px');
+  await page.getByRole('radio', { name: 'Comfortable' }).check();
+  await expect.poll(height).toBe('32px');
+  const body = (property: 'fontSize' | 'fontFamily') => () =>
+    page.evaluate((name) => getComputedStyle(document.body)[name], property);
+  expect(await body('fontSize')()).toBe('13px');
+  await page.getByRole('radio', { name: 'Larger' }).check();
+  await expect.poll(body('fontSize')).toBe('16px');
+  await expect.poll(() => browser.shell.evaluate(token, '--font-size-ui')).toBe('16px');
+  const font = page.getByRole('textbox', { name: 'Font of the browser' });
+  await font.fill('Inter Display');
+  await font.blur();
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
+  await font.fill('x";} body{color:red');
+  await font.blur();
+  await expect(page.getByRole('alert')).toHaveText(
+    'Use letters, digits, spaces, dots, hyphens and underscores only.',
+  );
+  await expect.poll(body('fontFamily')).toMatch(/^"Inter Display", /);
 });

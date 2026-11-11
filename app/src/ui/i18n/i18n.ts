@@ -29,6 +29,18 @@ export function pickLanguage(preferred: readonly string[]): string {
   return pickShippedLanguage(preferred, Object.keys(catalogs));
 }
 
+/**
+ * Picks the language of one of the browser's own pages: the language of the settings, which
+ * the preload puts on the root element, or else the best match for the system's languages.
+ * @returns A key of {@link catalogs}.
+ */
+export function pageLanguage(): string {
+  const chosen = document.documentElement.dataset['language'];
+  return pickLanguage(
+    chosen === undefined ? navigator.languages : [chosen, ...navigator.languages],
+  );
+}
+
 /** Translates the UI's message keys for one language, falling back to English. */
 export class Translator extends CatalogTranslator<MessageKey> {
   /** @param language - A key of {@link catalogs}. */

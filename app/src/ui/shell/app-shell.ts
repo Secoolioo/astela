@@ -65,7 +65,7 @@ export class AppShell extends LitElement {
     .find input {
       flex: none;
       width: 240px;
-      height: 24px;
+      height: var(--control-small);
       padding: 0 var(--space-2);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -80,7 +80,7 @@ export class AppShell extends LitElement {
     .find .count {
       min-width: 64px;
       color: var(--text-2);
-      font-size: 12px;
+      font-size: var(--font-size-small);
       text-align: end;
     }
     .downloads {
@@ -104,23 +104,23 @@ export class AppShell extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: var(--space-1);
-      height: 24px;
+      height: var(--control-small);
       padding: 0 var(--space-2);
       border-radius: var(--radius-1);
       background: var(--surface-2);
       color: var(--text-1);
-      font-size: 12px;
+      font-size: var(--font-size-small);
       white-space: nowrap;
     }
     .zoom {
-      height: 24px;
+      height: var(--control-small);
       padding: 0 var(--space-2);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
       background: var(--surface-1);
       color: var(--text-1);
       font: inherit;
-      font-size: 12px;
+      font-size: var(--font-size-small);
     }
     /* What a tab shows when it could not load its page or lost it. */
     .problem {
@@ -130,8 +130,8 @@ export class AppShell extends LitElement {
     }
     .problem h1 {
       margin: 0 0 var(--space-2);
-      font-size: 20px;
-      line-height: 28px;
+      font-size: var(--font-size-title);
+      line-height: var(--line-height-title);
       font-weight: 600;
     }
     .problem p {
@@ -140,11 +140,11 @@ export class AppShell extends LitElement {
       overflow-wrap: anywhere;
     }
     .problem .code {
-      font-size: 12px;
+      font-size: var(--font-size-small);
     }
     .problem button {
       margin-top: var(--space-2);
-      height: 32px;
+      height: var(--control-large);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);
@@ -177,10 +177,10 @@ export class AppShell extends LitElement {
       align-items: center;
       gap: 2px;
       min-width: 0;
-      height: 28px;
+      height: calc(var(--control-small) + 4px);
       padding: 0 var(--space-2);
       overflow: hidden;
-      font-size: 12px;
+      font-size: var(--font-size-small);
     }
     .bookmarks .items {
       display: flex;
@@ -200,7 +200,7 @@ export class AppShell extends LitElement {
       gap: var(--space-1);
       flex: none;
       max-width: 180px;
-      height: 24px;
+      height: var(--control-small);
       padding: 0 var(--space-2);
       border: 0;
       border-radius: var(--radius-1);
@@ -296,8 +296,8 @@ export class AppShell extends LitElement {
     .icon {
       display: grid;
       place-items: center;
-      width: 28px;
-      height: 28px;
+      width: var(--control-height);
+      height: var(--control-height);
       flex: none;
       border: 0;
       border-radius: var(--radius-1);
@@ -312,13 +312,13 @@ export class AppShell extends LitElement {
       opacity: 0.4;
     }
     .close {
-      width: 24px;
-      height: 24px;
+      width: var(--control-small);
+      height: var(--control-small);
     }
     .blocker {
       position: relative;
       width: auto;
-      min-width: 28px;
+      min-width: var(--control-height);
       gap: 2px;
       grid-auto-flow: column;
       padding: 0 var(--space-1);
@@ -337,8 +337,8 @@ export class AppShell extends LitElement {
       fill: currentColor;
     }
     .count {
-      font-size: 11px;
-      line-height: 16px;
+      font-size: var(--font-size-tiny);
+      line-height: var(--line-height-ui);
       color: var(--text-2);
       font-variant-numeric: tabular-nums;
     }
@@ -355,7 +355,7 @@ export class AppShell extends LitElement {
     input {
       flex: 1;
       min-width: 0;
-      height: 28px;
+      height: var(--control-height);
       padding: 0 var(--space-3);
       border: 1px solid var(--border-1);
       border-radius: var(--radius-1);

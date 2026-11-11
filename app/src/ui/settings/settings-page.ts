@@ -1,6 +1,6 @@
-import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { searchEngines } from '../../shared/search-engines.ts';
-import { isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
+import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
 import { choiceStyles } from '../ui-kit/choice-styles.ts';
 import {
   SettingsClient,
@@ -13,6 +13,7 @@ import {
 const choices = {
   'appearance.colorMode': ['system', 'light', 'dark'],
   'appearance.density': ['compact', 'normal', 'comfortable'],
+  'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
   'startup.page': ['restore', 'newtab'],
 } as const;
@@ -25,11 +26,14 @@ export class SettingsPage extends LitElement {
   static override properties = {
     revision: { state: true },
     searchError: { state: true },
+    fontError: { state: true },
     customSearch: { state: true },
     blockerFailed: { state: true },
     siteError: { state: true },
     query: { state: true },
     current: { state: true },
+    changedOnly: { state: true },
+    message: { state: true },
   };
 
   /** Styles of the page, scoped to its shadow root. */
@@ -40,9 +44,9 @@ export class SettingsPage extends LitElement {
         display: grid;
         grid-template-columns: 176px minmax(0, 720px);
         justify-content: center;
-        column-gap: 32px;
+        column-gap: var(--space-6);
         box-sizing: border-box;
-        padding: var(--space-3) var(--space-3) 48px;
+        padding: var(--space-3) var(--space-3) var(--space-7);
       }
       nav {
         position: sticky;
@@ -79,7 +83,7 @@ export class SettingsPage extends LitElement {
       input[type='search'] {
         width: 100%;
         box-sizing: border-box;
-        height: 32px;
+        height: var(--control-large);
         padding: 0 var(--space-2);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);
@@ -94,16 +98,85 @@ export class SettingsPage extends LitElement {
       .slot + .slot {
         border-top: 1px solid var(--border-1);
       }
+      .slot {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+      }
+      .slot > :not(.reset) {
+        grid-column: 1;
+      }
+      .slot > .reset {
+        grid-column: 2;
+        grid-row: 1;
+        margin-right: var(--space-3);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin: var(--space-2) 0 0;
+      }
+      .actions button[aria-pressed='true'] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .message {
+        margin: var(--space-2) 0 0;
+        color: var(--text-2);
+      }
+      /* The hint stays in view at the bottom while the page scrolls. */
+      .restart {
+        position: sticky;
+        bottom: var(--space-3);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin: var(--space-3) 0 0;
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
+      .lock {
+        width: 12px;
+        height: 12px;
+        margin-right: var(--space-1);
+        vertical-align: -1px;
+      }
+      dialog {
+        max-width: 420px;
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+        color: var(--text-1);
+      }
+      dialog::backdrop {
+        background: rgb(0 0 0 / 30%);
+      }
+      dialog .buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+      }
+      dialog .primary,
+      .restart .primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--on-accent, #fff);
+      }
       h1 {
-        margin: 24px 0 16px;
-        font-size: 20px;
-        line-height: 28px;
+        margin: var(--space-5) 0 var(--space-4);
+        font-size: var(--font-size-title);
+        line-height: var(--line-height-title);
         font-weight: 600;
       }
       h2 {
-        margin: 24px 0 8px;
-        font-size: 14px;
-        line-height: 20px;
+        margin: var(--space-5) 0 var(--space-2);
+        font-size: var(--font-size-large);
+        line-height: var(--line-height-large);
         font-weight: 600;
         color: var(--text-2);
       }
@@ -121,7 +194,7 @@ export class SettingsPage extends LitElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--space-3);
-        min-height: 48px;
+        min-height: var(--row-height);
         padding: var(--space-2) var(--space-3);
         box-sizing: border-box;
       }
@@ -135,22 +208,22 @@ export class SettingsPage extends LitElement {
       }
       .note {
         color: var(--text-2);
-        font-size: 12px;
-        line-height: 16px;
+        font-size: var(--font-size-small);
+        line-height: var(--line-height-ui);
       }
       .problem {
         color: var(--danger);
       }
       .error {
         color: var(--danger);
-        font-size: 12px;
-        line-height: 16px;
+        font-size: var(--font-size-small);
+        line-height: var(--line-height-ui);
       }
       select,
       input[type='url'],
       input[type='text'],
       button {
-        height: 32px;
+        height: var(--control-large);
         padding: 0 var(--space-2);
         border: 1px solid var(--border-1);
         border-radius: var(--radius-1);
@@ -222,6 +295,8 @@ export class SettingsPage extends LitElement {
 
   declare revision: number;
   declare searchError: boolean;
+  /** Whether the last font name was not one. */
+  declare fontError: boolean;
   declare customSearch: boolean;
   /** Whether the content blocker has no usable filter data. */
   declare blockerFailed: boolean;
@@ -231,6 +306,10 @@ export class SettingsPage extends LitElement {
   declare query: string;
   /** The section in view, which the navigation marks. */
   declare current: string;
+  /** Whether the page shows only the settings that differ from their defaults. */
+  declare changedOnly: boolean;
+  /** The outcome of the last import, if it needs telling. */
+  declare message: { readonly alert: boolean; readonly text: string } | undefined;
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private client: SettingsClient | undefined;
@@ -239,11 +318,14 @@ export class SettingsPage extends LitElement {
     super();
     this.revision = 0;
     this.searchError = false;
+    this.fontError = false;
     this.customSearch = false;
     this.blockerFailed = false;
     this.siteError = false;
     this.query = '';
     this.current = 'appearance';
+    this.changedOnly = false;
+    this.message = undefined;
   }
 
   override connectedCallback(): void {
@@ -291,6 +373,65 @@ export class SettingsPage extends LitElement {
   }
 
   private spy: IntersectionObserver | undefined;
+
+  /** The button that sets a changed setting back to its default. */
+  private renderReset(row: PageRow): TemplateResult | typeof nothing {
+    const title = row.keys[0];
+    if (this.client?.get(row.id)?.changed !== true || title === undefined) return nothing;
+    return html`<button
+      type="button"
+      class="reset"
+      aria-label=${this.t('settings.resetOne', { setting: this.t(title) })}
+      @click=${() => void this.bridge?.invoke('settings.reset', { keys: [row.id] })}
+    >
+      ${this.t('settings.resetShort')}
+    </button>`;
+  }
+
+  /** Sets every setting that differs from its default back, after the question. */
+  private async resetAll(): Promise<void> {
+    this.renderRoot.querySelector('dialog')?.close();
+    const keys = this.sections()
+      .flatMap((section) => section.rows)
+      .map((row) => row.id)
+      .filter((id) => this.client?.get(id)?.changed === true);
+    await this.bridge?.invoke('settings.reset', { keys });
+  }
+
+  private async exportFile(): Promise<void> {
+    this.message = undefined;
+    await this.bridge?.invoke('settings.export', {});
+  }
+
+  private async importFile(): Promise<void> {
+    this.message = undefined;
+    const result: unknown = await this.bridge?.invoke('settings.import', {});
+    if (typeof result !== 'object' || result === null) return;
+    if (Reflect.get(result, 'ok') === true) {
+      const count = String(Reflect.get(result, 'applied'));
+      const skipped = Number(Reflect.get(result, 'skipped'));
+      this.message = {
+        alert: false,
+        text:
+          skipped > 0
+            ? this.t('settings.importSkipped', { count, skipped: String(skipped) })
+            : this.t('settings.importDone', { count }),
+      };
+    } else if (Reflect.get(result, 'error') === 'invalid') {
+      this.message = { alert: true, text: this.t('settings.importInvalid') };
+    }
+  }
+
+  /** The note of a value that the organization sets or suggests, or else nothing. */
+  private managedNote(setting: SettingView | undefined): TemplateResult | typeof nothing {
+    if (setting?.locked === true) {
+      return html`<span class="note">${lockIcon}${this.t('settings.managed')}</span>`;
+    }
+    if (setting?.recommended === true) {
+      return html`<span class="note">${this.t('settings.recommended')}</span>`;
+    }
+    return nothing;
+  }
 
   private readonly onHashChange = (): void => this.reveal(location.hash);
 
@@ -350,6 +491,20 @@ export class SettingsPage extends LitElement {
             render: () => this.renderChoice('appearance.density', 'settings.density'),
           },
           {
+            id: 'appearance.textSize',
+            keys: [
+              'settings.textSize',
+              'settings.textSize.keywords',
+              ...optionKeys('appearance.textSize', 'settings.textSize'),
+            ],
+            render: () => this.renderChoice('appearance.textSize', 'settings.textSize'),
+          },
+          {
+            id: 'appearance.font',
+            keys: ['settings.font', 'settings.fontNote', 'settings.font.keywords'],
+            render: () => this.renderFont(),
+          },
+          {
             id: 'tabs.position',
             keys: [
               'settings.tabPosition',
@@ -382,6 +537,23 @@ export class SettingsPage extends LitElement {
               ...optionKeys('startup.page', 'settings.startupPage'),
             ],
             render: () => this.renderChoice('startup.page', 'settings.startupPage'),
+          },
+        ],
+      },
+      {
+        id: 'languages',
+        title: 'settings.languages',
+        rows: [
+          {
+            id: 'i18n.language',
+            keys: [
+              'settings.language',
+              'settings.languageNote',
+              'settings.language.keywords',
+              'settings.language.system',
+            ],
+            words: Object.keys(catalogs).map((code) => languageName(code)),
+            render: () => this.renderLanguage(),
           },
         ],
       },
@@ -521,13 +693,20 @@ export class SettingsPage extends LitElement {
   protected override render(): TemplateResult {
     const t = this.t;
     const sections = this.sections();
+    const restart = sections
+      .flatMap((section) => section.rows)
+      .some((row) => this.client?.get(row.id)?.restart === true);
     const words = searchWords(this.query);
     const shown = sections
       .map((section) => {
         const all = matches(textOf([section.title]), words);
         return {
           ...section,
-          rows: section.rows.filter((row) => all || matches(textOf(row.keys, row.words), words)),
+          rows: section.rows.filter(
+            (row) =>
+              (all || matches(textOf(row.keys, row.words), words)) &&
+              (!this.changedOnly || this.client?.get(row.id)?.changed === true),
+          ),
         };
       })
       .filter((section) => section.rows.length > 0);
@@ -556,10 +735,53 @@ export class SettingsPage extends LitElement {
             if (input instanceof HTMLInputElement) this.query = input.value;
           }}
         />
+        <div class="actions">
+          <button
+            type="button"
+            aria-pressed=${this.changedOnly ? 'true' : 'false'}
+            @click=${() => (this.changedOnly = !this.changedOnly)}
+          >
+            ${t('settings.changedOnly')}
+          </button>
+          <button type="button" @click=${() => void this.exportFile()}>
+            ${t('settings.export')}
+          </button>
+          <button type="button" @click=${() => void this.importFile()}>
+            ${t('settings.import')}
+          </button>
+          <button
+            type="button"
+            @click=${() => this.renderRoot.querySelector('dialog')?.showModal()}
+          >
+            ${t('settings.resetAll')}
+          </button>
+        </div>
+        ${
+          this.message === undefined
+            ? nothing
+            : html`<p class="message" role=${this.message.alert ? 'alert' : 'status'}>
+                ${this.message.text}
+              </p>`
+        }
+        <dialog aria-labelledby="reset-question">
+          <p id="reset-question">${t('settings.resetAllQuestion')}</p>
+          <div class="buttons">
+            <button type="button" @click=${() => this.renderRoot.querySelector('dialog')?.close()}>
+              ${t('settings.cancel')}
+            </button>
+            <button type="button" class="primary" @click=${() => void this.resetAll()}>
+              ${t('settings.resetAllConfirm')}
+            </button>
+          </div>
+        </dialog>
         ${
           shown.length === 0
             ? html`<p class="empty" role="status">
-                ${t('settings.searchEmpty', { query: this.query.trim() })}
+                ${
+                  this.changedOnly && this.query.trim() === ''
+                    ? t('settings.changedNone')
+                    : t('settings.searchEmpty', { query: this.query.trim() })
+                }
               </p>`
             : nothing
         }
@@ -573,11 +795,28 @@ export class SettingsPage extends LitElement {
                     </div>`
                   : html`<section aria-labelledby=${section.id}>
                       ${section.rows.map(
-                        (row) => html`<div class="slot" data-row=${row.id}>${row.render()}</div>`,
+                        (row) =>
+                          html`<div class="slot" data-row=${row.id}>
+                            ${row.render()}${this.renderReset(row)}
+                          </div>`,
                       )}
                     </section>`
               }`,
         )}
+        ${
+          restart
+            ? html`<div class="restart" role="status">
+                <span>${t('settings.restartNeeded')}</span>
+                <button
+                  type="button"
+                  class="primary"
+                  @click=${() => void this.bridge?.invoke('settings.restart', {})}
+                >
+                  ${t('settings.restartNow')}
+                </button>
+              </div>`
+            : nothing
+        }
       </div>
     `;
   }
@@ -591,11 +830,7 @@ export class SettingsPage extends LitElement {
   private renderLabel(key: MessageKey, setting: SettingView | undefined): TemplateResult {
     return html`<span class="label">
       <span>${this.t(key)}</span>
-      ${
-        setting?.locked === true
-          ? html`<span class="note">${this.t('settings.managed')}</span>`
-          : nothing
-      }
+      ${this.managedNote(setting)}
     </span>`;
   }
 
@@ -760,9 +995,11 @@ export class SettingsPage extends LitElement {
     return html`<div class="row">
       <label class="label" for=${key}>
         <span>${this.t(label)}</span>
-        <span class="note">
-          ${setting?.locked === true ? this.t('settings.managed') : this.t(note)}
-        </span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t(note)}</span>`
+        }
       </label>
       <input
         id=${key}
@@ -812,6 +1049,82 @@ export class SettingsPage extends LitElement {
           }}
         />
       </div>
+    </div>`;
+  }
+
+  /** The font of the browser, by name; an empty field keeps the font of the system. */
+  private renderFont(): TemplateResult {
+    const setting = this.client?.get('appearance.font');
+    return html`<div class="row stack">
+      <label class="label" for="ui-font">
+        <span>${this.t('settings.font')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.fontNote')}</span>`
+        }
+      </label>
+      <input
+        id="ui-font"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        maxlength="64"
+        placeholder=${this.t('settings.fontSystem')}
+        .value=${typeof setting?.value === 'string' ? setting.value : ''}
+        ?disabled=${setting?.locked !== false}
+        aria-invalid=${this.fontError ? 'true' : 'false'}
+        @change=${(event: Event) => void this.setFont(event)}
+      />
+      ${
+        this.fontError
+          ? html`<span class="error" role="alert">${this.t('settings.fontInvalid')}</span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private async setFont(event: Event): Promise<void> {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && this.client !== undefined) {
+      this.fontError = !(await this.client.set('appearance.font', input.value.trim()));
+    }
+  }
+
+  /** The language of the browser, which takes effect after a restart. */
+  private renderLanguage(): TemplateResult {
+    const setting = this.client?.get('i18n.language');
+    const value = typeof setting?.value === 'string' ? setting.value : 'system';
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.language')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">
+                ${this.t(setting?.restart === true ? 'settings.restartNote' : 'settings.languageNote')}
+              </span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.language')}
+        ?disabled=${setting?.locked !== false}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement)
+            void this.client?.set('i18n.language', select.value);
+        }}
+      >
+        <option value="system" ?selected=${value === 'system'}>
+          ${this.t('settings.language.system')}
+        </option>
+        ${Object.keys(catalogs).map(
+          (code) =>
+            html`<option value=${code} lang=${code} ?selected=${value === code}>
+              ${languageName(code)}
+            </option>`,
+        )}
+      </select>
     </div>`;
   }
 
@@ -899,6 +1212,12 @@ export class SettingsPage extends LitElement {
  * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
  * @param input - The text of the field.
  */
+/** The mark of values that the organization sets. */
+const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
+  <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5" />
+</svg>`;
+
 /** A row of the settings page: a setting, or a part such as the import. */
 interface PageRow {
   /** The setting's key, or the part's name; links name it after `#`. */
@@ -921,6 +1240,15 @@ interface PageSection {
 
 /** The texts of the page in every language, so a word of either language finds a setting. */
 const languages = [new Translator('en'), new Translator('de')];
+
+/** The name of a language in that language, such as Deutsch. */
+function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 /** The keys of the names of a choice's options. */
 function optionKeys(key: keyof typeof choices, label: MessageKey): MessageKey[] {

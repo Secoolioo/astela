@@ -2,6 +2,7 @@ import { app, Menu, session, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { brand } from '../shared/brand.ts';
+import { languageArguments } from '../shared/ui-language.ts';
 import { newTabUrl, pageUrl, tabPages } from '../shared/internal-pages.ts';
 import { GetNewTabState, NavigateFromNewTab } from '../shared/ipc/newtab-contracts.ts';
 import {
@@ -22,10 +23,11 @@ import {
   type Logger,
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
-import { linksFromArguments } from '../domain/navigation/links.ts';
+import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { parseSession } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
+import type { SettingDefinition } from '../domain/settings/setting.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
 import { updatePolicies } from '../domain/updates/update-policies.ts';
 import { SetupGuideEnabled, shouldShowSetupGuide } from '../domain/setup/setup-guide.ts';
@@ -59,6 +61,7 @@ import {
   BlockerAnnoyancesSetting,
   BlockerCookieNoticesSetting,
   ContentBlockerSetting,
+  LanguageSetting,
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
@@ -67,6 +70,7 @@ import {
   coreSettings,
 } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
+import { chooseLanguage } from './ui-language.ts';
 import type { Bookmarks } from './bookmarks.ts';
 import {
   canBeDefaultBrowser,
@@ -216,6 +220,16 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
   await settingsLoaded;
+  // Settings that need a restart keep the value of this start, such as the language of the
+  // menus, the dialogs and the browser's own views; the settings page compares with these.
+  const language = settings.get(LanguageSetting);
+  chooseLanguage(language);
+  const definitions: readonly SettingDefinition<unknown>[] = coreSettings;
+  const startValues = new Map(
+    definitions
+      .filter((definition) => definition.restartRequired === true)
+      .map((definition) => [definition.key, JSON.stringify(settings.get(definition))]),
+  );
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
     new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
@@ -483,6 +497,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     newTabUrl,
     backgroundColor: windowBackground,
     appearanceArgument: () => appearance.argument,
+    languageArguments: languageArguments(language),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.
@@ -571,6 +586,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           defaultBrowserAllowed: () =>
             policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
+          startValues,
         });
         pages = true;
       })
@@ -611,6 +627,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     preload: layout.pagePreload,
     partition: internalPartition,
     appearanceArgument: () => appearance.argument,
+    languageArguments: languageArguments(language),
     gate,
     router,
   };
@@ -687,8 +704,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   if (showSetup) {
     settings.set(SetupShownSetting, true);
   }
+  // A restart from the settings page brings the tabs back, whatever the startup setting says.
   const lastSession =
-    !showSetup && settings.get(StartupSetting) === 'restore'
+    !showSetup &&
+    (settings.get(StartupSetting) === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
       ? parseSession(await savedSession)
       : undefined;
   // Links from other apps open in tabs; a start without a session or the guide shows only them.

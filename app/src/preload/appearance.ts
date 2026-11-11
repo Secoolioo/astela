@@ -1,10 +1,12 @@
 import { ipcRenderer, webFrame } from 'electron';
 import { privateWindowArgument } from '../shared/private-window.ts';
+import { languageOfArguments } from '../shared/ui-language.ts';
 
 /**
  * Applies the browser's accent and density to the page before its first paint, and again
- * whenever they change. The style sheet comes from the browser process, on the command line
- * at start and as an event later; the page itself never sees or handles it.
+ * whenever they change, and gives the page the language of the settings. The style sheet
+ * comes from the browser process, on the command line at start and as an event later; the
+ * page itself never sees or handles it.
  */
 export function applyAppearance(): void {
   const argument = process.argv.find((arg) => arg.startsWith('--appearance='));
@@ -22,22 +24,24 @@ export function applyAppearance(): void {
     key = webFrame.insertCSS(css);
   });
   // The browser's own views in a private window look dark in both modes (tokens.css).
-  if (process.argv.includes(privateWindowArgument)) markPrivate();
+  if (process.argv.includes(privateWindowArgument)) markRoot('private', '');
+  // The page translates itself with this language when it starts (ui/i18n).
+  const language = languageOfArguments(process.argv);
+  if (language !== undefined) markRoot('language', language);
 }
 
-/** Marks the page as one of a private window, as soon as its root element exists. */
-function markPrivate(): void {
-  if (markRoot()) return;
+/** Sets a data attribute of the page's root element, as soon as the element exists. */
+function markRoot(name: string, value: string): void {
+  const root: HTMLElement | null = document.documentElement;
+  if (root !== null) {
+    root.dataset[name] = value;
+    return;
+  }
   const observer = new MutationObserver(() => {
-    if (markRoot()) observer.disconnect();
+    const element: HTMLElement | null = document.documentElement;
+    if (element === null) return;
+    observer.disconnect();
+    element.dataset[name] = value;
   });
   observer.observe(document, { childList: true });
-}
-
-/** Marks the root element; `false` while the page has none yet. */
-function markRoot(): boolean {
-  const root: HTMLElement | null = document.documentElement;
-  if (root === null) return false;
-  root.dataset['private'] = '';
-  return true;
 }

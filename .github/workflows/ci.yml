@@ -234,6 +234,7 @@ jobs:
       - name: Install and start the rpm on Fedora
         if: matrix.name == 'linux-x64'
         run: |
+          tools/ci/pull-images.sh fedora:latest
           docker run --rm -v "$RUNNER_TEMP/packages:/packages" fedora:latest bash -c '
             dnf install -y -q /packages/*-x86_64.rpm xorg-x11-server-Xvfb xorg-x11-xauth >/dev/null &&
             xvfb-run -a /opt/*/astela --no-sandbox --smoke-test=/packages/rpm-report.json'
@@ -344,7 +345,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb xdotool
           # The unpacked build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Turn the update check off
@@ -377,7 +378,7 @@ jobs:
       - name: Measure against the bare reference
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off
+            xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
           else
             node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off
           fi
