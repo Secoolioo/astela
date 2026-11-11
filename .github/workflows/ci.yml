@@ -377,7 +377,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
           else
-            node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off
+            node tools/perf/run.ts --app "$PERF_APP" --out perf.json --updates-off --background
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
