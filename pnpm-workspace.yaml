@@ -29,4 +29,4 @@ patchedDependencies:
 # to ship sooner (see the response times in docs/maintainers/WORKFLOW.md), so its exact
 # version is exempt; the next Electron update replaces the entry.
 minimumReleaseAgeExclude:
-  - electron@45.2.1
+  - electron@45.2.3
