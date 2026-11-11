@@ -21,6 +21,16 @@ packageExtensions:
 # directory names replace that part with a hash.
 virtualStoreDirMaxLength: 60
 
+# Development tools pull in versions with known vulnerabilities whose authors have not
+# updated them yet: markdownlint (re2js, katex). These overrides use the fixed versions
+# until they do. None of them is part of the browser. TypeDoc and electron-builder need
+# minimatch 9 or 10, where GHSA-g3hv-75wg-m249 has no fix, and minimatch 11 breaks them.
+# Both match only the patterns of this repository's configuration, so the denial of
+# service that the advisory describes cannot be started from outside.
+overrides:
+  re2js@<2.8.7: 2.9.1
+  katex@<0.18.2: 0.18.10
+
 patchedDependencies:
   '@ghostery/adblocker@2.20.3': patches/@ghostery__adblocker@2.20.3.patch
   app-builder-lib@26.18.0: patches/app-builder-lib@26.18.0.patch
