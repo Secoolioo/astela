@@ -3,6 +3,16 @@ import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
 import { secureDnsProviders, secureDnsTemplatesPattern } from '../../shared/secure-dns.ts';
+import { contrastRatio, hexFromOklch, parseColor } from '../../shared/color.ts';
+import {
+  builtInThemes,
+  isThemeId,
+  paletteTokens,
+  themeIds,
+  type CustomTheme,
+  type PaletteToken,
+  type ThemeId,
+} from '../../shared/themes.ts';
 import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
@@ -37,6 +47,7 @@ export class SettingsPage extends LitElement {
     pageError: { state: true },
     engineError: { state: true },
     tileError: { state: true },
+    themeMessage: { state: true },
     shortcuts: { state: true },
     recording: { state: true },
     shortcutNote: { state: true },
@@ -184,6 +195,83 @@ export class SettingsPage extends LitElement {
       }
       .engines li button {
         justify-self: end;
+      }
+      .theme-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: var(--space-2);
+      }
+      .theme-card {
+        position: relative;
+        display: grid;
+        gap: var(--space-1);
+        padding: var(--space-1);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+        font-size: var(--font-size-small);
+      }
+      .theme-card:has(input:checked) {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .theme-card:has(input:focus-visible) {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 1px;
+      }
+      .theme-card svg {
+        width: 100%;
+        height: auto;
+        border-radius: var(--radius-1);
+      }
+      .theme-card .page {
+        fill: var(--light-surface-0);
+      }
+      .theme-card .bar {
+        fill: var(--light-surface-2);
+      }
+      .theme-card .line {
+        fill: var(--light-text-1);
+      }
+      .theme-card .second {
+        fill: var(--light-text-2);
+      }
+      .theme-card .accent {
+        fill: var(--accent);
+      }
+      @media (prefers-color-scheme: dark) {
+        .theme-card .page {
+          fill: var(--dark-surface-0);
+        }
+        .theme-card .bar {
+          fill: var(--dark-surface-2);
+        }
+        .theme-card .line {
+          fill: var(--dark-text-1);
+        }
+        .theme-card .second {
+          fill: var(--dark-text-2);
+        }
+      }
+      .theme-colors {
+        border-collapse: collapse;
+      }
+      .theme-colors th,
+      .theme-colors td {
+        padding: var(--space-1) var(--space-2);
+        text-align: left;
+        font-weight: normal;
+      }
+      .custom-theme .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: center;
+      }
+      .custom-theme .from {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
       }
       .shortcut .label {
         flex: 1;
@@ -423,6 +511,8 @@ export class SettingsPage extends LitElement {
   declare engineError: boolean;
   /** Whether the last tile to add had no web address. */
   declare tileError: boolean;
+  /** What the last import or export of a theme did. */
+  declare themeMessage: { readonly alert: boolean; readonly text: string } | undefined;
   /** The shortcuts of every command, as the window uses them, once loaded. */
   declare shortcuts: ShortcutList | undefined;
   /** The command whose new shortcut the page waits for. */
@@ -471,6 +561,7 @@ export class SettingsPage extends LitElement {
     this.pageError = false;
     this.engineError = false;
     this.tileError = false;
+    this.themeMessage = undefined;
     this.shortcuts = undefined;
     this.recording = undefined;
     this.shortcutNote = undefined;
@@ -530,6 +621,7 @@ export class SettingsPage extends LitElement {
   protected override updated(): void {
     this.focusMovedToolbarItem();
     paintSwatches(this.renderRoot, this.client?.accents ?? []);
+    this.paintThemes();
     // The navigation marks the section whose heading is in the upper part of the window.
     this.spy?.disconnect();
     this.spy = new IntersectionObserver(
@@ -649,6 +741,16 @@ export class SettingsPage extends LitElement {
               ...optionKeys('appearance.colorMode', 'settings.colorMode'),
             ],
             render: () => this.renderChoice('appearance.colorMode', 'settings.colorMode'),
+          },
+          {
+            id: 'appearance.theme',
+            keys: [
+              'settings.theme',
+              'settings.themeNote',
+              'settings.theme.keywords',
+              ...[...themeIds, 'custom' as const].map((id) => `settings.theme.${id}` as const),
+            ],
+            render: () => this.renderTheme(),
           },
           { id: 'appearance.accent', keys: ['settings.accent'], render: () => this.renderAccent() },
           {
@@ -1357,6 +1459,210 @@ export class SettingsPage extends LitElement {
         }}
       />
     </div>`;
+  }
+
+  /** The colors of the custom theme, as the setting has them. */
+  private customTheme(): CustomTheme {
+    const value = this.client?.get('appearance.customTheme')?.value;
+    const palette = (mode: 'light' | 'dark'): CustomTheme['light'] => {
+      const colors: unknown =
+        typeof value === 'object' && value !== null ? Reflect.get(value, mode) : undefined;
+      return Object.fromEntries(
+        paletteTokens.flatMap((token) => {
+          const color: unknown =
+            typeof colors === 'object' && colors !== null ? Reflect.get(colors, token) : undefined;
+          return typeof color === 'string' ? [[token, color]] : [];
+        }),
+      );
+    };
+    return { light: palette('light'), dark: palette('dark') };
+  }
+
+  /** A color of the custom theme, or Astela's where none was chosen, as `#rrggbb`. */
+  private customColor(theme: CustomTheme, mode: 'light' | 'dark', token: PaletteToken): string {
+    return theme[mode][token] ?? hexOf(builtInThemes.astela[mode][token]);
+  }
+
+  /** Gives each theme card the colors of its theme, for both modes. */
+  private paintThemes(): void {
+    const custom = this.customTheme();
+    for (const card of this.renderRoot.querySelectorAll<HTMLElement>('[data-theme]')) {
+      const id = card.dataset['theme'];
+      for (const mode of ['light', 'dark'] as const) {
+        for (const token of ['surface-0', 'surface-2', 'text-1', 'text-2'] as const) {
+          const color = isThemeId(id)
+            ? builtInThemes[id][mode][token]
+            : this.customColor(custom, mode, token);
+          card.style.setProperty(`--${mode}-${token}`, color);
+        }
+      }
+    }
+  }
+
+  /** The theme: a card for each built-in theme and for the custom one, with its colors. */
+  private renderTheme(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('appearance.theme');
+    const value = typeof setting?.value === 'string' ? setting.value : 'astela';
+    return html`<div class="row stack">
+        <span class="label">
+          <span id="theme-label">${t('settings.theme')}</span>
+          ${
+            setting?.locked === true || setting?.recommended === true
+              ? this.managedNote(setting)
+              : html`<span class="note">${t('settings.themeNote')}</span>`
+          }
+        </span>
+        <div class="theme-cards" role="radiogroup" aria-labelledby="theme-label">
+          ${[...themeIds, 'custom' as const].map(
+            (id) =>
+              html`<label class="theme-card" data-theme=${id}>
+                <input
+                  type="radio"
+                  name="theme"
+                  .checked=${value === id}
+                  ?disabled=${setting?.locked !== false}
+                  @change=${() => void this.client?.set('appearance.theme', id)}
+                />
+                <svg viewBox="0 0 96 48" aria-hidden="true">
+                  <rect class="page" width="96" height="48" rx="4" />
+                  <rect class="bar" width="96" height="12" />
+                  <rect class="line" x="8" y="20" width="52" height="5" rx="2.5" />
+                  <rect class="line second" x="8" y="31" width="36" height="5" rx="2.5" />
+                  <circle class="accent" cx="82" cy="36" r="6" />
+                </svg>
+                <span>${t(`settings.theme.${id}`)}</span>
+              </label>`,
+          )}
+        </div>
+      </div>
+      ${value === 'custom' ? this.renderCustomTheme() : nothing}`;
+  }
+
+  /** The colors of the custom theme, with their contrast, and its import and export. */
+  private renderCustomTheme(): TemplateResult {
+    const t = this.t;
+    const setting = this.client?.get('appearance.customTheme');
+    const disabled = setting?.locked !== false;
+    const theme = this.customTheme();
+    const set = (mode: 'light' | 'dark', token: PaletteToken, color: string): void => {
+      void this.client?.set('appearance.customTheme', {
+        ...theme,
+        [mode]: { ...theme[mode], [token]: color },
+      });
+    };
+    // Texts need a contrast of 4.5:1 on the surfaces they appear on, as WCAG requires.
+    const problems = (['light', 'dark'] as const).flatMap((mode) =>
+      (['text-1', 'text-2'] as const).flatMap((text) =>
+        (['surface-0', 'surface-1', 'surface-2'] as const).flatMap((surface) => {
+          const ratio = contrastOf(
+            this.customColor(theme, mode, text),
+            this.customColor(theme, mode, surface),
+          );
+          return ratio < 4.5 ? [{ mode, text, surface, ratio }] : [];
+        }),
+      ),
+    );
+    return html`<div class="row stack custom-theme">
+      <span class="label">
+        <span>${t('settings.themeColors')}</span>
+        <span class="note">${t('settings.themeColorsNote')}</span>
+      </span>
+      <table class="theme-colors">
+        <thead>
+          <tr>
+            <th></th>
+            <th scope="col">${t('settings.colorMode.light')}</th>
+            <th scope="col">${t('settings.colorMode.dark')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paletteTokens.map(
+            (token) =>
+              html`<tr>
+                <th scope="row">${t(`settings.themeColor.${token}`)}</th>
+                ${(['light', 'dark'] as const).map(
+                  (mode) =>
+                    html`<td>
+                      <input
+                        type="color"
+                        aria-label=${t(`settings.themeColorOf.${mode}`, {
+                          part: t(`settings.themeColor.${token}`),
+                        })}
+                        .value=${this.customColor(theme, mode, token)}
+                        ?disabled=${disabled}
+                        @change=${(event: Event) => {
+                          const input = event.target;
+                          if (input instanceof HTMLInputElement) set(mode, token, input.value);
+                        }}
+                      />
+                    </td>`,
+                )}
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+      ${problems.map(
+        (problem) =>
+          html`<p class="note problem" role="alert">
+            ${t('settings.themeContrast', {
+              text: t(`settings.themeColor.${problem.text}`),
+              surface: t(`settings.themeColor.${problem.surface}`),
+              mode: t(`settings.themeMode.${problem.mode}`),
+              ratio: problem.ratio.toFixed(1),
+            })}
+          </p>`,
+      )}
+      <div class="buttons">
+        <label class="from">
+          <span>${t('settings.themeStartFrom')}</span>
+          <select
+            ?disabled=${disabled}
+            @change=${(event: Event) => {
+              const select = event.target;
+              if (!(select instanceof HTMLSelectElement) || !isThemeId(select.value)) return;
+              void this.client?.set('appearance.customTheme', hexTheme(select.value));
+              select.value = '';
+            }}
+          >
+            <option value="">…</option>
+            ${themeIds.map((id) => html`<option value=${id}>${t(`settings.theme.${id}`)}</option>`)}
+          </select>
+        </label>
+        <button type="button" @click=${() => void this.exportTheme()}>
+          ${t('settings.themeExport')}
+        </button>
+        <button type="button" ?disabled=${disabled} @click=${() => void this.importTheme()}>
+          ${t('settings.themeImport')}
+        </button>
+      </div>
+      ${
+        this.themeMessage === undefined
+          ? nothing
+          : html`<p class="note" role=${this.themeMessage.alert ? 'alert' : 'status'}>
+              ${this.themeMessage.text}
+            </p>`
+      }
+    </div>`;
+  }
+
+  private async exportTheme(): Promise<void> {
+    this.themeMessage = undefined;
+    const result = await this.bridge?.invoke('settings.exportTheme', {});
+    if (typeof result === 'object' && result !== null && Reflect.get(result, 'saved') === true) {
+      this.themeMessage = { alert: false, text: this.t('settings.themeExported') };
+    }
+  }
+
+  private async importTheme(): Promise<void> {
+    this.themeMessage = undefined;
+    const result = await this.bridge?.invoke('settings.importTheme', {});
+    if (typeof result !== 'object' || result === null) return;
+    if (Reflect.get(result, 'ok') === true) {
+      this.themeMessage = { alert: false, text: this.t('settings.themeImported') };
+    } else if (Reflect.get(result, 'error') === 'invalid') {
+      this.themeMessage = { alert: true, text: this.t('settings.themeInvalid') };
+    }
   }
 
   private renderAccent(): TemplateResult {
@@ -2554,6 +2860,27 @@ function isShortcutList(value: unknown): value is ShortcutList {
         typeof entry.changed === 'boolean',
     )
   );
+}
+
+/** A color of a design token as `#rrggbb`, for a color field. */
+function hexOf(color: string): string {
+  const parsed = parseColor(color);
+  return parsed === undefined ? '#808080' : hexFromOklch(parsed);
+}
+
+/** The WCAG contrast of two `#rrggbb` colors. */
+function contrastOf(a: string, b: string): number {
+  const [first, second] = [parseColor(a), parseColor(b)];
+  return first === undefined || second === undefined ? 21 : contrastRatio(first, second);
+}
+
+/** The colors of a built-in theme as a custom theme, to start from. */
+function hexTheme(id: ThemeId): CustomTheme {
+  const palette = (mode: 'light' | 'dark'): CustomTheme['light'] =>
+    Object.fromEntries(
+      paletteTokens.map((token) => [token, hexOf(builtInThemes[id][mode][token])]),
+    );
+  return { light: palette('light'), dark: palette('dark') };
 }
 
 interface PageRow {

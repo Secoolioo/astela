@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { builtInThemes } from '../../shared/themes.ts';
 import {
   accentColors,
   accentPresets,
@@ -113,5 +114,32 @@ describe('webFontPreferences', () => {
       defaultFontFamily: {},
       defaultFontSize: 16,
     });
+  });
+});
+
+describe('appearanceCss with a theme', () => {
+  it('sets the colors of the theme for both modes and private windows', () => {
+    const css = appearanceCss({
+      accent: presetAccentColors.blue,
+      density: 'normal',
+      textSize: 'medium',
+      font: '',
+      theme: builtInThemes.forest,
+    });
+    expect(css).toContain(`--surface-0:${builtInThemes.forest.light['surface-0']}`);
+    expect(css).toContain(
+      `@media (prefers-color-scheme: dark){:root:root{--surface-0:${builtInThemes.forest.dark['surface-0']}`,
+    );
+    expect(css).toContain(
+      `:root:root[data-private]{--surface-0:${builtInThemes.forest.dark['surface-0']}`,
+    );
+    expect(
+      appearanceCss({
+        accent: presetAccentColors.blue,
+        density: 'normal',
+        textSize: 'medium',
+        font: '',
+      }),
+    ).not.toContain('--surface-0');
   });
 });

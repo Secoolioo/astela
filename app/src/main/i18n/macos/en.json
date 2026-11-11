@@ -62,5 +62,8 @@
   "menu.quitApp": "Quit Astela",
   "settings.exportTitle": "Export Settings",
   "settings.importTitle": "Import Settings",
-  "settings.fileType": "Settings"
+  "settings.fileType": "Settings",
+  "settings.themeFileType": "Theme",
+  "settings.themeExportTitle": "Export Theme",
+  "settings.themeImportTitle": "Import Theme"
 }

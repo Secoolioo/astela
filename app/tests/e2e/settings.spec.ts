@@ -35,7 +35,7 @@ function token(name: string): string {
 test('changes the appearance at once in every view', async () => {
   const page = await openSettings();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-  await page.getByRole('radio', { name: 'Dark' }).check();
+  await page.getByRole('radio', { name: 'Dark', exact: true }).check();
   await expect
     .poll(() => browser.main.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
     .toBe('dark');
@@ -703,4 +703,58 @@ test('changes the shortcut of a command, keeps conflicts and text keys out, and 
   await page.getByRole('button', { name: 'Reset the shortcut of New tab' }).click();
   await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘T' : 'Ctrl+T']);
   await expect.poll(() => keys('bookmark.toggle')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
+});
+
+/** The background color that the shell paints with. */
+function surface(): Promise<string> {
+  return browser.shell.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--surface-0').trim(),
+  );
+}
+
+test('colors every view with the theme and the custom colors, and imports a theme', async () => {
+  const page = await openSettings();
+  const before = await surface();
+  await page.getByRole('radio', { name: 'Forest' }).check();
+  await expect.poll(surface).toBe('oklch(96.8% 0.01 155)');
+  await page.getByRole('radio', { name: 'Custom' }).check();
+  await expect.poll(surface).toBe(before);
+  const background = page.getByRole('textbox', {
+    name: 'Background in the light mode',
+    exact: true,
+  });
+  await background.evaluate((input: HTMLInputElement) => {
+    input.value = '#fdf6e3';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect.poll(surface).toBe('#fdf6e3');
+  // Text in the color of its background cannot be read; the page says so.
+  await page
+    .getByRole('textbox', { name: 'Text in the light mode', exact: true })
+    .evaluate((input: HTMLInputElement) => {
+      input.value = '#fdf6e3';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  await expect(page.getByRole('alert').filter({ hasText: 'Text on Background' })).toContainText(
+    'has a contrast of 1.0:1 in the light mode',
+  );
+  const folder = mkdtempSync(join(tmpdir(), 'theme-'));
+  const path = join(folder, 'theme.json');
+  writeFileSync(
+    path,
+    JSON.stringify({ $schemaVersion: 1, light: { 'surface-0': '#eef6ff' }, dark: {} }),
+  );
+  try {
+    await browser.main.evaluate(({ dialog }, file) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });
+    }, path);
+    await page.getByRole('button', { name: 'Import…' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'theme' })).toHaveText(
+      'The theme is imported.',
+    );
+    await expect.poll(surface).toBe('#eef6ff');
+    await expect(page.getByRole('alert').filter({ hasText: 'Text on Background' })).toHaveCount(0);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
