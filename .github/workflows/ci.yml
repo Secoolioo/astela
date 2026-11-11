@@ -86,7 +86,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install rpm tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: tools/ci/apt-install.sh rpm
       - name: Build the content blocker data
         run: node tools/blocker/build.ts --out app/build/blocker
       - name: Build packages
@@ -182,8 +182,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2t64 xvfb
+          tools/ci/apt-install.sh libfuse2t64 xvfb
           # Ubuntu restricts unprivileged user namespaces; the packages must cope with that.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
           Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
@@ -282,8 +281,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          tools/ci/apt-install.sh xvfb
           # The unpacked test build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run end-to-end tests
@@ -344,8 +342,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb xdotool
+          tools/ci/apt-install.sh xvfb xdotool
           # The unpacked build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Turn the update check off
@@ -430,8 +427,7 @@ jobs:
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libfuse2t64
+          tools/ci/apt-install.sh xvfb libfuse2t64
           # The AppImage sandbox needs user namespaces; the packages job tests the AppArmor fix.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Update build 1 to build 2, then roll back from build 3
@@ -466,8 +462,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install the repository tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm createrepo-c apt-utils
+          tools/ci/apt-install.sh rpm createrepo-c apt-utils
       - name: Build three releases that carry a test repository key
         env:
           GNUPGHOME: ${{ runner.temp }}/gnupg
