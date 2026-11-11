@@ -106,6 +106,8 @@ CI will run a drift check in every pull request: it will regenerate every artifa
 
 ## Themes
 
+> **Implementation status (0.1.0-beta.5):** themes are palettes of seven color tokens for each mode: five built-in themes and True Dark, and one custom theme whose colors are edited on the settings page with contrast warnings, exported and imported as files. See [ADR 0043](../adr/0043-themes-as-palettes-edited-on-the-settings-page.md). The theme files in the profile, the separate editor page, derived states and themes per workspace below are not implemented.
+
 ### Theme files
 
 A theme is a JSON file (`*.theme.json`) validated against a generated JSON Schema. User themes are stored in the profile folder `themes/`.

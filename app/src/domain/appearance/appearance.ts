@@ -1,3 +1,4 @@
+import { paletteTokens, type Palette, type ThemeColors } from '../../shared/themes.ts';
 import type { AccentColors } from './accent-presets.ts';
 
 /** Which colors the browser uses: those of the system, or always light or dark. */
@@ -85,14 +86,16 @@ export const fontNamePattern = /^[\p{L}\p{N} ._-]{0,64}$/u;
  * The style sheet that applies the accent, the density, the text size and the font to the
  * browser's own pages. It sets design tokens only; `tokens.css` picks the accent of the
  * current color mode.
- * @param appearance - The colors of the accent, the density, the text size, and the name of
- *   the font; an empty name keeps the font of the system.
+ * @param appearance - The colors of the accent, the density, the text size, the name of the
+ *   font, where an empty name keeps the font of the system, and the colors of the theme,
+ *   where none keep those of `tokens.css`.
  */
 export function appearanceCss(appearance: {
   readonly accent: AccentColors;
   readonly density: Density;
   readonly textSize: TextSize;
   readonly font: string;
+  readonly theme?: ThemeColors | undefined;
 }): string {
   const accent = appearance.accent;
   const sizes = { ...densitySizes[appearance.density], ...textSizeTokens[appearance.textSize] };
@@ -100,11 +103,22 @@ export function appearanceCss(appearance: {
   const font = appearance.font.trim();
   if (font !== '' && fontNamePattern.test(font))
     tokens.push(`--font-ui:"${font}",var(--font-system)`);
-  // Two :root selectors outrank the defaults in tokens.css, whatever the order of sheets.
+  const theme = appearance.theme;
+  // Two :root selectors outrank the defaults in tokens.css, whatever the order of sheets; a
+  // private window is dark in both modes, so it gets the dark colors of the theme.
   return (
     `:root:root{--accent-light:${accent.light};--accent-dark:${accent.dark};` +
-    `${tokens.join(';')}}`
+    `${tokens.join(';')}${theme === undefined ? '' : `;${paletteCss(theme.light)}`}}` +
+    (theme === undefined
+      ? ''
+      : `@media (prefers-color-scheme: dark){:root:root{${paletteCss(theme.dark)}}}` +
+        `:root:root[data-private]{${paletteCss(theme.dark)}}`)
   );
+}
+
+/** The design tokens of a palette, as declarations. */
+function paletteCss(palette: Palette): string {
+  return paletteTokens.map((token) => `--${token}:${palette[token]}`).join(';');
 }
 
 /** The fonts that web pages use where they name none, by family; empty keeps Chromium's. */

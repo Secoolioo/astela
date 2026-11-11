@@ -166,3 +166,24 @@ export const ShortcutRecorded = defineEvent({
   }),
   capability: 'page:settings',
 });
+
+/** Saves the colors of the custom theme in a file that the user picks. */
+export const ExportTheme = defineRequest({
+  channel: 'settings.exportTheme',
+  request: v.strictObject({}),
+  response: v.strictObject({ saved: v.boolean() }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});
+
+/** Reads the colors of a theme from a file that the user picks and uses them. */
+export const ImportTheme = defineRequest({
+  channel: 'settings.importTheme',
+  request: v.strictObject({}),
+  response: v.strictObject({
+    ok: v.boolean(),
+    error: v.optional(v.picklist(['canceled', 'invalid'])),
+  }),
+  capability: 'page:settings',
+  ratePerSecond: 2,
+});

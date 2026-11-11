@@ -1,4 +1,10 @@
 import {
+  CustomTheme,
+  themeIds,
+  type CustomTheme as CustomThemeColors,
+  type ThemeChoice,
+} from '../shared/themes.ts';
+import {
   shortcutPattern,
   shortcutProblem,
   windowCommands,
@@ -104,6 +110,24 @@ export const AccentSetting = defineSetting({
     v.pipe(v.string(), v.regex(/^#[0-9a-f]{6}$/i, 'Must be a preset or a #rrggbb color')),
   ]),
   default: 'blue',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'color', order: 2 },
+});
+
+/** The colors of the browser's own views: a built-in theme, or the colors that people chose. */
+export const ThemeSetting = defineSetting<ThemeChoice>({
+  key: 'appearance.theme',
+  schema: v.picklist([...themeIds, 'custom']),
+  default: 'astela',
+  scope: 'global',
+  ui: { section: 'appearance', control: 'select', order: 2 },
+});
+
+/** The colors of the custom theme, by color mode and token; others keep Astela's. */
+export const CustomThemeSetting = defineSetting<CustomThemeColors>({
+  key: 'appearance.customTheme',
+  schema: CustomTheme,
+  default: { light: {}, dark: {} },
   scope: 'global',
   ui: { section: 'appearance', control: 'color', order: 2 },
 });
@@ -505,6 +529,8 @@ export const coreSettings = [
   SearchEnginesSetting,
   SearchBangsSetting,
   ColorModeSetting,
+  ThemeSetting,
+  CustomThemeSetting,
   AccentSetting,
   DensitySetting,
   TextSizeSetting,

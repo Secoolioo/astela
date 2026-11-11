@@ -12,13 +12,19 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import {
   AccentSetting,
   ColorModeSetting,
+  CustomThemeSetting,
   DensitySetting,
   TextSizeSetting,
+  ThemeSetting,
   UiFontSetting,
 } from './core-settings.ts';
+import { themeColors, windowColors } from '../shared/themes.ts';
+import { setWindowColors } from './window-background.ts';
 
 const appearanceKeys = new Set([
   ColorModeSetting.key,
+  ThemeSetting.key,
+  CustomThemeSetting.key,
   AccentSetting.key,
   DensitySetting.key,
   TextSizeSetting.key,
@@ -120,7 +126,12 @@ export class AppearanceController implements Disposable {
 
   private currentCss(): string {
     const accent = this.settings.get(AccentSetting);
+    const theme = this.settings.get(ThemeSetting);
+    const custom = this.settings.get(CustomThemeSetting);
+    // New windows paint the theme's color until their shell has painted.
+    setWindowColors(windowColors(theme, custom));
     return appearanceCss({
+      theme: themeColors(theme, custom),
       accent: isAccentPreset(accent)
         ? presetAccentColors[accent]
         : (this.solve?.(accent) ?? presetAccentColors.blue),

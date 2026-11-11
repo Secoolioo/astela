@@ -1,3 +1,4 @@
+import { CustomThemeSetting, ThemeSetting } from './core-settings.ts';
 import { app, webContents, type Session, type WebContents } from 'electron';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import { restartArguments } from '../domain/navigation/restart.ts';
@@ -9,6 +10,8 @@ import {
   ClearBrowsingData,
   GetShortcuts,
   RecordShortcut,
+  ExportTheme,
+  ImportTheme,
   ShortcutRecorded,
   ExportSettings,
   GetSettings,
@@ -169,6 +172,21 @@ export function connectSettingsPage(
       });
     });
     return null;
+  });
+  router.handle(ExportTheme, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page exports themes');
+    const { exportTheme } = await import('./settings-file.ts');
+    const theme = settings.get(CustomThemeSetting);
+    return { saved: await exportTheme(sender, theme) };
+  });
+  router.handle(ImportTheme, async (_request, { sender }) => {
+    if (!fromSettingsPage(sender)) throw new Error('Only the settings page imports themes');
+    const { importTheme } = await import('./settings-file.ts');
+    const result = await importTheme(sender);
+    if (!result.ok) return { ok: false, error: result.error };
+    const saved =
+      settings.set(CustomThemeSetting, result.theme).ok && settings.set(ThemeSetting, 'custom').ok;
+    return saved ? { ok: true } : { ok: false, error: 'invalid' as const };
   });
   router.handle(ClearBrowsingData, async (request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page clears data');

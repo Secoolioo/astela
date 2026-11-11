@@ -4,7 +4,9 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
+import * as v from 'valibot';
 import { brand } from '../shared/brand.ts';
+import { CustomTheme, paletteTokens } from '../shared/themes.ts';
 import { writeFileAtomic } from '../platform/node/atomic-file.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
@@ -141,4 +143,97 @@ export async function chooseFolder(
       ? await dialog.showOpenDialog(options)
       : await dialog.showOpenDialog(window, options);
   return canceled ? undefined : filePaths[0];
+}
+
+/** The version of the format of theme files. */
+const themeFileVersion = 1;
+
+/** The options of the file dialogs of theme files. */
+function themeFileOptions(title: string): Electron.SaveDialogOptions & Electron.OpenDialogOptions {
+  const i18n = translatorFor(uiLocale(), process.platform);
+  return {
+    title,
+    defaultPath: join(app.getPath('documents'), `${brand.slug}-theme.json`),
+    filters: [{ name: i18n.t('settings.themeFileType'), extensions: ['json'] }],
+  };
+}
+
+/**
+ * Saves the colors of the custom theme in a file that the user picks. The file lists the
+ * colors in a fixed order, so saving a theme that was read from a file gives the same file.
+ * @param sender - The settings page.
+ * @param theme - The colors of the custom theme.
+ * @returns Whether the file was saved.
+ */
+export async function exportTheme(sender: WebContents, theme: CustomTheme): Promise<boolean> {
+  const i18n = translatorFor(uiLocale(), process.platform);
+  const options = themeFileOptions(i18n.t('settings.themeExportTitle'));
+  const window = windowOf(sender);
+  const { canceled, filePath } =
+    window === undefined
+      ? await dialog.showSaveDialog(options)
+      : await dialog.showSaveDialog(window, options);
+  if (canceled || filePath === undefined || filePath === '') return false;
+  const file = {
+    $schemaVersion: themeFileVersion,
+    light: orderedPalette(theme.light),
+    dark: orderedPalette(theme.dark),
+  };
+  await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`);
+  return true;
+}
+
+/**
+ * Reads the colors of a theme from a file that the user picks.
+ * @param sender - The settings page.
+ * @returns The colors, or why there are none.
+ */
+export async function importTheme(
+  sender: WebContents,
+): Promise<
+  | { readonly ok: true; readonly theme: CustomTheme }
+  | { readonly ok: false; readonly error: 'canceled' | 'invalid' }
+> {
+  const i18n = translatorFor(uiLocale(), process.platform);
+  const options = {
+    ...themeFileOptions(i18n.t('settings.themeImportTitle')),
+    properties: ['openFile' as const],
+  };
+  const window = windowOf(sender);
+  const { canceled, filePaths } =
+    window === undefined
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options);
+  const path = filePaths[0];
+  if (canceled || path === undefined) return { ok: false, error: 'canceled' };
+  let parsed: unknown;
+  try {
+    // A theme is a few colors; anything large is no theme.
+    if ((await stat(path)).size > 64 * 1024) return { ok: false, error: 'invalid' };
+    parsed = JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    return { ok: false, error: 'invalid' };
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Reflect.get(parsed, '$schemaVersion') !== themeFileVersion
+  ) {
+    return { ok: false, error: 'invalid' };
+  }
+  const theme = v.safeParse(CustomTheme, {
+    light: Reflect.get(parsed, 'light'),
+    dark: Reflect.get(parsed, 'dark'),
+  });
+  return theme.success ? { ok: true, theme: theme.output } : { ok: false, error: 'invalid' };
+}
+
+/** The colors of a palette in the order of the tokens, in lower case, for a canonical file. */
+function orderedPalette(palette: CustomTheme['light']): Record<string, string> {
+  return Object.fromEntries(
+    paletteTokens.flatMap((token) => {
+      const value = palette[token];
+      return value === undefined ? [] : [[token, value.toLowerCase()]];
+    }),
+  );
 }
