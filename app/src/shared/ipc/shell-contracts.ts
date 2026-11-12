@@ -25,12 +25,16 @@ export const TabProblem = v.strictObject({
 /** Why a tab shows no page. */
 export type TabProblem = v.InferOutput<typeof TabProblem>;
 
+/** The key of a page icon that the browser keeps; the shell asks for the icon by it. */
+export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
+
 /**
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
  * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
  * `problem` why the tab shows no page, which the shell then shows in its place;
- * `zoom` the zoom factor of the page, 1 for 100 %.
+ * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
+ * `audible` whether the page plays sound, and `muted` whether its sound is muted.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -44,6 +48,9 @@ export const TabView = v.strictObject({
   bookmarked: v.boolean(),
   problem: v.nullable(TabProblem),
   zoom: v.pipe(v.number(), v.minValue(0.25), v.maxValue(5)),
+  favicon: v.nullable(FaviconKey),
+  audible: v.boolean(),
+  muted: v.boolean(),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

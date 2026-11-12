@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { defineRequest, type RequestContract } from './contract.ts';
 import { OverlayAnchor } from './overlay-anchor.ts';
-import { Done, Empty, TabId } from './shell-contracts.ts';
+import { Done, Empty, FaviconKey, TabId } from './shell-contracts.ts';
 
 // Requests of the shell that its first paint does not need. They load with the first of
 // them, so the browser does not read them at its start; `shellLaterChannels` names them.
@@ -108,6 +108,22 @@ export const ToggleBookmark = defineRequest({
   capability: 'shell',
 });
 
+/** The icon of a page by its key, as a `data:` address, or `null` if the browser has none. */
+export const GetFavicon = defineRequest({
+  channel: 'tabs.favicon',
+  request: v.strictObject({ key: FaviconKey }),
+  response: v.nullable(v.pipe(v.string(), v.startsWith('data:image/'), v.maxLength(200_000))),
+  capability: 'shell',
+});
+
+/** Mutes the sound of a tab, or turns it on again. */
+export const SetTabMuted = defineRequest({
+  channel: 'tabs.setMuted',
+  request: v.strictObject({ tabId: TabId, muted: v.boolean() }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** The request contracts of the shell that load with the first of them. */
 export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = [
   ReopenClosedTab,
@@ -121,4 +137,6 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   OpenBlockerPopover,
   OpenBookmarkFolder,
   ToggleBookmark,
+  GetFavicon,
+  SetTabMuted,
 ];
