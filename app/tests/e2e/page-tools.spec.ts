@@ -406,6 +406,50 @@ test('shows PDF documents in the tab', async () => {
   }
 });
 
+test('gives later pages of an open tab the default zoom that the settings have now', async () => {
+  const port = new URL(server.origin).port;
+  // Names under .test reach the test's server; zoomed.test was zoomed in an earlier session.
+  const browser = await launch(
+    ['--host-resolver-rules=MAP *.test 127.0.0.1', '--no-proxy-server'],
+    {
+      settings: { 'zoom.sites': { 'zoomed.test': 1.5 } },
+    },
+  );
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const go = async (url: string): Promise<void> => {
+      await address.fill(url);
+      await address.press('Enter');
+      await waitForPage(browser, (shown) => shown === url);
+    };
+    const factor = (url: string): Promise<unknown> =>
+      browser.main.evaluate(
+        ({ webContents }, wanted) =>
+          webContents
+            .getAllWebContents()
+            .find((c) => c.getURL() === wanted)
+            ?.getZoomFactor(),
+        url,
+      );
+    await go(`${server.origin}/find.html`);
+    await expect.poll(() => factor(`${server.origin}/find.html`)).toBeCloseTo(1);
+    // The default zoom changes in another tab while this one stays open.
+    await browser.shell.getByRole('button', { name: 'New tab', exact: true }).click();
+    await go('app://settings/#zoom.default');
+    const settings = await waitForPage(browser, (shown) => shown.startsWith('app://settings'));
+    await settings.getByRole('combobox', { name: 'Page zoom' }).selectOption('1.25');
+    await browser.shell.getByRole('tab').first().click();
+    const fresh = `http://fresh.test:${port}/find.html`;
+    await go(fresh);
+    await expect.poll(() => factor(fresh)).toBeCloseTo(1.25);
+    const zoomed = `http://zoomed.test:${port}/find.html`;
+    await go(zoomed);
+    await expect.poll(() => factor(zoomed)).toBeCloseTo(1.5);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('gives sites without a zoom of their own the default zoom of the settings', async () => {
   const browser = await launch([], { settings: { 'zoom.default': 1.25 } });
   try {

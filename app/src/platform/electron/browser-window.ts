@@ -136,7 +136,11 @@ export interface BrowserWindowOptions {
    * The insecure address to offer in place of a page that did not load securely, when
    * HTTPS-First sent the page to the secure address.
    */
-  readonly insecureAddressFor?: (contents: WebContents, failed: string) => string | undefined;
+  readonly insecureAddressFor?: (
+    contents: WebContents,
+    failed: string,
+    stopped: boolean,
+  ) => string | undefined;
   /** Prints, saves or shows the source of a web page, or opens its developer tools. */
   readonly onPageCommand?: (
     window: BrowserWindowController,
@@ -221,6 +225,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private userFullScreen = false;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, string>();
+  /** The default zoom that each web view was made with, which Chromium keeps for its pages. */
+  private readonly madeZoom = new WeakMap<WebContents, number>();
   /** Tabs without a view yet, with the URL they will load when shown. */
   private readonly lazyTabs = new Map<TabId, string>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
@@ -919,6 +925,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       adopted === undefined ? this.viewOptions(page) : { webContents: adopted },
     );
     const contents = view.webContents;
+    if (page === undefined) this.madeZoom.set(contents, this.options.defaultZoom?.() ?? 1);
     let registration: Disposable | undefined;
     if (page !== undefined) {
       view.setBackgroundColor(this.options.backgroundColor(this.isPrivate));
@@ -957,16 +964,30 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     if (page === undefined) {
       // A page that could not be loaded, or whose renderer is gone, shows the shell's page
-      // for it instead of an empty one. A load that a new navigation stopped is no error.
+      // for it instead of an empty one.
       contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
-        if (!isMainFrame || code === -3) return;
+        if (!isMainFrame) return;
+        // A load that a new navigation stopped is no error, unless HTTPS-First stopped it
+        // because its secure address gave no answer in time.
+        if (code === -3) {
+          const slow = this.options.insecureAddressFor?.(contents, failed, true);
+          if (slow !== undefined) {
+            this.setProblem(id, {
+              kind: 'insecure',
+              code: 'ERR_TIMED_OUT',
+              url: slow,
+              proceed: true,
+            });
+          }
+          return;
+        }
         const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
         // A site that HTTPS-First could not load securely offers its insecure address after a
         // warning. Without a name or a network, the insecure address would not load either.
         const insecure =
           code === -105 || code === -106
             ? undefined
-            : this.options.insecureAddressFor?.(contents, failed);
+            : this.options.insecureAddressFor?.(contents, failed, false);
         if (insecure !== undefined) {
           this.setProblem(id, { kind: 'insecure', code: name, url: insecure, proceed: true });
           return;
@@ -995,11 +1016,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       });
       contents.on('did-navigate', (_event, address) => {
         this.setProblem(id, null);
-        // A site keeps the zoom it was left at, also after the browser restarts.
+        // A site keeps the zoom it was left at, also after the browser restarts, and other
+        // sites get the default zoom. Chromium gives a page the zoom that its site had in this
+        // session, or else the default zoom that the tab was made with, which may be old.
         const saved = this.options.zoomFor?.(address);
         const base = this.options.defaultZoom?.() ?? 1;
-        if (saved !== undefined && sameZoom(contents.getZoomFactor(), base)) {
-          contents.setZoomFactor(saved);
+        const factor = contents.getZoomFactor();
+        if (sameZoom(factor, this.madeZoom.get(contents) ?? base) || sameZoom(factor, base)) {
+          const wanted = saved ?? base;
+          if (!sameZoom(factor, wanted)) contents.setZoomFactor(wanted);
         }
       });
       contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));

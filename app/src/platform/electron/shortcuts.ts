@@ -47,13 +47,15 @@ export class ShortcutRecorder {
     this.waiting.get(contents.id)?.(undefined);
     return new Promise((resolve) => {
       const timer = setTimeout(() => done(undefined), timeout);
+      const gone = (): void => done(undefined);
       const done = (shortcut: string | undefined): void => {
         clearTimeout(timer);
+        contents.off('destroyed', gone);
         if (this.waiting.get(contents.id) === done) this.waiting.delete(contents.id);
         resolve(shortcut);
       };
       this.waiting.set(contents.id, done);
-      contents.once('destroyed', () => done(undefined));
+      contents.once('destroyed', gone);
     });
   }
 
@@ -112,6 +114,8 @@ export function shortcutOf(input: Input, mac: boolean): string {
     // arrives as a dead key: such a shortcut counts by the letter on the key.
     key = input.code.slice(3);
   }
+  // The space bar has a name, as the notation has no room for a space.
+  if (key === ' ') key = 'Space';
   const control = input.control ? 'Ctrl+' : '';
   const meta = input.meta ? 'Cmd+' : '';
   return `${control}${alt ? 'Alt+' : ''}${shift ? 'Shift+' : ''}${meta}${key}`;

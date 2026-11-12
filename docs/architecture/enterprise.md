@@ -29,7 +29,7 @@ Policy names follow Chrome's names where that makes sense, so that existing know
 
 - **Mandatory over recommended.** A mandatory policy locks a setting; a recommended policy only changes the value users start from.
 - **Machine over user.** On Windows, `HKLM` takes precedence over `HKCU`.
-- **Sensitive policies only from trusted sources.** The update URL (`UpdateURL`), the proxy policies, the default search provider policies and, from M4, extension sources apply only from `HKLM` on Windows and only as forced values on macOS. Linux policy files are system-wide by location. If a sensitive policy appears anywhere else, it will not apply, and the diagnostics page will show a warning. This keeps a program running as the user from redirecting updates or traffic by writing to `HKCU`. Chrome and Firefox follow the same principle (as of October 2026).
+- **Sensitive policies only from trusted sources.** The update URL (`UpdateURL`), the proxy policies, the default search provider policies, the DNS over HTTPS policies (`DnsOverHttpsMode`, `DnsOverHttpsTemplates`) and, from M4, extension sources apply only from `HKLM` on Windows and only as forced values on macOS. Linux policy files are system-wide by location. If a sensitive policy appears anywhere else, it will not apply, and the diagnostics page will show a warning. This keeps a program running as the user from redirecting updates or traffic by writing to `HKCU`. Chrome and Firefox follow the same principle (as of October 2026).
 
 How policies combine with defaults, user values and workspace overrides is described in the [resolution order](settings-policy-theme.md#resolution-order).
 
@@ -84,7 +84,7 @@ The proxy defaults to the system configuration. When the proxy policies are set,
 
 ### DNS over HTTPS
 
-Electron starts with DNS over HTTPS turned off (as of October 2026), so Astela is designed to configure the host resolver explicitly (`configureHostResolver`). The default is `automatic` with a list of providers. With `DnsOverHttpsMode`, administrators can choose `off` or `secure`, and `DnsOverHttpsTemplates` sets their own resolver templates.
+Electron starts with DNS over HTTPS turned off (as of October 2026), so Astela configures the host resolver explicitly (`configureHostResolver`). The default is `automatic` without a list of services, which uses DNS over HTTPS where the provider of the system offers it. With `DnsOverHttpsMode`, administrators can choose `off` or `secure`, and `DnsOverHttpsTemplates` sets their own resolver templates. Addresses that Chromium would refuse, such as templates with unbalanced braces or a variable in the host, are not valid values of the policy.
 
 ### Certificates
 
@@ -219,10 +219,10 @@ Also implemented:
 - `PromptForDownloadLocation` (boolean): whether the browser asks where to save each download, like the setting `downloads.ask`.
 - `ShowHomeButton` (boolean): shows or hides the home button of the toolbar, like the setting `home.button`.
 - `HomepageLocation` (web address, or empty for the new tab page): the page of the home button and of its shortcut, like the setting `home.page`.
-- `BlockThirdPartyCookies` (boolean): keeps cookies away from requests, responses and frames of other sites than the page's own, as mandatory or recommended policy, like the setting `privacy.blockThirdPartyCookies`; private windows always block them.
+- `BlockThirdPartyCookies` (boolean): keeps cookies away from requests, responses, frames and workers of other sites than the page's own, as mandatory or recommended policy, like the setting `privacy.blockThirdPartyCookies`. Chromium blocks them from the next start of the browser ([ADR 0044](../adr/0044-third-party-cookies-blocked-by-chromium.md)), with the policies that the last start read; private windows always block them.
 - `HttpsOnlyMode` (`disallowed`, `force_enabled` or `force_balanced_enabled`): as a mandatory policy, `disallowed` turns [HTTPS-First](../user/page-problems.md#sites-without-a-secure-connection) off and the other two keep it on, like the setting `privacy.httpsFirst`. Astela has one mode, which warns before an insecure address; `allowed` leaves the choice to the user, as no policy does, and the browser reports it as an invalid value.
 - `HttpAllowlist` (list of host names): hosts that HTTPS-First leaves on their insecure address, such as `intranet.example.com`; `[*.]example.com` also names every host below `example.com`. IP addresses and local names are never upgraded and need no entry.
-- `DnsOverHttpsMode` (`off`, `automatic` or `secure`): how the browser looks up the addresses of sites, like the setting `network.secureDns`: `automatic` uses DNS over HTTPS where the provider of the system offers it, `secure` only with the services of `DnsOverHttpsTemplates`, `off` never. `secure` without a service works like `automatic`. As a sensitive policy, it applies only from machine-wide mandatory sources.
+- `DnsOverHttpsMode` (`off`, `automatic` or `secure`): how the browser looks up the addresses of sites, like the setting `network.secureDns`: `automatic` uses DNS over HTTPS with the services of `DnsOverHttpsTemplates` or, without them, where the provider of the system offers it, `secure` only with the services of `DnsOverHttpsTemplates`, `off` never. `secure` without a service works like `automatic`. As a sensitive policy, it applies only from machine-wide mandatory sources.
 - `DnsOverHttpsTemplates` (string): the addresses of the DNS over HTTPS services, `https://` URI templates separated by spaces, such as `https://dns.example/dns-query{?dns}`, like the setting `network.secureDnsTemplates`. A sensitive policy too.
 - `DefaultSearchProviderSearchURL`: the search address of the address bar and the new tab page; as a sensitive policy it applies only from machine-wide mandatory sources.
 

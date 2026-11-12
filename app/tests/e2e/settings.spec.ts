@@ -208,18 +208,68 @@ test('opens a setting from its link and marks the section of the page in the nav
   await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
 });
 
+test('marks the section in view, also below its heading and at the end of the page', async () => {
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await address.fill('app://settings/#privacy.httpsFirst');
+  await address.press('Enter');
+  const page = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(page.getByRole('switch', { name: 'Always use secure connections' })).toBeFocused();
+  // The link scrolled past the heading of the section, which is still the one in view.
+  await expect(page.getByRole('heading', { name: 'Privacy' })).not.toBeInViewport();
+  const sections = page.getByRole('navigation', { name: 'Sections' });
+  const marked = (name: string) =>
+    expect(sections.getByRole('button', { name, exact: true })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+  await marked('Privacy');
+  // The last section is short; at the end of the page it is the one in view.
+  await page.mouse.wheel(0, 50_000);
+  await marked('Setup');
+  await page.mouse.wheel(0, -50_000);
+  await marked('Appearance');
+  // A section that the navigation shows stays marked, also when it cannot reach the top.
+  await sections.getByRole('button', { name: 'Default browser' }).click();
+  await marked('Default browser');
+});
+
 test('shows the changed settings and resets one or all of them', async () => {
   await browser.close();
+  const mac = process.platform === 'darwin';
   browser = await launch([], {
-    settings: { 'tabs.position': 'left', 'appearance.density': 'compact' },
+    settings: {
+      'tabs.position': 'left',
+      'appearance.density': 'compact',
+      'keys.shortcuts': { 'tab.new': [mac ? 'Shift+Cmd+K' : 'Ctrl+Shift+K'] },
+      'network.secureDns': 'secure',
+      'network.secureDnsTemplates': 'https://dns.quad9.net/dns-query',
+      // Pages to open at start stay changed while the browser restores its last session.
+      'startup.urls': ['https://example.com/'],
+    },
   });
   const page = await openSettings();
   await page.getByRole('button', { name: 'Show changed settings' }).click();
   await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'Density' })).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+  // A shortcut of one's own is a changed setting too.
+  await expect(page.getByRole('button', { name: 'Change the shortcut of New tab' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Change the shortcut of New window' }),
+  ).toBeHidden();
   await page.getByRole('button', { name: 'Reset Tabs' }).click();
   await expect(page.getByRole('radiogroup', { name: 'Tabs' })).toBeHidden();
+  // Secure DNS resets with the address of its service.
+  const dns = page.getByRole('combobox', { name: 'Use secure DNS' });
+  await expect(dns).toHaveValue('https://dns.quad9.net/dns-query');
+  await page.getByRole('button', { name: 'Reset Use secure DNS' }).click();
+  await expect(dns).toBeHidden();
+  // A section of the navigation shows also while only changed settings show.
+  const sections = page.getByRole('navigation', { name: 'Sections' });
+  await sections.getByRole('button', { name: 'Privacy' }).click();
+  await expect(page.getByRole('heading', { name: 'Privacy' })).toBeInViewport();
+  await expect(dns).toHaveValue('automatic');
+  await page.getByRole('button', { name: 'Show changed settings' }).click();
   await page.getByRole('button', { name: 'Reset all settings…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Reset all' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'No setting differs' })).toHaveText(
@@ -228,17 +278,27 @@ test('shows the changed settings and resets one or all of them', async () => {
   await page.getByRole('button', { name: 'Show changed settings' }).click();
   await expect(page.getByRole('radio', { name: 'Top' })).toBeChecked();
   await expect(page.getByRole('radio', { name: 'Normal' })).toBeChecked();
+  await expect(page.locator('[data-command="tab.new"] kbd')).toHaveText([mac ? '⌘T' : 'Ctrl+T']);
+  // The pages to open, which no row showed, are back to none.
+  await page.getByRole('radio', { name: 'Specific pages' }).check();
+  await expect(page.getByText('None yet. Without pages, the browser starts')).toBeVisible();
 });
 
 test('exports the settings to a file and imports them again', async () => {
   const folder = mkdtempSync(join(tmpdir(), 'settings-file-'));
   const file = join(folder, 'settings.json');
   try {
+    const page = await openSettings();
+    // The folder of downloads belongs to this computer, so the file leaves it out.
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+    }, folder);
+    await page.getByRole('button', { name: 'Change…' }).click();
+    await expect(page.getByText(folder, { exact: true })).toBeVisible();
     await browser.main.evaluate(({ dialog }, path) => {
       dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
     }, file);
-    const page = await openSettings();
     await page.getByRole('radio', { name: 'Left' }).check();
     await page.getByRole('button', { name: 'Export settings…' }).click();
     await expect
@@ -249,7 +309,11 @@ test('exports the settings to a file and imports them again', async () => {
           return undefined;
         }
       })
-      .toEqual({ $schemaVersion: 1, settings: { 'tabs.position': 'left' } });
+      .toEqual({
+        $schemaVersion: 1,
+        system: process.platform === 'darwin' ? 'macos' : 'pc',
+        settings: { 'tabs.position': 'left' },
+      });
     await page.getByRole('radio', { name: 'Top' }).check();
     await page.getByRole('button', { name: 'Import settings…' }).click();
     await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
@@ -261,9 +325,45 @@ test('exports the settings to a file and imports them again', async () => {
     await page.getByRole('button', { name: 'Import settings…' }).click();
     await expect(page.getByRole('alert')).toHaveText('This file holds no settings of Astela.');
     await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
+    // The background image of another profile is not in this one, and the shortcuts of
+    // another system would mean other keys, so both stay out.
+    const mac = process.platform === 'darwin';
+    writeFileSync(
+      file,
+      JSON.stringify({
+        $schemaVersion: 1,
+        system: mac ? 'pc' : 'macos',
+        settings: {
+          'tabs.position': 'right',
+          'newtab.background': { kind: 'image', file: 'background-0123456789abcdef.png' },
+          'keys.shortcuts': { 'tab.new': [mac ? 'Ctrl+Shift+K' : 'Shift+Cmd+K'] },
+        },
+      }),
+    );
+    // The page imports at most twice a second.
+    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: 'Import settings…' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Imported settings' })).toHaveText(
+      'Imported settings: 1. Skipped, as your organization manages them or they are not valid here: 2',
+    );
+    await expect(page.getByRole('radio', { name: 'Right' })).toBeChecked();
+    await expect(
+      page
+        .getByRole('radiogroup', { name: 'Background', exact: true })
+        .getByRole('radio', { name: 'None' }),
+    ).toBeChecked();
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test('shows English for a language without a translation, also on a German system', async () => {
+  await browser.close();
+  browser = await launch(['--lang=de'], { settings: { 'i18n.language': 'fr' } });
+  const page = await openSettings();
+  // The menus and dialogs are English for French; the pages are too, not German.
+  await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Language of the browser' })).toHaveValue('fr');
 });
 
 test('switches the language of the browser with a restart that brings the tabs back', async () => {
@@ -664,6 +764,22 @@ test('applies the secure DNS provider that is chosen, and turns it off', async (
   await expect.poll(lastCall).toEqual({ secureDnsMode: 'off', secureDnsServers: [] });
 });
 
+test('starts with the provider of the system when an address for secure DNS is not valid', async () => {
+  await browser.close();
+  // Chromium refuses such an address; it once stopped every start of the browser.
+  browser = await launch([], {
+    settings: { 'network.secureDnsTemplates': 'https://dns.example/dns-query{?dns' },
+  });
+  const page = await openSettings();
+  const dns = page.getByRole('combobox', { name: 'Use secure DNS' });
+  await expect(dns).toHaveValue('automatic');
+  // The page refuses an address with the variable in its host, too.
+  await dns.selectOption({ label: 'Other service' });
+  const service = page.getByRole('textbox', { name: 'Address of the DNS over HTTPS service' });
+  await service.fill('https://{dns}.example/');
+  await service.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Enter the https address');
+});
 test('changes the shortcut of a command, keeps conflicts and text keys out, and resets it', async () => {
   const page = await openSettings();
   const mac = process.platform === 'darwin';
@@ -698,11 +814,37 @@ test('changes the shortcut of a command, keeps conflicts and text keys out, and 
   await change.click();
   await expect(change).toHaveText('Press keys…');
   await pressNative(browser, 'K', [], 'app://settings');
-  await expect(page.getByRole('alert')).toContainText('This key types text');
+  await expect(page.getByRole('alert')).toContainText('This key types or edits text');
+  // So is a key that edits text in pages, such as paste.
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'V', ['primary'], 'app://settings');
+  await expect(page.getByRole('alert')).toContainText('This key types or edits text');
   await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
   await page.getByRole('button', { name: 'Reset the shortcut of New tab' }).click();
   await expect.poll(() => keys('tab.new')).toEqual([mac ? '⌘T' : 'Ctrl+T']);
   await expect.poll(() => keys('bookmark.toggle')).toEqual([mac ? '⌘D' : 'Ctrl+D']);
+  // A shortcut of one's own moves too, also from a command further down the list.
+  const downloads = page.getByRole('button', { name: 'Change the shortcut of Open the downloads' });
+  await downloads.click();
+  await expect(downloads).toHaveText('Press keys…');
+  await pressNative(browser, 'Y', ['primary', 'shift'], 'app://settings');
+  const own = mac ? '⇧⌘Y' : 'Ctrl+Shift+Y';
+  await expect.poll(() => keys('downloads.open')).toEqual([own]);
+  await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'Y', ['primary', 'shift'], 'app://settings');
+  await page
+    .getByRole('alert')
+    .filter({ hasText: 'is the shortcut of' })
+    .getByRole('button', { name: 'Use it for New tab' })
+    .click();
+  await expect.poll(() => keys('tab.new')).toEqual([own]);
+  await expect.poll(() => keys('downloads.open')).toEqual([]);
+  const count = await tabs();
+  await pressNative(browser, 'Y', ['primary', 'shift']);
+  await expect.poll(tabs).toBe(count + 1);
 });
 
 /** The background color that the shell paints with. */
@@ -717,6 +859,14 @@ test('colors every view with the theme and the custom colors, and imports a them
   const before = await surface();
   await page.getByRole('radio', { name: 'Forest' }).check();
   await expect.poll(surface).toBe('oklch(96.8% 0.01 155)');
+  // Open windows take the theme's color too, which shows where no page has painted yet.
+  await expect
+    .poll(() =>
+      browser.main.evaluate(({ BaseWindow }) =>
+        BaseWindow.getAllWindows()[0]?.getBackgroundColor().toLowerCase(),
+      ),
+    )
+    .toBe('#eff7f1');
   await page.getByRole('radio', { name: 'Custom' }).check();
   await expect.poll(surface).toBe(before);
   const background = page.getByRole('textbox', {
@@ -738,6 +888,10 @@ test('colors every view with the theme and the custom colors, and imports a them
   await expect(page.getByRole('alert').filter({ hasText: 'Text on Background' })).toContainText(
     'has a contrast of 1.0:1 in the light mode',
   );
+  // Texts show on the color under the pointer as well, such as the marked section.
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Text on Pointer over a control' }),
+  ).toContainText('in the light mode');
   const folder = mkdtempSync(join(tmpdir(), 'theme-'));
   const path = join(folder, 'theme.json');
   writeFileSync(

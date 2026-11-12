@@ -1,9 +1,10 @@
 import { CustomThemeSetting, NewTabBackgroundSetting, ThemeSetting } from './core-settings.ts';
 import { app, webContents, type Session, type WebContents } from 'electron';
+import { relaunch } from './relaunch.ts';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
-import type { SettingsService } from '../domain/settings/settings-service.ts';
+import type { SettingInspection, SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
 import {
   ChooseDownloadFolder,
@@ -47,6 +48,36 @@ function fromSettingsPage(sender: WebContents): boolean {
 }
 
 /**
+ * What the settings page shows of a setting. A value of the user counts as changed when it
+ * differs from the default, or when the organization recommends a value, which Reset brings
+ * back, also when the user's value is the default.
+ * @param definition - The setting.
+ * @param inspection - Its value and where the value comes from.
+ * @param startValues - Values of the settings that need a restart, as JSON, at this start.
+ */
+export function settingView(
+  definition: SettingDefinition<unknown>,
+  inspection: SettingInspection<unknown>,
+  startValues: ReadonlyMap<string, string>,
+): SettingView {
+  const { value, locked } = inspection;
+  return {
+    key: definition.key,
+    value,
+    locked,
+    changed:
+      !locked &&
+      inspection.userValue !== undefined &&
+      (inspection.recommendedValue !== undefined ||
+        JSON.stringify(inspection.userValue) !== JSON.stringify(definition.default)),
+    recommended: inspection.source === 'policy-recommended',
+    restart:
+      definition.restartRequired === true &&
+      startValues.get(definition.key) !== JSON.stringify(value),
+  };
+}
+
+/**
  * Connects the settings page to the settings: it reads and writes every setting that has a
  * place on the page, and hears about every change, wherever it came from.
  * @param router - IPC router.
@@ -78,23 +109,8 @@ export function connectSettingsPage(
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
   );
-  const view = (definition: SettingDefinition<unknown>): SettingView => {
-    const inspection = settings.inspect(definition);
-    const { value, locked } = inspection;
-    return {
-      key: definition.key,
-      value,
-      locked,
-      changed:
-        !locked &&
-        inspection.userValue !== undefined &&
-        JSON.stringify(inspection.userValue) !== JSON.stringify(definition.default),
-      recommended: inspection.source === 'policy-recommended',
-      restart:
-        definition.restartRequired === true &&
-        startValues.get(definition.key) !== JSON.stringify(value),
-    };
-  };
+  const view = (definition: SettingDefinition<unknown>): SettingView =>
+    settingView(definition, settings.inspect(definition), startValues);
   router.handle(GetSettings, () => ({
     settings: [...shown.values()].map(view),
     accents: accentPresets.map((id) => {
@@ -136,7 +152,7 @@ export function connectSettingsPage(
   router.handle(ImportSettings, async (_request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page imports settings');
     const { importSettings } = await import('./settings-file.ts');
-    return importSettings(sender, shown, settings);
+    return importSettings(sender, shown, settings, newTabFolder);
   });
   router.handle(ChooseDownloadFolder, async (_request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page chooses folders');
@@ -209,7 +225,7 @@ export function connectSettingsPage(
   });
   router.handle(RestartBrowser, (_request, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page restarts the browser');
-    app.relaunch({ args: restartArguments(process.argv.slice(1), process.defaultApp) });
+    relaunch(restartArguments(process.argv.slice(1), process.defaultApp));
     // Quitting saves the session and the settings first, as on every quit.
     app.quit();
     return null;

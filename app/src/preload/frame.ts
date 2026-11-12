@@ -60,11 +60,21 @@ function scoped(script: string): string {
 
 /**
  * Hides cookies from the scripts of an embedded frame of another site, before they run: the
- * browser already sends its requests without cookies.
+ * browser already sends its requests without cookies. Service workers and shared workers
+ * belong to no page, so the browser could not keep their requests apart from those of the
+ * site itself; such a frame starts none, and the ones it started before are removed.
  */
 const cookieGuard = `(() => {
-  Object.defineProperty(Document.prototype, 'cookie', { configurable: false, get: () => '', set: () => {} });
-  if ('cookieStore' in globalThis) Object.defineProperty(globalThis, 'cookieStore', { configurable: false, get: () => undefined });
+  const lock = (target, name, descriptor) => Object.defineProperty(target, name, { configurable: false, ...descriptor });
+  lock(Document.prototype, 'cookie', { get: () => '', set: () => {} });
+  if ('cookieStore' in globalThis) lock(globalThis, 'cookieStore', { get: () => undefined });
+  if ('ServiceWorkerContainer' in globalThis) {
+    lock(ServiceWorkerContainer.prototype, 'register', {
+      value: () => Promise.reject(new DOMException('Embedded frames of other sites cannot start service workers.', 'SecurityError')),
+    });
+    navigator.serviceWorker?.getRegistrations().then((all) => { for (const registration of all) void registration.unregister(); }, () => {});
+  }
+  if ('SharedWorker' in globalThis) lock(globalThis, 'SharedWorker', { value: undefined });
 })();`;
 
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');

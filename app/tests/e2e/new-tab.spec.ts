@@ -110,6 +110,26 @@ test('goes back from a web page to the new tab page and forward again', async ()
   await expect.poll(activeTitle).toBe('New tab');
 });
 
+test('shows the clock in the regional form of the system, such as British English', async () => {
+  await browser.close();
+  // On Linux, the environment names the locale of the system.
+  const british = { LANG: 'en_GB.UTF-8', LANGUAGE: 'en_GB:en', LC_ALL: 'en_GB.UTF-8' };
+  browser = await launch([], { settings: { 'newtab.clock': true }, env: british });
+  const system = await browser.main.evaluate(({ app }) =>
+    app.getSystemLocale().replace(/@.*$/, '').replaceAll('_', '-'),
+  );
+  const page = await newTabPage();
+  await expect(page.locator('#clock')).toHaveText(/\d/);
+  const [shown, expected] = await page.evaluate((tag) => {
+    const clock = document.querySelector('time');
+    const at = new Date(clock?.dateTime ?? '');
+    return [clock?.textContent, new Intl.DateTimeFormat(tag, { timeStyle: 'short' }).format(at)];
+  }, system);
+  expect(shown).toBe(expected);
+  // British English writes the time with 24 hours, unlike the English of the United States.
+  if (process.platform === 'linux') expect(shown).toMatch(/^\d{2}:\d{2}$/);
+});
+
 test('shows the search field, a clock and shortcuts as the settings say', async () => {
   await browser.close();
   const url = `${server.origin}/index.html`;
@@ -190,6 +210,13 @@ test('paints the background of the settings: a color and an image', async () => 
   await address.fill('app://settings');
   await address.press('Enter');
   const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  // Without a chosen image, the background stays as it was, and the page shows it so.
+  await browser.main.evaluate(({ dialog }) => {
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: true, filePaths: [] });
+  });
+  await settings.getByRole('radio', { name: 'Image' }).click();
+  await expect(settings.getByRole('radio', { name: 'Color', exact: true })).toBeChecked();
+  await expect(settings.getByRole('radio', { name: 'Image' })).not.toBeChecked();
   const image = fileURLToPath(new URL('./fixtures/image.png', import.meta.url));
   await browser.main.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });

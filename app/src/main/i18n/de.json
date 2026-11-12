@@ -26,7 +26,7 @@
   "menu.view": "&Darstellung",
   "menu.reload": "Seite &neu laden",
   "menu.reloadHard": "Ohne &Cache neu laden",
-  "menu.actualSize": "&Originalgröße",
+  "menu.actualSize": "Zoom &zurücksetzen",
   "menu.zoomIn": "&Vergrößern",
   "menu.zoomOut": "Ver&kleinern",
   "menu.fullScreen": "Voll&bild",

@@ -20,6 +20,19 @@ export function contrastRatio(a: Oklch, b: Oklch): number {
 }
 
 /**
+ * A contrast ratio as people read it in a language, with one decimal, such as `4.5` in
+ * English and `4,5` in German.
+ * @param ratio - The contrast ratio.
+ * @param language - The language of the text, such as `de`.
+ */
+export function formatRatio(ratio: number, language: string | undefined): string {
+  return new Intl.NumberFormat(language, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(ratio);
+}
+
+/**
  * Reads a `#rrggbb` color.
  * @param hex - The color; anything else reads as black.
  */

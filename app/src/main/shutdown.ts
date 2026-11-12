@@ -7,6 +7,7 @@ import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { JsonFileSessionStore } from '../platform/node/session-store.ts';
 import type { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
 import type { UpdateService } from '../domain/updates/update-service.ts';
+import { relaunching } from './relaunch.ts';
 
 /** What the browser keeps and closes when it quits. */
 export interface ShutdownDependencies {
@@ -47,7 +48,8 @@ export async function shutDown(dependencies: ShutdownDependencies): Promise<void
     logger.error('A window did not close cleanly', error);
   }
   dependencies.data.dispose();
-  dependencies.updates?.installOnExit();
+  // An installer would close the browser that a restart starts, so the update waits.
+  if (!relaunching()) dependencies.updates?.installOnExit();
   dependencies.updates?.dispose();
   logger.info('Shutdown complete');
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isLanguageCode, languageArguments, languageOfArguments } from '../ui-language.ts';
+import {
+  isLanguageCode,
+  languageArguments,
+  languageOfArguments,
+  localeArguments,
+  localeOfArguments,
+} from '../ui-language.ts';
 
 describe('the language of the browser', () => {
   it('gives the views a chosen language and nothing when it follows the system', () => {
@@ -14,5 +20,16 @@ describe('the language of the browser', () => {
     expect(languageOfArguments(['--language=de-DE'])).toBeUndefined();
     expect(languageOfArguments(['--language="><x'])).toBeUndefined();
     expect(languageOfArguments([])).toBeUndefined();
+  });
+
+  it('gives the views the locale of the system as a language tag', () => {
+    expect(localeArguments('en-GB')).toEqual(['--system-locale=en-GB']);
+    expect(localeArguments('de_AT')).toEqual(['--system-locale=de-AT']);
+    expect(localeArguments('en-US@posix')).toEqual(['--system-locale=en-US']);
+    expect(localeArguments('')).toEqual([]);
+    expect(localeArguments('a b')).toEqual([]);
+    expect(localeOfArguments(['--system-locale=en-GB'])).toBe('en-GB');
+    expect(localeOfArguments(['--system-locale=<x>'])).toBeUndefined();
+    expect(localeOfArguments([])).toBeUndefined();
   });
 });

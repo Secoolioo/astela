@@ -20,7 +20,8 @@ export interface ClearRequest {
 
 /**
  * Clears browsing data of regular windows: the history of the time range, and all cookies,
- * storage and the cache of web pages, which Chromium clears only as a whole.
+ * storage and the cache of web pages, which Chromium clears only as a whole. Sign-ins with
+ * HTTP authentication go with the cookies, as they would keep a site signed in.
  * @param request - What to clear, and since when.
  * @param data - The data service, which keeps the history.
  * @param web - The session of web pages.
@@ -46,6 +47,7 @@ export async function clearBrowsingData(
         'cachestorage',
       ],
     });
+    await web.clearAuthCache();
     await web.cookies.flushStore();
   }
   if (request.cache) await web.clearCache();

@@ -196,10 +196,27 @@ export function shortcutProblem(
   }
   // Function keys and the browser keys of some keyboards type nothing.
   if (/^(?:F(?:[1-9]|1\d|2[0-4])|Browser[A-Za-z]+)$/.test(key)) return undefined;
+  // The browser sees keys before the page, so keys that edit text would edit it nowhere.
+  if ((mac ? macEditing : pcEditing).test(shortcut)) return 'text';
   if (mac) return control !== undefined || command !== undefined ? undefined : 'text';
   if (control !== undefined && alt !== undefined) return 'altgr';
   return control !== undefined || alt !== undefined ? undefined : 'text';
 }
+
+/**
+ * Keys that edit text or move in it on macOS: copy, paste, undo, redo and select all, the
+ * arrows with Command, also with Shift to select, deletion with Command, and the bindings
+ * with Control that text fields of macOS know.
+ */
+const macEditing =
+  /^(?:(?:Shift\+)?Cmd\+(?:Z|Arrow(?:Left|Right|Up|Down))|Cmd\+(?:[ACVX]|Backspace|Delete)|Ctrl\+[ABDEFHKNOPTVY])$/;
+
+/**
+ * Keys that edit text or move in it on Windows and Linux: copy, paste, undo, redo and select
+ * all, deletion by words, and the arrows, Home and End by words, also with Shift to select.
+ */
+const pcEditing =
+  /^Ctrl\+(?:(?:Shift\+)?(?:[VZ]|Home|End|Arrow(?:Left|Right|Up|Down))|[ACXY]|Insert|Backspace|Delete)$/;
 
 /** Shortcuts that macOS itself uses for the app or the system. */
 const macSystem = new Set([
@@ -210,8 +227,8 @@ const macSystem = new Set([
   'Cmd+Tab',
   'Shift+Cmd+Tab',
   'Cmd+`',
-  'Cmd+ ',
-  'Ctrl+ ',
+  'Cmd+Space',
+  'Ctrl+Space',
   'Alt+Cmd+Escape',
   'Ctrl+Cmd+Q',
   'Shift+Cmd+3',
@@ -226,36 +243,69 @@ const pcSystem = new Set([
   'Alt+Shift+Tab',
   'Alt+Escape',
   'Ctrl+Escape',
-  'Alt+ ',
+  'Alt+Space',
 ]);
 
-const keyNames: Readonly<Record<string, string>> = {
+/** The names of the modifiers and of keys without a character, as a language writes them. */
+export interface KeyNames {
+  readonly ctrl: string;
+  readonly alt: string;
+  readonly shift: string;
+  readonly win: string;
+  /** Names of keys, such as `PageDown`, by the name of the key in the tables. */
+  readonly keys: Readonly<Record<string, string>>;
+}
+
+/** The names of keys in English, as Windows and Linux write them. */
+export const englishKeyNames: KeyNames = {
+  ctrl: 'Ctrl',
+  alt: 'Alt',
+  shift: 'Shift',
+  win: 'Win',
+  keys: {
+    PageUp: 'Page Up',
+    PageDown: 'Page Down',
+    Home: 'Home',
+    End: 'End',
+    Insert: 'Insert',
+    Delete: 'Delete',
+    Backspace: 'Backspace',
+    Space: 'Space',
+    Escape: 'Esc',
+    BrowserBack: 'Back',
+    BrowserForward: 'Forward',
+    '+': 'Plus',
+  },
+};
+
+const arrows: Readonly<Record<string, string>> = {
   ArrowLeft: '←',
   ArrowRight: '→',
   ArrowUp: '↑',
   ArrowDown: '↓',
-  PageUp: 'Page Up',
-  PageDown: 'Page Down',
-  BrowserBack: 'Back',
-  BrowserForward: 'Forward',
-  Escape: 'Esc',
-  ' ': 'Space',
 };
 
 /**
- * A shortcut as the system writes it: `⇧⌘T` on macOS, `Ctrl+Shift+T` elsewhere.
+ * A shortcut as the system writes it: `⇧⌘T` on macOS, `Ctrl+Shift+T` elsewhere, with the
+ * names of keys in the language of the page, such as `Strg+Umschalt+Bild ab` in German.
  * @param shortcut - The key press in the notation of the tables.
  * @param mac - Whether the browser runs on macOS.
+ * @param names - The names of keys; English by default.
  */
-export function displayShortcut(shortcut: string, mac: boolean): string {
+export function displayShortcut(
+  shortcut: string,
+  mac: boolean,
+  names: KeyNames = englishKeyNames,
+): string {
   const match = /^(Ctrl\+)?(Alt\+)?(Shift\+)?(Cmd\+)?(.+)$/.exec(shortcut);
   if (match === null) return shortcut;
   const [, control, alt, shift, command, key = ''] = match;
-  const name = keyNames[key] ?? (key === '+' && !mac ? 'Plus' : key);
+  // macOS writes + itself; elsewhere it would read as one more separator.
+  const name = arrows[key] ?? (key === '+' && mac ? '+' : (names.keys[key] ?? key));
   if (mac) {
     return `${control === undefined ? '' : '⌃'}${alt === undefined ? '' : '⌥'}${shift === undefined ? '' : '⇧'}${command === undefined ? '' : '⌘'}${name}`;
   }
-  return [control && 'Ctrl', alt && 'Alt', shift && 'Shift', command && 'Win', name]
+  return [control && names.ctrl, alt && names.alt, shift && names.shift, command && names.win, name]
     .filter((part) => part !== undefined)
     .join('+');
 }
@@ -266,7 +316,6 @@ const acceleratorKeys: Readonly<Record<string, string>> = {
   ArrowUp: 'Up',
   ArrowDown: 'Down',
   '+': 'Plus',
-  ' ': 'Space',
   Escape: 'Esc',
 };
 

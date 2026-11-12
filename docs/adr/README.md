@@ -83,4 +83,5 @@ Each rejected option as a bullet point with a short reason.
 | [0041](0041-private-windows-with-a-session-in-memory.md)               | Private windows with a session in memory                |
 | [0042](0042-density-and-text-size-scale-the-whole-interface.md)        | Density and text size scale the whole interface         |
 | [0043](0043-themes-as-palettes-edited-on-the-settings-page.md)         | Themes as palettes, edited on the settings page         |
+| [0044](0044-third-party-cookies-blocked-by-chromium.md)                | Third-party cookies blocked by Chromium                 |
 | [0045](0045-minified-main-bundle-with-names-kept.md)                   | A minified main bundle that keeps names                 |
