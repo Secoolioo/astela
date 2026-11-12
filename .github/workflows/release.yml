@@ -161,7 +161,7 @@ jobs:
         env:
           E2E_APP: ${{ runner.temp }}/e2e/linux-unpacked/astela
         run: |
-          tools/ci/apt-install.sh xvfb imagemagick
+          ../tools/ci/apt-install.sh xvfb imagemagick
           # The unpacked test build has no setuid sandbox helper; allow user namespaces instead.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           xvfb-run -a -s '-screen 0 3000x2000x24 -nocursor' \
