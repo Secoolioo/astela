@@ -336,7 +336,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   state(): ShellState {
     return {
       tabs: this.tabs.all.map(
-        ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem, zoom, ...tab }) => ({
+        ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem, zoom }) => ({
           id,
           title,
           url,
@@ -348,9 +348,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           bookmarked: this.options.isBookmarked?.(url) ?? false,
           problem,
           zoom,
-          favicon: tab.favicon,
-          audible: tab.audible,
-          muted: tab.muted,
         }),
       ),
       activeTabId: this.tabs.active?.id ?? null,
@@ -1062,18 +1059,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.layout();
       });
     }
-    // The count of blocked requests and the icon belong to one page.
+    // The count of blocked requests belongs to one page.
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
-        this.tabs.update(id, { blocked: 0, favicon: null });
+        this.tabs.update(id, { blocked: 0 });
       }
     });
-    contents.on('page-favicon-updated', (_event, urls) => void this.loadFavicon(id, view, urls));
-    contents.on('audio-state-changed', ({ audible }) => {
-      if (this.entries.get(id)?.view === view) this.tabs.update(id, { audible });
-    });
-    // A tab keeps its sound muted when it changes between web pages and the browser's own.
-    contents.setAudioMuted(this.tabs.all.find((tab) => tab.id === id)?.muted ?? false);
     contents.on('did-start-loading', sync);
     contents.on('did-stop-loading', sync);
     contents.on('did-navigate', sync);
@@ -1092,28 +1083,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private setPageFullScreen(on: boolean): void {
     if (process.platform === 'darwin') this.window.setSimpleFullScreen(on);
     else this.window.setFullScreen(on);
-  }
-
-  /**
-   * Mutes the sound of a tab, or turns it on again.
-   * @param id - The tab.
-   * @param muted - Whether the sound is muted.
-   */
-  setMuted(id: TabId, muted: boolean): void {
-    const contents = this.entries.get(id)?.view.webContents;
-    if (contents !== undefined && !contents.isDestroyed()) contents.setAudioMuted(muted);
-    this.tabs.update(id, { muted });
-  }
-
-  /** Loads the icon of a tab's page, which the tab shows unless its view changed meanwhile. */
-  private async loadFavicon(id: TabId, view: WebContentsView, urls: string[]): Promise<void> {
-    const url = urls.find((candidate) => /^(?:https?:|data:image\/)/i.test(candidate));
-    if (url === undefined) return;
-    const { favicons } = await import('./favicons.ts');
-    const key = await favicons.load(view.webContents.session, url);
-    if (key !== undefined && this.entries.get(id)?.view === view) {
-      this.tabs.update(id, { favicon: key });
-    }
   }
 
   /** Reports the state of a tab's view, unless the view was replaced meanwhile. */

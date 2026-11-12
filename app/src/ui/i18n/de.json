@@ -4,8 +4,6 @@
   "shell.closeTab": "Tab schließen",
   "shell.untitled": "Neuer Tab",
   "shell.loading": "Wird geladen",
-  "shell.muteTab": "Tab stummschalten",
-  "shell.unmuteTab": "Ton des Tabs einschalten",
   "shell.back": "Zurück",
   "shell.forward": "Vorwärts",
   "shell.reload": "Neu laden",

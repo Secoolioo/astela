@@ -33,12 +33,6 @@ export interface Tab {
   readonly problem: TabProblem | null;
   /** The zoom factor of the page, 1 for 100 %. */
   readonly zoom: number;
-  /** The icon of the page as a `data:` address, or `null` while it has none. */
-  readonly favicon: string | null;
-  /** Whether the page plays sound. */
-  readonly audible: boolean;
-  /** Whether the sound of the tab is muted. */
-  readonly muted: boolean;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -91,9 +85,6 @@ const tabFields = [
   'blocked',
   'problem',
   'zoom',
-  'favicon',
-  'audible',
-  'muted',
 ] as const;
 
 /** How many closed tabs can be reopened. */
@@ -160,9 +151,6 @@ export class TabService implements Disposable {
       blocked: 0,
       problem: null,
       zoom: 1,
-      favicon: null,
-      audible: false,
-      muted: false,
     };
     const activate = options.activate ?? true;
     this.tabs.splice(this.insertionIndex(activate), 0, tab);
