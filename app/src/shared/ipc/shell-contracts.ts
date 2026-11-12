@@ -187,7 +187,7 @@ export const ShellStateChanged = defineEvent({
 /** Asks the shell to run a UI command, such as focusing the address bar after a shortcut. */
 export const ShellCommand = defineEvent({
   channel: 'shell.command',
-  payload: v.picklist(['omnibox.focus', 'find.focus', 'downloads.open']),
+  payload: v.picklist(['omnibox.focus', 'omnibox.done', 'find.focus', 'downloads.open']),
   capability: 'shell',
 });
 

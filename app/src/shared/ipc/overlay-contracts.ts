@@ -93,10 +93,36 @@ const DownloadsPanel = v.strictObject({
   ),
 });
 
+/**
+ * The suggestions of the address bar below it: what Enter would do, open tabs, bookmarks and
+ * visited pages, and the one that the arrow keys chose, or -1.
+ */
+const SuggestionList = v.strictObject({
+  kind: v.literal('suggestions'),
+  items: v.pipe(
+    v.array(
+      v.strictObject({
+        kind: v.picklist(['search', 'url', 'tab', 'bookmark', 'history']),
+        title: v.pipe(v.string(), v.maxLength(1024)),
+        url: v.pipe(v.string(), v.maxLength(8192)),
+      }),
+    ),
+    v.maxLength(8),
+  ),
+  selected: v.pipe(v.number(), v.integer(), v.minValue(-1), v.maxValue(7)),
+});
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
 export const OverlayContent = v.nullable(
-  v.union([ShieldPopover, LoginPrompt, PermissionPrompt, ScreenPicker, DownloadsPanel]),
+  v.union([
+    ShieldPopover,
+    LoginPrompt,
+    PermissionPrompt,
+    ScreenPicker,
+    DownloadsPanel,
+    SuggestionList,
+  ]),
 );
 
 /** The content of an open overlay. */
@@ -121,6 +147,14 @@ export const OverlayChanged = defineEvent({
 export const CloseOverlay = defineRequest({
   channel: 'overlay.close',
   request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Opens a suggestion of the address bar that was clicked, by its place in the list. */
+export const ChooseSuggestion = defineRequest({
+  channel: 'overlay.chooseSuggestion',
+  request: v.strictObject({ index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(7)) }),
   response: v.null(),
   capability: 'overlay',
 });

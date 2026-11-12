@@ -516,5 +516,8 @@
   "key.escape": "Esc",
   "key.back": "Back",
   "key.forward": "Forward",
-  "key.plus": "Plus"
+  "key.plus": "Plus",
+  "overlay.suggestions": "Suggestions",
+  "overlay.suggestion.search": "Search",
+  "overlay.suggestion.tab": "Switch to this tab"
 }

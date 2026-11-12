@@ -15,6 +15,10 @@ export const shellLaterChannels = [
   'tabs.setMuted',
   'tabs.move',
   'tabs.openMenu',
+  'omnibox.suggest',
+  'omnibox.select',
+  'omnibox.accept',
+  'omnibox.close',
 ] as const;
 
 /**

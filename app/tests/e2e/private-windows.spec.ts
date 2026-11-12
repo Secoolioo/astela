@@ -85,6 +85,30 @@ async function openIn(browser: Browser, shell: Page, path: string): Promise<Page
   return waitForPage(browser, (url) => url === `${origin}${path}`);
 }
 
+/**
+ * The overlay that asks a question. Each window has an overlay of its own, and the address
+ * bar of another window may have opened one for its suggestions.
+ */
+async function overlayWithQuestion(browser: Browser): Promise<Page> {
+  let found: Page | undefined;
+  await expect
+    .poll(async () => {
+      for (const page of pagesAt(browser, 'app://overlay')) {
+        if (
+          (await page
+            .getByRole('dialog')
+            .count()
+            .catch(() => 0)) > 0
+        )
+          found = page;
+      }
+      return found !== undefined;
+    })
+    .toBe(true);
+  if (found === undefined) throw new Error('No overlay asks a question');
+  return found;
+}
+
 /** Closes every window but the first, as their close buttons do, and waits until they went. */
 async function closeOthers(browser: Browser): Promise<void> {
   await browser.main.evaluate(({ BaseWindow }) => {
@@ -92,7 +116,27 @@ async function closeOthers(browser: Browser): Promise<void> {
   });
   await expect.poll(() => windowCount(browser)).toBe(1);
   await expect.poll(() => pagesAt(browser, origin).length).toBe(0);
-  await expect.poll(() => pagesAt(browser, 'app://overlay').length).toBe(0);
+  // The overlays of the private windows went with them; the first window may have its own.
+  const privateOverlays = (): Promise<number> =>
+    browser.main.evaluate(async ({ webContents }) => {
+      const overlays = webContents
+        .getAllWebContents()
+        .filter(
+          (contents) => !contents.isDestroyed() && contents.getURL().startsWith('app://overlay'),
+        );
+      const kinds = await Promise.all(
+        overlays.map((contents) =>
+          Promise.race([
+            contents
+              .executeJavaScript("document.documentElement.hasAttribute('data-private')")
+              .catch(() => false),
+            new Promise((done) => setTimeout(() => done(false), 1000)),
+          ]),
+        ),
+      );
+      return kinds.filter((kind) => kind === true).length;
+    });
+  await expect.poll(privateOverlays).toBe(0);
 }
 
 test('keeps no history, session, cookies or answers of a private window', async () => {
@@ -125,7 +169,7 @@ test('keeps no history, session, cookies or answers of a private window', async 
       ).toEqual({ inMemory: true, regular: false });
       // A site asks in a private window as well, and the answer holds while it is open.
       const asked = page.evaluate(() => Notification.requestPermission());
-      const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+      const overlay = await overlayWithQuestion(browser);
       await overlay.getByRole('dialog').getByRole('button', { name: 'Allow' }).click();
       expect(await asked).toBe('granted');
       expect(await page.evaluate(() => Notification.requestPermission())).toBe('granted');
@@ -144,9 +188,7 @@ test('keeps no history, session, cookies or answers of a private window', async 
       const fresh = await openIn(browser, again, '/private');
       expect(await fresh.evaluate(() => document.cookie)).toBe('');
       const askedAgain = fresh.evaluate(() => Notification.requestPermission());
-      const question = (
-        await waitForPage(browser, (url) => url.startsWith('app://overlay'))
-      ).getByRole('dialog');
+      const question = (await overlayWithQuestion(browser)).getByRole('dialog');
       await question.getByRole('button', { name: 'Block' }).click();
       expect(await askedAgain).toBe('denied');
     } finally {

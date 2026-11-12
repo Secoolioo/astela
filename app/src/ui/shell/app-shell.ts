@@ -629,6 +629,17 @@ export class AppShell extends LitElement {
   declare state: ShellState;
   /** What was typed in the address bar of each tab and not yet entered. */
   declare drafts: ReadonlyMap<string, string>;
+  /** Whether suggestions for what was typed may be showing. */
+  private suggesting = false;
+  /** The suggestion that the arrow keys marked, or -1. */
+  private suggestion = -1;
+  /** The address bar that suggestions were asked for last, which a click on one leaves. */
+  private suggestionsFor: AddressOwner = null;
+  /**
+   * The address bar of a suggestion chosen with Enter, until the browser opened it. A click on
+   * New tab may give the address bar to the new tab meanwhile.
+   */
+  private chosenFor: AddressOwner | undefined;
   declare addressFocused: boolean;
   /** Whether the focused address bar had all of its text selected before an update. */
   private addressSelected = false;
@@ -711,6 +722,7 @@ export class AppShell extends LitElement {
       bridge.on('shell.command', (command) => {
         if (command === 'find.focus') this.focusFind();
         else if (command === 'downloads.open') this.openDownloadsAtButton();
+        else if (command === 'omnibox.done') this.leaveAddress();
         else this.focusAddress();
       }),
     );
@@ -789,12 +801,15 @@ export class AppShell extends LitElement {
     const active = this.active;
     if (changed.has('state') && active?.id !== this.focusedTabId) {
       this.focusedTabId = active?.id;
-      this.renderRoot
-        .querySelector('[role="tab"][aria-selected="true"]')
-        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const keepsInput =
         (this.opening !== undefined && tookInput(this.opening)) ||
         (active !== undefined && active.id === this.openedWithInput);
+      // Suggestions belong to what was typed in the tab that was active. Those for what was
+      // typed for a tab that the New tab button opens stay while that tab comes up.
+      if (!keepsInput) this.closeSuggestions();
+      this.renderRoot
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       if (active?.url === newTabUrl && !keepsInput) {
         this.focusAddress();
       }
@@ -1288,6 +1303,31 @@ export class AppShell extends LitElement {
     return this.opening === undefined ? this.active : undefined;
   }
 
+  /** Whose address bar it is: the tab that the New tab button opens, or the active tab. */
+  private get addressOwner(): AddressOwner {
+    return this.opening ?? this.state.activeTabId;
+  }
+
+  /**
+   * Whose address bar of earlier it is now: a tab that the New tab button opened is a tab like
+   * the others once the shell has it.
+   */
+  private ownerNow(owner: AddressOwner): AddressOwner {
+    return isOpening(owner) && owner !== this.opening && owner.id !== undefined ? owner.id : owner;
+  }
+
+  /** Forgets what was typed in the address bar of a tab, as its input opened. */
+  private dropInput(owner: AddressOwner): void {
+    if (isOpening(owner)) {
+      owner.draft = undefined;
+      this.requestUpdate();
+    } else if (owner !== null && this.drafts.has(owner)) {
+      const drafts = new Map(this.drafts);
+      drafts.delete(owner);
+      this.drafts = drafts;
+    }
+  }
+
   /**
    * Gives the tab that the New tab button opens what was typed for it, once the browser
    * named the tab and the state has it. Only the answer names the tab: a state can also make
@@ -1350,11 +1390,16 @@ export class AppShell extends LitElement {
             this.addressFocused = true;
             inputOf(e)?.select();
           }}
-          @input=${(e: InputEvent) => this.setDraft(inputOf(e)?.value)}
+          @input=${(e: InputEvent) => {
+            const text = inputOf(e)?.value;
+            this.setDraft(text);
+            this.suggest(text ?? '');
+          }}
           @keydown=${this.onAddressKey}
           @blur=${() => {
             this.addressFocused = false;
             this.setDraft(undefined);
+            this.closeSuggestions();
           }}
         />
         ${
@@ -1866,14 +1911,40 @@ export class AppShell extends LitElement {
     if (input === undefined) {
       return;
     }
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && this.suggesting) {
+      event.preventDefault();
+      void this.bridge
+        ?.invoke('omnibox.select', { step: event.key === 'ArrowDown' ? 1 : -1 })
+        .then((index) => (this.suggestion = index));
+      return;
+    }
     if (event.key === 'Escape') {
+      // The first Escape closes the suggestions, the next brings back the page's address.
+      if (this.suggesting) {
+        this.closeSuggestions();
+        return;
+      }
       this.setDraft(undefined);
       input.value = displayUrl(this.addressTab?.url);
       input.select();
     }
+    if (event.key === 'Enter' && this.suggestion !== -1) {
+      // The browser opens the suggestion in the tab that the list is for, also in the tab that
+      // the New tab button opens while the shell still waits for that tab.
+      const owner = this.addressOwner;
+      if (this.opening !== undefined) this.opening.entered = true;
+      this.chosenFor = owner;
+      void this.bridge?.invoke('omnibox.accept', {}).then((opened) => {
+        if (!opened && this.chosenFor === owner) this.chosenFor = undefined;
+      });
+      this.suggestion = -1;
+      this.suggesting = false;
+      return;
+    }
     if (event.key !== 'Enter' || input.value.trim() === '') {
       return;
     }
+    this.closeSuggestions();
     const opening = this.opening;
     const tabId = this.state.activeTabId;
     if (opening !== undefined) {
@@ -1891,6 +1962,61 @@ export class AppShell extends LitElement {
     this.setDraft(undefined);
     input.blur();
   };
+
+  /** Asks for the suggestions for what is typed, below the address bar. */
+  private suggest(text: string): void {
+    this.suggestion = -1;
+    const field = this.renderRoot.querySelector('.address')?.getBoundingClientRect();
+    if (text.trim() === '' || field === undefined) {
+      this.closeSuggestions();
+      return;
+    }
+    const style = getComputedStyle(this);
+    const rowHeight = Math.round(
+      Number.parseFloat(style.getPropertyValue('--control-large')) +
+        Number.parseFloat(style.getPropertyValue('--space-1')),
+    );
+    this.suggesting = true;
+    this.suggestionsFor = this.addressOwner;
+    // A chosen suggestion opens in the tab of the address bar. The browser knows the tab that
+    // the New tab button opens before the shell does.
+    const tabId = this.opening === undefined ? this.state.activeTabId : this.opening.id;
+    void this.bridge?.invoke('omnibox.suggest', {
+      text: text.slice(0, 2000),
+      ...(tabId === null || tabId === undefined ? {} : { tabId }),
+      x: Math.max(0, Math.round(field.left)),
+      y: Math.max(0, Math.round(field.bottom + 4)),
+      width: Math.max(1, Math.round(field.width)),
+      rowHeight: Math.min(120, Math.max(16, rowHeight || 36)),
+    });
+  }
+
+  private closeSuggestions(): void {
+    this.suggestion = -1;
+    if (!this.suggesting) return;
+    this.suggesting = false;
+    void this.bridge?.invoke('omnibox.close', {});
+  }
+
+  /**
+   * Leaves the address bar after a suggestion opened, with the page's address in it. The
+   * suggestion may have been chosen for the tab that was active before a click on New tab
+   * gave the address bar to the new tab: what is typed for the new tab then stays.
+   */
+  private leaveAddress(): void {
+    const owner = this.ownerNow(
+      this.chosenFor === undefined ? this.suggestionsFor : this.chosenFor,
+    );
+    this.chosenFor = undefined;
+    // A suggestion opened in the tab that the New tab button opens: the address bar does not
+    // take the focus back when the tab shows.
+    if (isOpening(owner)) owner.entered = true;
+    this.dropInput(owner);
+    if (owner !== this.addressOwner) return;
+    this.suggesting = false;
+    this.suggestion = -1;
+    this.renderRoot.querySelector('input')?.blur();
+  }
 
   private focusAddress(): void {
     const input = this.renderRoot.querySelector('input');
@@ -1933,6 +2059,17 @@ interface Opening {
 /** Whether the address bar took input for a tab that the New tab button opens. */
 function tookInput(opening: Opening): boolean {
   return opening.entered || opening.draft !== undefined;
+}
+
+/**
+ * Whose address bar it is: a tab that the New tab button opens while the shell waits for it,
+ * or the id of a tab, `null` without tabs.
+ */
+type AddressOwner = Opening | string | null;
+
+/** Whether an address bar is that of a tab that the New tab button opens. */
+function isOpening(owner: AddressOwner | undefined): owner is Opening {
+  return typeof owner === 'object' && owner !== null;
 }
 
 /** How a page's connection is shown in the address bar. */

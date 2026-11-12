@@ -67,7 +67,18 @@ interface DownloadsList {
   readonly items: readonly DownloadItem[];
 }
 
-type Content = Shield | Login | Permission | Screen | DownloadsList;
+/** The suggestions of the address bar, the one that the arrow keys reached marked. */
+interface Suggestions {
+  readonly kind: 'suggestions';
+  readonly items: readonly {
+    readonly kind: 'search' | 'url' | 'tab' | 'bookmark' | 'history';
+    readonly title: string;
+    readonly url: string;
+  }[];
+  readonly selected: number;
+}
+
+type Content = Shield | Login | Permission | Screen | DownloadsList | Suggestions;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -86,7 +97,9 @@ const isContent = (value: unknown): value is Content =>
   typeof value === 'object' &&
   value !== null &&
   'kind' in value &&
-  ['shield', 'login', 'permission', 'screen', 'downloads'].includes(String(value.kind));
+  ['shield', 'login', 'permission', 'screen', 'downloads', 'suggestions'].includes(
+    String(value.kind),
+  );
 
 /** Width of a popover, and its distance to the window's edges and to its button. */
 const width = 288;
@@ -141,6 +154,69 @@ export class OverlayPage extends LitElement {
     .backdrop {
       position: fixed;
       inset: 0;
+    }
+    /* The suggestions fill the overlay, which lies below the address bar, with room for their
+       shadow; each row is as high as the shell asked for. */
+    .suggestions {
+      position: fixed;
+      inset: 0 12px 12px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      list-style: none;
+      border: 1px solid var(--border-1);
+      border-radius: var(--radius-3);
+      background: var(--surface-1);
+      box-shadow: var(--shadow-popover);
+      animation: drop var(--motion-fast) var(--ease-out);
+    }
+    @keyframes drop {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+    }
+    .suggestions li {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      height: calc(var(--control-large) + var(--space-1));
+      padding: 0 var(--space-3);
+      cursor: default;
+    }
+    .suggestions li:hover,
+    .suggestions li[aria-selected='true'] {
+      background: var(--surface-hover);
+    }
+    .suggestions .kind {
+      display: grid;
+      flex: none;
+      color: var(--text-2);
+    }
+    .suggestions svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .suggestions .title {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .suggestions .where {
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-2);
+      font-size: var(--font-size-small);
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
     section {
       position: fixed;
@@ -409,7 +485,8 @@ export class OverlayPage extends LitElement {
     if (this.content.kind === 'permission') this.arm(this.content.id);
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
-    if (before !== this.content.kind) {
+    // The suggestions leave the focus in the address bar, where the typing goes on.
+    if (before !== this.content.kind && this.content.kind !== 'suggestions') {
       void this.updateComplete.then(() =>
         (
           this.renderRoot.querySelector<HTMLElement>('input, .source') ??
@@ -438,6 +515,36 @@ export class OverlayPage extends LitElement {
     this.style.setProperty('--top', `${anchor.y + anchor.height + gap}px`);
   }
 
+  /** The suggestions of the address bar, which fill the overlay below the field. */
+  private renderSuggestions(content: Suggestions): TemplateResult {
+    return html`<ul class="suggestions" role="listbox" aria-label=${this.t('overlay.suggestions')}>
+      ${content.items.map(
+        (item, index) =>
+          html`<li
+            role="option"
+            aria-selected=${index === content.selected ? 'true' : 'false'}
+            data-kind=${item.kind}
+            @mousedown=${(event: MouseEvent) => event.preventDefault()}
+            @click=${() => void this.bridge?.invoke('overlay.chooseSuggestion', { index })}
+          >
+            <span class="kind" aria-hidden="true">${suggestionIcons[item.kind]}</span>
+            <span class="title"
+              >${item.kind === 'search' ? item.title : item.title || item.url}</span
+            >
+            <span class="where"
+              >${
+                item.kind === 'search'
+                  ? this.t('overlay.suggestion.search')
+                  : item.kind === 'tab'
+                    ? this.t('overlay.suggestion.tab')
+                    : item.url
+              }</span
+            >
+          </li>`,
+      )}
+    </ul>`;
+  }
+
   override render(): TemplateResult | typeof nothing {
     const content = this.content;
     if (content === null) return nothing;
@@ -445,6 +552,7 @@ export class OverlayPage extends LitElement {
     if (content.kind === 'permission') return this.renderPermission(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
+    if (content.kind === 'suggestions') return this.renderSuggestions(content);
     return html`<div class="backdrop" @click=${this.close}></div>
       <section role="dialog" aria-label=${this.t('shell.blocker')}>
         <p class="site">${content.site}</p>
@@ -707,3 +815,28 @@ export class OverlayPage extends LitElement {
     return this.i18n?.t(key, params) ?? key;
   }
 }
+
+/** Icons of the kinds of suggestions, drawn after Lucide (ISC license). */
+const suggestionIcons = {
+  search: html`<svg viewBox="0 0 24 24">
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>`,
+  url: html`<svg viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20" />
+  </svg>`,
+  tab: html`<svg viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+  </svg>`,
+  bookmark: html`<svg viewBox="0 0 24 24">
+    <path
+      d="M11.5 2.3a.5.5 0 0 1 1 0l2.3 4.7a2.1 2.1 0 0 0 1.6 1.2l5.2.7a.5.5 0 0 1 .3.9l-3.8 3.7a2.1 2.1 0 0 0-.6 1.9l.9 5.1a.5.5 0 0 1-.8.6l-4.6-2.4a2.1 2.1 0 0 0-2 0L6.4 21a.5.5 0 0 1-.8-.6l.9-5.1a2.1 2.1 0 0 0-.6-1.9L2.2 9.8a.5.5 0 0 1 .3-.9l5.1-.7a2.1 2.1 0 0 0 1.6-1.2z"
+    />
+  </svg>`,
+  history: html`<svg viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5M12 7v5l4 2" />
+  </svg>`,
+};
