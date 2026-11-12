@@ -970,7 +970,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     const snapshot = windows.snapshot();
     if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
   };
-  windows.onDidChange(keepSession);
+  // A count of blocked requests or a page that loads does not build the session again.
+  windows.onDidChangeKept(keepSession);
   windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
   // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.

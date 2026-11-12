@@ -250,6 +250,23 @@ describe('TabService', () => {
     expect(order()).toEqual([c, f, b, a, e, d]);
   });
 
+  it('tells a session only about the changes that it keeps', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const id = tabs.open('https://a.example/');
+    let kept = 0;
+    let all = 0;
+    tabs.onDidChangeKept(() => (kept += 1));
+    tabs.onDidChange(() => (all += 1));
+    tabs.update(id, { blocked: 3 });
+    tabs.update(id, { loading: false });
+    tabs.update(id, { audible: true });
+    expect([kept, all]).toEqual([0, 3]);
+    tabs.update(id, { title: 'A' });
+    tabs.update(id, { url: 'https://a.example/next' });
+    tabs.open('https://b.example/');
+    expect(kept).toBe(3);
+  });
+
   it('destroys every view on dispose', () => {
     const views = new FakeViews();
     const tabs = new TabService(views, 'about:blank');

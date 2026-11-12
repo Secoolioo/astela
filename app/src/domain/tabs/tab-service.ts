@@ -103,6 +103,9 @@ const tabFields = [
   'pinned',
 ] as const;
 
+/** Fields of a tab that a session keeps. */
+const keptFields = ['url', 'title', 'pinned'] as const;
+
 /** How many closed tabs can be reopened. */
 const closedTabLimit = 25;
 
@@ -125,6 +128,12 @@ export class TabService implements Disposable {
 
   /** Fires after any tab or the active tab changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
+  private readonly keptEmitter = new Emitter<void>();
+  /**
+   * Fires after a change that a session keeps: tabs that open, close, move or are pinned, the
+   * active tab, and the address and the title of a page.
+   */
+  readonly onDidChangeKept: Event<void> = this.keptEmitter.event;
 
   /**
    * @param views - Creates and controls the web views.
@@ -184,7 +193,7 @@ export class TabService implements Disposable {
       this.activate(id);
     } else {
       this.openedInBackground.add(id);
-      this.changeEmitter.fire();
+      this.changed(true);
     }
     return id;
   }
@@ -200,7 +209,7 @@ export class TabService implements Disposable {
       this.openedInBackground.clear();
       this.views.show(id);
     }
-    this.changeEmitter.fire();
+    this.changed(true);
   }
 
   /**
@@ -225,7 +234,7 @@ export class TabService implements Disposable {
       if (next === undefined) {
         if (this.onLastClosed === undefined) this.open();
         else {
-          this.changeEmitter.fire();
+          this.changed(true);
           this.onLastClosed();
         }
         return;
@@ -233,7 +242,7 @@ export class TabService implements Disposable {
       this.activate(next.id);
       return;
     }
-    this.changeEmitter.fire();
+    this.changed(true);
   }
 
   /**
@@ -248,7 +257,7 @@ export class TabService implements Disposable {
     const pinned = this.pinnedCount;
     const [first, last] = tab.pinned ? [0, pinned] : [pinned, this.tabs.length];
     this.tabs.splice(Math.max(first, Math.min(index, last)), 0, tab);
-    this.changeEmitter.fire();
+    this.changed(true);
   }
 
   /**
@@ -261,7 +270,7 @@ export class TabService implements Disposable {
     const [tab] = this.tabs.splice(this.indexOf(id), 1);
     if (tab === undefined) return;
     this.tabs.splice(this.pinnedCount, 0, { ...tab, pinned });
-    this.changeEmitter.fire();
+    this.changed(true);
   }
 
   /** How many tabs are pinned; they are the first tabs. */
@@ -311,12 +320,18 @@ export class TabService implements Disposable {
       return;
     }
     const next = { ...current, ...update };
-    if (
-      tabFields.some((field) => update[field] !== undefined && update[field] !== current[field])
-    ) {
+    const differs = (field: (typeof tabFields)[number]): boolean =>
+      update[field] !== undefined && update[field] !== current[field];
+    if (tabFields.some(differs)) {
       this.tabs[index] = next;
-      this.changeEmitter.fire();
+      // A count of blocked requests or a page that loads changes nothing that a session keeps.
+      this.changed(keptFields.some(differs));
     }
+  }
+
+  private changed(kept: boolean): void {
+    this.changeEmitter.fire();
+    if (kept) this.keptEmitter.fire();
   }
 
   /** Destroys every view and removes listeners. */
@@ -325,6 +340,7 @@ export class TabService implements Disposable {
       this.views.destroy(tab.id);
     }
     this.changeEmitter.dispose();
+    this.keptEmitter.dispose();
   }
 
   /** Where a new tab goes: after the active tab and, in the background, its earlier tabs. */
