@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { brand } from '../../shared/brand.ts';
 import { searchEngines } from '../../shared/search-engines.ts';
 import { isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
-import { choiceStyles } from '../ui-kit/choice-styles.ts';
+import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
 import { SettingsClient, paintSwatches, type PageBridge } from '../ui-kit/settings-client.ts';
 
 /** The steps of the guide, in order. */
@@ -50,6 +50,7 @@ export class SetupGuide extends LitElement {
   /** Styles of the guide, scoped to its shadow root. */
   static override styles = [
     choiceStyles,
+    switchStyles,
     css`
       :host {
         display: flex;

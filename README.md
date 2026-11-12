@@ -35,6 +35,7 @@ On `main` now, and in the next beta, 0.1.0-beta.6:
 - **Address bar:** shows the site first with a lock for HTTPS and **Not secure** for HTTP, and shows the loading of a page.
 - **Suggestions:** while you type, a list below the address bar suggests open tabs to switch to, bookmarks and visited pages.
 - **Title bar:** the window controls sit in the top row of the browser, so pages get more room; a setting keeps the title bar of the system.
+- **Controls:** switches with a sliding knob, softer segmented controls, buttons that give way when pressed and a bookmark star that pops when it is set.
 
 ## Planned for 0.1.0
 

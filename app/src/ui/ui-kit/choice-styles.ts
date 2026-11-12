@@ -8,13 +8,16 @@ export const choiceStyles = css`
   .segments {
     display: inline-flex;
     border: 1px solid var(--border-1);
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     overflow: hidden;
   }
   .segments label {
     position: relative;
     padding: var(--space-1) var(--space-3);
     line-height: var(--line-height-large);
+    transition:
+      background-color var(--motion-fast) var(--ease-standard),
+      color var(--motion-fast) var(--ease-standard);
   }
   .segments label + label {
     border-left: 1px solid var(--border-1);
@@ -75,5 +78,47 @@ export const choiceStyles = css`
   label:has(:disabled),
   :disabled {
     opacity: 0.6;
+  }
+`;
+
+/**
+ * Switches: a checkbox with the role `switch` as a track whose knob slides to the end when it
+ * is on. The track has the contrast of secondary text while it is off.
+ */
+export const switchStyles = css`
+  input[role='switch'] {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 32px;
+    height: 18px;
+    margin: 0;
+    border-radius: var(--radius-pill);
+    background: var(--text-2);
+    transition: background-color var(--motion-fast) var(--ease-standard);
+  }
+  input[role='switch']::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-1);
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+  input[role='switch']:checked {
+    background: var(--accent);
+  }
+  input[role='switch']:checked::before {
+    transform: translateX(14px);
+  }
+  input[role='switch']:disabled {
+    opacity: 0.5;
+  }
+  input[role='switch']:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
 `;

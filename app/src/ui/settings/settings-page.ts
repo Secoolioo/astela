@@ -24,7 +24,7 @@ import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
-import { choiceStyles } from '../ui-kit/choice-styles.ts';
+import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
 import {
   SettingsClient,
   paintSwatches,
@@ -82,6 +82,7 @@ export class SettingsPage extends LitElement {
   /** Styles of the page, scoped to its shadow root. */
   static override styles = [
     choiceStyles,
+    switchStyles,
     css`
       :host {
         display: grid;
@@ -506,12 +507,6 @@ export class SettingsPage extends LitElement {
       }
       .add-site input {
         flex: 1;
-      }
-      input[role='switch'] {
-        width: 16px;
-        height: 16px;
-        margin: 0;
-        accent-color: var(--accent);
       }
       :focus-visible {
         outline: 2px solid var(--focus-ring);

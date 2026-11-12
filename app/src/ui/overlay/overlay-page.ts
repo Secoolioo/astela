@@ -1,3 +1,4 @@
+import { switchStyles } from '../ui-kit/choice-styles.ts';
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import type { Translator } from '../i18n/i18n.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
@@ -144,296 +145,293 @@ export class OverlayPage extends LitElement {
   };
 
   /** Styles of the page, scoped to its shadow root. */
-  static override styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      font: var(--font-size-ui) / 1.4 var(--font-ui);
-      color: var(--text-1);
-    }
-    .backdrop {
-      position: fixed;
-      inset: 0;
-    }
-    /* The suggestions fill the overlay, which lies below the address bar, with room for their
-       shadow; each row is as high as the shell asked for. */
-    .suggestions {
-      position: fixed;
-      inset: 0 12px 12px;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      list-style: none;
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-3);
-      background: var(--surface-1);
-      box-shadow: var(--shadow-popover);
-      animation: drop var(--motion-fast) var(--ease-out);
-    }
-    @keyframes drop {
-      from {
-        opacity: 0;
-        transform: translateY(-4px);
+  static override styles = [
+    switchStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        font: var(--font-size-ui) / 1.4 var(--font-ui);
+        color: var(--text-1);
       }
-    }
-    .suggestions li {
-      display: flex;
-      align-items: center;
-      gap: var(--space-2);
-      height: calc(var(--control-large) + var(--space-1));
-      padding: 0 var(--space-3);
-      cursor: default;
-    }
-    .suggestions li:hover,
-    .suggestions li[aria-selected='true'] {
-      background: var(--surface-hover);
-    }
-    .suggestions .kind {
-      display: grid;
-      flex: none;
-      color: var(--text-2);
-    }
-    .suggestions svg {
-      width: 16px;
-      height: 16px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.5;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .suggestions .title {
-      flex: 0 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-    .suggestions .where {
-      flex: 1 1 0;
-      min-width: 0;
-      overflow: hidden;
-      color: var(--text-2);
-      font-size: var(--font-size-small);
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-    section {
-      position: fixed;
-      left: var(--left);
-      top: var(--top);
-      width: var(--width, ${width}px);
-      box-sizing: border-box;
-      padding: var(--space-3);
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-2);
-      background: var(--surface-1);
-    }
-    .site {
-      margin: 0;
-      font-size: inherit;
-      font-weight: 600;
-      overflow-wrap: anywhere;
-    }
-    .count {
-      display: flex;
-      align-items: baseline;
-      gap: var(--space-2);
-      margin: var(--space-2) 0 var(--space-3);
-      color: var(--text-2);
-    }
-    .count strong {
-      font-size: calc(var(--font-size-title) + 4px);
-      font-weight: 600;
-      color: var(--text-1);
-    }
-    .row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-2);
-      padding: var(--space-2) 0;
-      border-top: 1px solid var(--border-1);
-    }
-    .note {
-      margin: var(--space-2) 0 0;
-      color: var(--text-2);
-    }
-    .problem {
-      color: var(--danger);
-    }
-    input[role='switch'] {
-      width: 16px;
-      height: 16px;
-      margin: 0;
-      accent-color: var(--accent);
-    }
-    button {
-      width: 100%;
-      margin-top: var(--space-2);
-      padding: var(--space-2);
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-1);
-      background: var(--surface-2);
-      color: inherit;
-      font: inherit;
-      text-align: start;
-    }
-    button:hover {
-      background: var(--surface-hover);
-    }
-    :focus-visible {
-      outline: 2px solid var(--focus-ring);
-      outline-offset: 1px;
-    }
-    .dialog {
-      position: fixed;
-      top: 96px;
-      left: 50%;
-      width: 360px;
-      max-width: calc(100% - 16px);
-      box-sizing: border-box;
-      transform: translateX(-50%);
-      padding: var(--space-3);
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-2);
-      background: var(--surface-1);
-    }
-    .dialog h2 {
-      margin: 0 0 var(--space-2);
-      font-size: var(--font-size-larger);
-      font-weight: 600;
-    }
-    .dialog p {
-      margin: 0 0 var(--space-2);
-      overflow-wrap: anywhere;
-    }
-    .dialog label {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-1);
-      margin-top: var(--space-2);
-    }
-    .dialog input {
-      height: var(--control-large);
-      padding: 0 var(--space-2);
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-1);
-      background: var(--surface-0);
-      color: inherit;
-      font: inherit;
-    }
-    .buttons {
-      display: flex;
-      justify-content: flex-end;
-      gap: var(--space-2);
-      margin-top: var(--space-3);
-    }
-    .buttons button {
-      width: auto;
-      margin: 0;
-      text-align: center;
-    }
-    .buttons .primary {
-      border-color: var(--accent);
-    }
-    .dialog ul {
-      margin: 0 0 var(--space-2);
-      padding: 0;
-      list-style: none;
-    }
-    .dialog li {
-      padding: 2px 0;
-    }
-    .buttons button:disabled {
-      opacity: 0.5;
-    }
-    /* The moment before a question takes clicks does not dim its buttons. */
-    .buttons[data-arming] button:disabled {
-      opacity: 1;
-    }
-    /* A question takes the focus itself; its buttons show the ring once they have it. */
-    .dialog:focus-visible {
-      outline: none;
-    }
-    .downloads {
-      max-height: 60vh;
-      margin: var(--space-2) 0 0;
-      padding: 0;
-      overflow-y: auto;
-      list-style: none;
-    }
-    .downloads li {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: var(--space-2) 0;
-      border-top: 1px solid var(--border-1);
-    }
-    .downloads .name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .downloads progress {
-      width: 100%;
-      height: 4px;
-      accent-color: var(--accent-secondary);
-    }
-    .downloads .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-1);
-    }
-    .downloads .actions button {
-      width: auto;
-      margin: 0;
-      padding: 2px var(--space-2);
-    }
-    .dialog.wide {
-      width: 640px;
-    }
-    .sources {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-      gap: var(--space-2);
-      max-height: 50vh;
-      margin: var(--space-2) 0 0;
-      padding: 2px;
-      overflow-y: auto;
-    }
-    .sources h3 {
-      grid-column: 1 / -1;
-      margin: var(--space-2) 0 0;
-      font-size: var(--font-size-ui);
-      font-weight: 600;
-    }
-    .source {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-1);
-      margin: 0;
-      padding: var(--space-1);
-      text-align: start;
-    }
-    .source[aria-pressed='true'] {
-      border-color: var(--accent);
-      outline: 1px solid var(--accent);
-    }
-    .source img,
-    .source .blank {
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      object-fit: contain;
-      border-radius: var(--radius-1);
-      background: var(--surface-0);
-    }
-    .source span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  `;
+      .backdrop {
+        position: fixed;
+        inset: 0;
+      }
+      /* The suggestions fill the overlay, which lies below the address bar, with room for their
+       shadow; each row is as high as the shell asked for. */
+      .suggestions {
+        position: fixed;
+        inset: 0 12px 12px;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        list-style: none;
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-3);
+        background: var(--surface-1);
+        box-shadow: var(--shadow-popover);
+        animation: drop var(--motion-fast) var(--ease-out);
+      }
+      @keyframes drop {
+        from {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+      }
+      .suggestions li {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        height: calc(var(--control-large) + var(--space-1));
+        padding: 0 var(--space-3);
+        cursor: default;
+      }
+      .suggestions li:hover,
+      .suggestions li[aria-selected='true'] {
+        background: var(--surface-hover);
+      }
+      .suggestions .kind {
+        display: grid;
+        flex: none;
+        color: var(--text-2);
+      }
+      .suggestions svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .suggestions .title {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .suggestions .where {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--text-2);
+        font-size: var(--font-size-small);
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      section {
+        position: fixed;
+        left: var(--left);
+        top: var(--top);
+        width: var(--width, ${width}px);
+        box-sizing: border-box;
+        padding: var(--space-3);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
+      .site {
+        margin: 0;
+        font-size: inherit;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .count {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        margin: var(--space-2) 0 var(--space-3);
+        color: var(--text-2);
+      }
+      .count strong {
+        font-size: calc(var(--font-size-title) + 4px);
+        font-weight: 600;
+        color: var(--text-1);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-2) 0;
+        border-top: 1px solid var(--border-1);
+      }
+      .note {
+        margin: var(--space-2) 0 0;
+        color: var(--text-2);
+      }
+      .problem {
+        color: var(--danger);
+      }
+      button {
+        width: 100%;
+        margin-top: var(--space-2);
+        padding: var(--space-2);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-1);
+        background: var(--surface-2);
+        color: inherit;
+        font: inherit;
+        text-align: start;
+      }
+      button:hover {
+        background: var(--surface-hover);
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 1px;
+      }
+      .dialog {
+        position: fixed;
+        top: 96px;
+        left: 50%;
+        width: 360px;
+        max-width: calc(100% - 16px);
+        box-sizing: border-box;
+        transform: translateX(-50%);
+        padding: var(--space-3);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
+      .dialog h2 {
+        margin: 0 0 var(--space-2);
+        font-size: var(--font-size-larger);
+        font-weight: 600;
+      }
+      .dialog p {
+        margin: 0 0 var(--space-2);
+        overflow-wrap: anywhere;
+      }
+      .dialog label {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        margin-top: var(--space-2);
+      }
+      .dialog input {
+        height: var(--control-large);
+        padding: 0 var(--space-2);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-1);
+        background: var(--surface-0);
+        color: inherit;
+        font: inherit;
+      }
+      .buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+        margin-top: var(--space-3);
+      }
+      .buttons button {
+        width: auto;
+        margin: 0;
+        text-align: center;
+      }
+      .buttons .primary {
+        border-color: var(--accent);
+      }
+      .dialog ul {
+        margin: 0 0 var(--space-2);
+        padding: 0;
+        list-style: none;
+      }
+      .dialog li {
+        padding: 2px 0;
+      }
+      .buttons button:disabled {
+        opacity: 0.5;
+      }
+      /* The moment before a question takes clicks does not dim its buttons. */
+      .buttons[data-arming] button:disabled {
+        opacity: 1;
+      }
+      /* A question takes the focus itself; its buttons show the ring once they have it. */
+      .dialog:focus-visible {
+        outline: none;
+      }
+      .downloads {
+        max-height: 60vh;
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        overflow-y: auto;
+        list-style: none;
+      }
+      .downloads li {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: var(--space-2) 0;
+        border-top: 1px solid var(--border-1);
+      }
+      .downloads .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .downloads progress {
+        width: 100%;
+        height: 4px;
+        accent-color: var(--accent-secondary);
+      }
+      .downloads .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+      }
+      .downloads .actions button {
+        width: auto;
+        margin: 0;
+        padding: 2px var(--space-2);
+      }
+      .dialog.wide {
+        width: 640px;
+      }
+      .sources {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+        gap: var(--space-2);
+        max-height: 50vh;
+        margin: var(--space-2) 0 0;
+        padding: 2px;
+        overflow-y: auto;
+      }
+      .sources h3 {
+        grid-column: 1 / -1;
+        margin: var(--space-2) 0 0;
+        font-size: var(--font-size-ui);
+        font-weight: 600;
+      }
+      .source {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        margin: 0;
+        padding: var(--space-1);
+        text-align: start;
+      }
+      .source[aria-pressed='true'] {
+        border-color: var(--accent);
+        outline: 1px solid var(--accent);
+      }
+      .source img,
+      .source .blank {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: contain;
+        border-radius: var(--radius-1);
+        background: var(--surface-0);
+      }
+      .source span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    `,
+  ];
 
   declare content: Content | null;
   /** The screen or window chosen in the picker. */

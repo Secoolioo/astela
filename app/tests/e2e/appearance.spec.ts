@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch, waitForPage } from './harness.ts';
+import { FixtureServer, launch, waitForPage } from './harness.ts';
 
 /** The design tokens that the browser set in a page. */
 function tokens(): { tab: string; light: string; dark: string } {
@@ -127,5 +127,52 @@ test('takes motion and radii from tokens, and moves nothing when the system asks
     }
   } finally {
     await browser.close();
+  }
+});
+
+test('shows switches whose knob slides, and a star that pops when a page becomes a bookmark', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill('app://settings/#bookmarks.bar');
+    await address.press('Enter');
+    const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    const toggle = settings.getByRole('switch', { name: 'Show bookmarks bar' });
+    const look = (): Promise<string[]> =>
+      toggle.evaluate((element) => [
+        getComputedStyle(element).appearance,
+        getComputedStyle(element).width,
+        getComputedStyle(element, '::before').transform,
+      ]);
+    expect(await look()).toEqual(['none', '32px', 'none']);
+    await toggle.check();
+    await expect.poll(look).toEqual(['none', '32px', 'matrix(1, 0, 0, 1, 14, 0)']);
+    // The star of a page that becomes a bookmark pops once.
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await browser.shell.evaluate(() => {
+      const root = document.querySelector('app-shell')?.shadowRoot;
+      const pops = { count: 0 };
+      Reflect.set(window, 'pops', pops);
+      root?.addEventListener(
+        'animationstart',
+        (event) => {
+          if (event instanceof AnimationEvent && event.animationName === 'pop') pops.count += 1;
+        },
+        true,
+      );
+    });
+    await browser.shell.getByRole('button', { name: 'Bookmark this page' }).click();
+    await expect
+      .poll(() =>
+        browser.shell.evaluate(() => (Reflect.get(window, 'pops') as { count: number }).count),
+      )
+      .toBe(1);
+  } finally {
+    await browser.close();
+    await server.stop();
   }
 });

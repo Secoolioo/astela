@@ -451,6 +451,24 @@ export class AppShell extends LitElement {
     .icon:hover:not(:disabled) {
       background: var(--surface-hover);
     }
+    /* Buttons give way a little while they are pressed. */
+    .icon {
+      transition:
+        background-color var(--motion-instant) var(--ease-standard),
+        transform var(--motion-instant) var(--ease-standard);
+    }
+    .icon:active:not(:disabled) {
+      transform: scale(0.92);
+    }
+    /* The star pops when the page becomes a bookmark. */
+    .bookmark[aria-pressed='true'] svg {
+      animation: pop var(--motion-base) var(--ease-out);
+    }
+    @keyframes pop {
+      50% {
+        transform: scale(1.3);
+      }
+    }
     .icon:disabled {
       opacity: 0.4;
     }
