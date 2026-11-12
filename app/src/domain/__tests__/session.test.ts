@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { keepsUrl, parseSession, sessionWindow } from '../session/session.ts';
+import { keepsUrl, parseSession, restoredWindows, sessionWindow } from '../session/session.ts';
+import { parseBeta6Session } from './beta6-session.ts';
 
 const tab = (url: string): { url: string; title: string } => ({ url, title: url });
 
@@ -117,5 +118,201 @@ describe('session', () => {
     expect(
       parseSession({ version: 1, windows: [{ tabs: [tab('about:blank')], active: 0 }] }),
     ).toBeUndefined();
+  });
+
+  it('reads each optional field of a tab and a window on its own, and drops only a broken one', () => {
+    const bounds = { x: 10, y: 20, width: 1200, height: 800 };
+    expect(
+      parseSession({
+        version: 1,
+        windows: [
+          {
+            tabs: [
+              { ...tab('https://a.example/'), pinned: 'yes' },
+              { ...tab('https://b.example/'), pinned: true },
+              { ...tab('https://c.example/'), pinned: null },
+            ],
+            active: 2,
+            bounds: { ...bounds, width: 0 },
+            maximized: true,
+          },
+          { tabs: [tab('https://d.example/')], active: 0, bounds, maximized: 'no' },
+        ],
+      }),
+    ).toEqual({
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            tab('https://a.example/'),
+            { ...tab('https://b.example/'), pinned: true },
+            tab('https://c.example/'),
+          ],
+          active: 2,
+          maximized: true,
+        },
+        { tabs: [tab('https://d.example/')], active: 0, bounds },
+      ],
+    });
+  });
+
+  it('opens the windows of a session again with their tabs, their active tab and their place', () => {
+    const bounds = { x: 10, y: 20, width: 1200, height: 800 };
+    expect(
+      restoredWindows({
+        version: 1,
+        windows: [
+          {
+            tabs: [{ ...tab('https://mail.example/'), pinned: true }, tab('https://a.example/')],
+            active: 1,
+            bounds,
+            maximized: false,
+          },
+          { tabs: [tab('app://newtab/')], active: 0 },
+        ],
+      }),
+    ).toEqual([
+      {
+        tabs: [
+          { ...tab('https://mail.example/'), pinned: true },
+          { ...tab('https://a.example/'), pinned: false },
+        ],
+        active: 1,
+        place: { bounds, maximized: false },
+      },
+      { tabs: [{ ...tab('app://newtab/'), pinned: false }], active: 0, place: {} },
+    ]);
+  });
+});
+
+/** A back and forward history of a tab, in the form that a later version keeps it. */
+const history = (url: string): unknown => ({
+  views: [
+    { entries: [{ url: 'app://newtab/', title: 'New tab' }], index: 0 },
+    { entries: [{ url, title: url, pageState: 'AAAA' }], index: 0 },
+  ],
+  view: 1,
+});
+
+describe('sessions and 0.1.0-beta.6', () => {
+  const bounds = { x: 10, y: 20, width: 1200, height: 800 };
+  /**
+   * A session with the fields that later versions add to tabs and windows: the back and
+   * forward history of a tab, a window in full screen, the pairs of a split view, tab groups,
+   * and the tabs of two workspaces, those of the hidden one with the mark of their active tab.
+   * Whoever writes one of these fields for real makes it here what the browser writes.
+   */
+  const later = {
+    version: 1,
+    windows: [
+      {
+        tabs: [
+          { ...tab('https://mail.example/'), pinned: true, workspace: 'default' },
+          {
+            ...tab('https://news.example/'),
+            workspace: 'default',
+            current: true,
+            history: history('https://news.example/'),
+          },
+          { ...tab('https://a.example/'), group: 'g1', workspace: 'w1' },
+          { ...tab('https://b.example/'), group: 'g1', workspace: 'w1', current: true },
+          { ...tab('app://settings/'), workspace: 'w1' },
+        ],
+        active: 3,
+        bounds,
+        maximized: false,
+        fullScreen: true,
+        splits: [{ start: 2, ratio: 0.4 }],
+        groups: [{ id: 'g1', name: 'Work', color: 'blue', collapsed: false }],
+        workspace: 'w1',
+      },
+      {
+        tabs: [{ ...tab('https://c.example/'), history: history('https://c.example/') }],
+        active: 0,
+        fullScreen: false,
+      },
+    ],
+  };
+  const kept = {
+    version: 1,
+    windows: [
+      {
+        tabs: [
+          { ...tab('https://mail.example/'), pinned: true },
+          tab('https://news.example/'),
+          tab('https://a.example/'),
+          tab('https://b.example/'),
+          tab('app://settings/'),
+        ],
+        active: 3,
+        bounds,
+        maximized: false,
+      },
+      { tabs: [tab('https://c.example/')], active: 0 },
+    ],
+  };
+
+  it('keeps every tab and the active tab of a session with the fields of later versions', () => {
+    expect(parseBeta6Session(later)).toEqual(kept);
+    // This version reads the fields it does not know yet the same way.
+    expect(parseSession(later)).toEqual(kept);
+  });
+
+  it('writes sessions that 0.1.0-beta.6 reads with every tab and the active tab', () => {
+    const window = sessionWindow(
+      [
+        { ...tab('https://mail.example/'), pinned: true },
+        tab('app://setup/'),
+        { url: 'https://a.example/', title: 'x'.repeat(2000) },
+        tab('app://history/'),
+      ],
+      3,
+      { bounds, maximized: true },
+    );
+    const written: unknown = JSON.parse(JSON.stringify({ version: 1, windows: [window] }));
+    expect(written).toEqual({
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            { ...tab('https://mail.example/'), pinned: true },
+            { url: 'https://a.example/', title: 'x'.repeat(1024) },
+            tab('app://history/'),
+          ],
+          active: 2,
+          bounds,
+          maximized: true,
+        },
+      ],
+    });
+    expect(parseBeta6Session(written)).toEqual(written);
+    expect(parseSession(written)).toEqual(written);
+  });
+
+  it('reads the sessions that 0.1.0-beta.6 wrote as they are', () => {
+    const files = [
+      {
+        version: 1,
+        windows: [
+          {
+            tabs: [{ ...tab('https://mail.example/'), pinned: true }, tab('app://newtab/')],
+            active: 1,
+            bounds,
+            maximized: false,
+          },
+        ],
+      },
+      {
+        version: 1,
+        windows: [
+          { tabs: [tab('https://a.example/'), tab('app://bookmarks/')], active: 0 },
+          { tabs: [tab('https://b.example/')], active: 0, bounds, maximized: true },
+        ],
+      },
+    ];
+    for (const file of files) {
+      expect(parseBeta6Session(file)).toEqual(file);
+      expect(parseSession(file)).toEqual(file);
+    }
   });
 });

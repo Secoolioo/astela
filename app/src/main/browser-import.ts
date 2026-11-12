@@ -37,13 +37,9 @@ export function connectBrowserImport(
       labels,
     );
     if (result.windows.length > 0) {
-      windows.restore({
-        version: 1,
-        windows: result.windows.map((window) => ({
-          tabs: [...window.tabs],
-          active: window.active,
-        })),
-      });
+      windows.restore(
+        result.windows.map((window) => ({ tabs: window.tabs, active: window.active, place: {} })),
+      );
     }
     // An import replaces the folder of an earlier one, even when it brings no bookmarks.
     if (withBookmarks) {

@@ -28,7 +28,11 @@ import {
   type TabViewPort,
 } from '../../domain/tabs/tab-service.ts';
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
-import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
+import {
+  sessionWindow,
+  type RestoredWindow,
+  type SessionSnapshot,
+} from '../../domain/session/session.ts';
 import {
   controlsOverlay,
   startInsets,
@@ -207,6 +211,8 @@ export interface OverlayHandle {
   readonly coversWindow: boolean;
   /** Closes the overlay and gives the focus back to the page or the shell. */
   close(): void;
+  /** Puts the overlay above the other views of the window again, after one of them was added. */
+  raise(): void;
 }
 
 /** Where a window opens, and whether it is a popup that a page opened. */
@@ -239,10 +245,11 @@ const settleTime = 1000;
 
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
- * tab. Tab views are created when a tab opens and destroyed when it closes; only the
- * active tab's view is attached to the window. Web pages and internal pages use views of
- * different sessions: when a tab switches between them, its view is replaced and the old
- * view's history is kept for Back and Forward.
+ * tab. Tab views are created when a tab opens and destroyed when it closes; only the views
+ * of the tabs that the content area shows, which is the active tab, are attached to the
+ * window, always below the overlay. Web pages and internal pages use views of different
+ * sessions: when a tab switches between them, its view is replaced and the old view's
+ * history is kept for Back and Forward.
  */
 export class BrowserWindowController implements Disposable, TabViewPort {
   readonly window: BaseWindow;
@@ -270,7 +277,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly waiting = new WeakMap<WebContents, string>();
   /** The default zoom that each web view was made with, which Chromium keeps for its pages. */
   private readonly madeZoom = new WeakMap<WebContents, number>();
-  /** Tabs without a view yet, with the URL they will load when shown. */
+  /** Tabs without a view yet, with the URL they load once they wake. */
   private readonly lazyTabs = new Map<TabId, string>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
   private adopting: WebContents | undefined;
@@ -278,7 +285,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly popup: boolean;
   /** Whether the window is a private window. */
   readonly isPrivate: boolean;
-  private visible: WebContentsView | undefined;
+  /** The views of the pages that the content area shows, attached to the window in this order. */
+  private readonly shown: WebContentsView[] = [];
   /** Where the content area is, as the shell reports it; until then, where it starts. */
   private insets: Insets;
   /** Whether the window draws its own title bar, which it keeps until it closes. */
@@ -598,29 +606,103 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   show(id: TabId): void {
-    this.materialize(id);
+    this.wake(id);
     const entry = this.entries.get(id);
-    const view = entry?.view;
-    if (view === undefined || view === this.visible) {
+    if (entry === undefined) return;
+    const view = this.shownViewOf(entry);
+    if (this.shown.includes(view)) {
       return;
     }
     this.overlay?.close();
-    const previous = this.tabs.all.find(
-      (tab) => this.entries.get(tab.id)?.view === this.visible,
-    )?.id;
-    if (previous !== undefined) this.stopFind(previous);
-    if (this.visible !== undefined) {
-      this.window.contentView.removeChildView(this.visible);
-    }
-    this.visible = view;
-    this.window.contentView.addChildView(view);
+    for (const previous of this.shownTabs()) this.stopFind(previous);
+    // The pages that the content area showed make room for this one.
+    for (const previous of this.shown.filter((other) => other !== view)) this.detachPage(previous);
+    this.attachPage(view);
     view.setVisible(this.problemOf(id) === null);
     // Another window may have zoomed the site meanwhile.
-    if (entry?.page === undefined && !view.webContents.isDestroyed()) {
+    if (entry.page === undefined && !view.webContents.isDestroyed()) {
       this.tabs.update(id, { zoom: view.webContents.getZoomFactor() });
     }
     this.layout();
     this.focusContent();
+  }
+
+  /**
+   * Whether the content area shows the page of a tab, also while the shell shows a problem of
+   * the page in its place.
+   * @param id - The tab.
+   */
+  isShown(id: TabId): boolean {
+    const entry = this.entries.get(id);
+    return entry !== undefined && this.shown.includes(this.shownViewOf(entry));
+  }
+
+  /**
+   * Where the pages of the window go, in the coordinates of its content: in the room that the
+   * shell leaves them, or in the whole window while the page of a shown tab is in full screen.
+   */
+  pageArea(): Rectangle {
+    if (this.window.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
+    const { width, height } = this.window.getContentBounds();
+    // Only the tab whose page is in full screen covers the shell.
+    const covering = this.fullScreenTab !== undefined && this.isShown(this.fullScreenTab);
+    const { top, right, bottom, left } = covering
+      ? { top: 0, right: 0, bottom: 0, left: 0 }
+      : this.insets;
+    return {
+      x: left,
+      y: top,
+      width: Math.max(0, width - left - right),
+      height: Math.max(0, height - top - bottom),
+    };
+  }
+
+  /**
+   * The area of the pages that a popover over them is placed in, such as one in their middle.
+   * It is the page area: the overlay covers the whole window, so its coordinates are those of
+   * the window's content.
+   */
+  contentArea(): Rectangle {
+    return this.pageArea();
+  }
+
+  /** The view that shows the page of a tab in the content area: the tab's own view. */
+  private shownViewOf(entry: TabEntry): WebContentsView {
+    return entry.view;
+  }
+
+  /** The tabs whose pages the content area shows, in the order of their views. */
+  private shownTabs(): TabId[] {
+    return this.shown.flatMap((view) => {
+      const id = [...this.entries].find(([, entry]) => this.shownViewOf(entry) === view)?.[0];
+      return id === undefined ? [] : [id];
+    });
+  }
+
+  /**
+   * Attaches the view of a page to the window, where the content area shows it. The overlay
+   * stays above it, so that no page covers a popover or a question.
+   * @param view - The view.
+   * @param index - Its place among the views of the content area; the last without it.
+   */
+  private attachPage(view: WebContentsView, index = this.shown.length): void {
+    if (this.shown.includes(view) || this.window.isDestroyed()) return;
+    this.shown.splice(index, 0, view);
+    this.window.contentView.addChildView(view);
+    this.overlay?.raise();
+  }
+
+  /**
+   * Takes the view of a page out of the window. The other views keep their order, so the
+   * overlay stays above them.
+   * @param view - The view.
+   */
+  private detachPage(view: WebContentsView): void {
+    const index = this.shown.indexOf(view);
+    if (index === -1) return;
+    this.shown.splice(index, 1);
+    // A destroyed window no longer has a content view; touching it blocks.
+    if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view);
   }
 
   /**
@@ -672,26 +754,27 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // In place of its page, the tab shows no icon of a page.
     if (problem !== null) this.dropFavicon(id);
     this.tabs.update(id, { problem });
-    const view = this.entries.get(id)?.view;
-    if (view !== undefined && view === this.visible && !this.window.isDestroyed()) {
-      view.setVisible(problem === null);
+    const entry = this.entries.get(id);
+    if (entry !== undefined && this.isShown(id) && !this.window.isDestroyed()) {
+      this.shownViewOf(entry).setVisible(problem === null);
       // Focusing a view raises its window: a window in the background stays there.
       if (this.window.isFocused()) this.focusContent();
     }
   }
 
   /**
-   * Focuses the visible tab, or the shell for the new tab page, where typing goes to the
-   * address bar.
+   * Focuses the page that the content area shows, that of the active tab once it shows, or
+   * the shell for the new tab page, where typing goes to the address bar.
    */
   focusContent(): void {
-    const id = [...this.entries].find(([, candidate]) => candidate.view === this.visible)?.[0];
+    const shown = this.shownTabs();
+    const id = shown.find((tab) => tab === this.tabs.active?.id) ?? shown[0];
     const entry = id === undefined ? undefined : this.entries.get(id);
     // The shell shows the new tab page's address bar and the problems of pages.
     if (entry === undefined || entry.page === 'newtab' || this.problemOf(id ?? '') !== null) {
       this.shell.webContents.focus();
     } else {
-      entry.view.webContents.focus();
+      this.shownViewOf(entry).webContents.focus();
     }
   }
 
@@ -701,6 +784,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (entry === undefined) {
       return;
     }
+    // The find bar looks in the page that the content area shows and closes with it, as when
+    // another tab shows; the change of the tabs that follows tells the shell.
+    if (this.isShown(id)) this.finding = null;
     this.entries.delete(id);
     entry.iconLoad?.abort();
     this.close(entry.view, entry.registration);
@@ -713,7 +799,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   load(id: TabId, url: string): void {
-    this.materialize(id);
+    this.wake(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -729,7 +815,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
-    this.materialize(id);
+    this.wake(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -790,8 +876,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   execute(command: WindowCommand): void {
     const active = this.tabs.active;
-    const all = this.tabs.all;
-    const index = active === undefined ? -1 : all.indexOf(active);
+    // The shortcuts that go to the next tab, or to a tab by its place, count the listed tabs.
+    const listed = this.tabs.listed;
+    const index = active === undefined ? -1 : listed.indexOf(active);
     switch (command) {
       case 'tab.new':
         this.tabs.open();
@@ -819,7 +906,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       case 'tab.next':
       case 'tab.previous': {
         const step = command === 'tab.next' ? 1 : -1;
-        const next = all[(index + step + all.length) % all.length];
+        const next = listed[(index + step + listed.length) % listed.length];
         if (next !== undefined) this.tabs.activate(next.id);
         break;
       }
@@ -833,15 +920,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       case 'tab.select8':
       case 'tab.selectLast': {
         const target =
-          command === 'tab.selectLast' ? all.at(-1) : all[Number(command.slice(-1)) - 1];
+          command === 'tab.selectLast' ? listed.at(-1) : listed[Number(command.slice(-1)) - 1];
         if (target !== undefined) this.tabs.activate(target.id);
         break;
       }
       case 'tab.moveLeft':
       case 'tab.moveRight':
-        if (active !== undefined) {
-          this.tabs.move(active.id, Math.max(0, index + (command === 'tab.moveRight' ? 1 : -1)));
-        }
+        if (active !== undefined) this.tabs.step(active.id, command === 'tab.moveRight' ? 1 : -1);
         break;
       case 'tab.pin':
         if (active !== undefined) this.tabs.pin(active.id, !active.pinned);
@@ -1136,8 +1221,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
-  /** Gives a lazy tab its view and loads its page. */
-  private materialize(id: TabId): void {
+  /** Gives a tab without a view, such as a restored one, its view, which loads its page. */
+  private wake(id: TabId): void {
     const url = this.lazyTabs.get(id);
     if (url !== undefined) {
       this.lazyTabs.delete(id);
@@ -1534,11 +1619,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.dropFavicon(id);
     this.tabs.update(id, { audible: false });
     Object.assign(entry, this.createView(id, url), { requested: url });
-    if (this.visible === old && !this.window.isDestroyed()) {
+    // The new view takes the place of the old one in the content area.
+    const place = this.shown.indexOf(old);
+    if (place !== -1 && !this.window.isDestroyed()) {
       this.overlay?.close();
-      this.window.contentView.removeChildView(old);
-      this.window.contentView.addChildView(entry.view);
-      this.visible = entry.view;
+      this.detachPage(old);
+      this.attachPage(entry.view, place);
       this.layout();
     }
     this.close(old, oldRegistration);
@@ -1551,13 +1637,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /** Closes a tab view that no longer shows a tab. */
   private close(view: WebContentsView, registration: Disposable | undefined): void {
-    if (this.visible === view) {
-      // A destroyed window no longer has a content view; touching it blocks.
-      if (!this.window.isDestroyed()) {
-        this.window.contentView.removeChildView(view);
-      }
-      this.visible = undefined;
-    }
+    this.detachPage(view);
     registration?.dispose();
     // A page that closed itself left its view without contents.
     const contents: WebContents | undefined = view.webContents;
@@ -1603,25 +1683,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
   }
 
+  /** Lays the shell over the whole window and the shown pages out in the page area. */
   private layout(): void {
     if (this.window.isDestroyed()) {
       return;
     }
     const { width, height } = this.window.getContentBounds();
     this.shell.setBounds({ x: 0, y: 0, width, height });
-    // Only the tab whose page is in full screen covers the shell.
-    const covering =
-      this.fullScreenTab !== undefined &&
-      this.entries.get(this.fullScreenTab)?.view === this.visible;
-    const { top, right, bottom, left } = covering
-      ? { top: 0, right: 0, bottom: 0, left: 0 }
-      : this.insets;
-    this.visible?.setBounds({
-      x: left,
-      y: top,
-      width: Math.max(0, width - left - right),
-      height: Math.max(0, height - top - bottom),
-    });
+    const area = this.pageArea();
+    for (const view of this.shown) view.setBounds(area);
   }
 
   private schedulePublish(): void {
@@ -1715,28 +1785,28 @@ export class WindowManager implements Disposable {
   }
 
   /**
-   * Opens the windows of a stored session. Only the active tab of each window loads; the
-   * others load when they are shown.
-   * @param session - The windows and their tabs.
-   * @returns The first window.
+   * Opens windows again with their tabs, such as those of a stored session. Only the active
+   * tab of each window loads; the others load when they are shown.
+   * @param windows - The windows, with their tabs and where they were.
+   * @returns The first window, or a new window with a new tab page when there is none.
    */
-  restore(session: SessionSnapshot): BrowserWindowController {
+  restore(windows: readonly RestoredWindow[]): BrowserWindowController {
     const areas = workAreas();
-    const controllers = session.windows.map((stored) => {
+    const controllers = windows.map(({ tabs, active, place }) => {
       const controller = this.add({
-        bounds: stored.bounds === undefined ? undefined : visibleBounds(stored.bounds, areas),
-        maximized: stored.maximized,
+        bounds: place.bounds === undefined ? undefined : visibleBounds(place.bounds, areas),
+        maximized: place.maximized,
       });
-      const ids = stored.tabs.map((tab, index) =>
+      const ids = tabs.map((tab, index) =>
         controller.tabs.open(tab.url, {
           activate: false,
-          lazy: index !== stored.active,
+          lazy: index !== active,
           title: tab.title,
           pinned: tab.pinned === true,
         }),
       );
-      const active = ids[stored.active] ?? ids[0];
-      if (active !== undefined) controller.tabs.activate(active);
+      const activeId = ids[active] ?? ids[0];
+      if (activeId !== undefined) controller.tabs.activate(activeId);
       return controller;
     });
     return controllers[0] ?? this.open();

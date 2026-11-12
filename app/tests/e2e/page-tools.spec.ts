@@ -171,6 +171,42 @@ test('starts a new search for new text and goes on with it for the next match', 
   }
 });
 
+test('closes the find bar with the tab whose page it searches', async () => {
+  // Of the start pages, only the first loads at once; the others load when they show.
+  const first = `${server.origin}/find.html`;
+  const pages = [first, `${server.origin}/second.html`, `${server.origin}/index.html`];
+  const browser = await launch([], {
+    settings: { 'startup.page': 'pages', 'startup.urls': pages },
+  });
+  try {
+    const find = browser.shell.getByRole('search', { name: 'Find in page' });
+    const field = find.getByRole('searchbox', { name: 'Find in page' });
+    const tabs = browser.shell.getByRole('tab');
+    const page = await waitForPage(browser, (url) => url === first);
+    await expect(page.locator('body')).toContainText('Apple pie.');
+    await pressNative(browser, 'F', ['primary']);
+    await expect(field).toBeFocused();
+    await field.fill('apple');
+    await expect(find).toContainText('1 of 3');
+    // Closing the tab shows the second one; the third has not loaded yet.
+    await pressNative(browser, 'W', ['primary']);
+    await expect(tabs).toHaveCount(2);
+    await expect(find).toBeHidden();
+    expect((await shellState(browser.shell)).find).toBe(null);
+    // The same when the tab that shows next is the last one of the window.
+    await open(browser, first);
+    await pressNative(browser, 'F', ['primary']);
+    await expect(field).toHaveValue('apple');
+    await expect(find).toContainText('1 of 3');
+    await pressNative(browser, 'W', ['primary']);
+    await expect(tabs).toHaveCount(1);
+    await expect(find).toBeHidden();
+    expect((await shellState(browser.shell)).find).toBe(null);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('shows the zoom of a site in every tab of the site', async () => {
   const browser = await launch();
   try {

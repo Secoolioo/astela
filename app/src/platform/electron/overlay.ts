@@ -105,6 +105,17 @@ export class WindowOverlay implements OverlayHandle {
   }
 
   /**
+   * Puts the overlay above every other view of the window again while it shows something,
+   * after the window attached a view, such as the page of a tab.
+   */
+  raise(): void {
+    const view = this.view;
+    if (this.shown === null || view === undefined || this.window.window.isDestroyed()) return;
+    // Adding a view that the window holds already moves it to the top.
+    this.window.window.contentView.addChildView(view);
+  }
+
+  /**
    * Closes the overlay and gives the focus back to the page or the shell, if the overlay had
    * it: a list below the address bar leaves the focus where the typing goes on.
    */

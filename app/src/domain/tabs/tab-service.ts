@@ -1,6 +1,7 @@
 import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
+import { TabStrip } from './tab-strip.ts';
 
 /** Identifier of a tab, such as `t1a`. */
 export type TabId = string;
@@ -109,19 +110,14 @@ const tabFields = [
 /** Fields of a tab that a session keeps. */
 const keptFields = ['url', 'title', 'pinned'] as const;
 
-/** How many closed tabs can be reopened. */
-const closedTabLimit = 25;
-
 /**
- * Owns the tabs of one window: their order, the active tab and recently closed tabs. A
- * window always keeps at least one tab.
+ * Owns the tabs of one window and tells its views what changed. A {@link TabStrip} keeps the
+ * order of the tabs, the active tab and the tabs that closed lately. A window always keeps at
+ * least one tab.
  */
 export class TabService implements Disposable {
-  private readonly tabs: Tab[] = [];
-  private activeId: TabId | undefined;
-  /** Tabs opened in the background since the active tab became active. */
-  private readonly openedInBackground = new Set<TabId>();
-  private readonly closed: string[] = [];
+  /** The tabs of the window. */
+  private readonly tabStrip = new TabStrip<Tab>();
   private nextId = 1;
   private readonly changeEmitter = new Emitter<void>();
   private readonly views: TabViewPort;
@@ -151,12 +147,34 @@ export class TabService implements Disposable {
 
   /** All tabs in display order. */
   get all(): readonly Tab[] {
-    return this.tabs;
+    return this.strip.all;
   }
 
   /** The active tab, if any. */
   get active(): Tab | undefined {
-    return this.tabs.find((t) => t.id === this.activeId);
+    return this.strip.active;
+  }
+
+  /** The tabs whose pages the content area shows: the active tab. */
+  get shown(): readonly TabId[] {
+    return this.strip.shown;
+  }
+
+  /**
+   * The tabs that the strip lists, in their order, which the shortcuts that go to the next
+   * tab or to a tab by its place count: all tabs.
+   */
+  get listed(): readonly Tab[] {
+    return this.strip.listed;
+  }
+
+  /**
+   * The tabs that move together with a tab, in their order: the tab alone.
+   * @param id - The tab.
+   * @returns The tabs, or none for a tab that the window does not have.
+   */
+  unitOf(id: TabId): readonly TabId[] {
+    return this.stripOf(id)?.unitOf(id) ?? [];
   }
 
   /**
@@ -185,17 +203,12 @@ export class TabService implements Disposable {
       pinned: options.pinned === true,
     };
     const activate = options.activate ?? true;
-    const index = tab.pinned
-      ? this.pinnedCount
-      : options.after === undefined
-        ? this.insertionIndex(activate)
-        : this.indexOf(options.after) + 1;
-    this.tabs.splice(Math.max(index, tab.pinned ? 0 : this.pinnedCount), 0, tab);
+    if (options.after !== undefined) this.require(options.after);
+    this.strip.insert(tab, { activate, after: options.after });
     this.views.create(id, url, lazy);
     if (activate) {
       this.activate(id);
     } else {
-      this.openedInBackground.add(id);
       this.changed(true);
     }
     return id;
@@ -206,10 +219,7 @@ export class TabService implements Disposable {
    * @param id - The tab.
    */
   activate(id: TabId): void {
-    this.require(id);
-    if (this.activeId !== id) {
-      this.activeId = id;
-      this.openedInBackground.clear();
+    if (this.require(id).activate(id)) {
       this.views.show(id);
     }
     this.changed(true);
@@ -221,20 +231,13 @@ export class TabService implements Disposable {
    * @param id - The tab.
    */
   close(id: TabId): void {
-    const index = this.indexOf(id);
-    const [tab] = this.tabs.splice(index, 1);
-    if (tab === undefined) {
+    const closed = this.require(id).close(id);
+    if (closed === undefined) {
       return;
     }
-    this.closed.push(tab.url);
-    if (this.closed.length > closedTabLimit) {
-      this.closed.shift();
-    }
     this.views.destroy(id);
-    if (this.activeId === id) {
-      this.activeId = undefined;
-      const next = this.tabs[index] ?? this.tabs[index - 1];
-      if (next === undefined) {
+    if (closed.active) {
+      if (closed.next === undefined) {
         if (this.onLastClosed === undefined) this.open();
         else {
           this.changed(true);
@@ -242,25 +245,35 @@ export class TabService implements Disposable {
         }
         return;
       }
-      this.activate(next.id);
+      this.activate(closed.next.id);
       return;
     }
     this.changed(true);
   }
 
   /**
-   * Moves a tab to another place in the order of the tabs.
+   * Moves a tab to another place in the order of the tabs. Pinned tabs stay among the pinned
+   * tabs, the others after them.
    * @param id - The tab.
    * @param index - Its new index, counted without the tab itself; clamped to the tabs.
    */
   move(id: TabId, index: number): void {
-    const [tab] = this.tabs.splice(this.indexOf(id), 1);
-    if (tab === undefined) return;
-    // Pinned tabs stay among the pinned tabs, the others after them.
-    const pinned = this.pinnedCount;
-    const [first, last] = tab.pinned ? [0, pinned] : [pinned, this.tabs.length];
-    this.tabs.splice(Math.max(first, Math.min(index, last)), 0, tab);
+    this.require(id).move(id, index);
     this.changed(true);
+  }
+
+  /**
+   * Moves a tab, with the tabs that move together with it, past the tab or the tabs next to
+   * it, as the keyboard moves the active tab. Pinned tabs stay among the pinned tabs, the
+   * others after them.
+   * @param id - The tab.
+   * @param direction - -1 toward the start of the strip, 1 toward its end.
+   * @returns Whether the tab moved; it does not at the end of its tabs.
+   */
+  step(id: TabId, direction: -1 | 1): boolean {
+    if (!this.require(id).step(id, direction)) return false;
+    this.changed(true);
+    return true;
   }
 
   /**
@@ -270,21 +283,13 @@ export class TabService implements Disposable {
    * @param pinned - Whether the tab is pinned.
    */
   pin(id: TabId, pinned: boolean): void {
-    const [tab] = this.tabs.splice(this.indexOf(id), 1);
-    if (tab === undefined) return;
-    this.tabs.splice(this.pinnedCount, 0, { ...tab, pinned });
+    this.require(id).pin(id, pinned);
     this.changed(true);
-  }
-
-  /** How many tabs are pinned; they are the first tabs. */
-  private get pinnedCount(): number {
-    const index = this.tabs.findIndex((tab) => !tab.pinned);
-    return index === -1 ? this.tabs.length : index;
   }
 
   /** Whether a closed tab can be opened again. */
   get canReopen(): boolean {
-    return this.closed.length > 0;
+    return this.strip.canReopen;
   }
 
   /**
@@ -292,7 +297,7 @@ export class TabService implements Disposable {
    * @returns The reopened tab's id, or `undefined` if nothing was closed.
    */
   reopenClosed(): TabId | undefined {
-    const url = this.closed.pop();
+    const url = this.strip.reopen();
     return url === undefined ? undefined : this.open(url);
   }
 
@@ -322,16 +327,16 @@ export class TabService implements Disposable {
    * @param update - Changed fields.
    */
   update(id: TabId, update: TabUpdate): void {
-    const index = this.tabs.findIndex((t) => t.id === id);
-    const current = this.tabs[index];
-    if (current === undefined) {
+    const strip = this.stripOf(id);
+    const current = strip?.get(id);
+    if (strip === undefined || current === undefined) {
       return;
     }
     const next = { ...current, ...update };
     const differs = (field: (typeof tabFields)[number]): boolean =>
       update[field] !== undefined && update[field] !== current[field];
     if (tabFields.some(differs)) {
-      this.tabs[index] = next;
+      strip.replace(next);
       // A count of blocked requests or a page that loads changes nothing that a session keeps.
       this.changed(keptFields.some(differs));
     }
@@ -344,39 +349,37 @@ export class TabService implements Disposable {
 
   /** Destroys every view and removes listeners. */
   dispose(): void {
-    for (const tab of this.tabs.splice(0)) {
+    for (const tab of this.strip.clear()) {
       this.views.destroy(tab.id);
     }
     this.changeEmitter.dispose();
     this.keptEmitter.dispose();
   }
 
-  /** Where a new tab goes: after the active tab and, in the background, its earlier tabs. */
-  private insertionIndex(activate: boolean): number {
-    if (this.activeId === undefined) {
-      return this.tabs.length;
-    }
-    // A tab that is not pinned goes after the pinned tabs, also when a pinned tab is active,
-    // so the tabs opened in the background before it come first.
-    const next = Math.max(this.indexOf(this.activeId) + 1, this.pinnedCount);
-    if (activate) {
-      return next;
-    }
-    const end = this.tabs.findIndex(
-      (tab, index) => index >= next && !this.openedInBackground.has(tab.id),
-    );
-    return end === -1 ? this.tabs.length : end;
+  /** The strip of tabs that the window shows. */
+  private get strip(): TabStrip<Tab> {
+    return this.tabStrip;
   }
 
-  private indexOf(id: TabId): number {
-    const index = this.tabs.findIndex((t) => t.id === id);
-    if (index === -1) {
+  /**
+   * The strip that holds a tab.
+   * @param id - The tab.
+   * @returns The strip, or `undefined` when the window has no such tab.
+   */
+  private stripOf(id: TabId): TabStrip<Tab> | undefined {
+    return this.tabStrip.has(id) ? this.tabStrip : undefined;
+  }
+
+  /**
+   * The strip that holds a tab, which must be one of the window's.
+   * @param id - The tab.
+   * @throws When the window has no such tab.
+   */
+  private require(id: TabId): TabStrip<Tab> {
+    const strip = this.stripOf(id);
+    if (strip === undefined) {
       throw new Error(`Unknown tab ${id}`);
     }
-    return index;
-  }
-
-  private require(id: TabId): void {
-    this.indexOf(id);
+    return strip;
   }
 }

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { FixtureServer, launch, pressNative, shellState, waitForPage } from './harness.ts';
 
@@ -41,6 +44,40 @@ test('restores the tabs of the last session and loads only the active one', asyn
     await expect.poll(loaded).toBe(2);
   } finally {
     await second.close();
+  }
+});
+
+test('restores a tab whose pinned flag in the session is broken, as a tab that is not pinned', async () => {
+  // Each optional field of a stored tab is read on its own, so a broken one costs only itself.
+  const profile = mkdtempSync(join(tmpdir(), 'e2e-profile-'));
+  mkdirSync(join(profile, 'data'), { recursive: true });
+  writeFileSync(
+    join(profile, 'data', 'session.json'),
+    JSON.stringify({
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            { url: `${server.origin}/index.html`, title: 'Fixture home', pinned: 'yes' },
+            { url: `${server.origin}/second.html`, title: 'Fixture second', pinned: true },
+            { url: `${server.origin}/opened.html`, title: 'Fixture opened' },
+          ],
+          active: 2,
+        },
+      ],
+    }),
+  );
+  const browser = await launch([], { profile });
+  try {
+    const state = await shellState(browser.shell);
+    expect(state.tabs.map((tab) => [tab.url, tab.pinned])).toEqual([
+      [`${server.origin}/second.html`, true],
+      [`${server.origin}/index.html`, false],
+      [`${server.origin}/opened.html`, false],
+    ]);
+    expect(state.activeTabId).toBe(state.tabs[2]?.id);
+  } finally {
+    await browser.close();
   }
 });
 
