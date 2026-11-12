@@ -29,6 +29,7 @@ import { FuseV1Options, FuseVersion, flipFuses } from '@electron/fuses';
 import { updateServiceStates } from './browser-log.ts';
 import { mannWhitneyGreater, median } from './stats.ts';
 import { memoryMetric, sampleTree, startTree, stopTree, type TreeSample } from './system.ts';
+import { staticImports } from './start-path.ts';
 
 const root = resolve(import.meta.dirname, '../..');
 const mib = 1024 * 1024;
@@ -453,19 +454,6 @@ function startFiles(htmlFile: string, rendererRoot: string): string[] {
   return [...refs].map(({ 1: ref = '' }) =>
     ref.startsWith('/') ? join(rendererRoot, ref) : resolve(dirname(htmlFile), ref),
   );
-}
-
-/** The main entry and the chunks it imports statically, recursively. */
-function staticImports(file: string, seen = new Set<string>()): Set<string> {
-  if (seen.has(file)) return seen;
-  seen.add(file);
-  const code = readFileSync(file, 'utf8');
-  for (const match of code.matchAll(
-    /^\s*import\s+(?:[^'"]*?\sfrom\s*)?["'](\.{1,2}\/[^"']+)["']/gm,
-  )) {
-    staticImports(resolve(dirname(file), match[1] ?? ''), seen);
-  }
-  return seen;
 }
 
 function bundleChecks(): Check[] {
