@@ -200,6 +200,8 @@ test('shows changes of the settings on an open new tab page', async () => {
   await expect(page.locator('#clock')).toBeHidden();
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await pressNative(browser, 'T', ['primary']);
+  // What is typed goes to the active tab, so the typing waits until the new tab shows.
+  await expect(browser.shell.getByRole('tab')).toHaveCount(2);
   await address.fill('app://settings/#newtab');
   await address.press('Enter');
   const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));

@@ -70,6 +70,12 @@ export class Bookmarks {
     return this.rows.flatMap(({ title, url }) => (url === null ? [] : [{ title, url }]));
   }
 
+  /** Every bookmark, without folders, once the bookmarks have loaded. */
+  async loadedPages(): Promise<{ title: string; url: string }[]> {
+    await (this.loaded ??= this.load());
+    return this.pages();
+  }
+
   /**
    * The bookmarks and folders in a folder, in their order.
    * @param folder - The folder's id.

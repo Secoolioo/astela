@@ -18,7 +18,7 @@ import {
   ThemeSetting,
   UiFontSetting,
 } from './core-settings.ts';
-import { themeColors, windowColors } from '../shared/themes.ts';
+import { themeColors, toolbarColors, windowColors } from '../shared/themes.ts';
 import { setWindowColors } from './window-background.ts';
 
 const appearanceKeys = new Set([
@@ -44,7 +44,10 @@ export class AppearanceController implements Disposable {
   private readonly router: IpcRouter;
   private readonly internal: Session;
   private css: string;
-  /** The colors of new windows, as JSON, to repaint open windows when the theme changes them. */
+  /**
+   * The colors of new windows and of their toolbar, as JSON, to repaint open windows and fit
+   * their window controls when the theme changes them.
+   */
   private windowColors = '';
   private readonly onColorsChanged: () => void;
   /** Computes the colors of a custom accent, once its code has loaded. */
@@ -136,10 +139,12 @@ export class AppearanceController implements Disposable {
     const accent = this.settings.get(AccentSetting);
     const theme = this.settings.get(ThemeSetting);
     const custom = this.settings.get(CustomThemeSetting);
-    // New windows paint the theme's color until their shell has painted.
+    // New windows paint the theme's color until their shell has painted, and the window
+    // controls take the color of the row that they sit on.
     const colors = windowColors(theme, custom);
-    setWindowColors(colors);
-    this.windowColors = JSON.stringify(colors);
+    const toolbar = toolbarColors(theme, custom);
+    setWindowColors(colors, toolbar);
+    this.windowColors = JSON.stringify([colors, toolbar]);
     return appearanceCss({
       theme: themeColors(theme, custom),
       accent: isAccentPreset(accent)

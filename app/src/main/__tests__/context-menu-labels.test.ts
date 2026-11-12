@@ -4,6 +4,7 @@ import {
   type ContextMenuParams,
 } from '../../domain/context-menu/context-menu.ts';
 import { contextMenuLabels } from '../context-menu-labels.ts';
+import { accessKeyProblems } from './access-keys.ts';
 
 const nothing: ContextMenuParams = {
   linkURL: '',
@@ -62,28 +63,6 @@ function texts(click: Partial<ContextMenuParams>, locale: string, platform: stri
     platform,
   );
   return entries.flatMap((entry) => (entry.type === 'item' ? [entry.label] : []));
-}
-
-/** Texts without exactly one access key, and access keys that two texts of a menu share. */
-function accessKeyProblems(labels: readonly string[]): string[] {
-  const owners = new Map<string, string>();
-  const problems: string[] = [];
-  for (const label of labels) {
-    const keys = [...label.replaceAll('&&', '').matchAll(/&(.)/gu)].map(([, key = '']) =>
-      key.toLowerCase(),
-    );
-    if (keys.length !== 1) {
-      problems.push(`${label} has ${keys.length} access keys`);
-    }
-    for (const key of keys) {
-      const owner = owners.get(key);
-      if (owner !== undefined) {
-        problems.push(`${label} shares ${key} with ${owner}`);
-      }
-      owners.set(key, label);
-    }
-  }
-  return problems;
 }
 
 describe('contextMenuLabels', () => {

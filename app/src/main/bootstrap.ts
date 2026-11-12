@@ -135,7 +135,7 @@ import type { PermissionPrompts } from './permission-prompt.ts';
 import { sitePermissions } from './site-permissions.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
 import { checkBoot } from './boot.ts';
-import { windowBackground } from './window-background.ts';
+import { toolbarBackground, windowBackground } from './window-background.ts';
 import type { UpdateService } from '../domain/updates/update-service.ts';
 
 /** Paths of the bundled files, relative to the main bundle. */
@@ -507,6 +507,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     privateSites = {};
     downloads?.forgetPrivate();
     if (ended === undefined) return;
+    // The icons of the private pages go with their session.
+    import('../platform/electron/favicons.ts').then(
+      ({ favicons }) => favicons.forget(ended),
+      (error: unknown) => logger.warn('Private icons were not deleted', { error: String(error) }),
+    );
     Promise.all([ended.clearStorageData(), ended.clearCache(), ended.clearAuthCache()]).catch(
       (error: unknown) => logger.warn('Private data was not deleted', { error: String(error) }),
     );
@@ -604,6 +609,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     privateSession: privateWeb,
     newTabUrl,
     backgroundColor: windowBackground,
+    toolbarColor: toolbarBackground,
     appearanceArgument: () => appearance.argument,
     languageArguments: viewArguments,
     webFonts: () =>
@@ -665,6 +671,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     logger,
     onContextMenu,
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+    // The pages of a site whose certificate the user accepted after the warning do not count
+    // as secure.
+    certificateException: (contents, url) => certificates.covers(contents, url),
     insecureAddressFor: (contents, failed, stopped) =>
       httpsFirst.insecureAddressFor(contents, failed, stopped),
     shortcuts: () => shortcuts,
@@ -798,7 +807,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           },
           history: async (text) =>
             (await data.call('history', text, 10)).map(({ title, url }) => ({ title, url })),
-          bookmarks: () => bookmarks?.pages() ?? [],
+          bookmarks: async () => (await loadBookmarks()).loadedPages(),
         },
         openShieldPopover: async (window, anchor) => {
           const { openShieldPopover } = await import('./shield-popover.ts');
@@ -891,12 +900,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }
     }
   });
+  // The density sets the height of the top row, which the window controls share.
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
     DefaultZoomSetting.key,
     ToolbarItemsSetting.key,
     TabStripPositionSetting.key,
+    DensitySetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
   ]);

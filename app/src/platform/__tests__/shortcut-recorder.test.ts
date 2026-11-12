@@ -43,6 +43,25 @@ describe('ShortcutRecorder', () => {
     await expect(second).resolves.toBeUndefined();
   });
 
+  it('records the keys of the digits as their digits, as the shortcuts match them', async () => {
+    const recorder = new ShortcutRecorder();
+    const recorded = (input: Partial<Input>): Promise<string | undefined> => {
+      const shortcut = recorder.record(view(6));
+      recorder.take(6, key(input), 'linux');
+      return shortcut;
+    };
+    // On French layouts, the 1 key types & and the 6 key the minus sign.
+    await expect(recorded({ key: '&', code: 'Digit1', control: true })).resolves.toBe('Ctrl+1');
+    await expect(recorded({ key: '1', code: 'Digit1', control: true, shift: true })).resolves.toBe(
+      'Ctrl+1',
+    );
+    await expect(recorded({ key: '-', code: 'Digit6', control: true })).resolves.toBe('Ctrl+-');
+    // On English layouts, Shift and the 1 key type !.
+    await expect(recorded({ key: '!', code: 'Digit1', control: true, shift: true })).resolves.toBe(
+      'Ctrl+Shift+!',
+    );
+  });
+
   it('leaves no listener on the view once a wait ends, and names the space bar', async () => {
     const recorder = new ShortcutRecorder();
     const contents = view(5);

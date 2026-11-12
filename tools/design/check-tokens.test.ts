@@ -3,6 +3,11 @@ import { describe, it } from 'node:test';
 import { resolve } from 'node:path';
 import { checkTokens, problemsIn } from './check-tokens.ts';
 
+/** The line and the rule of each problem in a text. */
+function found(text: string): [number, string][] {
+  return problemsIn('a.ts', text).map(({ line, rule }) => [line, rule]);
+}
+
 describe('problemsIn', () => {
   it('finds durations and easings that are written out', () => {
     const css = [
@@ -17,6 +22,7 @@ describe('problemsIn', () => {
         [1, 'easing'],
         [2, 'duration'],
         [2, 'easing'],
+        [3, 'duration'],
       ],
     );
   });
@@ -37,6 +43,98 @@ describe('problemsIn', () => {
       problemsIn('a.css', '.card { box-shadow: 0 4px 12px rgb(0 0 0 / 20%); }').map((p) => p.rule),
       ['shadow'],
     );
+  });
+
+  it('finds durations and easings on later lines than their property name', () => {
+    const css = [
+      '.tab {',
+      '  transition:',
+      '    background-color 120ms ease,',
+      '    transform 180ms ease-out;',
+      '  animation:',
+      '    open 0.2s',
+      '    linear;',
+      '}',
+    ].join('\n');
+    assert.deepEqual(found(css), [
+      [3, 'duration'],
+      [3, 'easing'],
+      [4, 'duration'],
+      [4, 'easing'],
+      [6, 'duration'],
+      [7, 'easing'],
+    ]);
+    const problem = problemsIn('a.css', css)[0];
+    assert.equal(problem?.text, 'background-color 120ms ease,');
+  });
+
+  it('finds durations, delays and easings in code', () => {
+    const code = [
+      'el.animate(frames, {',
+      '  duration: 200,',
+      "  easing: 'ease-out',",
+      '});',
+      'el.animate(frames, { duration: motionOf(el, "--motion-base"), delay: 50 });',
+      "el.style.cssText = 'background: url(https://a.example/b.png); transition: opacity .5s';",
+      'html`<p style="transition: ${name} 120ms ease-in"></p>`;',
+    ].join('\n');
+    assert.deepEqual(found(code), [
+      [2, 'duration'],
+      [3, 'easing'],
+      [5, 'duration'],
+      [6, 'duration'],
+      [7, 'duration'],
+      [7, 'easing'],
+    ]);
+  });
+
+  it('accepts durations and easings from tokens on later lines, and numbers that are no options', () => {
+    const code = [
+      '.tab {',
+      '  transition:',
+      '    background-color var(--motion-instant) var(--ease-standard),',
+      '    box-shadow var(--motion-fast) var(--ease-standard);',
+      '}',
+      'el.animate(frames, {',
+      '  duration: motionOf(this, "--motion-base"),',
+      "  easing: easingOf(this, '--ease-out'),",
+      '});',
+      'const length = animate ? duration : 0;',
+      'const armDelay = 500;',
+      "const ease = getComputedStyle(el).getPropertyValue(`--ease-${name}`) || 'ease';",
+    ].join('\n');
+    assert.deepEqual(found(code), []);
+  });
+
+  it('finds shadows whose value continues on later lines, but accepts rings there', () => {
+    const css = [
+      '.card {',
+      '  box-shadow:',
+      '    0 4px 12px rgb(0 0 0 / 20%),',
+      '    0 1px 3px rgb(0 0 0 / 10%);',
+      '}',
+      '.field:focus {',
+      '  box-shadow:',
+      '    0 0 0 2px var(--focus-ring);',
+      '}',
+      '.menu { box-shadow:',
+      '  var(--shadow-popover) }',
+    ].join('\n');
+    assert.deepEqual(found(css), [[3, 'shadow']]);
+  });
+
+  it('leaves out comments', () => {
+    const code = [
+      '/* A transition of 120ms that eases out: ease-out. */',
+      '.tab { transition: opacity var(--motion-fast) var(--ease-out); }',
+      '/*',
+      ' * The animation takes 1s,',
+      ' * with box-shadow: 0 4px 12px black.',
+      ' */',
+      '// The transition takes 180ms.',
+      'const wait = 3; // The delay is 2s.',
+    ].join('\n');
+    assert.deepEqual(found(code), []);
   });
 });
 

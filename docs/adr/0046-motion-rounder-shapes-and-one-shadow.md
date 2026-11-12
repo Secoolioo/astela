@@ -18,9 +18,9 @@ Motion that is too long or too frequent makes a browser feel slow, and shadows a
 
 - **Shape:** four radii as tokens: `--radius-1` (6 px) for small parts such as icon buttons and chips, `--radius-2` (8 px) for controls such as buttons, inputs, tabs and rows, `--radius-3` (12 px) for surfaces that float or group content, such as menus, popovers, dialogs and tiles, and `--radius-field` (10 px) for the address bar and search fields. Only switches, badges and progress bars have round ends (`--radius-pill`).
 - **Depth:** 1 px lines and surface colors still separate areas. Menus and popovers that float above the page get one soft shadow, `--shadow-popover`; nothing else casts a shadow. Rings of 1 or 2 px, such as focus rings, are allowed.
-- **Motion:** four durations, `--motion-instant` (60 ms) for hover and press, `--motion-fast` (120 ms) for small changes, `--motion-base` (180 ms) for things that open, close or move, and `--motion-slow` (220 ms) for larger movements, and `--motion-loop` (1 s) for one turn of a loading indicator, with three easings, `--ease-standard`, `--ease-out` for things that enter and `--ease-in` for things that leave. Motion animates only `transform`, `opacity` and colors, never layout. With reduced motion, every duration is 0.
+- **Motion:** four durations for changes, `--motion-instant` (60 ms) for hover and press, `--motion-fast` (120 ms) for small changes, `--motion-base` (180 ms) for things that open, close or move, and `--motion-slow` (220 ms) for larger movements, and one for loops, `--motion-loop` (1 s), for one turn of a loading indicator, which repeats while a page loads. Four easings go with them: `--ease-standard` for movements, `--ease-out` for things that enter, `--ease-in` for things that leave, and `--ease-linear` for a loading indicator that turns at an even speed. Motion animates only `transform`, `opacity` and colors, never layout. With reduced motion, every duration is 0.
 - **Weights:** `--font-weight-regular`, `--font-weight-medium` and `--font-weight-strong` give hierarchy with the type scale.
-- **Enforced:** `pnpm verify` fails when the interface writes out a duration, an easing or a shadow instead of taking it from the tokens (`tools/design/check-tokens.ts`).
+- **Enforced:** `pnpm verify` checks the interface in `app/src/ui` with `tools/design/check-tokens.ts`. It fails when a transition or an animation writes out a duration or an easing, when code gives `duration`, `delay` or `endDelay` as a number or writes out an easing, as in the options of `animate()`, and when a `box-shadow` is neither a shadow token nor a ring of 1 or 2 px in a color token. A value counts also when it continues on a later line than its property name. The check does not see a duration or an easing that code computes or keeps in a constant or a custom property of its own; code that animates reads them from the tokens with `motionOf` and `easingOf` (`app/src/ui/ui-kit/motion.ts`).
 
 ## Consequences
 
@@ -32,7 +32,7 @@ Positive:
 
 Negative:
 
-- The longest motion takes 220 ms instead of 150 ms; it is meant for movements that cover a distance, such as a sliding indicator, not for every change.
+- The longest change takes 220 ms instead of 150 ms; it is meant for movements that cover a distance, such as a sliding indicator, not for every change. Only loading indicators move longer, with turns of 1 s while a page loads.
 - Screenshots of all surfaces change once, as every radius grows by 2 px.
 
 ## Alternatives considered

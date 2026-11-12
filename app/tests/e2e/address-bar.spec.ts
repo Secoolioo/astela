@@ -37,7 +37,10 @@ async function open(browser: Browser, url: string): Promise<void> {
 
 /**
  * Holds back each message that tells the shell its state, so that the shell learns of a
- * change only some time after the browser made it, as on a busy computer.
+ * change only some time after the browser made it, as on a busy computer. A message that comes
+ * due after the shell closed, as while the browser quits, is dropped, as the browser drops its
+ * own: sending it would throw, and the box in which Electron shows an error of the browser
+ * process would keep the browser from quitting.
  * @param browser - The running browser.
  * @param delay - How long each message waits, in milliseconds.
  */
@@ -49,8 +52,11 @@ async function delayShellState(browser: Browser, delay: number): Promise<void> {
     if (shell === undefined) throw new Error('The shell was not found');
     const send = shell.send.bind(shell);
     shell.send = (channel: string, ...args: unknown[]): void => {
-      if (channel === 'shell.stateChanged') setTimeout(() => send(channel, ...args), wait);
-      else send(channel, ...args);
+      if (channel === 'shell.stateChanged') {
+        setTimeout(() => {
+          if (!shell.isDestroyed()) send(channel, ...args);
+        }, wait);
+      } else send(channel, ...args);
     };
   }, delay);
 }
@@ -78,7 +84,8 @@ async function delayNewTabAnswer(browser: Browser, delay: number): Promise<void>
 
 /**
  * Holds back a command that the browser sends the shell, such as the one that tells it that a
- * suggestion opened.
+ * suggestion opened. A command that comes due after the shell closed is dropped, as in
+ * {@link delayShellState}.
  * @param browser - The running browser.
  * @param command - The command.
  * @param delay - How long it waits, in milliseconds.
@@ -93,12 +100,36 @@ async function delayShellCommand(browser: Browser, command: string, delay: numbe
       const send = shell.send.bind(shell);
       shell.send = (channel: string, ...args: unknown[]): void => {
         if (channel === 'shell.command' && args[0] === held) {
-          setTimeout(() => send(channel, ...args), wait);
+          setTimeout(() => {
+            if (!shell.isDestroyed()) send(channel, ...args);
+          }, wait);
         } else send(channel, ...args);
       };
     },
     { held: command, wait: delay },
   );
+}
+
+/**
+ * Lets Enter on a marked suggestion find none, as when a newer list without the mark came
+ * first, and holds back the browser's answer, after which the shell opens what was typed.
+ * @param browser - The running browser.
+ * @param delay - How long the answer waits, in milliseconds.
+ */
+async function loseMarkedSuggestion(browser: Browser, delay: number): Promise<void> {
+  await browser.shell.evaluate((wait) => {
+    const shell = document.querySelector('app-shell') as unknown as {
+      bridge: { invoke(channel: string, request: unknown): Promise<unknown> };
+    };
+    const bridge = shell.bridge;
+    const invoke = bridge.invoke.bind(bridge);
+    bridge.invoke = async (channel, request) => {
+      if (channel !== 'omnibox.accept') return invoke(channel, request);
+      await invoke('omnibox.close', {});
+      const answer = await invoke(channel, request);
+      return new Promise((done) => setTimeout(() => done(answer), wait));
+    };
+  }, delay);
 }
 
 /** Opens a page in the first tab and returns its address. */
@@ -114,6 +145,40 @@ async function openFirstPage(browser: Browser): Promise<string> {
 /** The addresses of the tabs, in their order. */
 async function tabUrls(browser: Browser): Promise<string[]> {
   return (await shellState(browser.shell)).tabs.map((tab) => tab.url);
+}
+
+/**
+ * Lets the shell see where the focus is: Playwright pretends that a page it drives always has
+ * the focus, so the shell would never notice that the focus went to the page or to the list.
+ */
+async function useRealFocus(browser: Browser): Promise<void> {
+  const session = await browser.shell.context().newCDPSession(browser.shell);
+  await session.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+}
+
+/**
+ * Gives a view the focus of the window, as a click of the mouse does. Clicks that Playwright
+ * sends reach the page without moving the focus between the views of the window.
+ */
+async function focusView(browser: Browser, prefix: string): Promise<void> {
+  await browser.main.evaluate(({ webContents }, start) => {
+    webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL().startsWith(start))
+      ?.focus();
+  }, prefix);
+  await expect.poll(() => viewFocused(browser, prefix)).toBe(true);
+}
+
+/** Whether the view of the browser's own page at the start of an address has the focus. */
+function viewFocused(browser: Browser, prefix: string): Promise<boolean> {
+  return browser.main.evaluate(
+    ({ webContents }, start) =>
+      webContents
+        .getAllWebContents()
+        .some((contents) => contents.getURL().startsWith(start) && contents.isFocused()),
+    prefix,
+  );
 }
 
 test('keeps what was typed in the address bar of each tab until it is entered', async () => {
@@ -173,6 +238,38 @@ test('keeps what is typed right after a click on New tab for the new tab, howeve
   }
 });
 
+test('keeps what was typed when a switch of tabs moves the focus into the page', async () => {
+  const browser = await launch();
+  try {
+    await useRealFocus(browser);
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await open(browser, `${server.origin}/index.html`);
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await open(browser, `${server.origin}/second.html`);
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await focusView(browser, 'app://shell');
+    await address.click();
+    await address.fill('typed in the second tab');
+    // The browser shows the other tab and gives its page the focus, as after a real key press.
+    await pressNative(browser, 'Tab', ['control']);
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+    await expect.poll(() => viewFocused(browser, 'app://shell')).toBe(false);
+    await pressNative(browser, 'Tab', ['control'], `${server.origin}/index.html`);
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture second',
+    );
+    await expect(address).toHaveValue('typed in the second tab');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('loads what is entered right after a click on New tab in the new tab, also before the browser answered', async () => {
   const browser = await launch();
   try {
@@ -196,6 +293,36 @@ test('loads what is entered right after a click on New tab in the new tab, also 
     await tabs.nth(0).click();
     await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
     await expect(address).toHaveValue(first);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('closes the suggestions and leaves the focus and the text in the address bar', async () => {
+  const browser = await launch();
+  try {
+    await useRealFocus(browser);
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await open(browser, `${server.origin}/index.html`);
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await focusView(browser, 'app://shell');
+    await address.click();
+    await address.pressSequentially('fixture');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    await expect(list).toBeVisible();
+    // Escape closes the list; the typing goes on in the address bar.
+    await address.press('Escape');
+    await expect(list).toBeHidden();
+    await expect(address).toHaveValue('fixture');
+    expect(await viewFocused(browser, 'app://shell')).toBe(true);
+    // A field that becomes empty closes the list, too, and keeps the focus.
+    await address.pressSequentially(' home');
+    await expect(list).toBeVisible();
+    await address.fill('');
+    await expect(list).toBeHidden();
+    expect(await viewFocused(browser, 'app://shell')).toBe(true);
   } finally {
     await browser.close();
   }
@@ -282,6 +409,100 @@ test('takes what is typed right after a click on New tab into the address bar of
   }
 });
 
+test('keeps what is typed for a new tab with that tab when a further click on New tab leaves it', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const newTab = shell.getByRole('button', { name: 'New tab' });
+    const first = await openFirstPage(browser);
+    const second = `${server.origin}/second.html`;
+    // Both clicks and what is typed after each come before the shell knows of either tab.
+    await delayShellState(browser, 1500);
+    await newTab.click();
+    await shell.keyboard.type('typed for the first new tab');
+    await newTab.click();
+    await expect(address).toHaveValue('');
+    await shell.keyboard.type(second);
+    await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    await shell.keyboard.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await expect.poll(() => tabUrls(browser)).toEqual([first, 'app://newtab/', second]);
+    // The tab of the first click kept what was typed for it, as when the focus leaves the
+    // address bar.
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue('typed for the first new tab');
+    // The tab that was active before kept its page and its address.
+    await tabs.nth(0).click();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens a suggestion that is clicked after the press moved the focus to the list', async () => {
+  const browser = await launch();
+  try {
+    await useRealFocus(browser);
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await open(browser, `${server.origin}/index.html`);
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await focusView(browser, 'app://shell');
+    await address.click();
+    await address.pressSequentially('fixture home');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const tab = overlay
+      .getByRole('listbox', { name: 'Suggestions' })
+      .getByRole('option', { name: /Fixture home.*Switch to this tab/ });
+    await expect(tab).toBeVisible();
+    // A press of the mouse gives the list the focus before the click arrives.
+    await focusView(browser, 'app://overlay');
+    await tab.click();
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('suggests bookmarks right after a start on the new tab page', async () => {
+  const first = await launch();
+  const profile = first.profile;
+  try {
+    await open(first, `${server.origin}/index.html`);
+    await waitForPage(first, (url) => url.endsWith('/index.html'));
+    await expect(first.shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+    const star = first.shell.getByRole('button', { name: 'Bookmark this page' });
+    await star.click();
+    await expect(star).toHaveAttribute('aria-pressed', 'true');
+  } finally {
+    await first.close({ keepProfile: true });
+  }
+  // Nothing loads the bookmarks at a start on the new tab page but the suggestions.
+  const browser = await launch([], { profile, settings: { 'startup.page': 'newtab' } });
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.pressSequentially('fixture home');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    await expect(overlay.locator('[role="option"][data-kind="bookmark"]')).toContainText(
+      'Fixture home',
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
 test('shows the host first and how secure the connection of the page is', async () => {
   const secure = createSecureServer(selfSignedCertificate(), (_request, response) => {
     response.setHeader('Content-Type', 'text/html');
@@ -323,6 +544,83 @@ test('shows the host first and how secure the connection of the page is', async 
     // The browser's own pages say whose they are.
     await open(browser, 'app://settings');
     await expect(shell.getByRole('img', { name: 'Page of Astela' })).toBeVisible();
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => secure.close(() => done()));
+  }
+});
+
+test('says that a site whose certificate is not trusted is not secure, also after continuing, and nothing about pages that failed', async () => {
+  const secure = createSecureServer(selfSignedCertificate(), (_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<!doctype html><title>Untrusted</title><p>Behind the warning</p>');
+  });
+  await new Promise<void>((done) => secure.listen(0, '127.0.0.1', done));
+  const { port } = secure.address() as AddressInfo;
+  const names = {
+    'secure.astela-e2e.net': port,
+    'untrusted.astela-e2e.net': port,
+    'plain.astela-e2e.net': new URL(server.origin).port,
+  };
+  const browser = await launch(mapTo(names));
+  try {
+    // Only one of the names that lead to the server gets a certificate that the browser trusts.
+    await browser.main.evaluate(({ session }) => {
+      session
+        .fromPartition('persist:default')
+        .setCertificateVerifyProc((request, callback) =>
+          callback(request.hostname === 'secure.astela-e2e.net' ? 0 : -3),
+        );
+    });
+    const shell = browser.shell;
+    const notSecure = shell.getByRole('img', { name: 'Not secure' });
+    const secureConnection = shell.getByRole('img', { name: 'Connection is secure' });
+    // A page that could not be loaded, here from a server without encryption, shows nothing
+    // about its connection.
+    await open(browser, 'https://plain.astela-e2e.net/');
+    await expect(shell.getByRole('region', { name: "This page can't be reached" })).toBeVisible();
+    await expect(shell.locator('.security')).toHaveCount(0);
+    // The warning about the certificate says that the connection is not secure. Windows checks
+    // an unknown certificate with the system, which can look for its issuer on the network
+    // first; the warning shows once the check has failed.
+    const url = 'https://untrusted.astela-e2e.net/';
+    await open(browser, url);
+    const problem = shell.getByRole('region', { name: "Your connection isn't private" });
+    await expect(problem).toBeVisible({ timeout: 30_000 });
+    await expect(notSecure).toContainText('Not secure');
+    await expect(secureConnection).toHaveCount(0);
+    // So does the page once the certificate is accepted, and every page of the site in any tab.
+    await problem.getByText('Details').click();
+    await problem.getByRole('button', { name: 'Continue to untrusted.astela-e2e.net' }).click();
+    const page = await waitForPage(browser, (current) => current === url);
+    await expect(page.getByText('Behind the warning')).toBeVisible();
+    await expect(problem).toBeHidden();
+    await expect(notSecure).toContainText('Not secure');
+    await expect(secureConnection).toHaveCount(0);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await open(browser, `${url}again.html`);
+    const again = await waitForPage(browser, (current) => current === `${url}again.html`);
+    await expect(again.getByText('Behind the warning')).toBeVisible();
+    await expect(notSecure).toContainText('Not secure');
+    await expect(secureConnection).toHaveCount(0);
+    // A site with a trusted certificate stays secure.
+    const trusted = 'https://secure.astela-e2e.net/';
+    await open(browser, trusted);
+    const trustedPage = await waitForPage(browser, (current) => current === trusted);
+    await expect(secureConnection).toBeVisible();
+    await expect(notSecure).toHaveCount(0);
+    // A page that crashed shows nothing about its connection either. As in the test of crashed
+    // pages, the test ends the process of the page at once, the same way on every system.
+    await expect.poll(() => trustedPage.evaluate(() => document.readyState)).toBe('complete');
+    await browser.main.evaluate(({ webContents }, address) => {
+      const contents = webContents
+        .getAllWebContents()
+        .find((candidate) => candidate.getURL() === address);
+      if (contents === undefined) throw new Error(`No page shows ${address}`);
+      process.kill(contents.getOSProcessId(), 'SIGKILL');
+    }, trusted);
+    await expect(shell.getByRole('region', { name: 'This page crashed' })).toBeVisible();
+    await expect(shell.locator('.security')).toHaveCount(0);
   } finally {
     await browser.close();
     await new Promise<void>((done) => secure.close(() => done()));
@@ -589,6 +887,69 @@ test('opens a suggestion chosen right after a click on New tab in the new tab, a
     await tabs.nth(1).click();
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     await expect(address).toHaveValue(second);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps what is typed right after a click on New tab when what was typed before the click opens in its own tab', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { second } = await visitSecondPage(browser);
+    await address.click();
+    await address.pressSequentially(second);
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const entered = overlay
+      .getByRole('listbox', { name: 'Suggestions' })
+      .getByRole('option')
+      .first();
+    await expect(entered).toBeVisible();
+    await address.press('ArrowDown');
+    await expect(entered).toHaveAttribute('aria-selected', 'true');
+    // Enter finds no marked suggestion, and the shell learns so only after the click on New tab
+    // and what is typed for the new tab, and of the new tab even later.
+    await loseMarkedSuggestion(browser, 1000);
+    await delayShellState(browser, 2000);
+    await address.press('Enter');
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.fill('typed for the new tab');
+    // What was typed in the first tab loads there; the new tab keeps what was typed for it.
+    await expect.poll(() => tabUrls(browser)).toEqual([second, 'app://newtab/']);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue('typed for the new tab');
+    await expect(address).toBeFocused();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('quits as after any test when a state held back for the shell is due after the shell closed', async () => {
+  const browser = await launch();
+  try {
+    const [first] = await browser.main.evaluate(({ BaseWindow }) =>
+      BaseWindow.getAllWindows().map((window) => window.id),
+    );
+    // The shell of the first window learns of its new tab only after the window closed, as a
+    // shell can while the browser quits; a second window keeps the browser running till then.
+    await delayShellState(browser, 2000);
+    await browser.shell.getByRole('button', { name: 'New tab' }).click();
+    await pressNative(browser, 'N', ['primary']);
+    await expect
+      .poll(() => browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length))
+      .toBe(2);
+    await browser.main.evaluate(async ({ BaseWindow }, id) => {
+      const window = BaseWindow.fromId(id ?? 0);
+      if (window === null) throw new Error('The first window is missing');
+      await new Promise<void>((done) => {
+        window.once('closed', () => done());
+        window.close();
+      });
+    }, first);
+    // The held state is due by now.
+    await new Promise((done) => setTimeout(done, 2000));
   } finally {
     await browser.close();
   }

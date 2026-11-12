@@ -281,6 +281,31 @@ test('applies procedural rules and blocks popups that the lists name', async () 
   }
 });
 
+// The fixture lists block fixture-icon.png only as an image of a page of the fixture server,
+// so the icon's request must reach the blocker as an image and with its page.
+test('blocks the icon of a page as the lists block the images of the page', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocked-icon.html`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.endsWith('/blocked-icon.html'));
+    await page.waitForLoadState('load');
+    await expect.poll(async () => (await shellState(browser.shell)).tabs[0]?.loading).toBe(false);
+    // An icon that the lists allow comes after it in the same tab, so the blocked icon had
+    // its turn long before.
+    await address.fill(`${server.origin}/icon.html`);
+    await address.press('Enter');
+    await expect(
+      browser.shell.getByRole('tab', { name: 'Page with an icon' }).locator('.favicon img'),
+    ).toHaveAttribute('src', /^data:image\/png;base64,/);
+    expect(server.requests.map((request) => request.path)).toContain('/image.png');
+    expect(server.requests.map((request) => request.path)).not.toContain('/fixture-icon.png');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('turns the blocker off for a whole domain, its other hosts included', async () => {
   const browser = await launch();
   try {

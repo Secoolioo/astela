@@ -175,6 +175,7 @@ test('shows the zoom of a site in every tab of the site', async () => {
   try {
     await open(browser, `${server.origin}/find.html`);
     await pressNative(browser, 'T', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     await open(browser, `${server.origin}/second.html`);
     // The first tab zooms its site, which the second tab shows too.
     await withContents(browser, `${server.origin}/find.html`, 'zoomIn');
@@ -234,6 +235,7 @@ test('gives the shell back when another tab shows or the tab in full screen clos
   try {
     await open(browser, `${server.origin}/second.html`);
     await pressNative(browser, 'T', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     const page = await open(browser, `${server.origin}/find.html`);
     const visibleTop = (): Promise<number | undefined> =>
       browser.main.evaluate(

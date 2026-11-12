@@ -29,8 +29,10 @@ import {
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
 import {
+  controlsOverlay,
   startInsets,
   titleBarArea,
+  type ControlsOverlay,
   type Density,
   type TitleBarArea,
 } from '../../domain/windows/title-bar.ts';
@@ -42,6 +44,7 @@ import {
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
+import { noAppRegionCss } from '../../shared/app-region.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
 import { commandForInput, type ShortcutRecorder, type WindowCommand } from './shortcuts.ts';
@@ -89,6 +92,11 @@ export interface BrowserWindowOptions {
   readonly newTabUrl: string;
   /** Window background while the shell loads: for the light or dark mode, or a private window. */
   readonly backgroundColor: (privateWindow: boolean) => string;
+  /**
+   * The color of the toolbar, which the window controls take when the toolbar is the top row;
+   * the window background without it.
+   */
+  readonly toolbarColor?: (privateWindow: boolean) => string;
   /** Command line argument that gives a view of the browser's own UI its design tokens. */
   readonly appearanceArgument: () => string;
   /** Command line arguments that give the views of the browser's own UI their language. */
@@ -134,6 +142,11 @@ export interface BrowserWindowOptions {
   readonly onContextMenu?: (request: ContextMenuRequest) => void;
   /** Whether people may continue to a site whose certificate is not trusted. */
   readonly certificateOverride?: () => boolean;
+  /**
+   * Whether a page may have come with a certificate that the user accepted after the warning,
+   * so the address bar does not show its connection as secure.
+   */
+  readonly certificateException?: (contents: WebContents, url: string) => boolean;
   /** The keyboard shortcuts of the windows; the defaults of the system when left out. */
   readonly shortcuts?: () => ReadonlyMap<string, WindowCommand>;
   /** Takes the key presses of a page while the editor of shortcuts waits for one. */
@@ -179,6 +192,8 @@ export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools
 
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
+  /** Whether the overlay covers the whole window, rather than a list below the address bar. */
+  readonly coversWindow: boolean;
   /** Closes the overlay and gives the focus back to the page or the shell. */
   close(): void;
 }
@@ -204,6 +219,8 @@ interface TabEntry {
   requested: string;
   /** Views of the tab before and after this one. */
   readonly history: ViewHistory;
+  /** Stops the load of the icon of the tab's page while one runs. */
+  iconLoad?: AbortController | undefined;
 }
 
 /** How long a window that just opened takes to set itself up on Linux, in milliseconds. */
@@ -221,8 +238,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly shell: WebContentsView;
   readonly tabs: TabService;
   private readonly entries = new Map<TabId, TabEntry>();
-  /** The overlay while it shows something; a change of the visible tab closes it. */
-  overlay: OverlayHandle | undefined;
+  /** The overlay while it shows something. */
+  private shownOverlay: OverlayHandle | undefined;
+  /** Whether the overlay covers the whole window, as the shell last learned. */
+  private covered = false;
   /**
    * The tab that the shell asked for last. The shell's address bar is that tab's from the
    * click on New tab on, also while the shell does not know the tab yet.
@@ -270,6 +289,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const titleBar = options.titleBar?.();
     this.integrated = titleBar?.integrated === true;
     const area = this.titleBarArea(titleBar?.density ?? 'normal');
+    const overlay = area === null ? undefined : this.controlsOverlay(area);
+    if (overlay !== undefined) this.overlayKey = JSON.stringify(overlay);
     this.window = new BaseWindow({
       ...(place.bounds ?? { width: 1280, height: 820 }),
       minWidth: 480,
@@ -278,7 +299,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // renderer of a hidden window, so the shell would load later in one.
       backgroundColor: options.backgroundColor(this.isPrivate),
       // The title bar of the browser: the shell's top row holds the window controls.
-      ...(area === null ? {} : titleBarOptions(area, options.backgroundColor(this.isPrivate))),
+      ...(area === null || overlay === undefined ? {} : titleBarOptions(area, overlay)),
     });
     this.titleBarShown = area;
     this.insets = startInsets(titleBar?.density ?? 'normal', options.tabStripPosition());
@@ -321,6 +342,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.forwardContextMenu(this.shell, undefined);
     this.shell.webContents.once('did-finish-load', () => this.layout());
     this.window.on('resize', () => this.layout());
+    if (this.integrated) {
+      // The system hides the window controls in full screen, where the top row needs no room.
+      this.window.on('enter-full-screen', () => this.schedulePublish());
+      this.window.on('leave-full-screen', () => this.schedulePublish());
+    }
     this.window.on('closed', () => this.dispose());
     // Electron on Linux can crash when a window closes while it still sets itself up after it
     // opened. A window that closes within its first second hides at once and closes when that
@@ -353,6 +379,23 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return this.shell.webContents;
   }
 
+  /** The overlay while it shows something; a change of the visible tab closes it. */
+  get overlay(): OverlayHandle | undefined {
+    return this.shownOverlay;
+  }
+
+  /**
+   * Takes note of what the overlay shows. While it covers the window, the top row of the shell
+   * does not move the window: the window would take a click next to a popover for itself.
+   */
+  set overlay(overlay: OverlayHandle | undefined) {
+    this.shownOverlay = overlay;
+    const covered = overlay?.coversWindow === true;
+    if (covered === this.covered) return;
+    this.covered = covered;
+    if (!this.window.isDestroyed()) this.schedulePublish();
+  }
+
   /** The `WebContents` of the active tab, if any. */
   get activeTabContents(): WebContents | undefined {
     const active = this.tabs.active;
@@ -374,6 +417,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           blocking: this.options.blocking(url),
           bookmarked: this.options.isBookmarked?.(url) ?? false,
           problem,
+          certificateException: this.certificateException(id, url),
           zoom,
           favicon: tab.favicon,
           audible: tab.audible,
@@ -391,7 +435,17 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       defaultZoom: this.options.defaultZoom?.() ?? 1,
       toolbar: [...(this.options.toolbar?.() ?? toolbarItems)],
       titleBar: this.titleBarShown,
+      covered: this.covered,
     };
+  }
+
+  /**
+   * Whether the web page of a tab may have come with a certificate that the user accepted
+   * after the warning; the browser's own pages never do.
+   */
+  private certificateException(id: TabId, url: string): boolean {
+    const contents = this.webContentsOf(id);
+    return contents !== undefined && this.options.certificateException?.(contents, url) === true;
   }
 
   /** The area of the window controls in the top row, or `null` with the system's title bar. */
@@ -401,22 +455,30 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       : null;
   }
 
+  /** The window controls of Windows and Linux, in the color of the top row. */
+  private controlsOverlay(area: TitleBarArea): ControlsOverlay {
+    const window = this.options.backgroundColor(this.isPrivate);
+    const toolbar = this.options.toolbarColor?.(this.isPrivate) ?? window;
+    return controlsOverlay(area, { window, toolbar }, this.options.tabStripPosition());
+  }
+
   /**
    * Fits the window controls to the top row and the theme after the density, the place of
-   * the tab strip or the colors changed.
+   * the tab strip, the colors or full screen changed. In full screen, the system hides the
+   * controls, and the top row keeps no room for them.
    */
   private fitTitleBar(): void {
     const area = this.titleBarArea(this.options.titleBar?.().density ?? 'normal');
     if (area === null || this.window.isDestroyed()) return;
     const before = this.titleBarShown;
-    this.titleBarShown = area;
-    const color = this.options.backgroundColor(this.isPrivate);
+    this.titleBarShown = this.window.isFullScreen() ? null : area;
+    if (this.titleBarShown === null) return;
     if (process.platform === 'darwin') {
       if (before?.height !== area.height) this.window.setWindowButtonPosition(buttonPosition(area));
       return;
     }
     // The controls change only when their row or the colors of the theme change.
-    const overlay = overlayOf(area, color);
+    const overlay = this.controlsOverlay(area);
     const key = JSON.stringify(overlay);
     if (key === this.overlayKey) return;
     this.overlayKey = key;
@@ -580,6 +642,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return this.options.shortcuts?.() ?? shortcutTable(process.platform);
   }
 
+  /** Where the shell shows the tab strip. */
+  tabStripPosition(): TabStripPosition {
+    return this.options.tabStripPosition();
+  }
+
   /** Why a tab shows no page, or `null` when it shows one. */
   private problemOf(id: TabId): TabProblem | null {
     return this.tabs.all.find((tab) => tab.id === id)?.problem ?? null;
@@ -591,6 +658,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   private setProblem(id: TabId, problem: TabProblem | null): void {
     if (problem === null && this.problemOf(id) === null) return;
+    // In place of its page, the tab shows no icon of a page.
+    if (problem !== null) this.dropFavicon(id);
     this.tabs.update(id, { problem });
     const view = this.entries.get(id)?.view;
     if (view !== undefined && view === this.visible && !this.window.isDestroyed()) {
@@ -622,6 +691,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       return;
     }
     this.entries.delete(id);
+    entry.iconLoad?.abort();
     this.close(entry.view, entry.registration);
     // A page that closes in full screen ends it, unless the user chose full screen.
     if (this.fullScreenTab === id) {
@@ -673,7 +743,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
-  /** Paints the window and the views of internal pages in the current light or dark mode. */
+  /**
+   * Paints the window and the views of internal pages in the current light or dark mode, and
+   * gives the window controls the colors of the theme.
+   */
   repaintBackground(): void {
     if (this.window.isDestroyed()) {
       return;
@@ -684,6 +757,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     for (const entry of this.entries.values()) {
       if (entry.page !== undefined) entry.view.setBackgroundColor(color);
     }
+    this.fitTitleBar();
   }
 
   /** Closes the window and every tab view. */
@@ -1043,6 +1117,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     const sync = (): void => this.sync(id, contents);
     if (page === undefined) {
+      // The frame preload keeps every document that a web page loads from moving the window. A
+      // page that a script opened shows what the script wrote into its first, empty document,
+      // in which no preload runs, and every document gets the style sheet again once it is
+      // parsed, in case no preload ran in it either.
+      if (adopted !== undefined) keepAppRegionsOut(contents);
+      contents.on('dom-ready', () => keepAppRegionsOut(contents));
       // Pages that change their address with the History API, as many web apps do, count as
       // visits too; a jump to an anchor on the same page does not. A private window keeps no
       // history.
@@ -1157,11 +1237,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.layout();
       });
     }
-    // The count of blocked requests and the icon belong to one page.
+    // The count of blocked requests belongs to one page.
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
-        this.tabs.update(id, { blocked: 0, favicon: null });
+        this.tabs.update(id, { blocked: 0 });
       }
+    });
+    // So does the icon, which goes once another page has taken its place: a link that starts
+    // a download, or a response without content, leaves the page as it was.
+    contents.on('did-navigate', () => {
+      if (this.entries.get(id)?.view === view) this.dropFavicon(id);
     });
     contents.on('page-favicon-updated', (_event, urls) => void this.loadFavicon(id, view, urls));
     contents.on('audio-state-changed', ({ audible }) => {
@@ -1230,15 +1315,59 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.tabs.update(id, { muted });
   }
 
-  /** Loads the icon of a tab's page, which the tab shows unless its view changed meanwhile. */
+  /**
+   * Loads the icon of a tab's page, which the tab shows unless its page changed meanwhile.
+   * A tab loads one icon at a time: a newer icon of its page stops the load of the one
+   * before, and so does another page.
+   */
   private async loadFavicon(id: TabId, view: WebContentsView, urls: string[]): Promise<void> {
     const url = urls.find((candidate) => /^(?:https?:|data:image\/)/i.test(candidate));
-    if (url === undefined) return;
+    const entry = this.entries.get(id);
+    if (url === undefined || entry?.view !== view) return;
+    const before = entry.iconLoad;
+    const loading = new AbortController();
+    entry.iconLoad = loading;
+    const { session } = view.webContents;
+    const page = view.webContents.getURL();
     const { favicons } = await import('./favicons.ts');
-    const key = await favicons.load(view.webContents.session, url);
-    if (key !== undefined && this.entries.get(id)?.view === view) {
+    const loaded = favicons.load(session, url, page, loading.signal);
+    // The load before gives way only now, so that a page that names the same icon again
+    // does not start its load anew.
+    before?.abort();
+    const key = await loaded;
+    if (entry.iconLoad === loading) entry.iconLoad = undefined;
+    if (key !== undefined && !loading.signal.aborted && this.entries.get(id)?.view === view) {
       this.tabs.update(id, { favicon: key });
     }
+  }
+
+  /** Forgets the icon of a tab's page, and stops loading it, once the tab no longer shows it. */
+  private dropFavicon(id: TabId): void {
+    const entry = this.entries.get(id);
+    if (entry !== undefined) {
+      entry.iconLoad?.abort();
+      entry.iconLoad = undefined;
+    }
+    this.tabs.update(id, { favicon: null });
+  }
+
+  /**
+   * The icon of a page of the window by its key, as a `data:` address. The icons of each
+   * session are apart, so the window looks among those of the sessions of its tabs.
+   * @param key - The key of the icon in the state of a tab.
+   */
+  async favicon(key: string): Promise<string | undefined> {
+    const { favicons } = await import('./favicons.ts');
+    for (const { view } of this.entries.values()) {
+      // A page that closed itself left its view without contents.
+      const contents: WebContents | undefined = view.webContents;
+      const icon =
+        contents === undefined || contents.isDestroyed()
+          ? undefined
+          : favicons.get(contents.session, key);
+      if (icon !== undefined) return icon;
+    }
+    return undefined;
   }
 
   /** Reports the state of a tab's view, unless the view was replaced meanwhile. */
@@ -1296,8 +1425,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const old = entry.view;
     const oldRegistration = entry.registration;
     const focused = old.webContents.isFocused();
-    // The new view shows its own page, not the problem of the old one.
+    // The new view shows its own page, not the problem, the icon or the sound of the old one:
+    // the old view's events no longer count, and a new page plays no sound until it says so.
     if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
+    this.dropFavicon(id);
+    this.tabs.update(id, { audible: false });
     Object.assign(entry, this.createView(id, url), { requested: url });
     if (this.visible === old && !this.window.isDestroyed()) {
       this.overlay?.close();
@@ -1665,37 +1797,36 @@ function privateArgument(privateWindow: boolean): string[] {
 }
 
 /**
+ * Gives the current document of a web page the user style sheet that keeps it from marking
+ * regions that move the window.
+ * @param contents - The web page.
+ */
+function keepAppRegionsOut(contents: WebContents): void {
+  if (contents.isDestroyed()) return;
+  // A page that went away meanwhile needs the style sheet no more.
+  contents.insertCSS(noAppRegionCss, { cssOrigin: 'user' }).catch(() => undefined);
+}
+
+/**
  * The options of a window whose title bar the shell draws: on macOS, the window's three
- * buttons sit in the top row; elsewhere, Chromium draws the window controls at its end.
+ * buttons sit in the top row; elsewhere, Chromium draws the window controls in it, where the
+ * desktop puts them, and tells the shell where they are.
  * @param area - Where the controls go.
- * @param color - The background of the window, which the controls take.
+ * @param overlay - The window controls of Windows and Linux.
  */
 function titleBarOptions(
   area: TitleBarArea,
-  color: string,
+  overlay: ControlsOverlay,
 ): Pick<
   Electron.BaseWindowConstructorOptions,
   'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition'
 > {
   return process.platform === 'darwin'
     ? { titleBarStyle: 'hidden', trafficLightPosition: buttonPosition(area) }
-    : { titleBarStyle: 'hidden', titleBarOverlay: overlayOf(area, color) };
+    : { titleBarStyle: 'hidden', titleBarOverlay: overlay };
 }
 
 /** Where the three buttons of a macOS window go: centered in the top row. */
 function buttonPosition(area: TitleBarArea): Electron.Point {
   return { x: 14, y: Math.max(0, Math.round((area.height - 14) / 2)) };
-}
-
-/** The window controls of Windows and Linux, in the window's background and a readable color. */
-function overlayOf(area: TitleBarArea, color: string): Electron.TitleBarOverlay {
-  return { color, symbolColor: isDark(color) ? '#e8eaed' : '#1f2329', height: area.height };
-}
-
-/** Whether a color such as `#14161A` is dark. */
-function isDark(color: string): boolean {
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color);
-  if (match === null) return false;
-  const [r, g, b] = [match[1], match[2], match[3]].map((part) => Number.parseInt(part ?? '0', 16));
-  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0) < 128;
 }

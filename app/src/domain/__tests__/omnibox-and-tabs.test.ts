@@ -250,6 +250,31 @@ describe('TabService', () => {
     expect(order()).toEqual([c, f, b, a, e, d]);
   });
 
+  it('lines up background tabs of a pinned tab after the pinned tabs, in the order they open', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const mail = tabs.open('https://mail.example/', { pinned: true });
+    const calendar = tabs.open('https://calendar.example/', { pinned: true });
+    const other = tabs.open('https://other.example/');
+    const order = (): string[] => tabs.all.map((tab) => tab.id);
+    expect(order()).toEqual([mail, calendar, other]);
+    // A pinned tab that is not the last one opens links in the background.
+    tabs.activate(mail);
+    const first = tabs.open('https://1.example/', { activate: false });
+    const second = tabs.open('https://2.example/', { activate: false });
+    const third = tabs.open('https://3.example/', { activate: false });
+    expect(order()).toEqual([mail, calendar, first, second, third, other]);
+    // The last pinned tab does the same.
+    tabs.activate(calendar);
+    const fourth = tabs.open('https://4.example/', { activate: false });
+    const fifth = tabs.open('https://5.example/', { activate: false });
+    expect(order()).toEqual([mail, calendar, fourth, fifth, first, second, third, other]);
+    // A tab opened in the foreground from a pinned tab comes right after the pinned tabs.
+    tabs.activate(mail);
+    const front = tabs.open('https://front.example/');
+    expect(order()[2]).toBe(front);
+    expect(tabs.active?.id).toBe(front);
+  });
+
   it('tells a session only about the changes that it keeps', () => {
     const tabs = new TabService(new FakeViews(), 'about:blank');
     const id = tabs.open('https://a.example/');

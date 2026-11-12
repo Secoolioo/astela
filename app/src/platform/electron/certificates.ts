@@ -51,6 +51,22 @@ export class CertificateExceptions {
     this.allowed.set(contents.session, allowed);
     return true;
   }
+
+  /**
+   * Whether a page at an https address may have come with a certificate that the user
+   * accepted: the session of the page holds an exception for the host of the address.
+   * Electron does not tell which certificate a page came with, so every page of the host
+   * counts, in any tab of the session, also after a policy took the exceptions away, as the
+   * page may have loaded before.
+   * @param contents - The page.
+   * @param url - The address of the page.
+   */
+  covers(contents: WebContents, url: string): boolean {
+    const allowed = this.allowed.get(contents.session);
+    if (allowed === undefined || !/^https:/i.test(url)) return false;
+    const host = `${hostOf(url)}|`;
+    return [...allowed].some((key) => key.startsWith(host));
+  }
 }
 
 function hostOf(url: string): string {

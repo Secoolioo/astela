@@ -16,7 +16,7 @@ Astela should look like carefully made desktop software, not like a template. Th
 - **Hierarchy:** comes from typography (size, weight and spacing), not from effects. Sizes and spacing follow a dense 4 px grid, with 8 px steps for larger gaps.
 - **Icons:** one icon set with one stroke width. There are no emojis, no sparkle symbols, and no decorative blobs or generic illustrations.
 - **Platform:** the native window controls, menus, context menus and shortcuts of each operating system are respected.
-- **Motion:** only where it helps to follow a change, from 60 to 220 ms long, and off when the system asks for reduced motion ([ADR 0046](../adr/0046-motion-rounder-shapes-and-one-shadow.md)).
+- **Motion:** only where it helps to follow a change, from 60 to 220 ms long, and off when the system asks for reduced motion. Only loading indicators repeat their motion, with one turn of 1 s ([ADR 0046](../adr/0046-motion-rounder-shapes-and-one-shadow.md)).
 - **Website:** no standard landing page layout (a centered hero with gradient text above a grid of icon cards). It shows real screenshots of the browser, never mockups.
 - **Writing:** factual and brief. No marketing phrases, no emoji lists, and dashes only where a sentence needs them.
 
@@ -24,7 +24,7 @@ Astela should look like carefully made desktop software, not like a template. Th
 
 Design tokens are the only source for colors, spacing, radii, borders, shadows and motion. They live in the UI kit (`app/src/ui/ui-kit/tokens`) and reach every surface as CSS custom properties: the shell, the overlay and the internal pages.
 
-- Components use tokens and contain no hard-coded colors, sizes, durations, easings or shadows; `pnpm verify` checks the durations, easings and shadows (`tools/design/check-tokens.ts`).
+- Components use tokens and contain no hard-coded colors, sizes, durations, easings or shadows. `pnpm verify` checks a part of this rule with `tools/design/check-tokens.ts`: it fails when a transition or an animation writes out a duration or an easing, when code gives `duration`, `delay` or `endDelay` as a number or writes out an easing, as in the options of `animate()`, and when a `box-shadow` is neither the shadow token nor a ring of 1 or 2 px in a color token. A value counts also when it continues on a later line than its property name. The check does not see colors and sizes, or durations and easings that code computes or keeps in a constant or a custom property of its own ([ADR 0046](../adr/0046-motion-rounder-shapes-and-one-shadow.md)).
 - Themes override tokens and nothing else. A theme can never restyle a component directly.
 - Density and typography are settings that act through tokens.
 
@@ -110,10 +110,10 @@ Menus and popovers that float above the page have the one shadow, `--shadow-popo
 | `--motion-slow`    | 220 ms   | Larger movements, such as a sliding indicator |
 | `--motion-loop`    | 1 s      | One turn of a loading indicator               |
 
-- Things that enter use `--ease-out`, things that leave `--ease-in`, and movements `--ease-standard`.
+- Things that enter use `--ease-out`, things that leave `--ease-in`, and movements `--ease-standard`. A loading indicator repeats one turn of `--motion-loop`; one that turns at an even speed, such as the loading ring of a tab, uses `--ease-linear`.
 - Animations use only `transform`, `opacity` and colors, so they never trigger layout.
 - When the system requests reduced motion (`prefers-reduced-motion`), every duration is 0, so nothing moves.
-- Code that animates from JavaScript reads its duration from the tokens, so it stops with reduced motion as well.
+- Code that animates from JavaScript reads its duration and easing from the tokens with `motionOf` and `easingOf` (`app/src/ui/ui-kit/motion.ts`), so it stops with reduced motion as well.
 - No timers run while the browser is idle, which keeps idle CPU within its budget (see [Performance](performance.md)).
 
 ## Layouts
@@ -169,6 +169,6 @@ Switches are tracks whose knob slides when they change, segmented controls chang
 
 The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are Astela, the violet of the logo with its blue for progress and the default, and blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 
-The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area. By default, the top row of the shell is the title bar of the window, with the window controls of the system in its corner ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)); the setting `appearance.titleBar` brings back the title bar of the system after a restart.
+The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area. By default, the top row of the shell is the title bar of the window, with the window controls of the system in its corner, on Linux at the ends where the desktop puts them, in the color of the row; the row keeps `--space-7` free after its last button, so that it can move the window when the tabs fill it ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)). The setting `appearance.titleBar` brings back the title bar of the system after a restart.
 
 Not implemented yet: a single-color version of the logo, the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.

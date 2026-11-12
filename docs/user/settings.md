@@ -4,7 +4,7 @@
 
 Open the settings from the menu button at the right end of the toolbar, then **Settings**. On macOS, the application menu has **Settings…** as well, and Cmd+, opens them. The settings open in a new tab, or in place of the new tab page when the current tab shows it; if a tab of the same window shows them already, that tab comes to the front.
 
-Every change applies at once, in every window, and is kept when the browser restarts; only the [language](#languages) waits for a restart.
+Every change is kept when the browser restarts, and most apply at once, in every window. Three settings take full effect only after a restart: [Title bar](#appearance), [Block third-party cookies](#privacy) and [Language of the browser](#languages). After you change one of them, it says _Takes effect after a restart_, and the page offers **Restart now**.
 
 ## Find a setting
 
@@ -34,7 +34,7 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Font of the browser:** from 0.1.0-beta.5, the name of a font installed on your computer, such as Inter, for the text of the browser itself. An empty field, the default, uses the font of the system.
 - **Toolbar:** from 0.1.0-beta.5, which of the bookmark star, the content blocker and downloads show next to the address bar, and in which order; the arrows move a button to the left or the right. Downloads shows after the first download. Without the downloads button, `Ctrl+J` (`Command+Option+L` on macOS) opens the list of downloads at the menu button. Hiding the content blocker's button keeps the blocker on; **Sites without blocking** below turns it off for a site.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
-- **Title bar:** from 0.1.0-beta.6, With the tabs makes the top row of the window, the tabs or the toolbar, its title bar: drag its free space to move the window, and the buttons to minimize, maximize and close the window sit in its corner. Of the system brings back the title bar of your operating system above it. The change applies after a restart.
+- **Title bar:** from 0.1.0-beta.6, With the tabs makes the top row of the window, the tabs or the toolbar, its title bar: drag its free space to move the window. Some space after its last button stays free for that, also when the tabs fill the row. The buttons to minimize, maximize and close the window sit in its corner; on Windows and Linux, they take the color of the row, and on Linux they sit where your desktop puts them, at the left end, the right end or both. In full screen, the row leaves no room for them. Web pages cannot make parts of the window move it. Of the system brings back the title bar of your operating system above it. The change applies after a restart.
 - **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 
 ## On startup

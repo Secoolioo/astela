@@ -68,7 +68,8 @@
   "settings.themeImportTitle": "Import a theme",
   "settings.newTabImageTitle": "Choose a background image",
   "settings.imageFileType": "Images",
-  "tabMenu.newTabRight": "New tab to the &right",
+  "tabMenu.newTabRight": "&New tab to the right",
+  "tabMenu.newTabBelow": "&New tab below",
   "tabMenu.reload": "&Reload",
   "tabMenu.duplicate": "&Duplicate",
   "tabMenu.pin": "&Pin",
@@ -78,5 +79,6 @@
   "tabMenu.close": "&Close",
   "tabMenu.closeOthers": "Close &other tabs",
   "tabMenu.closeRight": "Close tabs to the righ&t",
+  "tabMenu.closeBelow": "Close tabs &below",
   "tabMenu.reopen": "R&eopen closed tab"
 }

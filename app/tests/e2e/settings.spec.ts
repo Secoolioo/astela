@@ -519,7 +519,9 @@ test('gives web pages that open after a change the text size and the fonts of th
           }),
         ]),
       });
+    const tabs = await browser.shell.getByRole('tab').count();
     await pressNative(browser, 'T', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(tabs + 1);
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await address.fill(`${server.origin}/index.html`);
     await address.press('Enter');
@@ -642,6 +644,8 @@ test('shows, hides and moves the buttons of the toolbar', async () => {
     );
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await pressNative(browser, 'T', ['primary']);
+  // What is typed goes to the active tab, so the typing waits until the new tab shows.
+  await expect(browser.shell.getByRole('tab')).toHaveCount(2);
   await address.fill('http://127.0.0.1:9/');
   await address.press('Enter');
   await expect.poll(buttons).toEqual(['bookmark', 'blocker']);

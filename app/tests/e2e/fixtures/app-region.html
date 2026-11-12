@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture app region</title>
+    <style>
+      /* Regions that would move the window from the tabs and the address bar above the page,
+         and from the questions of the browser on top of it. */
+      #cover {
+        position: fixed;
+        top: -300px;
+        left: 0;
+        right: 0;
+        height: 700px;
+        pointer-events: none;
+        -webkit-app-region: drag !important;
+      }
+      #cover::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        app-region: drag;
+      }
+      #standard {
+        window-drag: move;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="cover"></div>
+    <div id="inline" style="app-region: drag !important">Inline</div>
+    <div id="standard">Standard</div>
+    <button id="open">Open a blank page</button>
+    <iframe src="app-region-frame.html" title="Frame"></iframe>
+    <script>
+      // A blank page that this one fills itself, before it has any document of its own.
+      document.getElementById('open').addEventListener('click', () => {
+        const blank = window.open('', '_blank');
+        blank.document.write(
+          '<!doctype html><title>Written</title><div id="written" style="position: fixed; inset: 0; -webkit-app-region: drag">Written</div>',
+        );
+        blank.document.close();
+      });
+    </script>
+  </body>
+</html>

@@ -33,7 +33,10 @@ export interface Tab {
   readonly problem: TabProblem | null;
   /** The zoom factor of the page, 1 for 100 %. */
   readonly zoom: number;
-  /** The icon of the page as a `data:` address, or `null` while it has none. */
+  /**
+   * The key of the page's icon in the browser's `FaviconStore`, or `null` while the page has
+   * none. It is no address of an image: the shell asks for the icon by this key.
+   */
   readonly favicon: string | null;
   /** Whether the page plays sound. */
   readonly audible: boolean;
@@ -348,7 +351,9 @@ export class TabService implements Disposable {
     if (this.activeId === undefined) {
       return this.tabs.length;
     }
-    const next = this.indexOf(this.activeId) + 1;
+    // A tab that is not pinned goes after the pinned tabs, also when a pinned tab is active,
+    // so the tabs opened in the background before it come first.
+    const next = Math.max(this.indexOf(this.activeId) + 1, this.pinnedCount);
     if (activate) {
       return next;
     }

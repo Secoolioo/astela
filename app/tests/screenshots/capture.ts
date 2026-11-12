@@ -59,10 +59,13 @@ const address = server.address();
 const origin =
   typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : '';
 
-// Under Xvfb the system has no color scheme, so the shell and the page get it through the
-// DevTools protocol; both render with their own styles for that scheme.
+// Under Xvfb the system has no color scheme. The browser starts in the color mode of the
+// image, which also colors the window controls in its top row, and the shell and the page get
+// the scheme through the DevTools protocol as well.
 for (const theme of ['light', 'dark'] as const) {
-  const browser = await launch([`--force-device-scale-factor=${scale}`]);
+  const browser = await launch([`--force-device-scale-factor=${scale}`], {
+    settings: { 'appearance.colorMode': theme },
+  });
   try {
     const addressBar = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await addressBar.fill(`${origin}${base}docs/architecture/overview/`);

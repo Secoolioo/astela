@@ -34,6 +34,10 @@ export class WindowOverlay implements OverlayHandle {
   private shown: OverlayContent | null = null;
   /** Called once when what the overlay shows closes or is replaced. */
   private onClose: (() => void) | undefined;
+  /** Whether what the overlay shows took the focus, which closing it gives back. */
+  private tookFocus = false;
+  /** Whether what the overlay shows covers the whole window. */
+  private covering = false;
   private readonly window: BrowserWindowController;
   private readonly options: OverlayOptions;
 
@@ -56,6 +60,11 @@ export class WindowOverlay implements OverlayHandle {
     return this.view?.webContents;
   }
 
+  /** Whether the overlay shows something that covers the whole window, such as a popover. */
+  get coversWindow(): boolean {
+    return this.shown !== null && this.covering;
+  }
+
   /**
    * Shows content above the window's tabs, or replaces what it shows.
    * @param content - What to show.
@@ -74,8 +83,10 @@ export class WindowOverlay implements OverlayHandle {
     view.setBounds(bounds ?? { x: 0, y: 0, width, height });
     // Adding a view that the window holds already moves it to the top.
     base.contentView.addChildView(view);
-    this.window.overlay = this;
     this.shown = content;
+    this.covering = bounds === undefined;
+    this.tookFocus = bounds === undefined;
+    this.window.overlay = this;
     // Focusing the view would raise a window in the background, such as for a site's question.
     if (base.isFocused() && bounds === undefined) view.webContents.focus();
     this.options.router.publish(OverlayChanged, view.webContents, content);
@@ -93,7 +104,10 @@ export class WindowOverlay implements OverlayHandle {
     this.options.router.publish(OverlayChanged, this.view.webContents, content);
   }
 
-  /** Closes the overlay and gives the focus back to the page or the shell. */
+  /**
+   * Closes the overlay and gives the focus back to the page or the shell, if the overlay had
+   * it: a list below the address bar leaves the focus where the typing goes on.
+   */
   close(): void {
     if (this.shown === null) return;
     this.shown = null;
@@ -101,9 +115,10 @@ export class WindowOverlay implements OverlayHandle {
     if (this.window.overlay === this) this.window.overlay = undefined;
     const view = this.view;
     if (view !== undefined && !this.window.window.isDestroyed()) {
+      const hadFocus = this.tookFocus || view.webContents.isFocused();
       this.window.window.contentView.removeChildView(view);
       this.options.router.publish(OverlayChanged, view.webContents, null);
-      if (this.window.window.isFocused()) this.window.focusContent();
+      if (hadFocus && this.window.window.isFocused()) this.window.focusContent();
     }
   }
 
@@ -129,6 +144,9 @@ export class WindowOverlay implements OverlayHandle {
         nodeIntegration: false,
         spellcheck: false,
         v8CacheOptions: 'bypassHeatCheck',
+        // The page would take the focus as it loads, also for a list that leaves it in the
+        // address bar; what takes the focus gets it from open().
+        focusOnNavigation: false,
       },
     });
     view.setBackgroundColor('#00000000');

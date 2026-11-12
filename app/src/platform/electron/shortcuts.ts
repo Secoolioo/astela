@@ -95,6 +95,21 @@ export function shortcutOf(input: Input, mac: boolean): string {
     // Ctrl+T is the key that carries the T on a Latin keyboard. Layouts such as French type
     // letters on the keys of the digits too, where Ctrl+0 is the key that carries the 0.
     key = input.code.slice(-1);
+  } else if (
+    (input.control || input.meta) &&
+    !alt &&
+    /^Digit\d$/.test(input.code) &&
+    key !== '-' &&
+    (!shift || key === input.code.slice(-1))
+  ) {
+    // French, Belgian, Czech and Slovak layouts type other characters on the keys of the
+    // digits, such as & on the 1 key, and the digits with Shift. As in other browsers, the 1
+    // of Ctrl+1 and Command+1 is the key that carries the 1, also with the Shift that types
+    // the 1 there. So Ctrl+1 chooses the first tab on Czech, where the 1 key types +; Czech
+    // zooms in with Ctrl+= as well. A minus sign stays one: French types it on the 6 key only,
+    // so Ctrl+- zooms out there, and Ctrl+Shift+6 chooses the sixth tab.
+    key = input.code.slice(-1);
+    shift = false;
   } else if (mac && letter && !/\p{Script=Latin}/u.test(key) && input.code.startsWith('Bracket')) {
     // The same for Cmd+[ and Cmd+] where a layout for another script, such as Russian or
     // Arabic, types letters on these keys. Latin layouts type brackets, with Option if need
