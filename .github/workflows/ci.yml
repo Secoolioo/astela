@@ -279,6 +279,20 @@ jobs:
           else
             pnpm exec playwright test
           fi
+      - name: Keep the crash reports of the browser
+        # A browser that ends during a test leaves its cause only in the crash report of the
+        # system, which macOS writes for every process that crashes.
+        if: failure() && runner.os == 'macOS'
+        run: |
+          mkdir -p app/test-results/crash-reports
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -iname 'astela*' \
+            -newer package.json -exec cp {} app/test-results/crash-reports/ \; || true
+          for report in app/test-results/crash-reports/*; do
+            [ -f "$report" ] || continue
+            echo "== $report"
+            head -c 6000 "$report"
+            echo
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
