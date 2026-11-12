@@ -22,7 +22,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import type * as Electron from 'electron';
 import type { ShellState } from '../../src/shared/ipc/shell-contracts.ts';
 
@@ -260,9 +260,18 @@ export async function launch(
   const [inspectorMatch, devtoolsMatch] = await Promise.all([inspector, devtools]);
   for (let i = 0; !existsSync(report); i += 1) {
     if (i > 300 || child.exitCode !== null) {
+      // A browser process that still answers tells what its views wait for.
+      const reached =
+        child.exitCode === null
+          ? await within(
+              MainProcess.connect(inspectorMatch[1] ?? ''),
+              answerTime,
+              'The browser process',
+            ).catch(() => undefined)
+          : undefined;
       await reportFailedStart(
         child,
-        undefined,
+        reached,
         profile,
         devtoolsMatch[1] ?? '',
         'The shell did not become ready',
@@ -385,6 +394,7 @@ async function reportState(main: MainProcess, shell: Page, profile: string): Pro
       (known) => `Browser process: ${JSON.stringify(known)}\n`,
       (failure: unknown) => `Browser process not available: ${String(failure)}\n`,
     );
+    report += systemProcesses();
   }
   report += logTail(profile);
   if (info.status !== info.expectedStatus) process.stdout.write(report);
@@ -425,6 +435,7 @@ async function reportFailedStart(
     );
   }
   report += await pageReport(devtools);
+  report += systemProcesses();
   report += threadStacks(child.pid, profile, 'the browser process');
   // A page that does not answer holds up the connection; its process shows where it waits.
   for (const pid of pages) report += threadStacks(pid, profile, `the page process ${String(pid)}`);
@@ -446,6 +457,70 @@ async function reportFailedStart(
   } catch {
     // Outside a test there is nothing to attach to.
   }
+}
+
+/**
+ * How often each name occurs, the most frequent first.
+ * @param names - The names.
+ */
+function counted(names: readonly string[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return [...counts].toSorted(([, a], [, b]) => b - a);
+}
+
+/**
+ * The processes of the computer and of this user, how many one user may run, the processes of
+ * the browser's program, wherever they come from, and the programs of this user with the most
+ * processes. A browser whose pages never load can be one whose processes could not start, as when
+ * processes that earlier browsers left behind fill that limit.
+ */
+function systemProcesses(): string {
+  // macOS gives the path of each program, Linux its name.
+  const programs = (args: readonly string[]): string[] =>
+    runTool('ps', [...args, '-o', 'comm='])
+      .split('\n')
+      .map((line) => (process.platform === 'darwin' ? basename(line.trim()) : line.trim()))
+      .filter((name) => name !== '');
+  const all =
+    process.platform === 'win32'
+      ? runTool('tasklist', ['/fo', 'csv', '/nh'])
+          .split('\n')
+          .map((line) => /^"([^"]*)"/.exec(line.trim())?.[1] ?? '')
+          .filter((name) => name !== '')
+      : programs(['-A']);
+  const uid = process.getuid?.();
+  const mine = uid === undefined ? undefined : programs(['-U', String(uid)]);
+  const limit =
+    process.platform === 'darwin'
+      ? runTool('sysctl', ['-n', 'kern.maxprocperuid']).trim()
+      : process.platform === 'linux'
+        ? runTool('bash', ['-c', 'ulimit -u']).trim()
+        : '';
+  const allowed =
+    limit === ''
+      ? 'no known limit for one user'
+      : limit === 'unlimited'
+        ? 'no limit for one user'
+        : `at most ${limit} for one user`;
+  // The helpers of the program on macOS take the product's name: astela, Astela Helper.
+  const program = basename(process.env['E2E_APP'] ?? 'astela')
+    .replace(/\.exe$/i, '')
+    .toLowerCase();
+  const browser = all.filter((name) => name.toLowerCase().startsWith(program));
+  const ofUser = mine === undefined ? '' : `, ${String(mine.length)} of this user`;
+  const browserList = counted(browser)
+    .map(([name, count]) => `${String(count)} ${name}`)
+    .join(', ');
+  const most = counted(mine ?? all)
+    .slice(0, 15)
+    .map(([name, count]) => `  ${String(count)} ${name}\n`)
+    .join('');
+  return (
+    `Processes of the computer: ${String(all.length)}${ofUser} (${allowed})\n` +
+    `Processes of the browser: ${String(browser.length)} (${browserList})\n` +
+    `Programs with the most processes${mine === undefined ? '' : ' of this user'}:\n${most}`
+  );
 }
 
 /**
