@@ -224,6 +224,18 @@ export class TabService implements Disposable {
   }
 
   /**
+   * Moves a tab to another place in the order of the tabs.
+   * @param id - The tab.
+   * @param index - Its new index, counted without the tab itself; clamped to the tabs.
+   */
+  move(id: TabId, index: number): void {
+    const [tab] = this.tabs.splice(this.indexOf(id), 1);
+    if (tab === undefined) return;
+    this.tabs.splice(Math.max(0, Math.min(index, this.tabs.length)), 0, tab);
+    this.changeEmitter.fire();
+  }
+
+  /**
    * Reopens the most recently closed tab.
    * @returns The reopened tab's id, or `undefined` if nothing was closed.
    */

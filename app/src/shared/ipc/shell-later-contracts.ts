@@ -124,6 +124,17 @@ export const SetTabMuted = defineRequest({
   capability: 'shell',
 });
 
+/** Moves a tab to another place among the tabs of its window. */
+export const MoveTab = defineRequest({
+  channel: 'tabs.move',
+  request: v.strictObject({
+    tabId: TabId,
+    index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** The request contracts of the shell that load with the first of them. */
 export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = [
   ReopenClosedTab,
@@ -139,4 +150,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   ToggleBookmark,
   GetFavicon,
   SetTabMuted,
+  MoveTab,
 ];

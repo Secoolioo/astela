@@ -1,4 +1,6 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
+import { easingOf, motionOf } from '../ui-kit/motion.ts';
 import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
@@ -227,8 +229,62 @@ export class AppShell extends LitElement {
       min-width: 0;
       height: var(--tab-height);
       padding: var(--space-1) var(--space-2) 0;
-      overflow-x: auto;
+    }
+    /* The tabs scroll when they do not fit; a line marks a side with hidden tabs. */
+    .tabs {
+      position: relative;
+      display: flex;
+      flex: 0 1 auto;
+      gap: var(--space-1);
+      min-width: 0;
+      overflow: auto hidden;
       scrollbar-width: none;
+      border-inline: 1px solid transparent;
+    }
+    .tabs[data-before] {
+      border-inline-start-color: var(--border-1);
+    }
+    .tabs[data-after] {
+      border-inline-end-color: var(--border-1);
+    }
+    /* The active tab's surface, which slides from tab to tab. */
+    .indicator {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      border-radius: var(--radius-2) var(--radius-2) 0 0;
+      background: var(--surface-1);
+      pointer-events: none;
+    }
+    :host([data-tabs='bottom']) .indicator {
+      border-radius: 0 0 var(--radius-2) var(--radius-2);
+    }
+    [aria-orientation='vertical'] .indicator {
+      border-radius: var(--radius-2);
+    }
+    /* While a tab is dragged, the others make room for it, and it has its own surface. */
+    .tabs[data-dragging] .tab:not([data-dragged]) {
+      transition: transform var(--motion-base) var(--ease-standard);
+    }
+    .tabs[data-dragging] .indicator {
+      opacity: 0;
+    }
+    .tabs[data-dragging] .tab[aria-selected='true'] {
+      background: var(--surface-1);
+    }
+    .tab[data-dragged] {
+      z-index: 1;
+    }
+    /* Tabs that closed, while they fade where they were. */
+    .ghosts {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    .ghosts > .tab {
+      position: absolute;
     }
     :host([data-tabs='bottom']) [role='tablist'] {
       padding: 0 var(--space-2) var(--space-1);
@@ -239,8 +295,19 @@ export class AppShell extends LitElement {
       height: auto;
       min-height: 0;
       padding: var(--space-2);
+    }
+    [aria-orientation='vertical'] .tabs {
+      flex-direction: column;
       overflow: hidden auto;
       scrollbar-width: thin;
+      border-inline: 0;
+      border-block: 1px solid transparent;
+    }
+    [aria-orientation='vertical'] .tabs[data-before] {
+      border-block-start-color: var(--border-1);
+    }
+    [aria-orientation='vertical'] .tabs[data-after] {
+      border-block-end-color: var(--border-1);
     }
     :host([data-tabs='left']) [role='tablist'] {
       border-right: 1px solid var(--border-1);
@@ -250,32 +317,59 @@ export class AppShell extends LitElement {
     }
     [aria-orientation='vertical'] .tab {
       flex: none;
+      width: auto;
       height: var(--tab-height);
-      border-radius: var(--radius-1);
+      border-radius: var(--radius-2);
     }
     :host([data-tabs='bottom']) .tab {
-      border-radius: 0 0 var(--radius-1) var(--radius-1);
+      border-radius: 0 0 var(--radius-2) var(--radius-2);
     }
     .tab {
+      position: relative;
       display: flex;
       align-items: center;
       gap: var(--space-1);
-      min-width: 0;
-      flex: 0 1 220px;
-      padding: 0 var(--space-1) 0 var(--space-3);
+      /* An explicit width: a tab's content does not size it, as the tab is a size container. */
+      box-sizing: border-box;
+      width: 220px;
+      min-width: 40px;
+      flex: 0 1 auto;
+      padding: 0 var(--space-1) 0 var(--space-2);
       border: 0;
-      border-radius: var(--radius-1) var(--radius-1) 0 0;
+      border-radius: var(--radius-2) var(--radius-2) 0 0;
       background: transparent;
       color: var(--text-2);
       font: inherit;
       text-align: start;
+      container-type: inline-size;
+      touch-action: none;
+      transition:
+        background-color var(--motion-instant) var(--ease-standard),
+        color var(--motion-instant) var(--ease-standard);
     }
-    .tab:hover {
+    .tab:hover:not([aria-selected='true']) {
       background: var(--surface-hover);
     }
     .tab[aria-selected='true'] {
-      background: var(--surface-1);
       color: var(--text-1);
+    }
+    /* Narrow tabs show their icon only; the active one shows its close button instead. */
+    @container (max-width: 72px) {
+      .tab .title,
+      .tab .close,
+      .tab .sound {
+        display: none;
+      }
+      .tab .favicon {
+        margin-inline: auto;
+      }
+      .tab[aria-selected='true'] .favicon {
+        display: none;
+      }
+      .tab[aria-selected='true'] .close {
+        display: grid;
+        margin-inline: auto;
+      }
     }
     .title {
       flex: 1;
@@ -424,6 +518,25 @@ export class AppShell extends LitElement {
   private barOverflow = 0;
   /** Icons of pages by their keys, `undefined` while the browser is asked for one. */
   private readonly favicons = new Map<string, string | undefined>();
+  /** Where each tab and the active tab's surface were before a change, to move them from. */
+  private readonly tabsBefore = new Map<string, { element: HTMLElement; rect: DOMRect }>();
+  private indicatorBefore: DOMRect | undefined;
+  /** The tab that the pointer drags, where the drag started and where the tabs were. */
+  private dragging:
+    | {
+        readonly id: string;
+        readonly pointer: number;
+        readonly start: number;
+        readonly rects: ReadonlyMap<string, DOMRect>;
+        readonly index: number;
+        moved: boolean;
+        target: number;
+      }
+    | undefined;
+  /** Whether a drag just ended, so that its click does not activate the tab. */
+  private dragEnded = false;
+  /** Whether a dropped tab waits for the browser to move it. */
+  private dropPending = false;
 
   constructor() {
     super();
@@ -461,6 +574,8 @@ export class AppShell extends LitElement {
     this.resizeObserver = new ResizeObserver(() => {
       this.reportInsets();
       this.layoutBookmarksBar();
+      this.placeIndicator(false);
+      this.markHiddenTabs();
     });
     this.resizeObserver.observe(this);
   }
@@ -483,6 +598,15 @@ export class AppShell extends LitElement {
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('state')) {
       this.dataset['tabs'] = this.state.tabStrip;
+      // Tabs move from where they were, unless the whole strip moved to another side.
+      const before = changed.get('state');
+      if (
+        this.hasUpdated &&
+        this.dragging?.moved !== true &&
+        before?.tabStrip === this.state.tabStrip
+      ) {
+        this.measureTabs();
+      }
     }
     // Typing replaces an address that is selected as a whole, also when the page changes its
     // address meanwhile; setting the new address would put the caret at its end instead.
@@ -500,6 +624,11 @@ export class AppShell extends LitElement {
       this.renderRoot.querySelector('input')?.select();
     }
     if (changed.has('state')) {
+      if (this.dragging?.moved !== true) {
+        this.animateTabs();
+        this.placeIndicator(true);
+      }
+      this.markHiddenTabs();
       this.reportInsets();
       this.layoutBookmarksBar();
       this.takeFindFocus();
@@ -531,7 +660,22 @@ export class AppShell extends LitElement {
         aria-label=${t('shell.tabs')}
         aria-orientation=${vertical ? 'vertical' : 'horizontal'}
       >
-        ${this.state.tabs.map((tab) => this.renderTab(tab, t))}
+        <div
+          class="tabs"
+          @scroll=${this.markHiddenTabs}
+          @wheel=${this.onTabsWheel}
+          @pointermove=${this.onDragMove}
+          @pointerup=${this.endDrag}
+          @pointercancel=${this.endDrag}
+        >
+          <div class="indicator" aria-hidden="true"></div>
+          ${repeat(
+            this.state.tabs,
+            (tab) => tab.id,
+            (tab) => this.renderTab(tab, t),
+          )}
+          <div class="ghosts" aria-hidden="true"></div>
+        </div>
         <button
           class="icon"
           title=${t('shell.newTab')}
@@ -666,10 +810,12 @@ export class AppShell extends LitElement {
       <div
         class="tab"
         role="tab"
+        data-id=${tab.id}
         tabindex=${selected ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
         title=${title}
-        @click=${() => void this.bridge?.invoke('tabs.activate', { tabId: tab.id })}
+        @pointerdown=${(e: PointerEvent) => this.startDrag(e, tab.id)}
+        @click=${() => this.activateTab(tab.id)}
         @auxclick=${(e: MouseEvent) => e.button === 1 && this.close(tab.id)}
       >
         ${this.renderTabIcon(tab, t)}
@@ -698,6 +844,280 @@ export class AppShell extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  private get tabStrip(): HTMLElement | null {
+    return this.renderRoot.querySelector<HTMLElement>('.tabs');
+  }
+
+  private get vertical(): boolean {
+    return this.state.tabStrip === 'left' || this.state.tabStrip === 'right';
+  }
+
+  private tabElements(): HTMLElement[] {
+    return [...(this.tabStrip?.querySelectorAll<HTMLElement>(':scope > .tab[data-id]') ?? [])];
+  }
+
+  private activateTab(tabId: string): void {
+    // The click that ends a drag only drops the tab.
+    if (this.dragEnded) {
+      this.dragEnded = false;
+      return;
+    }
+    void this.bridge?.invoke('tabs.activate', { tabId });
+  }
+
+  /** Remembers where the tabs are before the browser's state changes them. */
+  private measureTabs(): void {
+    this.tabsBefore.clear();
+    for (const element of this.tabElements()) {
+      this.tabsBefore.set(element.dataset['id'] ?? '', {
+        element,
+        rect: element.getBoundingClientRect(),
+      });
+    }
+    this.indicatorBefore = this.tabStrip?.querySelector('.indicator')?.getBoundingClientRect();
+    // A dropped tab moves from where it was dropped, not from where the drag left it.
+    if (this.dropPending) {
+      this.dropPending = false;
+      this.clearDrag();
+    }
+  }
+
+  /**
+   * Moves the tabs from where they were to where they are, fades new tabs in and closed tabs
+   * out where they were. Nothing moves when the system asks for reduced motion.
+   */
+  private animateTabs(): void {
+    const strip = this.tabStrip;
+    const length = motionOf(this, '--motion-base');
+    if (strip === null || this.tabsBefore.size === 0 || length === 0) return;
+    const present = new Set<string>();
+    for (const element of this.tabElements()) {
+      const id = element.dataset['id'] ?? '';
+      present.add(id);
+      const before = this.tabsBefore.get(id)?.rect;
+      const now = element.getBoundingClientRect();
+      if (before === undefined) {
+        element.animate(
+          [
+            { opacity: 0, transform: 'scale(0.9)' },
+            { opacity: 1, transform: 'none' },
+          ],
+          { duration: length, easing: easingOf(this, '--ease-out') },
+        );
+      } else if (before.left !== now.left || before.top !== now.top) {
+        element.animate(
+          [
+            { transform: `translate(${before.left - now.left}px, ${before.top - now.top}px)` },
+            { transform: 'none' },
+          ],
+          { duration: length, easing: easingOf(this, '--ease-standard') },
+        );
+      }
+    }
+    const ghosts = strip.querySelector<HTMLElement>('.ghosts');
+    const origin = ghosts?.getBoundingClientRect();
+    for (const [id, { element, rect }] of this.tabsBefore) {
+      if (present.has(id) || ghosts === null || origin === undefined) continue;
+      // The element that the tab had leaves the page; it fades out above where it was.
+      element.removeAttribute('role');
+      element.removeAttribute('data-id');
+      element.inert = true;
+      Object.assign(element.style, {
+        left: `${rect.left - origin.left}px`,
+        top: `${rect.top - origin.top}px`,
+        width: `${rect.width}px`,
+        height: `${rect.height}px`,
+      });
+      ghosts.append(element);
+      element
+        .animate(
+          [
+            { opacity: 1, transform: 'none' },
+            { opacity: 0, transform: 'scale(0.9)' },
+          ],
+          { duration: length, easing: easingOf(this, '--ease-in') },
+        )
+        .finished.finally(() => element.remove())
+        .catch(() => undefined);
+    }
+    this.tabsBefore.clear();
+  }
+
+  /**
+   * Puts the active tab's surface under the active tab, sliding it from the tab that was
+   * active before when `animate` is set.
+   */
+  private placeIndicator(animate: boolean): void {
+    const strip = this.tabStrip;
+    const indicator = strip?.querySelector<HTMLElement>('.indicator');
+    const active = strip?.querySelector<HTMLElement>(':scope > .tab[aria-selected="true"]');
+    if (strip === null || strip === undefined || indicator === null || indicator === undefined) {
+      return;
+    }
+    if (active === null || active === undefined) {
+      indicator.hidden = true;
+      return;
+    }
+    indicator.hidden = false;
+    const box = strip.getBoundingClientRect();
+    const rect = active.getBoundingClientRect();
+    const x = rect.left - box.left - strip.clientLeft + strip.scrollLeft;
+    const y = rect.top - box.top - strip.clientTop + strip.scrollTop;
+    indicator.style.width = `${rect.width}px`;
+    indicator.style.height = `${rect.height}px`;
+    indicator.style.transform = `translate(${x}px, ${y}px)`;
+    const before = this.indicatorBefore;
+    this.indicatorBefore = undefined;
+    const length = motionOf(this, '--motion-slow');
+    if (
+      !animate ||
+      before === undefined ||
+      length === 0 ||
+      rect.width === 0 ||
+      rect.height === 0 ||
+      (before.left === rect.left && before.top === rect.top && before.width === rect.width)
+    ) {
+      return;
+    }
+    const from = `translate(${x + before.left - rect.left}px, ${y + before.top - rect.top}px)`;
+    indicator.animate(
+      [
+        {
+          transform: `${from} scale(${before.width / rect.width}, ${before.height / rect.height})`,
+        },
+        { transform: `translate(${x}px, ${y}px)` },
+      ],
+      { duration: length, easing: easingOf(this, '--ease-standard') },
+    );
+  }
+
+  /** Marks the sides of the tab strip behind which tabs are hidden. */
+  private readonly markHiddenTabs = (): void => {
+    const strip = this.tabStrip;
+    if (strip === null) return;
+    const [scrolled, size, visible] = this.vertical
+      ? [strip.scrollTop, strip.scrollHeight, strip.clientHeight]
+      : [Math.abs(strip.scrollLeft), strip.scrollWidth, strip.clientWidth];
+    strip.toggleAttribute('data-before', scrolled > 0);
+    strip.toggleAttribute('data-after', scrolled + visible < size - 1);
+  };
+
+  /** The mouse wheel scrolls a horizontal tab strip sideways. */
+  private readonly onTabsWheel = (event: WheelEvent): void => {
+    const strip = this.tabStrip;
+    if (strip === null || this.vertical || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+      return;
+    }
+    if (strip.scrollWidth <= strip.clientWidth) return;
+    event.preventDefault();
+    strip.scrollLeft += event.deltaY;
+  };
+
+  /** Starts to drag a tab with the primary button, unless a button of the tab is pressed. */
+  private startDrag(event: PointerEvent, id: string): void {
+    const target = event.target;
+    if (
+      event.button !== 0 ||
+      !(event.currentTarget instanceof HTMLElement) ||
+      (target instanceof Element && target.closest('button') !== null)
+    ) {
+      return;
+    }
+    const tabs = this.tabElements();
+    this.dragging = {
+      id,
+      pointer: event.pointerId,
+      start: this.vertical ? event.clientY : event.clientX,
+      rects: new Map(tabs.map((tab) => [tab.dataset['id'] ?? '', tab.getBoundingClientRect()])),
+      index: tabs.findIndex((tab) => tab.dataset['id'] === id),
+      moved: false,
+      target: -1,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  /** Moves the dragged tab with the pointer, and the other tabs out of its way. */
+  private readonly onDragMove = (event: PointerEvent): void => {
+    const drag = this.dragging;
+    const strip = this.tabStrip;
+    if (drag === undefined || strip === null || event.pointerId !== drag.pointer) return;
+    const vertical = this.vertical;
+    const offset = (vertical ? event.clientY : event.clientX) - drag.start;
+    if (!drag.moved && Math.abs(offset) < 4) return;
+    drag.moved = true;
+    strip.toggleAttribute('data-dragging', true);
+    const own = drag.rects.get(drag.id);
+    if (own === undefined) return;
+    const start = (rect: DOMRect): number => (vertical ? rect.top : rect.left);
+    const size = (rect: DOMRect): number => (vertical ? rect.height : rect.width);
+    const center = start(own) + size(own) / 2 + offset;
+    const others = [...drag.rects].filter(([id]) => id !== drag.id);
+    drag.target = others.filter(([, rect]) => start(rect) + size(rect) / 2 < center).length;
+    // Where each tab goes in the new order, from the start of the first tab.
+    const order = [
+      ...others.slice(0, drag.target),
+      [drag.id, own] as const,
+      ...others.slice(drag.target),
+    ];
+    const first = [...drag.rects.values()][0];
+    const gap = others.length > 0 ? this.tabGap() : 0;
+    let position = first === undefined ? 0 : start(first);
+    const places = new Map<string, number>();
+    for (const [id, rect] of order) {
+      places.set(id, position);
+      position += size(rect) + gap;
+    }
+    for (const element of this.tabElements()) {
+      const id = element.dataset['id'] ?? '';
+      const rect = drag.rects.get(id);
+      if (rect === undefined) continue;
+      const shift = id === drag.id ? offset : (places.get(id) ?? start(rect)) - start(rect);
+      element.toggleAttribute('data-dragged', id === drag.id);
+      element.style.transform = vertical ? `translateY(${shift}px)` : `translateX(${shift}px)`;
+    }
+  };
+
+  /** Drops the dragged tab at its new place, which the browser then gives it. */
+  private readonly endDrag = (event: PointerEvent): void => {
+    const drag = this.dragging;
+    if (drag === undefined || event.pointerId !== drag.pointer) return;
+    this.dragging = undefined;
+    if (!drag.moved) return;
+    this.dragEnded = true;
+    // A drag that ends outside the tab sends no click that would clear this.
+    setTimeout(() => (this.dragEnded = false));
+    if (event.type === 'pointerup' && drag.target !== -1 && drag.target !== drag.index) {
+      this.dropPending = true;
+      void this.bridge?.invoke('tabs.move', { tabId: drag.id, index: drag.target });
+      // Should the browser not move the tab, it goes back to its place.
+      setTimeout(() => {
+        if (!this.dropPending) return;
+        this.dropPending = false;
+        this.clearDrag();
+        this.placeIndicator(false);
+      }, 1000);
+      return;
+    }
+    this.measureTabs();
+    this.clearDrag();
+    this.animateTabs();
+    this.placeIndicator(false);
+  };
+
+  /** The space between two tabs. */
+  private tabGap(): number {
+    const strip = this.tabStrip;
+    return strip === null ? 0 : Number.parseFloat(getComputedStyle(strip).gap) || 0;
+  }
+
+  private clearDrag(): void {
+    this.tabStrip?.removeAttribute('data-dragging');
+    for (const element of this.tabElements()) {
+      element.removeAttribute('data-dragged');
+      element.style.transform = '';
+    }
   }
 
   /** The icon of a tab: a turning ring while it loads, else its page's icon. */

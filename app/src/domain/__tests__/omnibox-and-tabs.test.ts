@@ -203,6 +203,24 @@ describe('TabService', () => {
     expect(() => tabs.activate('t999')).toThrow('Unknown tab t999');
   });
 
+  it('moves a tab to another place and keeps the active tab', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const a = tabs.open('https://a.example/');
+    const b = tabs.open('https://b.example/');
+    const c = tabs.open('https://c.example/');
+    let changes = 0;
+    tabs.onDidChange(() => (changes += 1));
+    tabs.move(a, 2);
+    expect(tabs.all.map((tab) => tab.id)).toEqual([b, c, a]);
+    tabs.move(c, 0);
+    expect(tabs.all.map((tab) => tab.id)).toEqual([c, b, a]);
+    // An index past the end puts the tab last.
+    tabs.move(c, 99);
+    expect(tabs.all.map((tab) => tab.id)).toEqual([b, a, c]);
+    expect(tabs.active?.id).toBe(c);
+    expect(changes).toBe(3);
+  });
+
   it('destroys every view on dispose', () => {
     const views = new FakeViews();
     const tabs = new TabService(views, 'about:blank');

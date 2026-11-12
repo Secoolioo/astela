@@ -12,6 +12,7 @@ import {
   ResetZoom,
   SetTabMuted,
   GetFavicon,
+  MoveTab,
   StopFinding,
   ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
@@ -67,6 +68,11 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
   router.handle(GetFavicon, ({ key }) => favicons.get(key) ?? null);
+  router.handle(MoveTab, ({ tabId, index }, { sender }) => {
+    const { tabs } = windowOf(sender);
+    if (tabs.all.some((tab) => tab.id === tabId)) tabs.move(tabId, index);
+    return null;
+  });
   router.handle(
     SetTabMuted,
     ({ tabId, muted }, { sender }) => (windowOf(sender).setMuted(tabId, muted), null),
