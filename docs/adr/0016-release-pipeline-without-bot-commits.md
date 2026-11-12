@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0056](0056-live-update-proof-after-a-failed-deployment.md) changes two statements below: a deployment without a release runs the live update proof again while no proof of the newest release has passed, and a failed deployment is resumed by its fix on `main` rather than by re-running the failed jobs.
 
 ## Date
 

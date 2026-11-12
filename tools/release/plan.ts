@@ -3,7 +3,10 @@
  * release exists for the version in app/package.json, the version is released; otherwise
  * only the website is deployed. Prints `key=value` lines for `$GITHUB_OUTPUT`; `previous`
  * names the published release from which the live update proof updates to the version, and
- * is empty when there is none, as for the first release.
+ * is empty when there is none, as for the first release. `live` asks a run that does not
+ * release to run the live update proof all the same: the version came out at most
+ * 14 days ago and no proof of it has passed on `main`, as after a release whose deployment
+ * failed (ADR 0056).
  *
  * A release needs the public update keys and the repository key in `app/build/keys/`,
  * because every package embeds them; without them the installed browser could never
@@ -14,7 +17,16 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { channelOf, listPublishedReleases, previousRelease, readBrand } from './releases.ts';
+import {
+  catchesUpLiveUpdate,
+  channelOf,
+  listArtifacts,
+  listPublishedReleases,
+  liveUpdateProofName,
+  mayCatchUpLiveUpdate,
+  previousRelease,
+  readBrand,
+} from './releases.ts';
 
 const root = resolve(import.meta.dirname, '../..');
 const repository = process.env['GITHUB_REPOSITORY'] ?? readBrand().repository;
@@ -43,8 +55,26 @@ if (release) {
   }
 }
 
+const previous = previousRelease(releases, version);
+const publishedAt = releases.find((r) => r.version === version)?.publishedAt;
+const now = new Date();
+let live = false;
+// Only a version that may need the catch-up costs a request for its artifacts.
+if (!release && mayCatchUpLiveUpdate(publishedAt, previous, now)) {
+  try {
+    const artifacts = await listArtifacts(repository, liveUpdateProofName(version));
+    live = catchesUpLiveUpdate({ release, publishedAt, previous, now, artifacts });
+  } catch (error) {
+    // The deployment does not depend on the proof, so a failed lookup only skips it. The
+    // output goes to $GITHUB_OUTPUT, so the warning goes to stderr.
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`::warning::The live update proof of ${version} was not looked up: ${reason}`);
+  }
+}
+
 console.log(`version=${version}`);
 console.log(`tag=v${version}`);
 console.log(`prerelease=${channelOf(version) === 'beta'}`);
 console.log(`release=${release}`);
-console.log(`previous=${previousRelease(releases, version) ?? ''}`);
+console.log(`previous=${previous ?? ''}`);
+console.log(`live=${live}`);
