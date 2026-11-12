@@ -20,8 +20,9 @@ test('fails a test with a report of the browser process when the shell stops ans
   expect(text).toContain('The shell did not answer within 10 seconds');
   expect(text).toContain('Browser process: {"windows":[{');
   expect(text).toMatch(
-    /^Processes of the computer: \d+ \((at most \d+|no limit|no known limit) for one user\)$/m,
+    /^Processes of the computer: \d+(, \d+ of this user)? \((at most \d+|no limit|no known limit) for one user\)$/m,
   );
+  expect(text).toMatch(/^Processes of the browser: [1-9]\d* \(.*\bastela\b/m);
 });
 
 test('records and stops a browser that does not let the harness connect', async () => {
@@ -56,9 +57,11 @@ test('records and stops a browser that does not let the harness connect', async 
   expect(text).toContain('The browser started, but the harness could not use it');
   // A stopped browser cannot list its pages either.
   expect(text).toContain('Pages of the browser not available');
-  // The processes of the computer, among them the stopped browser.
-  expect(text).toMatch(/^Processes of the computer: \d+ \((at most \d+|no limit) for one user\)$/m);
-  expect(text).toMatch(/^ {2}\d+ astela$/m);
+  // The processes of the computer and of this user, among them those of the stopped browser.
+  expect(text).toMatch(
+    /^Processes of the computer: \d+, \d+ of this user \((at most \d+|no limit) for one user\)$/m,
+  );
+  expect(text).toMatch(/^Processes of the browser: [1-9]\d* \((.*, )?\d+ astela(, |\)$)/m);
 });
 
 test('names the page that does not answer in the record of a start', async () => {
