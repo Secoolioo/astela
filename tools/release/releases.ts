@@ -105,6 +105,88 @@ export function previousRelease(
   return (sameChannel ?? (channel === 'stable' ? earlier.at(-1) : undefined))?.version;
 }
 
+/** How many days after its publication a run catches up the live update proof of a release. */
+export const liveUpdateCatchUpDays = 14;
+
+/**
+ * The name of the artifact that the release workflow keeps when the live update proof of a
+ * version passes.
+ * @param version - The version that the proof updates to.
+ */
+export function liveUpdateProofName(version: string): string {
+  return `live-update-v${version}`;
+}
+
+/** An artifact as the list of artifacts of the REST API describes it. */
+export interface ApiArtifact {
+  readonly expired: boolean;
+  readonly workflow_run?: {
+    readonly head_branch?: string | null;
+    readonly head_repository_id?: number | null;
+    readonly repository_id?: number | null;
+  } | null;
+}
+
+/**
+ * Tells whether an artifact records a passed live update proof: it has not expired and a run
+ * on `main` of the repository itself kept it, not the run of a pull request or of a fork.
+ * @param artifact - An artifact named after the proof.
+ */
+export function isLiveUpdateProof(artifact: ApiArtifact): boolean {
+  const run = artifact.workflow_run;
+  return (
+    !artifact.expired &&
+    run?.head_branch === 'main' &&
+    typeof run.repository_id === 'number' &&
+    run.head_repository_id === run.repository_id
+  );
+}
+
+/**
+ * Decides whether a run of the release workflow catches up the live update proof of the
+ * version on `main`: the run does not release it, because a run before it published the
+ * version, the version came out at most {@link liveUpdateCatchUpDays} days ago, it has a
+ * previous release, and no proof of it has passed. A proof that the release run skipped or
+ * that failed is therefore run again (ADR 0056).
+ * @param options - What the plan knows about the version.
+ * @param options.release - Whether this run releases the version.
+ * @param options.publishedAt - When the version was published, or `undefined` when it is not.
+ * @param options.previous - The release that the proof updates from, if any.
+ * @param options.now - The current time.
+ * @param options.artifacts - The artifacts named after the proof of the version.
+ */
+export function catchesUpLiveUpdate(options: {
+  readonly release: boolean;
+  readonly publishedAt: string | undefined;
+  readonly previous: string | undefined;
+  readonly now: Date;
+  readonly artifacts: readonly ApiArtifact[];
+}): boolean {
+  return (
+    !options.release &&
+    mayCatchUpLiveUpdate(options.publishedAt, options.previous, options.now) &&
+    !options.artifacts.some(isLiveUpdateProof)
+  );
+}
+
+/**
+ * Tells whether the version on `main` may need a catch-up of its live update proof, before
+ * the plan lists the artifacts: it is published, came out at most
+ * {@link liveUpdateCatchUpDays} days ago and has a previous release.
+ * @param publishedAt - When the version was published, or `undefined` when it is not.
+ * @param previous - The release that the proof updates from, or `undefined` when none exists.
+ * @param now - The current time.
+ */
+export function mayCatchUpLiveUpdate(
+  publishedAt: string | undefined,
+  previous: string | undefined,
+  now: Date,
+): boolean {
+  if (publishedAt === undefined || previous === undefined) return false;
+  const age = now.getTime() - Date.parse(publishedAt);
+  return age >= 0 && age <= liveUpdateCatchUpDays * 24 * 60 * 60 * 1000;
+}
+
 /**
  * Reads a `SHA256SUMS` file as `sha256sum` writes it, in text or binary mode.
  * @param text - The file content.
@@ -185,6 +267,25 @@ export async function listPublishedReleases(repository: string): Promise<Publish
     if (batch.length < 100) break;
   }
   return releases.toSorted((a, b) => compareVersions(a.version, b.version));
+}
+
+/**
+ * Lists the artifacts of the repository with that name, expired ones included.
+ * @param repository - `owner/name`.
+ * @param name - The name of the artifact.
+ */
+export async function listArtifacts(repository: string, name: string): Promise<ApiArtifact[]> {
+  const artifacts: ApiArtifact[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await github(
+      `/repos/${repository}/actions/artifacts?name=${encodeURIComponent(name)}&per_page=100&page=${page}`,
+    );
+    if (!response.ok) throw new Error(`Listing the artifacts failed: ${response.status}`);
+    const batch = ((await response.json()) as { artifacts: ApiArtifact[] }).artifacts;
+    artifacts.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return artifacts;
 }
 
 /**
