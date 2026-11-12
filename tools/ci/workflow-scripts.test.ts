@@ -84,14 +84,16 @@ describe('the workflows of this repository', () => {
     assert.deepEqual(missingScripts(root), []);
   });
 
-  it('install the link checker before each pnpm verify, which checks the links in CI', () => {
+  // install-lychee.sh puts lychee on the PATH through $GITHUB_PATH, which only the later
+  // steps of the job see.
+  it('install the link checker in a step before each step that checks links', () => {
     const missing: string[] = [];
     for (const name of workflows) {
       const runs = entries(readFileSync(join(folder, name), 'utf8')).filter(
         (entry) => entry.path[0] === 'jobs' && entry.path[2] === 'steps' && entry.path[4] === 'run',
       );
       for (const [index, entry] of runs.entries()) {
-        if (!/\bpnpm verify\b/.test(entry.value)) continue;
+        if (!/\bpnpm verify\b|check-links\.sh/.test(entry.value)) continue;
         const job = entry.path[1];
         const installed = runs
           .slice(0, index)
