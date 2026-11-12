@@ -2,9 +2,12 @@ import { app } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootstrap } from './bootstrap.ts';
+import { skipMacWindowRestoration } from './window-restoration.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+// In time for AppKit, which handles the launch only after this script has loaded.
+skipMacWindowRestoration();
 bootstrap({
   rendererDir: join(here, '../renderer'),
   shellPreload: join(here, '../preload/shell.cjs'),
