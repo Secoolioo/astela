@@ -22,7 +22,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import type * as Electron from 'electron';
 import type { ShellState } from '../../src/shared/ipc/shell-contracts.ts';
 
@@ -385,6 +385,7 @@ async function reportState(main: MainProcess, shell: Page, profile: string): Pro
       (known) => `Browser process: ${JSON.stringify(known)}\n`,
       (failure: unknown) => `Browser process not available: ${String(failure)}\n`,
     );
+    report += systemProcesses();
   }
   report += logTail(profile);
   if (info.status !== info.expectedStatus) process.stdout.write(report);
@@ -425,6 +426,7 @@ async function reportFailedStart(
     );
   }
   report += await pageReport(devtools);
+  report += systemProcesses();
   report += threadStacks(child.pid, profile, 'the browser process');
   // A page that does not answer holds up the connection; its process shows where it waits.
   for (const pid of pages) report += threadStacks(pid, profile, `the page process ${String(pid)}`);
@@ -446,6 +448,46 @@ async function reportFailedStart(
   } catch {
     // Outside a test there is nothing to attach to.
   }
+}
+
+/**
+ * The processes of the computer, counted by program, with the most frequent first, and how
+ * many processes one user may run. A browser whose pages never load can be one whose processes
+ * could not start, as when processes that earlier browsers left behind fill that limit.
+ */
+function systemProcesses(): string {
+  const names =
+    process.platform === 'win32'
+      ? runTool('tasklist', ['/fo', 'csv', '/nh'])
+          .split('\n')
+          .map((line) => /^"([^"]*)"/.exec(line.trim())?.[1] ?? '')
+      : runTool('ps', ['-A', '-o', 'comm='])
+          .split('\n')
+          // macOS gives the path of each program, Linux its name.
+          .map((line) => (process.platform === 'darwin' ? basename(line.trim()) : line.trim()));
+  const counts = new Map<string, number>();
+  for (const name of names.filter((entry) => entry !== '')) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const limit =
+    process.platform === 'darwin'
+      ? runTool('sysctl', ['-n', 'kern.maxprocperuid']).trim()
+      : process.platform === 'linux'
+        ? runTool('bash', ['-c', 'ulimit -u']).trim()
+        : '';
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  const most = [...counts]
+    .toSorted(([, a], [, b]) => b - a)
+    .slice(0, 15)
+    .map(([name, count]) => `  ${String(count)} ${name}\n`)
+    .join('');
+  const allowed =
+    limit === ''
+      ? 'no known limit for one user'
+      : limit === 'unlimited'
+        ? 'no limit for one user'
+        : `at most ${limit} for one user`;
+  return `Processes of the computer: ${String(total)} (${allowed})\n${most}`;
 }
 
 /**
