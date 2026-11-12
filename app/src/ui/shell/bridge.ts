@@ -19,6 +19,8 @@ import type {
   ProceedUnsafely,
   ReopenClosedTab,
   ResetZoom,
+  SetTabMuted,
+  GetFavicon,
   StopFinding,
   ToggleBookmark,
 } from '../../shared/ipc/shell-later-contracts.ts';
@@ -42,6 +44,8 @@ interface Requests {
   'tabs.resetZoom': typeof ResetZoom;
   'shell.toggleBookmark': typeof ToggleBookmark;
   'shell.openBookmarkFolder': typeof OpenBookmarkFolder;
+  'tabs.favicon': typeof GetFavicon;
+  'tabs.setMuted': typeof SetTabMuted;
 }
 
 interface Events {
