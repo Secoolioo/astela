@@ -9,6 +9,14 @@ import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contra
 import { controlsRoom } from '../../shared/window-controls.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
+import {
+  dropPlace,
+  spanOf,
+  stripItems,
+  unitsOf,
+  type Span,
+  type StripUnit,
+} from './strip-items.ts';
 import { TabIcons } from '../ui-kit/tab-icons.ts';
 
 /**
@@ -719,13 +727,24 @@ export class AppShell extends LitElement {
   private indicatorBefore: DOMRect | undefined;
   /** The slide of the active tab's surface while it runs, and the place where it ends. */
   private indicatorSlide: { readonly animation: Animation; readonly to: Place } | undefined;
-  /** The tab that the pointer drags, where the drag started and where the tabs were. */
+  /**
+   * The tab that the pointer drags, with the items of the strip that move with it, where the
+   * drag started and where the items of the strip were.
+   */
   private dragging:
     | {
         readonly id: string;
+        /** The dragged unit: the tab and the items that move with it. */
+        readonly unit: StripUnit;
+        /** The units of the strip when the drag started, in their order. */
+        readonly units: readonly StripUnit[];
         readonly pointer: number;
         readonly start: number;
-        readonly rects: ReadonlyMap<string, DOMRect>;
+        /** Where each item of the strip was along the strip, by its key. */
+        readonly spans: ReadonlyMap<string, Span>;
+        /** The space between two items of the strip. */
+        readonly gap: number;
+        /** How many items came before the dragged unit. */
         readonly index: number;
         moved: boolean;
         target: number;
@@ -913,9 +932,9 @@ export class AppShell extends LitElement {
         >
           <div class="indicator" aria-hidden="true"></div>
           ${repeat(
-            this.state.tabs,
-            (tab) => tab.id,
-            (tab) => this.renderTab(tab, t),
+            stripItems(this.state),
+            (item) => item.key,
+            (item) => this.renderTab(item.tab, t),
           )}
           <div class="ghosts" aria-hidden="true"></div>
         </div>
@@ -1084,8 +1103,9 @@ export class AppShell extends LitElement {
     return this.state.tabStrip === 'left' || this.state.tabStrip === 'right';
   }
 
-  private tabElements(): HTMLElement[] {
-    return [...(this.tabStrip?.querySelectorAll<HTMLElement>(':scope > .tab[data-id]') ?? [])];
+  /** The elements of the items of the tab strip, in their order, each with its key as `data-id`. */
+  private stripElements(): HTMLElement[] {
+    return [...(this.tabStrip?.querySelectorAll<HTMLElement>(':scope > [data-id]') ?? [])];
   }
 
   private activateTab(tabId: string): void {
@@ -1100,7 +1120,7 @@ export class AppShell extends LitElement {
   /** Remembers where the tabs are before the browser's state changes them. */
   private measureTabs(): void {
     this.tabsBefore.clear();
-    for (const element of this.tabElements()) {
+    for (const element of this.stripElements()) {
       this.tabsBefore.set(element.dataset['id'] ?? '', {
         element,
         rect: element.getBoundingClientRect(),
@@ -1130,7 +1150,7 @@ export class AppShell extends LitElement {
     const length = motionOf(this, '--motion-base');
     if (strip === null || this.tabsBefore.size === 0 || length === 0) return;
     const present = new Set<string>();
-    for (const element of this.tabElements()) {
+    for (const element of this.stripElements()) {
       const id = element.dataset['id'] ?? '';
       present.add(id);
       const before = this.tabsBefore.get(id)?.rect;
@@ -1278,13 +1298,24 @@ export class AppShell extends LitElement {
       this.clearDrag();
       this.placeIndicator(false);
     }
-    const tabs = this.tabElements();
+    const vertical = this.vertical;
+    const elements = this.stripElements();
+    const units = unitsOf(stripItems(this.state));
+    const unit = units.find((candidate) => candidate.includes(id)) ?? [id];
     this.dragging = {
       id,
+      unit,
+      units,
       pointer: event.pointerId,
-      start: this.vertical ? event.clientY : event.clientX,
-      rects: new Map(tabs.map((tab) => [tab.dataset['id'] ?? '', tab.getBoundingClientRect()])),
-      index: tabs.findIndex((tab) => tab.dataset['id'] === id),
+      start: vertical ? event.clientY : event.clientX,
+      spans: new Map(
+        elements.map((element) => [
+          element.dataset['id'] ?? '',
+          spanOf(element.getBoundingClientRect(), vertical),
+        ]),
+      ),
+      gap: this.tabGap(),
+      index: elements.findIndex((element) => element.dataset['id'] === unit[0]),
       moved: false,
       target: -1,
     };
@@ -1306,33 +1337,15 @@ export class AppShell extends LitElement {
     if (!drag.moved && Math.abs(offset) < 4) return;
     drag.moved = true;
     strip.toggleAttribute('data-dragging', true);
-    const own = drag.rects.get(drag.id);
-    if (own === undefined) return;
-    const start = (rect: DOMRect): number => (vertical ? rect.top : rect.left);
-    const size = (rect: DOMRect): number => (vertical ? rect.height : rect.width);
-    const center = start(own) + size(own) / 2 + offset;
-    const others = [...drag.rects].filter(([id]) => id !== drag.id);
-    drag.target = others.filter(([, rect]) => start(rect) + size(rect) / 2 < center).length;
-    // Where each tab goes in the new order, from the start of the first tab.
-    const order = [
-      ...others.slice(0, drag.target),
-      [drag.id, own] as const,
-      ...others.slice(drag.target),
-    ];
-    const first = [...drag.rects.values()][0];
-    const gap = others.length > 0 ? this.tabGap() : 0;
-    let position = first === undefined ? 0 : start(first);
-    const places = new Map<string, number>();
-    for (const [id, rect] of order) {
-      places.set(id, position);
-      position += size(rect) + gap;
-    }
-    for (const element of this.tabElements()) {
-      const id = element.dataset['id'] ?? '';
-      const rect = drag.rects.get(id);
-      if (rect === undefined) continue;
-      const shift = id === drag.id ? offset : (places.get(id) ?? start(rect)) - start(rect);
-      element.toggleAttribute('data-dragged', id === drag.id);
+    const place = dropPlace(drag.units, drag.unit, offset, drag.spans, drag.gap);
+    if (place === undefined) return;
+    drag.target = place.index;
+    for (const element of this.stripElements()) {
+      const key = element.dataset['id'] ?? '';
+      if (!drag.spans.has(key)) continue;
+      const dragged = drag.unit.includes(key);
+      const shift = dragged ? offset : (place.shifts.get(key) ?? 0);
+      element.toggleAttribute('data-dragged', dragged);
       element.style.transform = vertical ? `translateY(${shift}px)` : `translateX(${shift}px)`;
     }
   };
@@ -1388,7 +1401,7 @@ export class AppShell extends LitElement {
 
   private clearDrag(): void {
     this.tabStrip?.removeAttribute('data-dragging');
-    for (const element of this.tabElements()) {
+    for (const element of this.stripElements()) {
       element.removeAttribute('data-dragged');
       element.style.transform = '';
     }

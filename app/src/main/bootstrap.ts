@@ -45,7 +45,7 @@ import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-en
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { webFontPreferences } from '../domain/appearance/appearance.ts';
-import { parseSession } from '../domain/session/session.ts';
+import { parseSession, restoredWindows } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
@@ -961,20 +961,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       : undefined;
   // The pages of the settings open like a session: in one window, and only the first loads.
   const startPages = startup === 'pages' && !showSetup ? settings.get(StartupPagesSetting) : [];
-  const startSession =
-    lastSession ??
-    (startPages.length === 0
-      ? undefined
-      : {
-          version: 1 as const,
-          windows: [{ tabs: startPages.map((url) => ({ url, title: url })), active: 0 }],
-        });
+  const startWindows =
+    lastSession === undefined
+      ? startPages.length === 0
+        ? undefined
+        : [{ tabs: startPages.map((url) => ({ url, title: url })), active: 0, place: {} }]
+      : restoredWindows(lastSession);
   // Links from other apps open in tabs; a start without a session or the guide shows only them.
   const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
   const first =
-    startSession === undefined
+    startWindows === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
-      : windows.restore(startSession);
+      : windows.restore(startWindows);
   // Later links open in the window used last, which comes to the front, also without links;
   // without a window, the first link opens one.
   openLinks = (links) => {
