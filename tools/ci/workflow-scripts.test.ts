@@ -103,4 +103,22 @@ describe('the workflows of this repository', () => {
     }
     assert.deepEqual(missing, []);
   });
+
+  it('keep the record of a passed live update proof under the name the plan looks for', () => {
+    const release = entries(readFileSync(join(folder, 'release.yml'), 'utf8'));
+    const value = (...path: string[]): string | undefined =>
+      release.find((entry) => entry.path.join('.') === path.join('.'))?.value;
+    const upload = release.find(
+      (entry) =>
+        entry.path.slice(0, 3).join('.') === 'jobs.live-update-proof.steps' &&
+        entry.path.at(-2) === 'with' &&
+        entry.path.at(-1) === 'name',
+    );
+    // tools/release/plan.ts prints tag=v<version>, and liveUpdateProofName adds live-update-.
+    assert.equal(upload?.value, 'live-update-${{ needs.plan.outputs.tag }}');
+    // Below jobs that a run without a release skips, a job runs only with a status function.
+    assert.match(value('jobs', 'live-update', 'if') ?? '', /^!cancelled\(\) && /);
+    assert.match(value('jobs', 'live-update-proof', 'if') ?? '', /!cancelled\(\)/);
+    assert.match(value('jobs', 'live-update', 'if') ?? '', /needs\.plan\.outputs\.live == 'true'/);
+  });
 });

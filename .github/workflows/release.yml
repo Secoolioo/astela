@@ -2,7 +2,9 @@
 # the commit, builds signed macOS packages, signs the rest, publishes the release with the
 # owner token, deploys the website, update feed and package repositories, and proves that the
 # previous release updates itself to the new one through them. Without a new version, only
-# the website is deployed. See docs/adr/0016-release-pipeline-without-bot-commits.md.
+# the website is deployed, and the proof runs again while the newest release has none that
+# passed (docs/adr/0056-live-update-proof-after-a-failed-deployment.md). See
+# docs/adr/0016-release-pipeline-without-bot-commits.md.
 name: Release
 
 on:
@@ -22,12 +24,15 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      # The plan looks up the artifact that a passed live update proof keeps.
+      actions: read
     outputs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
       release: ${{ steps.plan.outputs.release }}
       previous: ${{ steps.plan.outputs.previous }}
+      live: ${{ steps.plan.outputs.live }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,6 +42,9 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - id: plan
+        # With an explicit bash, the step runs with pipefail, so a failing plan fails the job
+        # instead of leaving its outputs empty behind tee.
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/release/plan.ts | tee -a "$GITHUB_OUTPUT"
@@ -321,11 +329,19 @@ jobs:
 
   # The previous release of the channel, installed from its release assets without policies,
   # must update itself to the new one through the live feed and repositories that the pages
-  # job has just deployed and verified. The first release has no previous one.
+  # job has just deployed and verified. The first release has no previous one. A run that
+  # does not release catches up a proof that its release skipped, as when the deployment
+  # failed (ADR 0056).
   live-update:
     name: live-update (${{ matrix.name }})
     needs: [plan, pages]
-    if: needs.plan.outputs.release == 'true' && needs.plan.outputs.previous != ''
+    # Without a release, ci, macos, screenshots and publish are skipped, and a job below them
+    # runs only with an explicit status function; pages succeeds in a release only after
+    # publish did.
+    if: >-
+      !cancelled() && needs.plan.result == 'success' && needs.pages.result == 'success' &&
+      (needs.plan.outputs.release == 'true' || needs.plan.outputs.live == 'true') &&
+      needs.plan.outputs.previous != ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:
@@ -379,3 +395,24 @@ jobs:
       - name: Upgrade the previous deb and rpm through the live repositories
         if: runner.os == 'Linux' && !cancelled() && steps.download.outcome == 'success'
         run: app/tests/linux-repos/live.sh --upgrade "$VERSION" "$PREVIOUS" "$RUNNER_TEMP/previous"
+
+  # Keeps the record that the live update proof of the version passed, which the plan of later
+  # runs looks for before it catches up a skipped proof.
+  live-update-proof:
+    name: live-update-proof
+    needs: [plan, live-update]
+    # The result of the matrix job is success only when every entry passed.
+    if: ${{ !cancelled() && needs.live-update.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          RUN: ${{ github.run_id }}
+        run: printf '%s passed the live update proof in run %s\n' "$TAG" "$RUN" >"$RUNNER_TEMP/proof.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-update-${{ needs.plan.outputs.tag }}
+          path: ${{ runner.temp }}/proof.txt
+          retention-days: 90

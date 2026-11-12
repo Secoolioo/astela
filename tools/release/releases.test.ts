@@ -1,7 +1,16 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
-import { channelOf, parseChecksums, previousRelease, verifyChecksum } from './releases.ts';
+import {
+  catchesUpLiveUpdate,
+  channelOf,
+  isLiveUpdateProof,
+  liveUpdateProofName,
+  mayCatchUpLiveUpdate,
+  parseChecksums,
+  previousRelease,
+  verifyChecksum,
+} from './releases.ts';
 
 const published = (...versions: string[]): { version: string; channel: 'stable' | 'beta' }[] =>
   versions.map((version) => ({ version, channel: channelOf(version) }));
@@ -53,6 +62,69 @@ describe('previousRelease', () => {
       previousRelease(published('0.1.0-beta.9', '0.1.0-beta.10'), '0.1.0-beta.11'),
       '0.1.0-beta.10',
     );
+  });
+});
+
+describe('mayCatchUpLiveUpdate', () => {
+  const now = new Date('2026-11-12T06:00:00Z');
+
+  it('catches up the proof of a version published in the last 14 days', () => {
+    assert.equal(mayCatchUpLiveUpdate('2026-11-12T05:51:00Z', '0.1.0-beta.4', now), true);
+    assert.equal(mayCatchUpLiveUpdate('2026-10-29T06:00:00Z', '0.1.0-beta.4', now), true);
+  });
+
+  it('leaves out an older release, a version that is not published and the first release', () => {
+    assert.equal(mayCatchUpLiveUpdate('2026-10-29T05:59:59Z', '0.1.0-beta.4', now), false);
+    assert.equal(mayCatchUpLiveUpdate(undefined, '0.1.0-beta.4', now), false);
+    assert.equal(mayCatchUpLiveUpdate('2026-11-12T05:51:00Z', undefined, now), false);
+  });
+
+  it('leaves out a publication time after the current time', () => {
+    assert.equal(mayCatchUpLiveUpdate('2026-11-12T07:00:00Z', '0.1.0-beta.4', now), false);
+  });
+
+  it('names the artifact of the proof after the version', () => {
+    assert.equal(liveUpdateProofName('0.1.0-beta.5'), 'live-update-v0.1.0-beta.5');
+  });
+});
+
+describe('catchesUpLiveUpdate', () => {
+  const now = new Date('2026-11-12T06:00:00Z');
+  const onMain = { head_branch: 'main', head_repository_id: 7, repository_id: 7 };
+  const proof = { expired: false, workflow_run: onMain };
+  const plan = {
+    release: false,
+    publishedAt: '2026-11-12T05:51:00Z',
+    previous: '0.1.0-beta.4',
+    now,
+    artifacts: [],
+  };
+
+  it('catches up a proof that no run on main passed', () => {
+    assert.equal(catchesUpLiveUpdate(plan), true);
+  });
+
+  it('leaves a release run, which runs the proof anyway, and a version without a catch-up', () => {
+    assert.equal(catchesUpLiveUpdate({ ...plan, release: true }), false);
+    assert.equal(catchesUpLiveUpdate({ ...plan, publishedAt: undefined }), false);
+    assert.equal(catchesUpLiveUpdate({ ...plan, previous: undefined }), false);
+    assert.equal(catchesUpLiveUpdate({ ...plan, publishedAt: '2026-10-01T00:00:00Z' }), false);
+  });
+
+  it('stops once a run on main kept the record of a passed proof', () => {
+    assert.equal(catchesUpLiveUpdate({ ...plan, artifacts: [proof] }), false);
+  });
+
+  it('counts no expired record and no record from another branch or a fork', () => {
+    const others = [
+      { ...proof, expired: true },
+      { expired: false, workflow_run: { ...onMain, head_branch: 'feat/x' } },
+      { expired: false, workflow_run: { ...onMain, head_repository_id: 8 } },
+      { expired: false, workflow_run: null },
+      { expired: false },
+    ];
+    for (const artifact of others) assert.equal(isLiveUpdateProof(artifact), false);
+    assert.equal(catchesUpLiveUpdate({ ...plan, artifacts: others }), true);
   });
 });
 

@@ -86,3 +86,4 @@ Each rejected option as a bullet point with a short reason.
 | [0044](0044-third-party-cookies-blocked-by-chromium.md)                | Third-party cookies blocked by Chromium                 |
 | [0045](0045-minified-main-bundle-with-names-kept.md)                   | A minified main bundle that keeps names                 |
 | [0046](0046-motion-rounder-shapes-and-one-shadow.md)                   | Motion, rounder shapes and one shadow                   |
+| [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment             |
