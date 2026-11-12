@@ -2,7 +2,7 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
-## [0.1.0-beta.5] - 2026-11-11
+## [0.1.0-beta.5] - 2026-11-12
 
 The fifth beta lets you adjust the browser to the way you work. The settings page finds every setting, shows what you changed and saves the settings in a file; themes, the density, the text size and the fonts change the look; the toolbar, the new tab page, the search engines and the keyboard shortcuts can be changed; and new privacy settings open sites over HTTPS first, look up addresses over encrypted DNS and block third-party cookies. Installed copies of 0.1.0-beta.4 receive it as an update.
 
@@ -13,12 +13,13 @@ The fifth beta lets you adjust the browser to the way you work. The settings pag
 - Find in page: Enter right after typing goes on to the next match also while the page still looks for the typed text; before, it could stay on the first match.
 - Windows: on Linux, a window that closes right after it opened, such as a popup that closes itself at once, no longer makes the browser crash.
 - Windows: a link from another app, and on macOS an item of the menu bar, opens in a window that is still open, also when another window closed right after it opened.
+- Errors: an error in the browser process that no code catches is written to its log; before, a box showed it and kept the browser from quitting.
 
 ### Features
 
 - Settings page: a search field finds settings by their names, their descriptions and other words, in English and in German, and a wide window lists the sections at the left. Every section and every setting has an address of its own, such as `app://settings/#privacy`. **Show changed settings** lists what differs from the defaults; settings can be reset one by one or all at once, saved in a file and read from one. Settings that a policy sets show a lock, and recommended ones say so.
 - Language: the browser can use English or German instead of the language of the system, and **Restart now** applies the change with the windows and tabs that were open.
-- Appearance: themes, namely Astela, Paper, Forest, Ocean and Slate in a light and a dark mode, and True Dark with a black dark mode for OLED screens, and colors of your own, with a warning for text with too little contrast, saved in and read from theme files. The density now also sets the size of buttons and fields and the space between them, in the browser's own pages as well. New settings set the text size and the font of the browser, the default fonts and text size of web pages, and the zoom of sites that you have not zoomed.
+- Appearance: themes, namely Astela, Paper, Forest, Ocean and Slate in a light and a dark mode, and True Dark with a black dark mode for OLED screens, and colors of your own, with a warning for text with too little contrast, saved in and read from theme files. The density now also sets the size of buttons and fields and the space between them, in the browser's own pages as well. New settings set the text size and the font of the browser, the default fonts and text size of web pages, and the zoom of sites that you have not zoomed. Controls and larger surfaces have slightly rounder corners.
 - Toolbar: the buttons of the bookmark star, the content blocker and the downloads can be shown, hidden and ordered, and a home button opens a page of your choice (`Alt+Home`, `Command+Shift+H` on macOS).
 - New tab page: the search field and a clock can be shown or hidden, and the page can show up to 12 shortcuts of your choice, up to 8 of your most visited sites and a background of one color, a gradient or an image of yours.
 - Search: a keyword before a search, such as `@google`, searches with that engine; search engines of your own can be added; and a `!bang` such as `!w` searches a site, here Wikipedia.
@@ -33,7 +34,7 @@ The fifth beta lets you adjust the browser to the way you work. The settings pag
 
 ### Performance
 
-- Each start reads less code: the code of the main process is minified, with the names of functions and classes kept for stack traces, and rarer requests of the toolbar load when they are first needed. The main process now reads 103 KiB before its first window, down from 148 KiB in 0.1.0-beta.4.
+- Each start reads less code: the code of the main process is minified, with the names of functions and classes kept for stack traces, and rarer requests of the toolbar load when they are first needed. The main process now reads 117 KiB before its first window, down from 148 KiB in 0.1.0-beta.4.
 
 ### Security
 
