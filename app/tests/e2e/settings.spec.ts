@@ -411,6 +411,8 @@ test('switches the language of the browser with a restart that brings the tabs b
   expect((await shellState(browser.shell)).tabs.map((tab) => tab.url)).toEqual(['app://settings/']);
   const restored = await waitForPage(browser, (url) => url.startsWith('app://settings'));
   await expect(restored.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
+  // The hint depends on the settings, which the page shows once it has them.
+  await expect(restored.locator('html')).toHaveAttribute('data-ready', 'true');
   await expect(restored.getByRole('status').filter({ hasText: 'Neustart' })).toHaveCount(0);
   // The dialogs of the browser speak German too.
   await browser.main.evaluate(({ dialog }) => {
@@ -700,6 +702,16 @@ test('clears the history, the cookies and the cache of web pages', async () => {
         return { cookies: (await pages.cookies.get({})).length, cache: await pages.getCacheSize() };
       });
     await expect.poll(async () => (await stored()).cookies).toBe(1);
+    // The visit is in the history and the page in the cache before they are cleared.
+    await expect.poll(async () => (await stored()).cache).toBeGreaterThan(0);
+    const visited = async (): Promise<number> => {
+      await address.fill('app://history');
+      await address.press('Enter');
+      const history = await waitForPage(browser, (url) => url.startsWith('app://history'));
+      await expect(history.locator('html')).toHaveAttribute('data-ready', 'true');
+      return history.getByRole('button', { name: /^Fixture home/ }).count();
+    };
+    expect(await visited()).toBeGreaterThan(0);
     const page = await openSettings();
     await page.getByRole('button', { name: 'Clear…' }).click();
     const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
@@ -710,24 +722,45 @@ test('clears the history, the cookies and the cache of web pages', async () => {
       'The browsing data is cleared.',
     );
     expect(await stored()).toEqual({ cookies: 0, cache: 0 });
-    await address.fill('app://history');
-    await address.press('Enter');
-    const history = await waitForPage(browser, (url) => url.startsWith('app://history'));
-    await expect(history.getByRole('button', { name: /^Fixture home/ })).toHaveCount(0);
+    expect(await visited()).toBe(0);
   } finally {
     await server.stop();
   }
 });
 
 test('keeps the data when the question is cancelled', async () => {
-  const page = await openSettings();
-  await page.getByRole('button', { name: 'Clear…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
-  await expect(dialog.getByRole('combobox', { name: 'Time range' })).toHaveValue('hour');
-  await expect(dialog.getByRole('checkbox', { name: 'History' })).toBeChecked();
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveCount(0);
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    const web = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await web.evaluate(() => {
+      document.cookie = 'kept=yes; max-age=3600';
+    });
+    const cookies = (): Promise<number> =>
+      browser.main.evaluate(async ({ session }) => {
+        return (await session.fromPartition('persist:default').cookies.get({})).length;
+      });
+    await expect.poll(cookies).toBe(1);
+    const page = await openSettings();
+    await page.getByRole('button', { name: 'Clear…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Clear browsing data' });
+    await expect(dialog.getByRole('combobox', { name: 'Time range' })).toHaveValue('hour');
+    await expect(dialog.getByRole('checkbox', { name: 'History' })).toBeChecked();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('status').filter({ hasText: 'cleared' })).toHaveCount(0);
+    // The cookie and the visit are still there.
+    expect(await cookies()).toBe(1);
+    await address.fill('app://history');
+    await address.press('Enter');
+    const history = await waitForPage(browser, (url) => url.startsWith('app://history'));
+    await expect(history.getByRole('button', { name: /^Fixture home/ })).toBeVisible();
+  } finally {
+    await server.stop();
+  }
 });
 
 test('applies the secure DNS provider that is chosen, and turns it off', async () => {
@@ -792,11 +825,13 @@ test('changes the shortcut of a command, keeps conflicts and text keys out, and 
   await expect(change).toHaveText('Press keys…');
   await pressNative(browser, 'K', ['primary', 'shift'], 'app://settings');
   await expect.poll(() => keys('tab.new')).toEqual([mac ? '⇧⌘K' : 'Ctrl+Shift+K']);
-  // The old shortcut does nothing now, and the new one opens a tab.
+  // The new shortcut opens a tab, and the old one does nothing now.
   const before = await tabs();
-  await pressNative(browser, 'T', ['primary']);
   await pressNative(browser, 'K', ['primary', 'shift']);
   await expect.poll(tabs).toBe(before + 1);
+  await pressNative(browser, 'T', ['primary']);
+  await browser.main.evaluate(() => new Promise((done) => setTimeout(done, 1000)));
+  expect(await tabs()).toBe(before + 1);
   await expect(page.getByRole('button', { name: 'Reset the shortcut of New tab' })).toBeVisible();
   // A shortcut of another command needs a confirmation, and moves.
   await browser.shell.getByRole('tab', { name: 'Settings' }).click();
