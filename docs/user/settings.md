@@ -34,6 +34,7 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Font of the browser:** from 0.1.0-beta.5, the name of a font installed on your computer, such as Inter, for the text of the browser itself. An empty field, the default, uses the font of the system.
 - **Toolbar:** from 0.1.0-beta.5, which of the bookmark star, the content blocker and downloads show next to the address bar, and in which order; the arrows move a button to the left or the right. Downloads shows after the first download. Without the downloads button, `Ctrl+J` (`Command+Option+L` on macOS) opens the list of downloads at the menu button. Hiding the content blocker's button keeps the blocker on; **Sites without blocking** below turns it off for a site.
 - **Tabs:** Top and Bottom show the tabs in a row above or below the page; Left and Right show them as a list at that side of the window.
+- **Title bar:** from 0.1.0-beta.6, With the tabs makes the top row of the window, the tabs or the toolbar, its title bar: drag its free space to move the window, and the buttons to minimize, maximize and close the window sit in its corner. Of the system brings back the title bar of your operating system above it. The change applies after a restart.
 - **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 
 ## On startup

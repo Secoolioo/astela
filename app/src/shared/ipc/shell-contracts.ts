@@ -76,6 +76,17 @@ export const FindState = v.strictObject({
 export type FindState = v.InferOutput<typeof FindState>;
 
 /**
+ * Where the window controls lie in the top row when the browser draws the title bar: at its
+ * start or end, how much room they take and how high the row is. The state has `null` with
+ * the system's title bar.
+ */
+const TitleBarArea = v.strictObject({
+  side: v.picklist(['start', 'end']),
+  size: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(400)),
+  height: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(200)),
+});
+
+/**
  * The downloads button: how many downloads run and how much of them is done, from 0 to 1,
  * or `null` while a size is unknown. The button shows once the browser downloaded something.
  */
@@ -103,6 +114,7 @@ export const ShellState = v.strictObject({
   home: v.boolean(),
   defaultZoom: v.number(),
   toolbar: v.array(v.picklist(toolbarItems)),
+  titleBar: v.nullable(TitleBarArea),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

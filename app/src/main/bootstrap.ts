@@ -109,6 +109,8 @@ import {
   SiteZoomSetting,
   SitePermissionsSetting,
   TabStripPositionSetting,
+  TitleBarSetting,
+  DensitySetting,
   ToolbarItemsSetting,
   coreSettings,
 } from './core-settings.ts';
@@ -590,6 +592,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const appearance = await AppearanceController.create(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
+  const titleBarAtStart = settings.get(TitleBarSetting);
   const windows = new WindowManager({
     shellUrl: layout.devShellUrl ?? 'app://shell/',
     shellOrigin:
@@ -609,6 +612,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     defaultZoom: () => settings.get(DefaultZoomSetting),
     homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
+    // The title bar of a window is fixed when it opens; the setting applies after a restart.
+    titleBar: () => ({
+      integrated: titleBarAtStart === 'integrated',
+      density: settings.get(DensitySetting),
+    }),
     toolbar: () => settings.get(ToolbarItemsSetting),
     blocking,
     // The history records every web page a tab shows; the data service starts with it.

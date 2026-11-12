@@ -60,6 +60,9 @@
   "settings.tabPosition.bottom": "Unten",
   "settings.tabPosition.left": "Links",
   "settings.tabPosition.right": "Rechts",
+  "settings.titleBar": "Titelleiste",
+  "settings.titleBar.integrated": "Mit den Tabs",
+  "settings.titleBar.system": "Des Systems",
   "settings.setup": "Einrichtung",
   "settings.setupGuide": "Einrichtungsassistent",
   "settings.setupGuideNote": "Aussehen, Tabs und Suchmaschine Schritt für Schritt wählen.",
@@ -519,5 +522,6 @@
   "key.plus": "Plus",
   "overlay.suggestions": "Vorschläge",
   "overlay.suggestion.search": "Suchen",
-  "overlay.suggestion.tab": "Zu diesem Tab wechseln"
+  "overlay.suggestion.tab": "Zu diesem Tab wechseln",
+  "settings.titleBar.keywords": "Fensterrahmen Fenstertasten minimieren maximieren schließen"
 }

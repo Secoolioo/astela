@@ -208,6 +208,21 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
+/** Where the window controls are: in the row of the tabs, or in a title bar of the system. */
+export const titleBars = ['integrated', 'system'] as const;
+/** Where the window controls are: `integrated` with the tabs, `system` above them. */
+export type TitleBar = (typeof titleBars)[number];
+
+/** Whether the window draws its own title bar with the tabs in it, or has the system's. */
+export const TitleBarSetting = defineSetting<TitleBar>({
+  key: 'appearance.titleBar',
+  schema: v.picklist(titleBars),
+  default: 'integrated',
+  scope: 'global',
+  restartRequired: true,
+  ui: { section: 'appearance', control: 'select', order: 5 },
+});
+
 /** Whether the content blocker blocks ads, trackers and what pages load from known malware hosts. */
 export const ContentBlockerSetting = defineSetting<boolean>({
   key: 'contentBlocker.enabled',
@@ -579,6 +594,7 @@ export const coreSettings = [
   WebFontsSetting,
   ToolbarItemsSetting,
   TabStripPositionSetting,
+  TitleBarSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,
   BlockerCookieNoticesSetting,

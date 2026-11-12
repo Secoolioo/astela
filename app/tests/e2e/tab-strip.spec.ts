@@ -328,3 +328,44 @@ test('switches to a tab by its place and moves the active tab with the keyboard'
     await server.stop();
   }
 });
+
+test('draws the title bar with the tabs, and leaves it to the system after a restart when chosen', async () => {
+  let browser = await launch();
+  try {
+    const host = browser.shell.locator('app-shell');
+    const side = process.platform === 'darwin' ? 'start' : 'end';
+    await expect(host).toHaveAttribute('data-titlebar', side);
+    // The top row moves the window, and its tabs and buttons stay clickable.
+    const regions = (): Promise<{ row: string; tab: string; button: string }> =>
+      browser.shell.evaluate(() => {
+        const root = document.querySelector('app-shell')?.shadowRoot;
+        const region = (selector: string): string =>
+          root === null || root === undefined
+            ? ''
+            : getComputedStyle(root.querySelector(selector) ?? document.body).getPropertyValue(
+                '-webkit-app-region',
+              );
+        return {
+          row: region('.top-row'),
+          tab: region('[role="tab"]'),
+          button: region('.top-row button'),
+        };
+      });
+    expect(await regions()).toEqual({ row: 'drag', tab: 'no-drag', button: 'no-drag' });
+    // Choosing the system's title bar waits for a restart.
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill('app://settings/#appearance.titleBar');
+    await address.press('Enter');
+    const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    await settings.getByRole('radio', { name: 'Of the system' }).check();
+    await expect(settings.getByText('Takes effect after a restart').first()).toBeVisible();
+    await expect(host).toHaveAttribute('data-titlebar', side);
+    const { profile } = browser;
+    await browser.close({ keepProfile: true });
+    browser = await launch([], { profile });
+    await expect(browser.shell.getByRole('tablist')).toBeVisible();
+    await expect(browser.shell.locator('app-shell')).not.toHaveAttribute('data-titlebar', /.*/);
+  } finally {
+    await browser.close();
+  }
+});
