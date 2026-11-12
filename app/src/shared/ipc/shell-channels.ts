@@ -13,6 +13,7 @@ export const shellLaterChannels = [
   'shell.openBookmarkFolder',
   'tabs.favicon',
   'tabs.setMuted',
+  'tabs.move',
 ] as const;
 
 /**
