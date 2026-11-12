@@ -87,5 +87,6 @@ Each rejected option as a bullet point with a short reason.
 | [0045](0045-minified-main-bundle-with-names-kept.md)                   | A minified main bundle that keeps names                 |
 | [0046](0046-motion-rounder-shapes-and-one-shadow.md)                   | Motion, rounder shapes and one shadow                   |
 | [0047](0047-address-suggestions-in-a-part-of-the-overlay.md)           | Address suggestions in a part of the overlay            |
+| [0048](0048-title-bar-drawn-by-the-browser.md)                         | Title bar drawn by the browser                          |
 | [0049](0049-logo-and-colors-of-the-brand.md)                           | Logo and colors of the brand                            |
 | [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment             |

@@ -38,6 +38,7 @@ const choices = {
   'appearance.density': ['compact', 'normal', 'comfortable'],
   'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
+  'appearance.titleBar': ['integrated', 'system'],
   'startup.page': ['restore', 'newtab', 'pages'],
 } as const;
 
@@ -900,6 +901,15 @@ export class SettingsPage extends LitElement {
             render: () => this.renderChoice('tabs.position', 'settings.tabPosition'),
           },
           {
+            id: 'appearance.titleBar',
+            keys: [
+              'settings.titleBar',
+              'settings.titleBar.keywords',
+              ...optionKeys('appearance.titleBar', 'settings.titleBar'),
+            ],
+            render: () => this.renderChoice('appearance.titleBar', 'settings.titleBar'),
+          },
+          {
             id: 'bookmarks.bar',
             keys: ['settings.bookmarksBar', 'settings.bookmarksBarNote'],
             render: () =>
@@ -1382,7 +1392,11 @@ export class SettingsPage extends LitElement {
   private renderLabel(key: MessageKey, setting: SettingView | undefined): TemplateResult {
     return html`<span class="label">
       <span>${this.t(key)}</span>
-      ${this.managedNote(setting)}
+      ${
+        setting?.restart === true && !setting.locked
+          ? html`<span class="note">${this.t('settings.restartNote')}</span>`
+          : this.managedNote(setting)
+      }
     </span>`;
   }
 

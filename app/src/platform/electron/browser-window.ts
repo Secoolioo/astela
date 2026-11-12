@@ -29,6 +29,12 @@ import {
 import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import { sessionWindow, type SessionSnapshot } from '../../domain/session/session.ts';
 import {
+  startInsets,
+  titleBarArea,
+  type Density,
+  type TitleBarArea,
+} from '../../domain/windows/title-bar.ts';
+import {
   popupBounds,
   visibleBounds,
   type WindowBounds,
@@ -149,6 +155,8 @@ export interface BrowserWindowOptions {
   ) => void;
   /** The zoom of pages whose site has no zoom of its own. */
   readonly defaultZoom?: () => number;
+  /** Whether new windows draw their title bar with the tabs, and the density of the interface. */
+  readonly titleBar?: () => { readonly integrated: boolean; readonly density: Density };
   /** The zoom factor that a site was left at, to give its pages again. */
   readonly zoomFor?: (url: string) => number | undefined;
   /** Remembers the zoom factor of a site. */
@@ -241,7 +249,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** Whether the window is a private window. */
   readonly isPrivate: boolean;
   private visible: WebContentsView | undefined;
-  private insets: Insets = { top: 76, right: 0, bottom: 0, left: 0 };
+  /** Where the content area is, as the shell reports it; until then, where it starts. */
+  private insets: Insets;
+  /** Whether the window draws its own title bar, which it keeps until it closes. */
+  private readonly integrated: boolean;
+  /** The area of the window controls that the window has now, or `null`. */
+  private titleBarShown: TitleBarArea | null;
+  /** The window controls of Windows and Linux as they were last set. */
+  private overlayKey = '';
   private readonly subscriptions = new DisposableStore();
   private publishTimer: NodeJS.Timeout | undefined;
   private hidesUntilClosed = false;
@@ -252,6 +267,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.options = options;
     this.popup = place.popup === true;
     this.isPrivate = place.private === true;
+    const titleBar = options.titleBar?.();
+    this.integrated = titleBar?.integrated === true;
+    const area = this.titleBarArea(titleBar?.density ?? 'normal');
     this.window = new BaseWindow({
       ...(place.bounds ?? { width: 1280, height: 820 }),
       minWidth: 480,
@@ -259,7 +277,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // Shown at once in the theme's background color: Chromium lowers the priority of the
       // renderer of a hidden window, so the shell would load later in one.
       backgroundColor: options.backgroundColor(this.isPrivate),
+      // The title bar of the browser: the shell's top row holds the window controls.
+      ...(area === null ? {} : titleBarOptions(area, options.backgroundColor(this.isPrivate))),
     });
+    this.titleBarShown = area;
+    this.insets = startInsets(titleBar?.density ?? 'normal', options.tabStripPosition());
     this.shell = new WebContentsView({
       webPreferences: {
         preload: options.shellPreload,
@@ -368,7 +390,37 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       home: this.options.homeButton?.() ?? false,
       defaultZoom: this.options.defaultZoom?.() ?? 1,
       toolbar: [...(this.options.toolbar?.() ?? toolbarItems)],
+      titleBar: this.titleBarShown,
     };
+  }
+
+  /** The area of the window controls in the top row, or `null` with the system's title bar. */
+  private titleBarArea(density: Density): TitleBarArea | null {
+    return this.integrated
+      ? titleBarArea(process.platform, density, this.options.tabStripPosition())
+      : null;
+  }
+
+  /**
+   * Fits the window controls to the top row and the theme after the density, the place of
+   * the tab strip or the colors changed.
+   */
+  private fitTitleBar(): void {
+    const area = this.titleBarArea(this.options.titleBar?.().density ?? 'normal');
+    if (area === null || this.window.isDestroyed()) return;
+    const before = this.titleBarShown;
+    this.titleBarShown = area;
+    const color = this.options.backgroundColor(this.isPrivate);
+    if (process.platform === 'darwin') {
+      if (before?.height !== area.height) this.window.setWindowButtonPosition(buttonPosition(area));
+      return;
+    }
+    // The controls change only when their row or the colors of the theme change.
+    const overlay = overlayOf(area, color);
+    const key = JSON.stringify(overlay);
+    if (key === this.overlayKey) return;
+    this.overlayKey = key;
+    this.window.setTitleBarOverlay(overlay);
   }
 
   /**
@@ -1346,6 +1398,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private publishNow(): void {
     clearTimeout(this.publishTimer);
     this.publishTimer = undefined;
+    this.fitTitleBar();
     this.options.router.publish(ShellStateChanged, this.shell.webContents, this.state());
   }
 }
@@ -1603,4 +1656,40 @@ function workAreas(): WindowBounds[] {
 /** The argument that gives the browser's own views in a private window their look. */
 function privateArgument(privateWindow: boolean): string[] {
   return privateWindow ? [privateWindowArgument] : [];
+}
+
+/**
+ * The options of a window whose title bar the shell draws: on macOS, the window's three
+ * buttons sit in the top row; elsewhere, Chromium draws the window controls at its end.
+ * @param area - Where the controls go.
+ * @param color - The background of the window, which the controls take.
+ */
+function titleBarOptions(
+  area: TitleBarArea,
+  color: string,
+): Pick<
+  Electron.BaseWindowConstructorOptions,
+  'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition'
+> {
+  return process.platform === 'darwin'
+    ? { titleBarStyle: 'hidden', trafficLightPosition: buttonPosition(area) }
+    : { titleBarStyle: 'hidden', titleBarOverlay: overlayOf(area, color) };
+}
+
+/** Where the three buttons of a macOS window go: centered in the top row. */
+function buttonPosition(area: TitleBarArea): Electron.Point {
+  return { x: 14, y: Math.max(0, Math.round((area.height - 14) / 2)) };
+}
+
+/** The window controls of Windows and Linux, in the window's background and a readable color. */
+function overlayOf(area: TitleBarArea, color: string): Electron.TitleBarOverlay {
+  return { color, symbolColor: isDark(color) ? '#e8eaed' : '#1f2329', height: area.height };
+}
+
+/** Whether a color such as `#14161A` is dark. */
+function isDark(color: string): boolean {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color);
+  if (match === null) return false;
+  const [r, g, b] = [match[1], match[2], match[3]].map((part) => Number.parseInt(part ?? '0', 16));
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0) < 128;
 }

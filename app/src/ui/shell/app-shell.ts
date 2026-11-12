@@ -611,6 +611,20 @@ export class AppShell extends LitElement {
         opacity: 0.5;
       }
     }
+    /* With the browser's title bar, the top row moves the window and leaves room for the
+       window controls; what can be clicked in it stays clickable. */
+    :host([data-titlebar]) .top-row {
+      -webkit-app-region: drag;
+    }
+    :host([data-titlebar]) .top-row :is(button, input, [role='tab'], .address) {
+      -webkit-app-region: no-drag;
+    }
+    :host([data-titlebar='start']) .top-row {
+      padding-inline-start: calc(var(--titlebar-size) + var(--space-2));
+    }
+    :host([data-titlebar='end']) .top-row {
+      padding-inline-end: calc(var(--titlebar-size) + var(--space-2));
+    }
     :focus-visible {
       outline: 2px solid var(--focus-ring);
       outline-offset: 1px;
@@ -705,6 +719,7 @@ export class AppShell extends LitElement {
       home: false,
       defaultZoom: 1,
       toolbar: ['bookmark', 'shield', 'downloads'],
+      titleBar: null,
     };
     this.drafts = new Map();
     this.addressFocused = false;
@@ -755,6 +770,12 @@ export class AppShell extends LitElement {
     if (changed.has('state')) {
       this.settleOpening();
       this.dataset['tabs'] = this.state.tabStrip;
+      const titleBar = this.state.titleBar;
+      if (titleBar === null) delete this.dataset['titlebar'];
+      else {
+        this.dataset['titlebar'] = titleBar.side;
+        this.style.setProperty('--titlebar-size', `${titleBar.size}px`);
+      }
       // Tabs move from where they were, unless the whole strip moved to another side.
       const before = changed.get('state');
       if (
@@ -824,6 +845,7 @@ export class AppShell extends LitElement {
     return html`
       <div
         role="tablist"
+        class=${this.state.tabStrip === 'top' ? 'top-row' : ''}
         aria-label=${t('shell.tabs')}
         aria-orientation=${vertical ? 'vertical' : 'horizontal'}
       >
@@ -852,7 +874,7 @@ export class AppShell extends LitElement {
           ${icons.plus}
         </button>
       </div>
-      <nav aria-label=${t('shell.toolbar')}>
+      <nav class=${this.state.tabStrip === 'top' ? '' : 'top-row'} aria-label=${t('shell.toolbar')}>
         <button
           class="icon"
           title=${t('shell.back')}

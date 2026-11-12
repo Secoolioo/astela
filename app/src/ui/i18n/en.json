@@ -60,6 +60,9 @@
   "settings.tabPosition.bottom": "Bottom",
   "settings.tabPosition.left": "Left",
   "settings.tabPosition.right": "Right",
+  "settings.titleBar": "Title bar",
+  "settings.titleBar.integrated": "With the tabs",
+  "settings.titleBar.system": "Of the system",
   "settings.setup": "Setup",
   "settings.setupGuide": "Setup guide",
   "settings.setupGuideNote": "Choose the look, the tabs and the search engine step by step.",
@@ -519,5 +522,6 @@
   "key.plus": "Plus",
   "overlay.suggestions": "Suggestions",
   "overlay.suggestion.search": "Search",
-  "overlay.suggestion.tab": "Switch to this tab"
+  "overlay.suggestion.tab": "Switch to this tab",
+  "settings.titleBar.keywords": "window frame controls minimize maximize close caption"
 }
