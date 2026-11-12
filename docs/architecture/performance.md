@@ -35,7 +35,7 @@ These techniques apply from M1:
    - Tabs are lazy and restore their history with `navigationHistory.restore()`.
    - A sleeping tab keeps its navigation entries and a thumbnail; its `webContents` is closed.
    - `backgroundThrottling` stays on.
-   - Background tabs use `focusOnNavigation: false`.
+   - A page takes the focus only where the browser gives it: background tabs load without being attached to the window, and the new tab page uses `focusOnNavigation: false`, so its load never takes the focus from the address bar.
 6. **UI and package:**
    - UI animations use only `transform` and `opacity`, respect `prefers-reduced-motion` and run no timers while idle (see [design system](design-system.md)).
    - `electronLanguages` is limited to the shipped UI languages, English and German, which saves up to 12.8 MB compressed on Windows (as of October 2026).

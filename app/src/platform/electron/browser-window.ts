@@ -906,6 +906,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               nodeIntegration: false,
               spellcheck: false,
               v8CacheOptions: 'bypassHeatCheck',
+              // Chromium focuses a page when it commits in the active window. The new tab page
+              // leaves the focus in the address bar, where typing goes, also when it commits
+              // after the address bar took the focus, as at the start or right after a new tab
+              // opened.
+              ...(page === 'newtab' ? { focusOnNavigation: false } : {}),
             },
     };
   }

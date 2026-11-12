@@ -73,6 +73,53 @@ test('opens new tabs on the new tab page with the search engine', async () => {
   expect(shellCall).toBe('refused');
 });
 
+/**
+ * The addresses of the views that have the focus of the window, as the browser process sees
+ * it: Playwright pretends that each page it drives has the focus.
+ */
+function focusedViews(): Promise<string[]> {
+  return browser.main.evaluate(({ webContents }) =>
+    webContents
+      .getAllWebContents()
+      .filter((contents) => contents.isFocused())
+      .map((contents) => contents.getURL()),
+  );
+}
+
+test('leaves the focus in the address bar after the start, once the new tab page loaded', async () => {
+  const page = await newTabPage();
+  await page.waitForLoadState('load');
+  await expect.poll(focusedViews).toEqual(['app://shell/']);
+});
+
+test('leaves the focus in the address bar when the new tab page loads after it', async () => {
+  await newTabPage();
+  await browser.main.evaluate(({ webContents }) => {
+    webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL().startsWith('app://shell'))
+      ?.focus();
+  });
+  await expect.poll(focusedViews).toEqual(['app://shell/']);
+  // The page commits while the address bar has the focus, as when it loads after the address
+  // bar of a new tab took the focus. Typing must go on in the address bar.
+  await browser.main.evaluate(
+    ({ webContents }) =>
+      new Promise<void>((done) => {
+        const page = webContents
+          .getAllWebContents()
+          .find((contents) => contents.getURL().startsWith('app://newtab'));
+        if (page === undefined) {
+          done();
+          return;
+        }
+        page.once('did-finish-load', () => done());
+        page.reload();
+      }),
+  );
+  expect(await focusedViews()).toEqual(['app://shell/']);
+});
+
 test('searches from the new tab page with the chosen engine', async () => {
   // Tests never reach third-party sites: the search request is recorded and cancelled.
   await browser.main.evaluate(({ session }) => {
