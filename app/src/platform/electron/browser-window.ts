@@ -7,6 +7,7 @@ import {
   type Rectangle,
   type WebContents,
 } from 'electron';
+import { is } from 'valibot';
 import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
@@ -42,6 +43,7 @@ import {
   type WindowBounds,
 } from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
+import type { CommandContext } from '../../domain/commands/availability.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
@@ -131,6 +133,12 @@ export interface BrowserWindowOptions {
   readonly openWindow?: () => void;
   /** Opens a new private window, if people may. */
   readonly openPrivateWindow?: () => void;
+  /** Whether people may open private windows; they may when left out. */
+  readonly privateWindows?: () => boolean;
+  /** Whether people may open the developer tools of web pages; they may when left out. */
+  readonly developerTools?: () => boolean;
+  /** Tells the version of the browser, or quits it, for the commands of the browser itself. */
+  readonly onAppCommand?: (window: BrowserWindowController, command: AppCommand) => void;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
@@ -189,6 +197,9 @@ export interface BrowserWindowOptions {
 
 /** The commands that tools outside the window carry out on a web page. */
 export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools.toggle';
+
+/** The commands of the browser itself rather than of a window. */
+export type AppCommand = 'app.about' | 'app.quit';
 
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
@@ -796,6 +807,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       case 'tab.reopen':
         this.tabs.reopenClosed();
         break;
+      case 'tab.duplicate':
+        if (active !== undefined) this.tabAction(active.id, 'duplicate');
+        break;
+      case 'tab.closeOthers':
+        if (active !== undefined) this.tabAction(active.id, 'closeOthers');
+        break;
+      case 'tab.closeRight':
+        if (active !== undefined) this.tabAction(active.id, 'closeRight');
+        break;
       case 'tab.next':
       case 'tab.previous': {
         const step = command === 'tab.next' ? 1 : -1;
@@ -825,6 +845,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'tab.pin':
         if (active !== undefined) this.tabs.pin(active.id, !active.pinned);
+        break;
+      case 'tab.mute':
+        if (active !== undefined) this.setMuted(active.id, !active.muted);
         break;
       case 'page.reload':
       case 'page.back':
@@ -909,7 +932,48 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         else this.options.onPageCommand?.(this, command, contents);
         break;
       }
+      case 'app.about':
+      case 'app.quit':
+        this.options.onAppCommand?.(this, command);
+        break;
     }
+  }
+
+  /** Whether the find bar of the window is open. */
+  get findOpen(): boolean {
+    return this.finding !== null;
+  }
+
+  /**
+   * Whether the view of the active tab is one of a web page, which the page tools work on,
+   * rather than one of the browser's own pages, or of a tab whose view is not made yet.
+   */
+  get activeShowsWebPage(): boolean {
+    const active = this.tabs.active;
+    return active !== undefined && this.webContentsOf(active.id) !== undefined;
+  }
+
+  /**
+   * What decides which commands can run in the window now, for `availableCommands` and
+   * `canRun` of `domain/commands/availability.ts`.
+   */
+  commandContext(): CommandContext {
+    const active = this.tabs.active;
+    return {
+      tabs: this.tabs.all.map(({ url, pinned, canGoBack, canGoForward, muted }) => ({
+        url,
+        pinned,
+        canGoBack,
+        canGoForward,
+        muted,
+      })),
+      activeIndex: active === undefined ? -1 : this.tabs.all.indexOf(active),
+      canReopen: this.tabs.canReopen,
+      finding: this.findOpen,
+      webPage: this.activeShowsWebPage,
+      privateWindows: this.options.privateWindows?.() ?? true,
+      developerTools: this.options.developerTools?.() ?? true,
+    };
   }
 
   /**
@@ -999,19 +1063,58 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Shows an internal page: the tab that already shows it, or else the active tab if it
-   * shows the new tab page, or else a new tab.
+   * shows the new tab page, or else a new tab. A fragment names a place of the page, such as
+   * a row of the settings, which the page shows also when its tab is open already.
    * @param page - The page.
+   * @param fragment - `#` and the name of the place, such as `#tabs.position`; without it,
+   *   a tab that shows the page stays where it is.
    */
-  openPage(page: TabPage): void {
+  openPage(page: TabPage, fragment = ''): void {
+    const url = pageUrl(page) + fragment;
     const open = this.tabs.all.find((tab) => tabPageOf(tab.url) === page);
     const active = this.tabs.active;
     if (open !== undefined) {
       this.tabs.activate(open.id);
+      if (fragment === '') return;
+      // A page sees no change of its address when it shows that address already.
+      if (open.url === url) this.revealPlace(open.id, page, fragment);
+      else this.tabs.navigate(open.id, url);
     } else if (active !== undefined && active.url === this.options.newTabUrl) {
-      this.tabs.navigate(active.id, pageUrl(page));
+      this.tabs.navigate(active.id, url);
     } else {
-      this.tabs.open(pageUrl(page));
+      this.tabs.open(url);
     }
+  }
+
+  /**
+   * Tells the settings page of a tab to show the row or the section that its address names
+   * once more, and gives the page the focus.
+   * @param id - The tab.
+   * @param page - The page that the tab shows.
+   * @param fragment - `#` and the name of the place.
+   */
+  private revealPlace(id: TabId, page: TabPage, fragment: string): void {
+    const contents = this.entries.get(id)?.view.webContents;
+    if (page !== 'settings' || contents === undefined || contents.isDestroyed()) return;
+    let place: string;
+    try {
+      place = decodeURIComponent(fragment.slice(1));
+    } catch {
+      return;
+    }
+    contents.focus();
+    // The contracts of the settings page load with it, not with the window.
+    void import('../../shared/ipc/settings-contracts.ts')
+      .then(({ SettingsReveal }) => {
+        // Only the name of a row or a section goes to the page.
+        const payload = { id: place };
+        if (is(SettingsReveal.payload, payload)) {
+          this.options.router.publish(SettingsReveal, contents, payload);
+        }
+      })
+      .catch((error: unknown) =>
+        this.options.logger.debug('The settings did not show their row', { error: String(error) }),
+      );
   }
 
   /**

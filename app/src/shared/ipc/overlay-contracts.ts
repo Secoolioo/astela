@@ -167,7 +167,7 @@ export const ToggleSiteBlocking = defineRequest({
   capability: 'overlay',
 });
 
-/** Opens the settings of the content blocker and closes the overlay. */
+/** Opens the settings at the row of the content blocker and closes the overlay. */
 export const OpenBlockerSettings = defineRequest({
   channel: 'overlay.openBlockerSettings',
   request: v.strictObject({}),

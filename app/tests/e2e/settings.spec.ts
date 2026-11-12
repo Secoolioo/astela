@@ -3,9 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  chooseMenuItem,
   FixtureServer,
   launch,
+  menuAccelerators,
+  overlayPage,
   pressNative,
+  recordedMenu,
+  recordMenus,
   shellState,
   waitForPage,
   type Browser,
@@ -131,22 +136,10 @@ test('chooses the search engine of the new tab page and the address bar', async 
 });
 
 test('opens the settings from the browser menu in place of a new tab page', async () => {
-  await browser.main.evaluate(({ Menu }) => {
-    const recorded: Electron.Menu[] = [];
-    Object.assign(globalThis, { recordedMenus: recorded });
-    Menu.prototype.popup = function popup(this: Electron.Menu) {
-      recorded.push(this);
-    };
-  });
+  await recordMenus(browser);
   await browser.shell.getByRole('button', { name: 'Menu' }).click();
   await expect
-    .poll(() =>
-      browser.main.evaluate(() =>
-        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-          .at(-1)
-          ?.items.map((item) => (item.type === 'separator' ? '-' : item.label)),
-      ),
-    )
+    .poll(async () => (await recordedMenu(browser)).items)
     .toEqual(
       process.platform === 'darwin'
         ? [
@@ -188,18 +181,67 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
             process.platform === 'win32' ? 'E&xit' : '&Quit',
           ],
     );
-  await browser.main.evaluate(
-    (_electron, label) => {
-      const menu = (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(
-        -1,
-      );
-      menu?.items.find((item) => item.label === label)?.click();
-    },
-    process.platform === 'darwin' ? 'Settings…' : '&Settings',
-  );
+  await chooseMenuItem(browser, [process.platform === 'darwin' ? 'Settings…' : '&Settings']);
   await waitForPage(browser, (url) => url.startsWith('app://settings'));
   await expect(browser.shell.getByRole('tab')).toHaveCount(1);
   await expect(browser.shell.getByRole('tab', { name: 'Settings' })).toBeVisible();
+});
+
+test('tells the version and quits from the browser menu, and from shortcuts of their own', async () => {
+  await browser.close();
+  const mac = process.platform === 'darwin';
+  const [aboutKeys, quitKeys] = mac
+    ? ['Shift+Cmd+Y', 'Shift+Cmd+E']
+    : ['Ctrl+Shift+Y', 'Ctrl+Shift+E'];
+  browser = await launch([], {
+    settings: { 'keys.shortcuts': { 'app.about': [aboutKeys], 'app.quit': [quitKeys] } },
+  });
+  // The browser shows no message and stays open: the test only notes what it would do.
+  await browser.main.evaluate(({ app, dialog }) => {
+    const calls: string[] = [];
+    const quit = app.quit.bind(app);
+    Object.assign(globalThis, {
+      appCalls: calls,
+      restoreQuit: () => {
+        app.quit = quit;
+      },
+    });
+    dialog.showMessageBox = ((_window: unknown, options: Electron.MessageBoxOptions) => {
+      calls.push(options.message);
+      return Promise.resolve({ response: 0, checkboxChecked: false });
+    }) as typeof dialog.showMessageBox;
+    app.quit = () => {
+      calls.push('quit');
+    };
+  });
+  try {
+    const calls = (): Promise<unknown> =>
+      browser.main.evaluate(() => Reflect.get(globalThis, 'appCalls') as unknown);
+    const about = await browser.main.evaluate(({ app }) => `${app.getName()} ${app.getVersion()}`);
+    const [aboutItem, quitItem] = mac
+      ? ['About Astela', 'Quit Astela']
+      : ['&About Astela', process.platform === 'win32' ? 'E&xit' : '&Quit'];
+    await recordMenus(browser);
+    const menu = browser.shell.getByRole('button', { name: 'Menu', exact: true });
+    await menu.click();
+    // The menu shows the shortcuts of its items.
+    await recordedMenu(browser, 1);
+    expect(await menuAccelerators(browser)).toMatchObject({
+      [aboutItem]: aboutKeys,
+      [quitItem]: quitKeys,
+    });
+    await chooseMenuItem(browser, [aboutItem]);
+    await expect.poll(calls).toEqual([about]);
+    await menu.click();
+    await chooseMenuItem(browser, [quitItem]);
+    await expect.poll(calls).toEqual([about, 'quit']);
+    await pressNative(browser, 'Y', ['primary', 'shift']);
+    await expect.poll(calls).toEqual([about, 'quit', about]);
+    await pressNative(browser, 'E', ['primary', 'shift']);
+    await expect.poll(calls).toEqual([about, 'quit', about, 'quit']);
+  } finally {
+    await browser.main.evaluate(() => (Reflect.get(globalThis, 'restoreQuit') as () => void)());
+  }
 });
 
 test('finds settings by their words in English and German, and says when none matches', async () => {
@@ -669,7 +711,7 @@ test('shows, hides and moves the buttons of the toolbar', async () => {
     process.platform === 'darwin' ? 'L' : 'J',
     process.platform === 'darwin' ? ['primary', 'alt'] : ['primary'],
   );
-  const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+  const overlay = await overlayPage(browser);
   await expect(overlay.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
 });
 
@@ -929,6 +971,106 @@ test('changes the shortcut of a command, keeps conflicts and text keys out, and 
   const count = await tabs();
   await pressNative(browser, 'Y', ['primary', 'shift']);
   await expect.poll(tabs).toBe(count + 1);
+});
+
+test('gives Duplicate the tab a shortcut of its own, which duplicates the active tab', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const page = await openSettings();
+    const mac = process.platform === 'darwin';
+    const row = page.locator('[data-command="tab.duplicate"]');
+    const keys = (): Promise<string[]> => row.locator('kbd').allTextContents();
+    const urls = async (): Promise<string[]> =>
+      (await shellState(browser.shell)).tabs.map((tab) => tab.url);
+    // The commands of the menu of a tab have no shortcut until they get one.
+    await expect(row).toContainText('No shortcut');
+    const change = page.getByRole('button', { name: 'Change the shortcut of Duplicate the tab' });
+    await change.click();
+    await expect(change).toHaveText('Press keys…');
+    await pressNative(browser, 'Y', ['primary', 'shift'], 'app://settings');
+    await expect.poll(keys).toEqual([mac ? '⇧⌘Y' : 'Ctrl+Shift+Y']);
+    // Two web pages in tabs of their own, and the first of them in front.
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const first = `${server.origin}/index.html`;
+    const second = `${server.origin}/second.html`;
+    for (const url of [first, second]) {
+      await pressNative(browser, 'T', ['primary']);
+      await address.fill(url);
+      await address.press('Enter');
+      await waitForPage(browser, (current) => current === url);
+    }
+    await browser.shell.getByRole('tab', { name: 'Fixture home' }).click();
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+    expect(await urls()).toEqual(['app://settings/', first, second]);
+    // The keys open the page of the active tab again, in a new tab right after it.
+    await pressNative(browser, 'Y', ['primary', 'shift'], first);
+    await expect.poll(urls).toEqual(['app://settings/', first, first, second]);
+    const state = await shellState(browser.shell);
+    expect(state.tabs.findIndex((tab) => tab.id === state.activeTabId)).toBe(2);
+    // Reset takes the shortcut away again, and the keys do nothing.
+    await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: 'Reset the shortcut of Duplicate the tab' }).click();
+    await expect(row).toContainText('No shortcut');
+    await expect.poll(keys).toEqual([]);
+    await pressNative(browser, 'Y', ['primary', 'shift']);
+    await browser.main.evaluate(() => new Promise((done) => setTimeout(done, 1000)));
+    expect(await urls()).toEqual(['app://settings/', first, first, second]);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('names closing the tabs to the right after the tabs below while the tab strip is at a side', async () => {
+  const page = await openSettings();
+  const row = page.locator('[data-command="tab.closeRight"]');
+  await expect(row).toContainText('Close the tabs to the right');
+  const tabs = page.getByRole('radiogroup', { name: 'Tabs' });
+  await tabs.getByRole('radio', { name: 'Left' }).check();
+  // The menu of a tab in a side strip says the same, and so does the row.
+  await expect(row).toContainText('Close the tabs below');
+  await expect(row).not.toContainText('to the right');
+  await expect(
+    page.getByRole('button', { name: 'Change the shortcut of Close the tabs below' }),
+  ).toBeVisible();
+  // The search finds the row by either name, in English and in German.
+  const search = page.getByRole('searchbox', { name: 'Search settings' });
+  for (const words of ['tabs below', 'tabs darunter', 'tabs to the right', 'tabs rechts']) {
+    await search.fill(words);
+    await expect(row).toBeVisible();
+  }
+  await search.fill('');
+  await tabs.getByRole('radio', { name: 'Top' }).check();
+  await expect(row).toContainText('Close the tabs to the right');
+});
+
+test('shows the shortcut that the system gives Quit Astela, next to one of its own', async () => {
+  const page = await openSettings();
+  const mac = process.platform === 'darwin';
+  const row = page.locator('[data-command="app.quit"]');
+  const keys = (): Promise<string[]> => row.locator('kbd').allTextContents();
+  const note = row.getByText('comes from the system and cannot be changed');
+  // On macOS, Command+Q quits through the application menu, whatever the settings say.
+  if (mac) {
+    await expect.poll(keys).toEqual(['⌘Q']);
+    await expect(note).toHaveText('⌘Q comes from the system and cannot be changed.');
+  } else {
+    await expect(row).toContainText('No shortcut');
+    await expect(note).toHaveCount(0);
+  }
+  const change = page.getByRole('button', { name: 'Change the shortcut of Quit Astela' });
+  await change.click();
+  await expect(change).toHaveText('Press keys…');
+  await pressNative(browser, 'E', ['primary', 'shift'], 'app://settings');
+  const own = mac ? '⇧⌘E' : 'Ctrl+Shift+E';
+  await expect.poll(keys).toEqual(mac ? [own, '⌘Q'] : [own]);
+  // Reset takes only the shortcut of one's own away.
+  await page.getByRole('button', { name: 'Reset the shortcut of Quit Astela' }).click();
+  await expect.poll(keys).toEqual(mac ? ['⌘Q'] : []);
+  await expect(note).toHaveCount(mac ? 1 : 0);
 });
 
 /** The background color that the shell paints with. */

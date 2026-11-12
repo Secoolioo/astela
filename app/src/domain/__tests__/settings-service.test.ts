@@ -253,6 +253,113 @@ describe('SettingsService', () => {
     expect(settings.get(Density)).toBe('normal');
   });
 
+  it('writes several values in one step, with one change event and one save', () => {
+    const { settings, store } = setup();
+    const listener = vi.fn();
+    settings.onDidChange(listener);
+    expect(
+      settings.setMany([
+        [TabPosition, 'left'],
+        [Density, 'compact'],
+        [TabPosition, 'right'],
+      ]),
+    ).toEqual({
+      ok: true,
+      value: { applied: ['tabs.position', 'appearance.density'], locked: [] },
+    });
+    expect(settings.get(TabPosition)).toBe('right');
+    expect(settings.get(Density)).toBe('compact');
+    expect(listener.mock.calls).toEqual([[{ keys: ['tabs.position', 'appearance.density'] }]]);
+    expect(store.save).toHaveBeenCalledTimes(1);
+    // Nothing to write changes nothing.
+    expect(settings.setMany([])).toEqual({ ok: true, value: { applied: [], locked: [] } });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes none of the values when one of them is not valid', () => {
+    const { settings, store } = setup();
+    const listener = vi.fn();
+    settings.onDidChange(listener);
+    expect(
+      settings.setMany([
+        [Density, 'compact'],
+        [TabPosition, 'diagonal'],
+      ]),
+    ).toEqual({
+      ok: false,
+      error: { kind: 'invalid-value', message: expect.stringContaining('tabs.position') },
+    });
+    expect(settings.get(Density)).toBe('normal');
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.save).not.toHaveBeenCalled();
+  });
+
+  it('leaves out and reports the settings that a policy locks, and writes the others', async () => {
+    const { settings, store, provider, policies } = setup();
+    provider.result = {
+      values: [
+        {
+          name: 'TabStripPosition',
+          value: 'top',
+          level: 'mandatory',
+          scope: 'machine',
+          source: 'test',
+        },
+      ],
+      errors: [],
+    };
+    await policies.refresh();
+    const listener = vi.fn();
+    settings.onDidChange(listener);
+    expect(
+      settings.setMany([
+        [TabPosition, 'left'],
+        [Density, 'compact'],
+      ]),
+    ).toEqual({ ok: true, value: { applied: ['appearance.density'], locked: ['tabs.position'] } });
+    expect(settings.get(TabPosition)).toBe('top');
+    expect(settings.get(Density)).toBe('compact');
+    expect(listener.mock.calls).toEqual([[{ keys: ['appearance.density'] }]]);
+    // Only locked settings: nothing changes and nothing is saved.
+    expect(settings.setMany([[TabPosition, 'left']])).toEqual({
+      ok: true,
+      value: { applied: [], locked: ['tabs.position'] },
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.save).toHaveBeenCalledTimes(1);
+    // A value that is not valid fails the whole write, also for a locked setting.
+    expect(
+      settings.setMany([
+        [TabPosition, 'diagonal'],
+        [Density, 'comfortable'],
+      ]).ok,
+    ).toBe(false);
+    expect(settings.get(Density)).toBe('compact');
+  });
+
+  it('writes workspace overrides only of settings that a workspace can override', () => {
+    const { settings } = setup();
+    const workspace = { scope: 'workspace', workspaceId: 'w1' } as const;
+    expect(settings.setMany([[TabPosition, 'right']], workspace)).toEqual({
+      ok: true,
+      value: { applied: ['tabs.position'], locked: [] },
+    });
+    expect(settings.get(TabPosition, { workspaceId: 'w1' })).toBe('right');
+    expect(settings.get(TabPosition)).toBe('top');
+    expect(
+      settings.setMany(
+        [
+          [TabPosition, 'left'],
+          [Density, 'compact'],
+        ],
+        workspace,
+      ),
+    ).toEqual({ ok: false, error: { kind: 'not-workspace-scoped' } });
+    expect(settings.get(TabPosition, { workspaceId: 'w1' })).toBe('right');
+    expect(settings.get(Density, { workspaceId: 'w1' })).toBe('normal');
+  });
+
   it('loads stored values, keeps unknown keys and sets invalid values aside', async () => {
     const { settings, store } = setup();
     store.stored = {

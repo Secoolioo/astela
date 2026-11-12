@@ -73,7 +73,7 @@ function connect(deps: ShieldPopoverDependencies): void {
     const overlay = overlayBySender(sender.id);
     const window = overlay === undefined ? undefined : windowOf(overlay);
     overlay?.close();
-    window?.execute('settings.open');
+    window?.openPage('settings', `#${ContentBlockerSetting.key}`);
     return null;
   });
   // The popover counts along while the page loads, at most every 50 ms.

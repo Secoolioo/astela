@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   acceleratorOf,
+  defaultShortcuts,
   displayShortcut,
   shortcutProblem,
   shortcutTable,
   shortcutsOf,
+  systemShortcutsOf,
+  windowCommands,
 } from '../shortcuts.ts';
 
 describe('shortcutTable', () => {
@@ -22,6 +25,66 @@ describe('shortcutTable', () => {
     expect(shortcutsOf(table, 'bookmark.toggle')).toEqual([]);
     expect(shortcutsOf(table, 'devtools.toggle')).toEqual([]);
     expect(shortcutsOf(table, 'history.open')).toEqual(['Ctrl+H']);
+  });
+});
+
+describe('defaultShortcuts', () => {
+  it.each(['darwin', 'win32', 'linux'])(
+    'gives no key on %s to two commands, and only keys that can be shortcuts',
+    (platform) => {
+      const defaults = defaultShortcuts(platform);
+      const keys = defaults.map(([shortcut]) => shortcut);
+      expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([]);
+      const refused = defaults.filter(
+        ([shortcut]) => shortcutProblem(shortcut, platform) !== undefined,
+      );
+      expect(refused).toEqual([]);
+      expect(shortcutTable(platform).size).toBe(defaults.length);
+    },
+  );
+
+  it('leaves the commands of the menus without a default, until people give them one', () => {
+    const menuOnly = [
+      'tab.duplicate',
+      'tab.closeOthers',
+      'tab.closeRight',
+      'tab.mute',
+      'app.about',
+      'app.quit',
+    ] as const;
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(platform);
+      for (const command of menuOnly) expect(shortcutsOf(table, command)).toEqual([]);
+    }
+    const reopen = windowCommands.indexOf('tab.reopen');
+    expect(windowCommands.slice(reopen, reopen + 4)).toEqual([
+      'tab.reopen',
+      'tab.duplicate',
+      'tab.closeOthers',
+      'tab.closeRight',
+    ]);
+    expect(windowCommands.at(windowCommands.indexOf('tab.pin') + 1)).toBe('tab.mute');
+    expect(windowCommands.slice(-2)).toEqual(['app.about', 'app.quit']);
+    const own = shortcutTable('linux', { 'tab.duplicate': ['Ctrl+Shift+Y'], 'app.quit': ['F9'] });
+    expect(own.get('Ctrl+Shift+Y')).toBe('tab.duplicate');
+    expect(shortcutsOf(own, 'app.quit')).toEqual(['F9']);
+  });
+});
+
+describe('systemShortcutsOf', () => {
+  it('gives Quit Astela Command+Q on macOS only, which nobody can take for a shortcut', () => {
+    expect(systemShortcutsOf('darwin', 'app.quit')).toEqual(['Cmd+Q']);
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const given = windowCommands.flatMap((command) =>
+        systemShortcutsOf(platform, command).map((shortcut) => [command, shortcut]),
+      );
+      expect(given).toEqual(platform === 'darwin' ? [['app.quit', 'Cmd+Q']] : []);
+      // The window never runs them itself: the system's own menu does.
+      for (const [, shortcut = ''] of given) {
+        expect(shortcutProblem(shortcut, platform)).toBe('system');
+        expect(shortcutTable(platform).has(shortcut)).toBe(false);
+      }
+    }
   });
 });
 

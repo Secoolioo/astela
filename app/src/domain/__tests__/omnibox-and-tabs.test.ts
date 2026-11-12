@@ -174,6 +174,7 @@ describe('TabService', () => {
 
   it('reopens closed tabs in reverse order and keeps at most 25', () => {
     const tabs = new TabService(new FakeViews(), 'about:blank');
+    expect(tabs.canReopen).toBe(false);
     for (let i = 0; i < 30; i += 1) {
       tabs.close(tabs.open(`https://${i}.example/`));
     }
@@ -184,6 +185,11 @@ describe('TabService', () => {
     expect(reopened).toHaveLength(25);
     expect(reopened[0]).toBe('https://29.example/');
     expect(reopened.at(-1)).toBe('https://5.example/');
+    expect(tabs.canReopen).toBe(false);
+    tabs.close(tabs.open('https://again.example/'));
+    expect(tabs.canReopen).toBe(true);
+    tabs.reopenClosed();
+    expect(tabs.canReopen).toBe(false);
   });
 
   it('forwards navigation and actions and applies view updates', () => {

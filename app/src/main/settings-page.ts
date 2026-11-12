@@ -28,6 +28,7 @@ import type { DataClient } from '../platform/electron/data-service-client.ts';
 import {
   shortcutProblem,
   shortcutsOf,
+  systemShortcutsOf,
   windowCommands,
   type ShortcutOverrides,
   type WindowCommand,
@@ -175,6 +176,7 @@ export function connectSettingsPage(
       commands: windowCommands.map((command) => ({
         command,
         shortcuts: shortcutsOf(table, command),
+        system: [...systemShortcutsOf(process.platform, command)],
         changed: overrides[command] !== undefined,
       })),
     };

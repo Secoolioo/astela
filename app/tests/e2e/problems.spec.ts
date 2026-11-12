@@ -2,7 +2,14 @@ import { expect, test } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { FixtureServer, launch, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  FixtureServer,
+  launch,
+  shellState,
+  tabViews,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 import { selfSignedCertificate } from './tls.ts';
 
 const server = new FixtureServer();
@@ -23,12 +30,13 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-/** Whether the view of the active tab is shown, rather than the shell's page for a problem. */
-function pageShown(browser: Browser): Promise<boolean> {
-  return browser.main.evaluate(({ BaseWindow }) => {
-    const views = BaseWindow.getAllWindows()[0]?.contentView.children ?? [];
-    return views.at(-1)?.getVisible() ?? false;
-  });
+/**
+ * Whether the view of a tab's page shows, rather than the shell's page for a problem;
+ * `undefined` while the window has no view of the page.
+ * @param url - The address of the page, by which the view is found.
+ */
+async function pageShown(browser: Browser, url: string): Promise<boolean | undefined> {
+  return (await tabViews(browser)).find((view) => view.url === url)?.visible;
 }
 
 async function open(browser: Browser, url: string): Promise<void> {
@@ -48,7 +56,7 @@ test('tells why a page could not be loaded and loads it once it is there', async
     await expect(problem).toBeVisible();
     await expect(problem).toContainText(`127.0.0.1:${port} refused to connect.`);
     await expect(problem).toContainText('Error: ERR_CONNECTION_REFUSED');
-    expect(await pageShown(browser)).toBe(false);
+    expect(await pageShown(browser, url)).toBe(false);
     // The address bar keeps the address, so it can be corrected or tried again.
     await expect(
       browser.shell.getByRole('textbox', { name: 'Address and search bar' }),
@@ -60,7 +68,7 @@ test('tells why a page could not be loaded and loads it once it is there', async
     await new Promise<void>((done) => late?.listen(port, '127.0.0.1', done));
     await problem.getByRole('button', { name: 'Try again' }).click();
     await expect(problem).toBeHidden();
-    await expect.poll(() => pageShown(browser)).toBe(true);
+    await expect.poll(() => pageShown(browser, url)).toBe(true);
     const page = await waitForPage(browser, (current) => current === url);
     await expect(page.getByText('Here now')).toBeVisible();
   } finally {
@@ -76,7 +84,7 @@ test('shows a page whose renderer crashed and loads it again', async () => {
     await open(browser, url);
     const page = await waitForPage(browser, (current) => current === url);
     await expect.poll(() => page.evaluate(() => document.readyState)).toBe('complete');
-    await expect.poll(() => pageShown(browser)).toBe(true);
+    await expect.poll(() => pageShown(browser, url)).toBe(true);
     // Electron's own way ends the renderer on Windows and macOS, but makes it crash on Linux,
     // where the crash handler of the system can keep the process alive while it saves a dump.
     // So the test ends the process of the page at once, the same way on every system.
@@ -95,10 +103,10 @@ test('shows a page whose renderer crashed and loads it again', async () => {
       .toBeDefined();
     const problem = browser.shell.getByRole('region', { name: 'This page crashed' });
     await expect(problem).toBeVisible();
-    expect(await pageShown(browser)).toBe(false);
+    expect(await pageShown(browser, url)).toBe(false);
     await problem.getByRole('button', { name: 'Reload' }).click();
     await expect(problem).toBeHidden();
-    await expect.poll(() => pageShown(browser)).toBe(true);
+    await expect.poll(() => pageShown(browser, url)).toBe(true);
     // The tab shows its page again.
     expect((await shellState(browser.shell)).tabs[0]?.problem).toBe(null);
   } finally {
@@ -152,7 +160,7 @@ test('warns about a certificate that is not trusted and continues only when aske
     // the network first; the warning shows once the check has failed.
     await expect(problem).toBeVisible({ timeout: 30_000 });
     await expect(problem).toContainText('Error: ERR_CERT_AUTHORITY_INVALID');
-    expect(await pageShown(browser)).toBe(false);
+    expect(await pageShown(browser, url)).toBe(false);
     const proceed = problem.getByRole('button', { name: `Continue to 127.0.0.1:${port}` });
     await expect(proceed).toBeHidden();
     await problem.getByText('Details').click();
@@ -165,7 +173,7 @@ test('warns about a certificate that is not trusted and continues only when aske
     await waitForPage(browser, (current) => current.endsWith('/second.html'));
     await open(browser, `${url}again.html`);
     await waitForPage(browser, (current) => current === `${url}again.html`);
-    expect(await pageShown(browser)).toBe(true);
+    expect(await pageShown(browser, `${url}again.html`)).toBe(true);
     await expect(problem).toBeHidden();
   } finally {
     await browser.close();

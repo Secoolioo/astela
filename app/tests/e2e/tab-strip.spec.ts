@@ -4,10 +4,15 @@ import { join } from 'node:path';
 import { expect, test, type Frame, type Page } from '@playwright/test';
 import type * as Electron from 'electron';
 import {
+  chooseMenuItem,
   FixtureServer,
+  lastMenu,
   launch,
+  overlayPage,
   pressNative,
+  recordMenus,
   shellState,
+  tabViews,
   waitForPage,
   type Browser,
 } from './harness.ts';
@@ -15,10 +20,10 @@ import {
 test('places the tab strip at a side and fits the page next to it', async () => {
   const browser = await launch([], { settings: { 'tabs.position': 'left' } });
   try {
-    const page = (): Promise<Electron.Rectangle | undefined> =>
-      browser.main.evaluate(({ BaseWindow }) =>
-        BaseWindow.getAllWindows()[0]?.contentView.children[1]?.getBounds(),
-      );
+    // The window shows one tab, whose view follows it to the settings.
+    const page = async (): Promise<Electron.Rectangle | undefined> =>
+      (await tabViews(browser)).find((view) => /^app:\/\/(?:newtab|settings)\//.test(view.url))
+        ?.bounds;
     const tabs = browser.shell.getByRole('tablist');
     await expect(tabs).toHaveAttribute('aria-orientation', 'vertical');
     await expect.poll(async () => (await page())?.x).toBe(240);
@@ -401,35 +406,6 @@ test('fits many tabs: narrow tabs show their icon, the active one its close butt
   }
 });
 
-/** Makes the browser record its menus instead of showing them, so a test can choose items. */
-async function recordMenus(browser: Browser): Promise<void> {
-  await browser.main.evaluate(({ Menu }) => {
-    const recorded: Electron.Menu[] = [];
-    Object.assign(globalThis, { recordedMenus: recorded });
-    Menu.prototype.popup = function popup(this: Electron.Menu) {
-      recorded.push(this);
-    };
-  });
-}
-
-/** Chooses an item of the last menu that the browser built, by its text without access keys. */
-async function choose(browser: Browser, label: string): Promise<void> {
-  await expect
-    .poll(() =>
-      browser.main.evaluate(
-        () => (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.length,
-      ),
-    )
-    .toBeGreaterThan(0);
-  await browser.main.evaluate((_electron, text) => {
-    const { recordedMenus } = globalThis as unknown as { recordedMenus: Electron.Menu[] };
-    const menu = recordedMenus.pop();
-    const item = menu?.items.find((candidate) => candidate.label.replaceAll('&', '') === text);
-    if (item === undefined) throw new Error(`No menu item ${text}`);
-    item.click();
-  }, label);
-}
-
 test('pins a tab from its menu, keeps it first and small, and pinned at the next start', async () => {
   const server = new FixtureServer();
   await server.start();
@@ -446,7 +422,7 @@ test('pins a tab from its menu, keeps it first and small, and pinned at the next
     await expect(second).toBeVisible();
     await recordMenus(browser);
     await second.click({ button: 'right' });
-    await choose(browser, 'Pin');
+    await chooseMenuItem(browser, ['Pin']);
     const tabs = shell.getByRole('tab');
     await expect.poll(() => tabs.evaluateAll(titles)).toEqual(['Fixture second', 'Fixture home']);
     await expect(tabs.first()).toHaveAttribute('data-pinned', '');
@@ -455,7 +431,7 @@ test('pins a tab from its menu, keeps it first and small, and pinned at the next
     expect((await tabs.first().boundingBox())?.width).toBeCloseTo(40, 1);
     // Duplicate opens the page again right after the tab, which is not pinned.
     await shell.getByRole('tab', { name: 'Fixture home' }).click({ button: 'right' });
-    await choose(browser, 'Duplicate');
+    await chooseMenuItem(browser, ['Duplicate']);
     await expect
       .poll(() => tabs.evaluateAll(titles))
       .toEqual(['Fixture second', 'Fixture home', 'Fixture home']);
@@ -471,18 +447,6 @@ test('pins a tab from its menu, keeps it first and small, and pinned at the next
     await server.stop();
   }
 });
-
-/** The texts of the items of the last menu that the browser built, without access keys. */
-function lastMenu(browser: Browser): Promise<string[]> {
-  return browser.main.evaluate(() =>
-    (
-      (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.at(-1)?.items ??
-      []
-    )
-      .filter((item) => item.type !== 'separator')
-      .map((item) => item.label.replaceAll('&', '')),
-  );
-}
 
 test('names the tabs below a tab in its menu at a side, and runs no item once the tab closed', async () => {
   const server = new FixtureServer();
@@ -513,12 +477,9 @@ test('names the tabs below a tab in its menu at a side, and runs no item once th
     // The tab closes while its menu is open, as a page that closes itself does.
     await second.getByRole('button', { name: 'Close tab' }).click();
     await expect(shell.getByRole('tab')).toHaveCount(1);
-    await browser.main.evaluate(() => {
-      const { recordedMenus } = globalThis as unknown as { recordedMenus: Electron.Menu[] };
-      for (const item of recordedMenus.pop()?.items ?? []) {
-        if (['Reload', 'Pin', 'Close'].includes(item.label.replaceAll('&', ''))) item.click();
-      }
-    });
+    for (const [index, label] of ['Reload', 'Pin', 'Close'].entries()) {
+      await chooseMenuItem(browser, [label], { again: index > 0 });
+    }
     await expect(shell.getByRole('tab')).toHaveCount(1);
     await expect(shell.getByRole('tab')).toHaveAttribute('title', 'Fixture home');
     await expect(shell.getByRole('tab')).not.toHaveAttribute('data-pinned', '');
@@ -996,7 +957,7 @@ test('leaves a click next to a popover to the overlay instead of moving the wind
     expect(await region()).toBe('drag');
     // The popover covers the whole window: the top row below it moves the window no more.
     await browser.shell.getByRole('button', { name: /^Content blocker:/ }).click();
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     await expect(overlay.getByRole('dialog', { name: 'Content blocker' })).toBeVisible();
     await expect.poll(async () => (await shellState(browser.shell)).covered).toBe(true);
     await expect.poll(region).toBe('no-drag');

@@ -1,6 +1,7 @@
 /**
  * Commands that keyboard shortcuts run in a window, also while web content has focus, in the
- * order in which the settings page lists them.
+ * order in which the settings page lists them. The menus run them too. Some, such as
+ * duplicating a tab, have no default shortcut; people can give them one.
  */
 export const windowCommands = [
   'tab.new',
@@ -8,6 +9,9 @@ export const windowCommands = [
   'window.newPrivate',
   'tab.close',
   'tab.reopen',
+  'tab.duplicate',
+  'tab.closeOthers',
+  'tab.closeRight',
   'tab.next',
   'tab.previous',
   'tab.select1',
@@ -22,6 +26,7 @@ export const windowCommands = [
   'tab.moveLeft',
   'tab.moveRight',
   'tab.pin',
+  'tab.mute',
   'page.back',
   'page.forward',
   'page.reload',
@@ -45,6 +50,8 @@ export const windowCommands = [
   'page.save',
   'page.source',
   'devtools.toggle',
+  'app.about',
+  'app.quit',
 ] as const;
 
 /** A command that a keyboard shortcut runs in a window. */
@@ -167,6 +174,26 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+Shift+I', 'devtools.toggle'],
 ];
 
+/**
+ * The default shortcuts of a system, with their commands. A command can have several, and
+ * some commands have none.
+ * @param platform - `process.platform`.
+ */
+export function defaultShortcuts(platform: string): readonly (readonly [string, WindowCommand])[] {
+  return platform === 'darwin' ? macShortcuts : pcShortcuts;
+}
+
+/**
+ * The shortcuts that the system itself gives a command, besides those of the window: on
+ * macOS, Command+Q quits through the application menu. People cannot change them, and they
+ * work whatever the window's shortcuts are.
+ * @param platform - `process.platform`.
+ * @param command - The command.
+ */
+export function systemShortcutsOf(platform: string, command: WindowCommand): readonly string[] {
+  return platform === 'darwin' && command === 'app.quit' ? ['Cmd+Q'] : [];
+}
+
 /** The shortcuts that people chose, by command; an empty list leaves a command without one. */
 export type ShortcutOverrides = Readonly<Partial<Record<WindowCommand, readonly string[]>>>;
 
@@ -184,7 +211,7 @@ export function shortcutTable(
   overrides: ShortcutOverrides = {},
 ): Map<string, WindowCommand> {
   const table = new Map<string, WindowCommand>();
-  for (const [shortcut, command] of platform === 'darwin' ? macShortcuts : pcShortcuts) {
+  for (const [shortcut, command] of defaultShortcuts(platform)) {
     if (overrides[command] === undefined) table.set(shortcut, command);
   }
   for (const command of windowCommands) {

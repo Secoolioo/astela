@@ -651,6 +651,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     downloads: (privateWindow) => downloads?.summary(privateWindow) ?? null,
     openWindow: () => void windows.open(),
     openPrivateWindow,
+    privateWindows: privateWindowsAllowed,
+    developerTools,
+    // The commands of the browser itself: its version, shown in a message, and quitting it.
+    onAppCommand: (window, command) => {
+      if (command === 'app.quit') {
+        app.quit();
+        return;
+      }
+      void import('./browser-menu.ts')
+        .then(({ showAbout }) => showAbout(window))
+        .catch((error: unknown) => logger.error('The version of the browser was not shown', error));
+    },
     // Administrators expect a change of policy to show when they come back to the browser.
     // The focus that the first window gets at start does not read them a second time.
     onFocus: () => {

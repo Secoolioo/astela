@@ -282,6 +282,11 @@ export class TabService implements Disposable {
     return index === -1 ? this.tabs.length : index;
   }
 
+  /** Whether a closed tab can be opened again. */
+  get canReopen(): boolean {
+    return this.closed.length > 0;
+  }
+
   /**
    * Reopens the most recently closed tab.
    * @returns The reopened tab's id, or `undefined` if nothing was closed.

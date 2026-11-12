@@ -1,5 +1,6 @@
 import type { Input } from 'electron';
 import { describe, expect, it } from 'vitest';
+import { shortcutTable } from '../../shared/shortcuts.ts';
 import { commandForInput, type WindowCommand } from '../electron/shortcuts.ts';
 
 /** A key press as `before-input-event` reports it. */
@@ -271,5 +272,18 @@ describe.each(['darwin', 'win32', 'linux'])('commandForInput on %s', (platform) 
     expect(commandForInput({ ...newTab, isComposing: true }, platform)).toBeUndefined();
     expect(commandForInput(press('F6', { isComposing: true }), platform)).toBeUndefined();
     expect(commandForInput(press('Process', { isComposing: true }), platform)).toBeUndefined();
+  });
+});
+
+describe.each(['darwin', 'win32', 'linux'])('commands of the menus on %s', (platform) => {
+  const keys = press('Y', platform === 'darwin' ? cmdShift : ctrlShift);
+  const own = platform === 'darwin' ? 'Shift+Cmd+Y' : 'Ctrl+Shift+Y';
+
+  it('run only with a shortcut that people gave them', () => {
+    expect(commandForInput(keys, platform)).toBeUndefined();
+    for (const command of ['tab.duplicate', 'tab.mute', 'app.about'] as const) {
+      const table = shortcutTable(platform, { [command]: [own] });
+      expect(commandForInput(keys, platform, table)).toBe(command);
+    }
   });
 });

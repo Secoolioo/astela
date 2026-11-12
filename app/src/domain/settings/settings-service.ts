@@ -46,6 +46,14 @@ export interface SettingChange {
   readonly keys: readonly string[];
 }
 
+/** What a write of several settings in one step did. */
+export interface SettingsWriteReport {
+  /** The settings whose values were written, in the order of the write. */
+  readonly applied: readonly string[];
+  /** The settings that a mandatory policy locks, which kept their values. */
+  readonly locked: readonly string[];
+}
+
 /** User and workspace values as stored on disk. */
 export interface StoredSettings {
   readonly user: Readonly<Record<string, unknown>>;
@@ -282,6 +290,39 @@ export class SettingsService implements Disposable {
     this.layerFor(target, true)?.set(definition.key, checked.value);
     this.changed([definition.key]);
     return ok(undefined);
+  }
+
+  /**
+   * Writes several values in one step. Every value is validated first, and a single value
+   * that is not valid, or a setting that cannot have a workspace override, writes none of
+   * them. Settings that a mandatory policy locks keep their values and are reported. The
+   * others change together, with one change event and one save.
+   * @param entries - The settings and their new values; a later value of a setting wins.
+   * @param target - User values or workspace overrides.
+   */
+  setMany(
+    entries: readonly (readonly [SettingDefinition<unknown>, unknown])[],
+    target: SettingTarget = { scope: 'user' },
+  ): Result<SettingsWriteReport, SettingWriteError> {
+    const values = new Map<string, unknown>();
+    for (const [definition, value] of entries) {
+      if (target.scope === 'workspace' && definition.scope !== 'workspace') {
+        return err({ kind: 'not-workspace-scoped' });
+      }
+      const checked = validateSetting(definition, value);
+      if (!checked.ok) {
+        return err({ kind: 'invalid-value', message: `${definition.key}: ${checked.error}` });
+      }
+      values.set(definition.key, checked.value);
+    }
+    const locked = [...values.keys()].filter((key) => this.policies.isLocked(key));
+    for (const key of locked) values.delete(key);
+    if (values.size > 0) {
+      const layer = this.layerFor(target, true);
+      for (const [key, value] of values) layer?.set(key, value);
+      this.changed([...values.keys()]);
+    }
+    return ok({ applied: [...values.keys()], locked });
   }
 
   /**
