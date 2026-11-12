@@ -1,4 +1,6 @@
 import { strict as assert } from 'node:assert';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import { entries, missingScripts, scriptUses } from './workflow-scripts.ts';
@@ -74,8 +76,31 @@ describe('scriptUses', () => {
 });
 
 describe('the workflows of this repository', () => {
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  const folder = join(root, '.github', 'workflows');
+  const workflows = readdirSync(folder).filter((name) => /\.ya?ml$/.test(name));
+
   it('run only scripts that exist in the folder of their step', () => {
-    const root = fileURLToPath(new URL('../..', import.meta.url));
     assert.deepEqual(missingScripts(root), []);
+  });
+
+  it('install the link checker before each pnpm verify, which checks the links in CI', () => {
+    const missing: string[] = [];
+    for (const name of workflows) {
+      const runs = entries(readFileSync(join(folder, name), 'utf8')).filter(
+        (entry) => entry.path[0] === 'jobs' && entry.path[2] === 'steps' && entry.path[4] === 'run',
+      );
+      for (const [index, entry] of runs.entries()) {
+        if (!/\bpnpm verify\b/.test(entry.value)) continue;
+        const job = entry.path[1];
+        const installed = runs
+          .slice(0, index)
+          .some(
+            (earlier) => earlier.path[1] === job && earlier.value.includes('install-lychee.sh'),
+          );
+        if (!installed) missing.push(`${name}: ${job ?? ''}`);
+      }
+    }
+    assert.deepEqual(missing, []);
   });
 });
