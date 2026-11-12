@@ -27,6 +27,36 @@ async function openSettings(): Promise<Page> {
   return waitForPage(browser, (url) => url.startsWith('app://settings'));
 }
 
+/**
+ * Makes the search for other browsers answer late, as the data service often does on Windows:
+ * with two profiles, when the page gets its first wheel turn or after 2 seconds. Until then the
+ * import section is empty, so the page ends higher.
+ */
+function answerImportLate(): Promise<void> {
+  return browser.main.evaluate(({ app }) => {
+    app.on('web-contents-created', (_event, contents) => {
+      let answer: (() => void) | undefined;
+      const answered = new Promise<void>((done) => {
+        answer = done;
+      });
+      contents.on('input-event', (_input, input) => {
+        if (input.type === 'mouseWheel') answer?.();
+      });
+      contents.ipc.handle('settings.findBrowsers', async () => {
+        setTimeout(() => answer?.(), 2000);
+        await answered;
+        return {
+          enabled: true,
+          profiles: [
+            { id: 'chromium:a', browser: 'Google Chrome', profile: 'Default', tabs: false },
+            { id: 'firefox:b', browser: 'Firefox', profile: 'default-release', tabs: true },
+          ],
+        };
+      });
+    });
+  });
+}
+
 /** A design token as a page computes it. */
 function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -209,6 +239,7 @@ test('opens a setting from its link and marks the section of the page in the nav
 });
 
 test('marks the section in view, also below its heading and at the end of the page', async () => {
+  await answerImportLate();
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await address.fill('app://settings/#privacy.httpsFirst');
   await address.press('Enter');
@@ -223,6 +254,19 @@ test('marks the section in view, also below its heading and at the end of the pa
       'true',
     );
   await marked('Privacy');
+  // The import section gets its content only when the search for other browsers answers, so
+  // the page ends where it does only from then on; the frames after it carry the new layout.
+  await expect(page.getByRole('button', { name: 'Import from Google Chrome' })).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            done();
+          });
+        });
+      }),
+  );
   // The last section is short; at the end of the page it is the one in view.
   await page.mouse.wheel(0, 50_000);
   await marked('Setup');
