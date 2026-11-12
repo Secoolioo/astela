@@ -11,8 +11,6 @@ export const shellLaterChannels = [
   'tabs.resetZoom',
   'shell.toggleBookmark',
   'shell.openBookmarkFolder',
-  'tabs.favicon',
-  'tabs.setMuted',
 ] as const;
 
 /**

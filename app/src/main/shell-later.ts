@@ -10,12 +10,9 @@ import {
   ProceedUnsafely,
   ReopenClosedTab,
   ResetZoom,
-  SetTabMuted,
-  GetFavicon,
   StopFinding,
   ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
-import { favicons } from '../platform/electron/favicons.ts';
 import type {
   BrowserWindowController,
   WindowManager,
@@ -66,11 +63,6 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
-  router.handle(GetFavicon, ({ key }) => favicons.get(key) ?? null);
-  router.handle(
-    SetTabMuted,
-    ({ tabId, muted }, { sender }) => (windowOf(sender).setMuted(tabId, muted), null),
-  );
   router.handle(
     ToggleBookmark,
     (_request, { sender }) => (windowOf(sender).execute('bookmark.toggle'), null),

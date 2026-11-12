@@ -4,8 +4,6 @@
   "shell.closeTab": "Close tab",
   "shell.untitled": "New tab",
   "shell.loading": "Loading",
-  "shell.muteTab": "Mute tab",
-  "shell.unmuteTab": "Unmute tab",
   "shell.back": "Back",
   "shell.forward": "Forward",
   "shell.reload": "Reload",
