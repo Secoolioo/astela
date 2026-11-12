@@ -108,6 +108,10 @@ export function appearanceCss(appearance: {
   // private window is dark in both modes, so it gets the dark colors of the theme.
   return (
     `:root:root{--accent-light:${accent.light};--accent-dark:${accent.dark};` +
+    (accent.secondary === undefined
+      ? ''
+      : `--accent-secondary-light:${accent.secondary.light};` +
+        `--accent-secondary-dark:${accent.secondary.dark};`) +
     `${tokens.join(';')}${theme === undefined ? '' : `;${paletteCss(theme.light)}`}}` +
     (theme === undefined
       ? ''

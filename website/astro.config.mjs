@@ -37,8 +37,8 @@ export default defineConfig({
     starlight({
       title: brand.productName,
       description: brand.tagline,
-      logo: { src: '../assets/brand/app-icon.svg' },
-      favicon: '/favicon.svg',
+      logo: { src: '../assets/brand/app-icon.png' },
+      favicon: '/favicon.png',
       customCss: ['./src/styles/theme.css'],
       expressiveCode: {
         styleOverrides: { borderRadius: '4px', frames: { frameBoxShadowCssValue: 'none' } },

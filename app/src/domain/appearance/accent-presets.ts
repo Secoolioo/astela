@@ -1,5 +1,13 @@
 /** Identifiers of the accent colors offered without picking a custom color. */
-export const accentPresets = ['blue', 'teal', 'green', 'orange', 'red', 'graphite'] as const;
+export const accentPresets = [
+  'astela',
+  'blue',
+  'teal',
+  'green',
+  'orange',
+  'red',
+  'graphite',
+] as const;
 
 /** An accent preset. */
 export type AccentPreset = (typeof accentPresets)[number];
@@ -8,6 +16,11 @@ export type AccentPreset = (typeof accentPresets)[number];
 export interface AccentColors {
   readonly light: string;
   readonly dark: string;
+  /**
+   * A second color, for progress, where the accent has one: Astela's own accent pairs the
+   * violet of its logo with the blue of it. Without one, progress takes the accent.
+   */
+  readonly secondary?: { readonly light: string; readonly dark: string };
 }
 
 /**
@@ -16,6 +29,11 @@ export interface AccentColors {
  * that they match.
  */
 export const presetAccentColors: Readonly<Record<AccentPreset, AccentColors>> = {
+  astela: {
+    light: 'oklch(55.0% 0.240 290.0)',
+    dark: 'oklch(72.0% 0.157 290.0)',
+    secondary: { light: 'oklch(55.0% 0.180 265.0)', dark: 'oklch(72.0% 0.145 265.0)' },
+  },
   blue: { light: 'oklch(55.0% 0.170 255.0)', dark: 'oklch(72.0% 0.148 255.0)' },
   teal: { light: 'oklch(55.0% 0.094 195.0)', dark: 'oklch(72.0% 0.110 195.0)' },
   green: { light: 'oklch(54.8% 0.150 150.0)', dark: 'oklch(72.0% 0.150 150.0)' },

@@ -30,6 +30,7 @@
   "settings.colorMode.light": "Hell",
   "settings.colorMode.dark": "Dunkel",
   "settings.accent": "Akzentfarbe",
+  "settings.accent.astela": "Astela",
   "settings.accent.blue": "Blau",
   "settings.accent.teal": "Petrol",
   "settings.accent.green": "Grün",

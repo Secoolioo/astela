@@ -1,12 +1,12 @@
 /*
  * The website follows the design rules of the browser (docs/architecture/design-system.md):
- * the accent color of the app, small radii, lines instead of shadows, no blur and short
- * motion. Starlight keeps its styles in cascade layers, so these unlayered rules win.
+ * the violet of the logo as its accent color, small radii, lines instead of shadows, no blur
+ * and short motion. Starlight keeps its styles in cascade layers, so these unlayered rules win.
  */
 :root {
-  --sl-color-accent-low: #10243b;
-  --sl-color-accent: #65a7fa;
-  --sl-color-accent-high: #cfe3fd;
+  --sl-color-accent-low: #301c64;
+  --sl-color-accent: #a491ff;
+  --sl-color-accent-high: #e7e4ff;
   --sl-shadow-sm: none;
   --sl-shadow-md: none;
   --sl-shadow-lg: none;
@@ -14,9 +14,9 @@
 }
 
 :root[data-theme='light'] {
-  --sl-color-accent-low: #d9e8fb;
-  --sl-color-accent: #1570d1;
-  --sl-color-accent-high: #0b3f78;
+  --sl-color-accent-low: #e7e4ff;
+  --sl-color-accent: #7844f0;
+  --sl-color-accent-high: #462494;
 }
 
 .sl-link-button,

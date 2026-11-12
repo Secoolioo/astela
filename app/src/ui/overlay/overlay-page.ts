@@ -302,7 +302,7 @@ export class OverlayPage extends LitElement {
     .downloads progress {
       width: 100%;
       height: 4px;
-      accent-color: var(--accent);
+      accent-color: var(--accent-secondary);
     }
     .downloads .actions {
       display: flex;

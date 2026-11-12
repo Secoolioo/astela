@@ -8,10 +8,10 @@ The decisions behind it are recorded in ADR 0013 (theme system and design tokens
 
 ## Design rules
 
-Astela should look like carefully made desktop software, not like a template. These rules apply to the browser UI, the internal pages, the website, the README and the brand assets.
+Astela should look like carefully made desktop software, not like a template. These rules apply to the browser UI, the internal pages, the website, the README and the brand assets. The logo and the application icon are the only exceptions: they keep their gradient, their glow and their star ([ADR 0049](../adr/0049-logo-and-colors-of-the-brand.md)).
 
 - **Shape:** corner radii come in four steps: 6 px for small parts, 8 px for controls, 12 px for surfaces that float or group content, and 10 px for the address bar and search fields. Only switches, badges and progress bars have round ends; there are no pill-shaped buttons.
-- **Color:** flat, restrained colors with one accent color. There are no gradients anywhere, including the logo, page headers and text. The accent is not a generic purple or indigo.
+- **Color:** flat, restrained colors with one accent color and a second color for progress. There are no gradients in the browser, its pages, the website, page headers or text. The default accent is the violet of the logo, and progress takes its blue.
 - **Depth:** 1 px lines and differences in surface color separate areas. Menus and popovers that float above the page have one soft shadow; nothing else casts a shadow. There are no glow or neon effects and no glass or blur effects.
 - **Hierarchy:** comes from typography (size, weight and spacing), not from effects. Sizes and spacing follow a dense 4 px grid, with 8 px steps for larger gaps.
 - **Icons:** one icon set with one stroke width. There are no emojis, no sparkle symbols, and no decorative blobs or generic illustrations.
@@ -36,7 +36,7 @@ All colors are defined in OKLCH. The palette consists of:
 - neutral grays in 11 steps,
 - status colors.
 
-The final values will be set together with the logo in the brand assets (`assets/brand/palette.json`). Hover, pressed and disabled states are not defined by hand; the theme engine derives them in OKLCH from the base tokens.
+The accent and the second color come from the logo ([ADR 0049](../adr/0049-logo-and-colors-of-the-brand.md)): the violet `oklch(55% 0.24 290)` in light mode and `oklch(72% 0.157 290)` in dark mode, and the blue `oklch(55% 0.18 265)` and `oklch(72% 0.145 265)` for progress. Hover, pressed and disabled states are not defined by hand; the theme engine derives them in OKLCH from the base tokens.
 
 Every text and UI color pair has to meet these contrast minimums, in line with WCAG 2.2 AA:
 
@@ -79,7 +79,7 @@ The font of the UI is a setting: the name of an installed font, or empty for the
 | Large     | 12   | 13    | 14  | 15    | 17     | 22    | 30      | 20, 20, 24, 28, 36 |
 | Larger    | 13   | 14    | 16  | 17    | 19     | 24    | 32      | 20, 24, 24, 32, 40 |
 
-Medium is the default. The line heights belong to the UI, Large, Larger, Title and Display text. The default fonts and the text size of web pages are separate settings, which new tabs get as web preferences. The wordmark on the website is an SVG.
+Medium is the default. The line heights belong to the UI, Large, Larger, Title and Display text. The default fonts and the text size of web pages are separate settings, which new tabs get as web preferences. The website shows its name as text in the system font next to the application icon and loads no web font.
 
 ## Icons
 
@@ -145,16 +145,9 @@ Presets give users a good layout without having to assemble it from individual s
 
 On first start, the new tab page is designed to offer the choice of presets without a modal dialog; the settings offer it later as well. After choosing a preset, users can adjust every part of the layout freely. Each preset has a reference layout as well.
 
-## Logo brief
+## Logo
 
-The logo is designed to be:
-
-- a geometric, distinctive mark of its own,
-- legible at 16 px and in a single color,
-- accompanied by a separate wordmark,
-- free of any resemblance to the logos of other browsers.
-
-The brand assets are designed to live in `assets/brand/`: `logo.svg`, `logo-mark.svg`, `wordmark.svg`, `palette.json`, `banner.svg` and the social preview image (`social-preview.svg` and `.png`).
+The logo is the owner's own: a letter A in a gradient from violet to blue, an orbit around it and a four-pointed star, with a glow, above the name on a dark indigo background ([ADR 0049](../adr/0049-logo-and-colors-of-the-brand.md)). It lives in `assets/brand/` (`logo.webp`), with the application icon that `tools/brand/render-icon.ts` renders from it: the mark without the name on a plate in the dark color of the logo (`app-icon.png`, and `app/build/icon.png` for the packages). Its gradient, its glow and its star stay in the logo and the icon; the interface has none of them.
 
 ## Acceptance
 
@@ -172,10 +165,10 @@ How these checks fit into the overall test strategy is described in [Testing](te
 
 ## Implementation status
 
-The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The application icon, the single-color mark and the wordmark exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
+The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The logo and the application icon exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
 
-The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
+The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are Astela, the violet of the logo with its blue for progress and the default, and blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 
 The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area.
 
-Not implemented yet: `palette.json`, the banner and the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.
+Not implemented yet: a single-color version of the logo, the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.

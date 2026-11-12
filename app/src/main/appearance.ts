@@ -144,7 +144,7 @@ export class AppearanceController implements Disposable {
       theme: themeColors(theme, custom),
       accent: isAccentPreset(accent)
         ? presetAccentColors[accent]
-        : (this.solve?.(accent) ?? presetAccentColors.blue),
+        : (this.solve?.(accent) ?? presetAccentColors.astela),
       density: this.settings.get(DensitySetting),
       textSize: this.settings.get(TextSizeSetting),
       font: this.settings.get(UiFontSetting),

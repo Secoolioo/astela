@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The logo brief is replaced by [ADR 0049](0049-logo-and-colors-of-the-brand.md).
 
 ## Date
 

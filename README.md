@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/brand/logo.webp" alt="Astela" width="240"></p>
+
 # Astela
 
 A desktop browser for Windows, macOS and Linux, built on Chromium through Electron and written in TypeScript. It has no telemetry, no ads, no sponsored tiles, no news feed and needs no account.
@@ -21,6 +23,13 @@ A desktop browser for Windows, macOS and Linux, built on Chromium through Electr
 - **Policies** from the Windows registry, macOS configuration profiles and JSON files on Linux, read before the first window opens.
 - **Performance budgets**, measured against a bare Electron app on all three systems for every change: start-up at most 120 ms and 25 % slower than the bare app (on macOS still a target: its CI runners show 10 to 60 %, and the gate there stops at 75 % until the shell starts faster), idle memory at most 60 MB above it (50 MB on macOS), idle CPU at most 0.5 % of one core. See [performance](docs/architecture/performance.md).
 - **Security fixes** from Electron ship in a patch release within 72 hours, critical ones within 24 hours.
+
+## New on main
+
+On `main` now, and in the next beta, 0.1.0-beta.6:
+
+- **Logo and colors:** a new logo and application icon; its violet is the default accent of the browser and the accent of its website, and its blue shows progress, such as a page that loads.
+- **Tab icons:** each tab shows the icon of its page, a ring while the page loads and a button that mutes a tab that plays sound.
 
 ## Planned for 0.1.0
 

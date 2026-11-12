@@ -11,7 +11,15 @@ export {
 };
 
 /** Hue and chroma of each preset; the lightness follows from the contrast rule. */
-const presets: Readonly<Record<AccentPreset, { readonly c: number; readonly h: number }>> = {
+interface PresetHue {
+  readonly c: number;
+  readonly h: number;
+  /** The hue of a second color, for progress; Astela's own accent takes the blue of its logo. */
+  readonly secondary?: { readonly c: number; readonly h: number };
+}
+
+const presets: Readonly<Record<AccentPreset, PresetHue>> = {
+  astela: { c: 0.24, h: 290, secondary: { c: 0.18, h: 265 } },
   blue: { c: 0.17, h: 255 },
   teal: { c: 0.11, h: 195 },
   green: { c: 0.15, h: 150 },
@@ -39,11 +47,26 @@ export const minimumAccentContrast = 4.5;
  */
 export function accentColors(accent: string): AccentColors {
   const preset = isPreset(accent) ? presets[accent] : undefined;
-  const base: Oklch =
-    preset === undefined ? oklchFromHex(accent) : { l: 0.55, c: preset.c, h: preset.h };
-  const light = solve(base, lightSurface, 'darker');
-  const dark = solve(preset === undefined ? base : { ...base, l: 0.72 }, darkSurface, 'lighter');
-  return { light: css(light), dark: css(dark) };
+  if (preset === undefined) {
+    const base = oklchFromHex(accent);
+    return {
+      light: css(solve(base, lightSurface, 'darker')),
+      dark: css(solve(base, darkSurface, 'lighter')),
+    };
+  }
+  const colors = presetColors(preset);
+  return preset.secondary === undefined
+    ? colors
+    : { ...colors, secondary: presetColors(preset.secondary) };
+}
+
+/** The colors of a preset's hue: from a middle lightness, solved for each mode. */
+function presetColors(hue: { readonly c: number; readonly h: number }): AccentColors {
+  const base: Oklch = { l: 0.55, c: hue.c, h: hue.h };
+  return {
+    light: css(solve(base, lightSurface, 'darker')),
+    dark: css(solve({ ...base, l: 0.72 }, darkSurface, 'lighter')),
+  };
 }
 
 /**
