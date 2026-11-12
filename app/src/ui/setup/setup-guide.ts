@@ -107,7 +107,7 @@ export class SetupGuide extends LitElement {
       }
       .step {
         flex: 1;
-        animation: enter var(--motion-fast) ease-out;
+        animation: enter var(--motion-fast) var(--ease-out);
       }
       @keyframes enter {
         from {

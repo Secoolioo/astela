@@ -46,6 +46,11 @@ const checks: readonly Check[] = [
     command: ['pnpm', 'exec', 'oxlint', '--type-aware', '--deny-warnings'],
   },
   {
+    name: 'design',
+    title: 'Design tokens (durations, easings, shadows)',
+    command: ['node', 'tools/design/check-tokens.ts'],
+  },
+  {
     name: 'architecture',
     title: 'Architecture rules (dependency-cruiser)',
     command: [
