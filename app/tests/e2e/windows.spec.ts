@@ -3,9 +3,12 @@ import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
+  chooseMenuItem,
   FixtureServer,
   launch,
   pressNative,
+  recordedMenu,
+  recordMenus,
   shellState,
   startAgain,
   waitForPage,
@@ -366,23 +369,11 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
       await pressNative(browser, 'N', ['primary'], server.origin);
       await expect.poll(() => windowCount(browser)).toBe(2);
       // The menu offers new windows too, with the other tools.
-      await browser.main.evaluate(({ Menu }) => {
-        const recorded: Electron.Menu[] = [];
-        Object.assign(globalThis, { recordedMenus: recorded });
-        Menu.prototype.popup = function popup(this: Electron.Menu) {
-          recorded.push(this);
-        };
-      });
+      await recordMenus(browser);
       await browser.shell.getByRole('button', { name: 'Menu', exact: true }).click();
       const newWindow = mac ? 'New Window' : 'New &window';
       await expect
-        .poll(() =>
-          browser.main.evaluate(() =>
-            (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-              .at(-1)
-              ?.items.map((item) => item.label),
-          ),
-        )
+        .poll(async () => (await recordedMenu(browser)).items)
         .toEqual(
           expect.arrayContaining(
             mac
@@ -390,12 +381,7 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
               : [newWindow, '&Downloads', '&Zoom', '&Find…', '&Print…', 'More t&ools'],
           ),
         );
-      await browser.main.evaluate((_electron, label) => {
-        (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus
-          .at(-1)
-          ?.items.find((item) => item.label === label)
-          ?.click();
-      }, newWindow);
+      await chooseMenuItem(browser, [newWindow]);
       await expect.poll(() => windowCount(browser)).toBe(3);
       // The first window goes to a place of its own, which the next start restores. It fits
       // the smallest screen of the test machines, 1024 × 768 with the menu bar and the Dock

@@ -1,6 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import type * as Electron from 'electron';
-import { FixtureServer, launch, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  chooseMenuItem,
+  FixtureServer,
+  launch,
+  recordedMenu,
+  recordMenus,
+  shellState,
+  waitForPage,
+  type Browser,
+  type RecordedMenu,
+} from './harness.ts';
 
 const server = new FixtureServer();
 let browser: Browser;
@@ -58,23 +68,6 @@ const en =
         inspect: 'I&nspect',
       };
 
-/** A context menu as the browser built it; `-` stands for a separator. */
-interface ShownMenu {
-  readonly items: readonly string[];
-  readonly disabled: readonly string[];
-  readonly options: {
-    readonly x?: number | undefined;
-    readonly y?: number | undefined;
-    readonly sourceType?: string | undefined;
-  };
-}
-
-/** What the main process records for each menu instead of showing it. */
-interface Recorded {
-  readonly menu: Electron.Menu;
-  readonly options: Electron.PopupOptions;
-}
-
 /**
  * Starts the browser and makes it record its context menus instead of showing them, so the
  * tests can read them and choose items in the same way on every system.
@@ -82,16 +75,7 @@ interface Recorded {
  */
 async function start(args: readonly string[] = []): Promise<void> {
   browser = await launch(args);
-  await browser.main.evaluate(({ Menu }) => {
-    const recorded: Recorded[] = [];
-    Object.assign(globalThis, { recordedMenus: recorded });
-    Menu.prototype.popup = function popup(
-      this: Electron.Menu,
-      options: Electron.PopupOptions = {},
-    ) {
-      recorded.push({ menu: this, options });
-    };
-  });
+  await recordMenus(browser);
 }
 
 /** Opens a fixture page from the address bar. */
@@ -108,33 +92,16 @@ async function open(name: string): Promise<Page> {
  * Waits until the browser has built a number of menus and returns the last one.
  * @param count - How many menus the test has opened so far.
  */
-async function menu(count: number): Promise<ShownMenu> {
-  await expect
-    .poll(() =>
-      browser.main.evaluate(
-        () => (globalThis as unknown as { recordedMenus: Recorded[] }).recordedMenus.length,
-      ),
-    )
-    .toBe(count);
-  return browser.main.evaluate(() => {
-    const { recordedMenus } = globalThis as unknown as { recordedMenus: Recorded[] };
-    const { menu: shown, options } = recordedMenus[recordedMenus.length - 1] as Recorded;
-    return {
-      items: shown.items.map((item) => (item.type === 'separator' ? '-' : item.label)),
-      disabled: shown.items.filter((item) => !item.enabled).map((item) => item.label),
-      options: { x: options.x, y: options.y, sourceType: options.sourceType },
-    };
-  });
+function menu(count: number): Promise<RecordedMenu> {
+  return recordedMenu(browser, count);
 }
 
-/** Chooses an item of the last menu, as a click on it would. */
+/**
+ * Chooses an item of the last menu, as a click on it would. The tests choose several items of
+ * one menu, which {@link menu} waited for.
+ */
 async function choose(label: string): Promise<void> {
-  await browser.main.evaluate((_electron, wanted) => {
-    const { recordedMenus } = globalThis as unknown as { recordedMenus: Recorded[] };
-    const item = recordedMenus.at(-1)?.menu.items.find((candidate) => candidate.label === wanted);
-    if (item === undefined) throw new Error(`No menu item ${wanted}`);
-    item.click();
-  }, label);
+  await chooseMenuItem(browser, [label], { again: true });
 }
 
 /**
@@ -142,7 +109,7 @@ async function choose(label: string): Promise<void> {
  * text or a link also selects the word or the link under the pointer, as everywhere on that
  * system, so the menu may have the items for that selection before Inspect.
  */
-function expectItems(shown: ShownMenu, expected: readonly string[], inspect = en.inspect): void {
+function expectItems(shown: RecordedMenu, expected: readonly string[], inspect = en.inspect): void {
   expect(shown.items.slice(-2)).toEqual(['-', inspect]);
   const items = shown.items.slice(0, -2);
   expect(process.platform === 'darwin' ? items.slice(0, expected.length) : items).toEqual(expected);

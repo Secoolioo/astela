@@ -1,6 +1,6 @@
 # Tabs
 
-> **Status:** available from 0.1.0-beta.6.
+> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab from 0.1.0-beta.7.
 
 ## What a tab shows
 
@@ -22,8 +22,8 @@ Pin a tab from its menu to keep it at the start of the tab strip, where it shows
 
 ## The menu of a tab
 
-A click with the secondary button on a tab opens its menu: a new tab next to it, reload, duplicate, pin or unpin, mute or unmute, close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. On Windows and Linux, each item has an access key of its own.
+A click with the secondary button on a tab opens its menu: a new tab next to it, reload, duplicate, pin or unpin, mute or unmute, close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
 
 ## Keyboard
 
-`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab. They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab. The settings can give these commands, and pinning a tab, shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md).
+`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab. They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab. The settings can give these commands shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md). They can also give shortcuts to duplicating, pinning and muting a tab, and to closing the other tabs and the tabs to the right (below, in a tab strip at a side), which have none at first; see [commands without a shortcut](keyboard-shortcuts.md#commands-without-a-shortcut).

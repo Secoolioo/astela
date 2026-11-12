@@ -1,5 +1,6 @@
 import {
   chromium,
+  expect,
   test,
   type Browser as CdpBrowser,
   type Page,
@@ -801,6 +802,269 @@ export async function clickHistoryButton(
     await session.send('Input.dispatchMouseEvent', { type, ...point, button, clickCount: 1 });
   }
   await session.detach();
+}
+
+/** A native menu that the browser built while {@link recordMenus} records them. */
+interface MenuRecord {
+  readonly menu: Electron.Menu;
+  readonly options: Electron.PopupOptions;
+  /** Whether a choice of {@link chooseMenuItem} used the menu, which a person closes so. */
+  used: boolean;
+}
+
+/** A native menu as the browser built it, while {@link recordMenus} records them. */
+export interface RecordedMenu {
+  /**
+   * The labels of the items as the browser wrote them, with `&` before the access key on
+   * Windows and Linux; `-` stands for a separator.
+   */
+  readonly items: readonly string[];
+  /** The labels of the items that cannot be chosen. */
+  readonly disabled: readonly string[];
+  /** Where the browser asked to show the menu, and whether a mouse or the keyboard opened it. */
+  readonly options: {
+    readonly x?: number | undefined;
+    readonly y?: number | undefined;
+    readonly sourceType?: string | undefined;
+  };
+}
+
+/**
+ * Makes the browser record its native menus instead of showing them, so that a test reads
+ * them and chooses their items in the same way on every system: the menus of tabs and pages,
+ * the browser menu and the folders of the bookmarks bar.
+ * @param browser - The running browser.
+ */
+export async function recordMenus(browser: Browser): Promise<void> {
+  await browser.main.evaluate(({ Menu }) => {
+    const recorded: MenuRecord[] = [];
+    Object.assign(globalThis, { recordedMenus: recorded });
+    Menu.prototype.popup = function popup(
+      this: Electron.Menu,
+      options: Electron.PopupOptions = {},
+    ) {
+      recorded.push({ menu: this, options, used: false });
+    };
+  });
+}
+
+/**
+ * How many menus the browser built since {@link recordMenus}.
+ * @param browser - The running browser.
+ */
+export function menuCount(browser: Browser): Promise<number> {
+  return browser.main.evaluate(
+    () => (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.length ?? 0,
+  );
+}
+
+/**
+ * The last menu that the browser built, as it built it; a menu without items before the
+ * first one.
+ * @param browser - The running browser.
+ * @param count - How many menus the browser must have built by then; the test waits for them.
+ */
+export async function recordedMenu(browser: Browser, count?: number): Promise<RecordedMenu> {
+  if (count !== undefined) await expect.poll(() => menuCount(browser)).toBe(count);
+  return browser.main.evaluate(() => {
+    const last = (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.at(-1);
+    if (last === undefined) return { items: [], disabled: [], options: {} };
+    const { menu, options } = last;
+    return {
+      items: menu.items.map((item) => (item.type === 'separator' ? '-' : item.label)),
+      disabled: menu.items.filter((item) => !item.enabled).map((item) => item.label),
+      options: { x: options.x, y: options.y, sourceType: options.sourceType },
+    };
+  });
+}
+
+/**
+ * The shortcuts that the items of the last menu that the browser built show next to them, by
+ * the labels of the items as the browser wrote them; items without one are left out.
+ * @param browser - The running browser.
+ */
+export function menuAccelerators(browser: Browser): Promise<Record<string, string>> {
+  return browser.main.evaluate(() =>
+    Object.fromEntries(
+      (
+        (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.at(-1)?.menu
+          .items ?? []
+      ).flatMap((item) =>
+        typeof item.accelerator === 'string' ? [[item.label, item.accelerator]] : [],
+      ),
+    ),
+  );
+}
+
+/**
+ * The texts of the items of the last menu that the browser built, as they show without the
+ * marks of access keys, and without separators; none before the first menu.
+ * @param browser - The running browser.
+ */
+export function lastMenu(browser: Browser): Promise<string[]> {
+  return browser.main.evaluate(() =>
+    (
+      (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.at(-1)?.menu
+        .items ?? []
+    )
+      .filter((item) => item.type !== 'separator')
+      .map((item) => item.label.replace(/&(&?)/g, '$1')),
+  );
+}
+
+/**
+ * Chooses an item of the last menu that the browser built, as a click on it does. It waits
+ * for a menu that no earlier choice used, as a person opens a menu again for each choice, and
+ * refuses an item that a person could not choose because it is disabled.
+ * @param browser - The running browser.
+ * @param path - The texts of the item, without the marks of access keys or as the browser
+ *   wrote them, after those of the submenus that lead to it.
+ * @param options - `again` chooses from a menu that an earlier choice used.
+ */
+export async function chooseMenuItem(
+  browser: Browser,
+  path: readonly string[],
+  options: { readonly again?: boolean } = {},
+): Promise<void> {
+  await expect
+    .poll(() =>
+      browser.main.evaluate((_electron, again) => {
+        const last = (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.at(
+          -1,
+        );
+        return last !== undefined && (again || !last.used);
+      }, options.again === true),
+    )
+    .toBe(true);
+  await browser.main.evaluate((_electron, labels) => {
+    const last = (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus?.at(-1);
+    if (last === undefined) throw new Error('No menu');
+    last.used = true;
+    let items = last.menu.items;
+    let chosen: Electron.MenuItem | undefined;
+    for (const label of labels) {
+      chosen = items.find(
+        (item) => item.label === label || item.label.replace(/&(&?)/g, '$1') === label,
+      );
+      if (chosen === undefined) throw new Error(`No menu item ${label}`);
+      if (!chosen.enabled) throw new Error(`The menu item ${label} is disabled`);
+      items = chosen.submenu?.items ?? [];
+    }
+    chosen?.click();
+  }, path);
+}
+
+/**
+ * Whether the overlay is part of a window, found among the views of the window by its
+ * address, never by its place among them.
+ * @param browser - The running browser.
+ * @param windowId - The id of the window's `BaseWindow`; the first window when left out.
+ */
+export function overlayAttached(browser: Browser, windowId?: number): Promise<boolean> {
+  return browser.main.evaluate(({ BaseWindow }, id) => {
+    const window = id === null ? BaseWindow.getAllWindows()[0] : BaseWindow.fromId(id);
+    return (window?.contentView.children ?? []).some(
+      (child) =>
+        'webContents' in child &&
+        (child as Electron.WebContentsView).webContents.getURL().startsWith('app://overlay'),
+    );
+  }, windowId ?? null);
+}
+
+/**
+ * Waits until the page of an overlay exists and returns it. Every window has an overlay of
+ * its own, made with its first popover.
+ * @param browser - The connected browser.
+ * @param except - Pages of overlays to leave out, such as that of another window.
+ */
+export async function overlayPage(
+  browser: Pick<Browser, 'cdp'>,
+  except: readonly Page[] = [],
+): Promise<Page> {
+  for (let i = 0; i < 100; i += 1) {
+    const page = browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find(
+        (candidate) => candidate.url().startsWith('app://overlay') && !except.includes(candidate),
+      );
+    if (page !== undefined) return page;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error('No page of an overlay');
+}
+
+/** A view of a tab that is part of a window, as the main process sees it. */
+export interface AttachedTabView {
+  /** The address that the view shows. */
+  readonly url: string;
+  /** Where the view lies in the content of the window, as Electron gives its bounds. */
+  readonly bounds: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  /** Whether the view shows, rather than the shell's page for a problem of the tab. */
+  readonly visible: boolean;
+  /** Whether the view has the focus of the window. */
+  readonly focused: boolean;
+}
+
+/**
+ * The views of tabs that are part of a window, in the order of the window's views. Tests find
+ * a view by its address: views for two sides of a window, a cover above a page or rows of the
+ * shell above it change the order of the window's views.
+ * @param browser - The running browser.
+ * @param windowId - The id of the window's `BaseWindow`; the first window when left out.
+ */
+export function tabViews(browser: Browser, windowId?: number): Promise<AttachedTabView[]> {
+  return browser.main.evaluate(({ BaseWindow }, id) => {
+    const window = id === null ? BaseWindow.getAllWindows()[0] : BaseWindow.fromId(id);
+    return (window?.contentView.children ?? []).flatMap((child) => {
+      if (!('webContents' in child)) return [];
+      const contents = (child as Electron.WebContentsView).webContents;
+      const url = contents.getURL();
+      if (url.startsWith('app://shell') || url.startsWith('app://overlay')) return [];
+      const { x, y, width, height } = child.getBounds();
+      return [
+        {
+          url,
+          bounds: { x, y, width, height },
+          visible: child.getVisible(),
+          focused: contents.isFocused(),
+        },
+      ];
+    });
+  }, windowId ?? null);
+}
+
+/**
+ * Gives the view of a page the focus of its window, as a click of the mouse does, and waits
+ * until it has it. Clicks that Playwright sends reach a page without moving the focus between
+ * the views of the window. No other view may show the address of the page.
+ * @param browser - The running browser.
+ * @param page - The page, such as the shell or a tab's page.
+ */
+export async function focusPage(browser: Browser, page: Page): Promise<void> {
+  const url = page.url();
+  await browser.main.evaluate(({ webContents }, address) => {
+    webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL() === address)
+      ?.focus();
+  }, url);
+  await expect
+    .poll(() =>
+      browser.main.evaluate(
+        ({ webContents }, address) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL() === address && contents.isFocused()),
+        url,
+      ),
+    )
+    .toBe(true);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TabIcons } from '../shell/tab-icons.ts';
+import { TabIcons } from '../ui-kit/tab-icons.ts';
 
 /** A browser that answers the questions for icons when the test says so. */
 function browser(): {

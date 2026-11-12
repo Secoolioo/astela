@@ -10,7 +10,7 @@ Every change is kept when the browser restarts, and most apply at once, in every
 
 From 0.1.0-beta.5, the field at the top of the page finds settings by their names, their descriptions and words that people look for, such as _vertical_ for the tabs at the side. It understands English and German words in either language. A wide window shows the sections of the page at its left; a click takes you to a section, and the one in view is marked.
 
-Every section and every setting has an address of its own, such as `app://settings/#privacy` or `app://settings/#tabs.position`. Opening it, also from a bookmark or another tab, shows that part of the page and puts the keyboard focus on it.
+Every section and every setting has an address of its own, such as `app://settings/#privacy` or `app://settings/#tabs.position`. Opening it, also from a bookmark or another tab, shows that part of the page and puts the keyboard focus on it. From 0.1.0-beta.7, the links of the browser to a setting, such as **Content blocker settings** in the popover of the [content blocker](content-blocker.md), show it and give it the focus also when the settings show its address already.
 
 ## Changed settings, reset, export and import
 

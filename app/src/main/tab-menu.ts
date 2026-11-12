@@ -55,6 +55,10 @@ export function tabMenuTemplate(
       .find((candidate) => candidate !== undefined);
     return accelerator === undefined ? {} : { accelerator };
   };
+  // The shortcuts of the commands of the tab act on the active tab, so only its menu shows them.
+  const active = tabId === window.tabs.active?.id;
+  const ofTab = (command: WindowCommand): { accelerator?: string; registerAccelerator?: false } =>
+    active ? { ...shortcut(command), registerAccelerator: false } : {};
   // Runs an item only while the tab is open.
   const whileOpen =
     (run: () => void): (() => void) =>
@@ -71,29 +75,37 @@ export function tabMenuTemplate(
       label: i18n.t('tabMenu.reload'),
       click: whileOpen(() => window.tabs.run(tabId, 'reload')),
     },
-    { label: i18n.t('tabMenu.duplicate'), click: () => window.tabAction(tabId, 'duplicate') },
+    {
+      label: i18n.t('tabMenu.duplicate'),
+      ...ofTab('tab.duplicate'),
+      click: () => window.tabAction(tabId, 'duplicate'),
+    },
     {
       label: i18n.t(tab.pinned ? 'tabMenu.unpin' : 'tabMenu.pin'),
+      ...ofTab('tab.pin'),
       click: whileOpen(() => window.tabs.pin(tabId, !tab.pinned)),
     },
     {
       label: i18n.t(tab.muted ? 'tabMenu.unmute' : 'tabMenu.mute'),
+      ...ofTab('tab.mute'),
       click: () => window.setMuted(tabId, !tab.muted),
     },
     { type: 'separator' },
     {
       label: i18n.t('tabMenu.close'),
-      ...(tabId === window.tabs.active?.id ? shortcut('tab.close') : {}),
+      ...ofTab('tab.close'),
       registerAccelerator: false,
       click: whileOpen(() => window.tabs.close(tabId)),
     },
     {
       label: i18n.t('tabMenu.closeOthers'),
+      ...ofTab('tab.closeOthers'),
       enabled: window.tabs.all.some((other) => other.id !== tabId && !other.pinned),
       click: () => window.tabAction(tabId, 'closeOthers'),
     },
     {
       label: i18n.t(vertical ? 'tabMenu.closeBelow' : 'tabMenu.closeRight'),
+      ...ofTab('tab.closeRight'),
       enabled: window.tabs.all.some((other, place) => place > index && !other.pinned),
       click: () => window.tabAction(tabId, 'closeRight'),
     },

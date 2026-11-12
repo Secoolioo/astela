@@ -53,6 +53,18 @@ export const SettingsChanged = defineEvent({
   capability: 'page:settings',
 });
 
+/**
+ * Sent to a settings page whose address names a row or a section already, such as
+ * `app://settings/#tabs.position`, when the browser opens that address again: the page
+ * shows the row once more and gives it the focus, which a change of its address would do.
+ * The page only looks the id up.
+ */
+export const SettingsReveal = defineEvent({
+  channel: 'settings.reveal',
+  payload: v.strictObject({ id: v.pipe(v.string(), v.regex(/^[a-z][a-zA-Z0-9.-]{0,63}$/)) }),
+  capability: 'page:settings',
+});
+
 /** Sets settings back to their defaults; settings that a policy fixes stay as they are. */
 export const ResetSettings = defineRequest({
   channel: 'settings.reset',
@@ -124,7 +136,10 @@ export const ClearBrowsingData = defineRequest({
   ratePerSecond: 1,
 });
 
-/** The keyboard shortcuts of every command, as the window uses them. */
+/**
+ * The keyboard shortcuts of every command, as the window uses them, and those that the system
+ * gives a command besides, which people cannot change, such as Command+Q on macOS.
+ */
 export const GetShortcuts = defineRequest({
   channel: 'settings.getShortcuts',
   request: v.strictObject({}),
@@ -134,6 +149,7 @@ export const GetShortcuts = defineRequest({
       v.strictObject({
         command: v.picklist(windowCommands),
         shortcuts: v.array(v.string()),
+        system: v.array(v.string()),
         changed: v.boolean(),
       }),
     ),

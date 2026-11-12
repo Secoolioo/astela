@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { easingOf, motionOf } from '../ui-kit/motion.ts';
+import { percent } from '../ui-kit/percent.ts';
 import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
@@ -8,7 +9,7 @@ import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contra
 import { controlsRoom } from '../../shared/window-controls.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
-import { TabIcons } from './tab-icons.ts';
+import { TabIcons } from '../ui-kit/tab-icons.ts';
 
 /**
  * The browser shell: tab strip, navigation buttons and the address bar. It renders the
@@ -2338,11 +2339,6 @@ function inputOf(event: Event): HTMLInputElement | undefined {
 
 function displayUrl(url: string | undefined): string {
   return url === undefined || url === 'about:blank' || url === newTabUrl ? '' : url;
-}
-
-/** A zoom factor as a percentage in the shell's language, such as 125 %. */
-function percent(factor: number, language: string | undefined): string {
-  return new Intl.NumberFormat(language, { style: 'percent' }).format(factor);
 }
 
 /** Where the active tab's surface goes in the tab strip, and its size. */

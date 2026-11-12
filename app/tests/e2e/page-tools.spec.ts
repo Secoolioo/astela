@@ -7,6 +7,7 @@ import {
   launch,
   pressNative,
   shellState,
+  tabViews,
   waitForPage,
   type Browser,
 } from './harness.ts';
@@ -233,28 +234,28 @@ test('zooms a site in and out, shows its zoom and keeps it for the next start', 
 test('gives the shell back when another tab shows or the tab in full screen closes', async () => {
   const browser = await launch();
   try {
-    await open(browser, `${server.origin}/second.html`);
+    const second = `${server.origin}/second.html`;
+    const find = `${server.origin}/find.html`;
+    await open(browser, second);
     await pressNative(browser, 'T', ['primary']);
     await expect(browser.shell.getByRole('tab')).toHaveCount(2);
-    const page = await open(browser, `${server.origin}/find.html`);
-    const visibleTop = (): Promise<number | undefined> =>
-      browser.main.evaluate(
-        ({ BaseWindow }) =>
-          BaseWindow.getAllWindows()[0]?.contentView.children.at(-1)?.getBounds().y,
-      );
-    const top = await visibleTop();
+    const page = await open(browser, find);
+    // The top of the view of a tab's page, found by its address, while the window shows it.
+    const topOf = async (url: string): Promise<number | undefined> =>
+      (await tabViews(browser)).find((view) => view.url === url)?.bounds.y;
+    const top = await topOf(find);
     expect(top).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Full screen' }).click();
-    await expect.poll(visibleTop).toBe(0);
+    await expect.poll(() => topOf(find)).toBe(0);
     // The other tab is not in full screen, so the shell shows above it.
     await pressNative(browser, 'Tab', ['control']);
-    await expect.poll(visibleTop).toBe(top);
+    await expect.poll(() => topOf(second)).toBe(top);
     await pressNative(browser, 'Tab', ['control']);
-    await expect.poll(visibleTop).toBe(0);
+    await expect.poll(() => topOf(find)).toBe(0);
     // Closing the tab in full screen ends it.
     await pressNative(browser, 'W', ['primary']);
     await expect(browser.shell.getByRole('tab')).toHaveCount(1);
-    await expect.poll(visibleTop).toBe(top);
+    await expect.poll(() => topOf(second)).toBe(top);
     expect(
       await browser.main.evaluate(({ BaseWindow }) =>
         BaseWindow.getAllWindows()[0]?.isFullScreen(),
@@ -270,11 +271,8 @@ test('lets a page show an element in full screen, over the whole window', async 
   try {
     const url = `${server.origin}/find.html`;
     const page = await open(browser, url);
-    const pageBounds = (): Promise<{ y: number; height: number } | undefined> =>
-      browser.main.evaluate(({ BaseWindow }) => {
-        const view = BaseWindow.getAllWindows()[0]?.contentView.children.at(-1);
-        return view === undefined ? undefined : view.getBounds();
-      });
+    const pageBounds = async (): Promise<{ y: number; height: number } | undefined> =>
+      (await tabViews(browser)).find((view) => view.url === url)?.bounds;
     const before = await pageBounds();
     expect(before?.y).toBeGreaterThan(0);
     // On macOS, the window covers the screen without a space of its own.

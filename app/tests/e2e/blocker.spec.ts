@@ -1,8 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  chooseMenuItem,
   FixtureServer,
   launch,
+  overlayAttached,
+  overlayPage,
   packageWithoutBlockerData,
+  recordMenus,
   shellState,
   waitForPage,
   type Browser,
@@ -129,7 +133,7 @@ test('counts blocked requests and switches the blocker off for one site', async 
     // The popover's way to the settings opens them and closes the popover.
     await popover.getByRole('button', { name: 'Content blocker settings' }).click();
     await waitForPage(browser, (url) => url.startsWith('app://settings'));
-    await expect.poll(() => overlayShown(browser)).toBe(false);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
   } finally {
     await browser.close();
   }
@@ -324,7 +328,7 @@ test('turns the blocker off for a whole domain, its other hosts included', async
       browser.shell.getByRole('button', { name: 'Content blocker: off on this site' }),
     ).toBeVisible();
     await overlay.keyboard.press('Escape');
-    await expect.poll(() => overlayShown(browser)).toBe(false);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
     // Another host of the same domain is covered by the exception, another site is not.
     const other = await open(`http://shop.news.localhost:${port}/blocker.html`);
     await expect(
@@ -361,14 +365,87 @@ test('closes the popover with Escape or a click next to it and gives the page th
     // The popover takes the focus, so the keyboard reaches its switch.
     await expect(overlay.getByRole('switch')).toBeFocused();
     await overlay.keyboard.press('Escape');
-    await expect.poll(() => overlayShown(browser)).toBe(false);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
     await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await openShield(browser, 'Content blocker: 2 blocked');
-    await expect.poll(() => overlayShown(browser)).toBe(true);
+    await expect.poll(() => overlayAttached(browser)).toBe(true);
     // A click next to the popover closes it and reaches nothing below.
     await overlay.mouse.click(40, 400);
-    await expect.poll(() => overlayShown(browser)).toBe(false);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
     expect((await shellState(browser.shell)).tabs).toHaveLength(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens the settings of the content blocker at its row from the shield, also a second time', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    await overlay.getByRole('button', { name: 'Content blocker settings' }).click();
+    const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    await expect(settings).toHaveURL('app://settings/#contentBlocker.enabled');
+    const blocker = settings.getByRole('switch', { name: 'Block ads and trackers' });
+    await expect(blocker).toBeFocused();
+    await expect(blocker).toBeInViewport();
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // The settings scroll to their top and the search takes the focus; the page shows again.
+    await settings.getByRole('searchbox', { name: 'Search settings' }).focus();
+    await settings.evaluate(() => window.scrollTo(0, 0));
+    await expect(blocker).not.toBeInViewport();
+    await browser.shell.getByRole('tab', { name: 'Fixture blocker' }).click();
+    await openShield(browser, 'Content blocker: 2 blocked');
+    // The link leads to the address that the settings show already, and to their row again.
+    await overlay.getByRole('button', { name: 'Content blocker settings' }).click();
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'Settings',
+    );
+    await expect(blocker).toBeFocused();
+    await expect(blocker).toBeInViewport();
+    await expect(settings).toHaveURL('app://settings/#contentBlocker.enabled');
+    expect((await shellState(browser.shell)).tabs).toHaveLength(2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('takes the settings that the browser menu opened to the row of the content blocker', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const fixture = `${server.origin}/blocker.html`;
+    await address.fill(fixture);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url === fixture);
+    // The menu opens the settings at their top, in a tab after that of the page.
+    await recordMenus(browser);
+    await browser.shell.getByRole('button', { name: 'Menu', exact: true }).click();
+    await chooseMenuItem(browser, [process.platform === 'darwin' ? 'Settings…' : 'Settings']);
+    const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    await expect(settings).toHaveURL('app://settings/');
+    const blocker = settings.getByRole('switch', { name: 'Block ads and trackers' });
+    await expect(blocker).toBeVisible();
+    await expect(blocker).not.toBeInViewport();
+    await browser.shell.getByRole('tab', { name: 'Fixture blocker' }).click();
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    // The link takes the tab of the settings to the address of the row.
+    await overlay.getByRole('button', { name: 'Content blocker settings' }).click();
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'Settings',
+    );
+    await expect(settings).toHaveURL('app://settings/#contentBlocker.enabled');
+    await expect(blocker).toBeFocused();
+    await expect(blocker).toBeInViewport();
+    expect((await shellState(browser.shell)).tabs.map((tab) => tab.url)).toEqual([
+      fixture,
+      'app://settings/#contentBlocker.enabled',
+    ]);
   } finally {
     await browser.close();
   }
@@ -473,14 +550,7 @@ function displayOf(page: Page, id: string): Promise<string> {
 /** Clicks the shield button and returns the page of the overlay that opens. */
 async function openShield(browser: Browser, name: string): Promise<Page> {
   await browser.shell.getByRole('button', { name }).click();
-  const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+  const overlay = await overlayPage(browser);
   await expect(overlay.getByRole('dialog', { name: 'Content blocker' })).toBeVisible();
   return overlay;
-}
-
-/** Whether the overlay is part of the window: the shell, the tab and the overlay. */
-function overlayShown(browser: Browser): Promise<boolean> {
-  return browser.main.evaluate(
-    ({ BaseWindow }) => (BaseWindow.getAllWindows()[0]?.contentView.children.length ?? 0) > 2,
-  );
 }

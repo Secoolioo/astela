@@ -4,7 +4,12 @@ import type {
   BrowserWindowController,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
-import { acceleratorOf, shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
+import {
+  acceleratorOf,
+  shortcutsOf,
+  systemShortcutsOf,
+  type WindowCommand,
+} from '../shared/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
 /**
@@ -20,13 +25,18 @@ export function popupBrowserMenu(
   options: { readonly privateWindows: boolean },
 ): void {
   const i18n = translatorFor(uiLocale(), process.platform);
-  const mac = process.platform === 'darwin';
   const table = window.shortcuts();
   const item = (
     label: Parameters<typeof i18n.t>[0],
     command: WindowCommand,
   ): Electron.MenuItemConstructorOptions => {
-    const accelerator = acceleratorFor(table, command);
+    // Without a shortcut of the window, an item shows the one that the system gives the
+    // command, such as Command+Q, with which the application menu of macOS quits.
+    const accelerator =
+      acceleratorFor(table, command) ??
+      systemShortcutsOf(process.platform, command)
+        .map((shortcut) => acceleratorOf(shortcut))
+        .find((written) => written !== undefined);
     return {
       label: i18n.t(label),
       ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
@@ -64,12 +74,8 @@ export function popupBrowserMenu(
     },
     { type: 'separator' },
     item('menu.settings', 'settings.open'),
-    { label: i18n.t('menu.about'), click: () => showAbout(window) },
-    {
-      label: i18n.t(process.platform === 'win32' ? 'menu.exit' : 'menu.quit'),
-      ...(mac ? { accelerator: 'Cmd+Q', registerAccelerator: false } : {}),
-      click: () => app.quit(),
-    },
+    item('menu.about', 'app.about'),
+    item(process.platform === 'win32' ? 'menu.exit' : 'menu.quit', 'app.quit'),
   ]);
   menu.popup({ window: window.window, x: position.x, y: position.y });
 }
@@ -88,9 +94,9 @@ function acceleratorFor(
 
 /**
  * Tells the version of the browser and of what it is built on.
- * @param window - The window whose menu asked.
+ * @param window - The window whose menu or shortcut asked.
  */
-function showAbout(window: BrowserWindowController): void {
+export function showAbout(window: BrowserWindowController): void {
   const i18n = translatorFor(uiLocale(), process.platform);
   void dialog.showMessageBox(window.window, {
     type: 'info',

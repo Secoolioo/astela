@@ -3,6 +3,7 @@ import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
 import { searchEngines, type CustomSearchEngine } from '../../shared/search-engines.ts';
+import { matchesAll, searchWords } from '../../shared/search-text.ts';
 import { areSecureDnsTemplates, secureDnsProviders } from '../../shared/secure-dns.ts';
 import { contrastRatio, formatRatio, hexFromOklch, parseColor } from '../../shared/color.ts';
 import {
@@ -14,33 +15,30 @@ import {
   type PaletteToken,
   type ThemeId,
 } from '../../shared/themes.ts';
-import {
-  displayShortcut,
-  windowCommands,
-  type KeyNames,
-  type WindowCommand,
-} from '../../shared/shortcuts.ts';
+import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
-import { catalogs, isMessageKey, Translator, type MessageKey } from '../i18n/i18n.ts';
+import { catalogs, isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
 import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
+import { keyNamesOf } from '../ui-kit/key-names.ts';
 import {
   SettingsClient,
   paintSwatches,
   type PageBridge,
   type SettingView,
 } from '../ui-kit/settings-client.ts';
-
-/** Options of a choice between a few values. */
-const choices = {
-  'appearance.colorMode': ['system', 'light', 'dark'],
-  'appearance.density': ['compact', 'normal', 'comfortable'],
-  'appearance.textSize': ['small', 'medium', 'large', 'larger'],
-  'tabs.position': ['top', 'bottom', 'left', 'right'],
-  'appearance.titleBar': ['integrated', 'system'],
-  'startup.page': ['restore', 'newtab', 'pages'],
-} as const;
+import {
+  choices,
+  commandNameKey,
+  languageName,
+  settingsIndex,
+  shortcutRowId,
+  textOf,
+  type ChoiceKey,
+  type SettingsRow,
+  type SettingsSection,
+} from '../ui-kit/settings-index.ts';
 
 /**
  * How far below the top of the window a heading may be for its section to be the one in view,
@@ -563,6 +561,8 @@ export class SettingsPage extends LitElement {
   private client: SettingsClient | undefined;
   /** Stops listening for recorded shortcuts. */
   private unsubscribeShortcuts: (() => void) | undefined;
+  /** Stops listening for the browser's requests to show a row again. */
+  private unsubscribeReveal: (() => void) | undefined;
   /** The value of the shortcut setting, as JSON, that the shortcuts were loaded for. */
   private shortcutsLoaded: string | undefined;
   /** The toolbar button that moved, to focus again once the list shows its new place. */
@@ -605,6 +605,13 @@ export class SettingsPage extends LitElement {
       'settings.shortcutRecorded',
       (payload) => void this.takeShortcut(payload),
     );
+    // The browser opens the address that the page shows already, such as from a link to a
+    // row: no change of the address tells the page, so the browser does.
+    this.unsubscribeReveal = this.bridge.on('settings.reveal', (payload) => {
+      const id: unknown =
+        typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'id') : undefined;
+      if (typeof id === 'string') this.reveal(`#${encodeURIComponent(id)}`);
+    });
     this.client = new SettingsClient(this.bridge, () => {
       this.revision += 1;
       // The shortcuts depend on the setting and on the defaults of the system.
@@ -632,6 +639,7 @@ export class SettingsPage extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.unsubscribeShortcuts?.();
+    this.unsubscribeReveal?.();
     removeEventListener('hashchange', this.onHashChange);
     removeEventListener('scroll', this.onScroll);
     removeEventListener('resize', this.onScroll);
@@ -790,461 +798,174 @@ export class SettingsPage extends LitElement {
     });
   }
 
-  /** The sections of the page with their rows, and the words that find each row. */
+  /**
+   * How the page draws each row of the settings index, by the row's id, and how it tells
+   * whether a row differs from its defaults when the row resets in its own way. Every row of
+   * the index has a view here, and every view a row.
+   */
+  static readonly rowViews: Readonly<Record<string, (page: SettingsPage) => RowView>> = {
+    'appearance.colorMode': (page) => ({
+      render: () => page.renderChoice('appearance.colorMode', 'settings.colorMode'),
+    }),
+    'appearance.theme': (page) => ({ render: () => page.renderTheme() }),
+    'appearance.accent': (page) => ({ render: () => page.renderAccent() }),
+    'appearance.density': (page) => ({
+      render: () => page.renderChoice('appearance.density', 'settings.density'),
+    }),
+    'appearance.textSize': (page) => ({
+      render: () => page.renderChoice('appearance.textSize', 'settings.textSize'),
+    }),
+    'appearance.font': (page) => ({ render: () => page.renderFont() }),
+    'fonts.size': (page) => ({ render: () => page.renderWebTextSize() }),
+    'fonts.web': (page) => ({ render: () => page.renderWebFonts() }),
+    'zoom.default': (page) => ({ render: () => page.renderPageZoom() }),
+    'toolbar.items': (page) => ({ render: () => page.renderToolbar() }),
+    'tabs.position': (page) => ({
+      render: () => page.renderChoice('tabs.position', 'settings.tabPosition'),
+    }),
+    'appearance.titleBar': (page) => ({
+      render: () => page.renderChoice('appearance.titleBar', 'settings.titleBar'),
+    }),
+    'bookmarks.bar': (page) => ({
+      render: () =>
+        page.renderToggle('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote'),
+    }),
+    'startup.page': (page) => ({
+      render: () => page.renderChoice('startup.page', 'settings.startupPage'),
+    }),
+    'startup.urls': (page) => ({ render: () => page.renderStartupPages() }),
+    'home.button': (page) => ({
+      render: () =>
+        page.renderToggle('home.button', 'settings.homeButton', 'settings.homeButtonNote'),
+    }),
+    'home.page': (page) => ({ render: () => page.renderHomePage() }),
+    'newtab.search': (page) => ({
+      render: () =>
+        page.renderToggle('newtab.search', 'settings.newTabSearch', 'settings.newTabSearchNote'),
+    }),
+    'newtab.clock': (page) => ({
+      render: () =>
+        page.renderToggle('newtab.clock', 'settings.newTabClock', 'settings.newTabClockNote'),
+    }),
+    'newtab.mostVisited': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'newtab.mostVisited',
+          'settings.newTabMostVisited',
+          'settings.newTabMostVisitedNote',
+        ),
+    }),
+    'newtab.background': (page) => ({ render: () => page.renderNewTabBackground() }),
+    'newtab.tiles': (page) => ({ render: () => page.renderTiles() }),
+    'downloads.folder': (page) => ({ render: () => page.renderDownloadFolder() }),
+    'downloads.ask': (page) => ({
+      render: () =>
+        page.renderToggle('downloads.ask', 'settings.downloadAsk', 'settings.downloadAskNote'),
+    }),
+    'i18n.language': (page) => ({ render: () => page.renderLanguage() }),
+    'search.urlTemplate': (page) => ({ render: () => page.renderSearch() }),
+    'search.engines': (page) => ({ render: () => page.renderSearchEngines() }),
+    'search.bangs': (page) => ({ render: () => page.renderBangs() }),
+    'contentBlocker.enabled': (page) => ({
+      render: () =>
+        html`${page.renderToggle(
+          'contentBlocker.enabled',
+          'settings.contentBlocker',
+          'settings.contentBlockerNote',
+        )}${
+          page.blockerFailed
+            ? html`<p class="row note problem" role="alert">
+                ${page.t('settings.contentBlockerFailed')}
+              </p>`
+            : nothing
+        }`,
+    }),
+    'contentBlocker.cookieNotices': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'contentBlocker.cookieNotices',
+          'settings.cookieNotices',
+          'settings.cookieNoticesNote',
+        ),
+    }),
+    'contentBlocker.annoyances': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'contentBlocker.annoyances',
+          'settings.annoyances',
+          'settings.annoyancesNote',
+        ),
+    }),
+    'contentBlocker.allowedSites': (page) => ({ render: () => page.renderAllowedSites() }),
+    'privacy.blockThirdPartyCookies': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'privacy.blockThirdPartyCookies',
+          'settings.thirdPartyCookies',
+          'settings.thirdPartyCookiesNote',
+        ),
+    }),
+    'privacy.httpsFirst': (page) => ({
+      render: () =>
+        page.renderToggle('privacy.httpsFirst', 'settings.httpsFirst', 'settings.httpsFirstNote'),
+    }),
+    'network.secureDns': (page) => ({ render: () => page.renderSecureDns() }),
+    'clear-data': (page) => ({ render: () => page.renderClearData() }),
+    'permissions.sites': (page) => ({ render: () => page.renderSitePermissions() }),
+    ...Object.fromEntries(
+      windowCommands.map((command) => [
+        shortcutRowId(command),
+        (page: SettingsPage): RowView => ({
+          render: () => page.renderShortcut(command),
+          changed: () => page.hasOwnShortcut(command),
+        }),
+      ]),
+    ),
+    'shortcuts-reset': (page) => ({
+      render: () => page.renderShortcutsReset(),
+      changed: () => page.client?.get('keys.shortcuts')?.changed === true,
+    }),
+    'default-browser': (page) => ({
+      render: () =>
+        html`<default-browser .bridge=${page.bridge} .i18n=${page.i18n}></default-browser>`,
+    }),
+    import: (page) => ({
+      render: () =>
+        html`<p class="intro">${page.t('import.note')}</p>
+          <browser-import .bridge=${page.bridge} .i18n=${page.i18n}></browser-import>`,
+    }),
+    setup: (page) => ({
+      render: () =>
+        html`<div class="row">
+          <span class="label">
+            <span>${page.t('settings.setupGuide')}</span>
+            <span class="note">${page.t('settings.setupGuideNote')}</span>
+          </span>
+          <button @click=${() => void page.bridge?.invoke('settings.openSetup', {})}>
+            ${page.t('settings.setupGuideOpen')}
+          </button>
+        </div>`,
+    }),
+  };
+
+  /**
+   * The sections of the settings index with the views of their rows, without the rows that
+   * the value of another setting leaves out.
+   */
   private sections(): readonly PageSection[] {
-    const t = this.t;
-    return [
-      {
-        id: 'appearance',
-        title: 'settings.appearance',
-        rows: [
-          {
-            id: 'appearance.colorMode',
-            keys: [
-              'settings.colorMode',
-              'settings.colorMode.keywords',
-              ...optionKeys('appearance.colorMode', 'settings.colorMode'),
-            ],
-            render: () => this.renderChoice('appearance.colorMode', 'settings.colorMode'),
-          },
-          {
-            id: 'appearance.theme',
-            settings: ['appearance.theme', 'appearance.customTheme'],
-            keys: [
-              'settings.theme',
-              'settings.themeNote',
-              'settings.theme.keywords',
-              ...[...themeIds, 'custom' as const].map((id) => `settings.theme.${id}` as const),
-            ],
-            render: () => this.renderTheme(),
-          },
-          { id: 'appearance.accent', keys: ['settings.accent'], render: () => this.renderAccent() },
-          {
-            id: 'appearance.density',
-            keys: [
-              'settings.density',
-              'settings.density.keywords',
-              ...optionKeys('appearance.density', 'settings.density'),
-            ],
-            render: () => this.renderChoice('appearance.density', 'settings.density'),
-          },
-          {
-            id: 'appearance.textSize',
-            keys: [
-              'settings.textSize',
-              'settings.textSize.keywords',
-              ...optionKeys('appearance.textSize', 'settings.textSize'),
-            ],
-            render: () => this.renderChoice('appearance.textSize', 'settings.textSize'),
-          },
-          {
-            id: 'appearance.font',
-            keys: ['settings.font', 'settings.fontNote', 'settings.font.keywords'],
-            render: () => this.renderFont(),
-          },
-          {
-            id: 'fonts.size',
-            keys: [
-              'settings.webTextSize',
-              'settings.webTextSizeNote',
-              'settings.webTextSize.keywords',
-              'settings.webTextSize.9',
-              'settings.webTextSize.12',
-              'settings.webTextSize.16',
-              'settings.webTextSize.20',
-              'settings.webTextSize.24',
-            ],
-            render: () => this.renderWebTextSize(),
-          },
-          {
-            id: 'fonts.web',
-            keys: [
-              'settings.webFonts',
-              'settings.webFontsNote',
-              'settings.webFonts.keywords',
-              'settings.webFont.standard',
-              'settings.webFont.serif',
-              'settings.webFont.sansSerif',
-              'settings.webFont.fixed',
-            ],
-            render: () => this.renderWebFonts(),
-          },
-          {
-            id: 'zoom.default',
-            keys: ['settings.pageZoom', 'settings.pageZoomNote', 'settings.pageZoom.keywords'],
-            render: () => this.renderPageZoom(),
-          },
-          {
-            id: 'toolbar.items',
-            keys: [
-              'settings.toolbar',
-              'settings.toolbarNote',
-              'settings.toolbar.keywords',
-              'settings.toolbar.bookmark',
-              'settings.toolbar.shield',
-              'settings.toolbar.downloads',
-            ],
-            render: () => this.renderToolbar(),
-          },
-          {
-            id: 'tabs.position',
-            keys: [
-              'settings.tabPosition',
-              'settings.tabPosition.keywords',
-              ...optionKeys('tabs.position', 'settings.tabPosition'),
-            ],
-            render: () => this.renderChoice('tabs.position', 'settings.tabPosition'),
-          },
-          {
-            id: 'appearance.titleBar',
-            keys: [
-              'settings.titleBar',
-              'settings.titleBar.keywords',
-              ...optionKeys('appearance.titleBar', 'settings.titleBar'),
-            ],
-            render: () => this.renderChoice('appearance.titleBar', 'settings.titleBar'),
-          },
-          {
-            id: 'bookmarks.bar',
-            keys: ['settings.bookmarksBar', 'settings.bookmarksBarNote'],
-            render: () =>
-              this.renderToggle(
-                'bookmarks.bar',
-                'settings.bookmarksBar',
-                'settings.bookmarksBarNote',
-              ),
-          },
-        ],
-      },
-      {
-        id: 'startup',
-        title: 'settings.startup',
-        rows: [
-          {
-            id: 'startup.page',
-            keys: [
-              'settings.startupPage',
-              'settings.startupPage.keywords',
-              ...optionKeys('startup.page', 'settings.startupPage'),
-            ],
-            render: () => this.renderChoice('startup.page', 'settings.startupPage'),
-          },
-          // The list shows when the browser opens specific pages at start.
-          ...(this.client?.get('startup.page')?.value === 'pages'
-            ? [
-                {
-                  id: 'startup.urls',
-                  keys: ['settings.startupPages', 'settings.startupPagesNote'],
-                  render: () => this.renderStartupPages(),
-                } satisfies PageRow,
-              ]
-            : []),
-          {
-            id: 'home.button',
-            keys: ['settings.homeButton', 'settings.homeButtonNote', 'settings.home.keywords'],
-            render: () =>
-              this.renderToggle('home.button', 'settings.homeButton', 'settings.homeButtonNote'),
-          },
-          {
-            id: 'home.page',
-            keys: ['settings.homePage', 'settings.homePageNote', 'settings.home.keywords'],
-            render: () => this.renderHomePage(),
-          },
-        ],
-      },
-      {
-        id: 'newtab',
-        title: 'settings.newTab',
-        rows: [
-          {
-            id: 'newtab.search',
-            keys: ['settings.newTabSearch', 'settings.newTabSearchNote'],
-            render: () =>
-              this.renderToggle(
-                'newtab.search',
-                'settings.newTabSearch',
-                'settings.newTabSearchNote',
-              ),
-          },
-          {
-            id: 'newtab.clock',
-            keys: ['settings.newTabClock', 'settings.newTabClockNote'],
-            render: () =>
-              this.renderToggle('newtab.clock', 'settings.newTabClock', 'settings.newTabClockNote'),
-          },
-          {
-            id: 'newtab.mostVisited',
-            keys: ['settings.newTabMostVisited', 'settings.newTabMostVisitedNote'],
-            render: () =>
-              this.renderToggle(
-                'newtab.mostVisited',
-                'settings.newTabMostVisited',
-                'settings.newTabMostVisitedNote',
-              ),
-          },
-          {
-            id: 'newtab.background',
-            keys: [
-              'settings.newTabBackground',
-              'settings.newTabBackgroundNote',
-              'settings.newTabBackground.keywords',
-            ],
-            render: () => this.renderNewTabBackground(),
-          },
-          {
-            id: 'newtab.tiles',
-            keys: ['settings.newTabTiles', 'settings.newTabTilesNote', 'settings.newTab.keywords'],
-            render: () => this.renderTiles(),
-          },
-        ],
-      },
-      {
-        id: 'downloads',
-        title: 'settings.downloads',
-        rows: [
-          {
-            id: 'downloads.folder',
-            keys: [
-              'settings.downloadFolder',
-              'settings.downloadFolder.keywords',
-              'settings.downloadFolderSystem',
-            ],
-            render: () => this.renderDownloadFolder(),
-          },
-          {
-            id: 'downloads.ask',
-            keys: ['settings.downloadAsk', 'settings.downloadAskNote'],
-            render: () =>
-              this.renderToggle(
-                'downloads.ask',
-                'settings.downloadAsk',
-                'settings.downloadAskNote',
-              ),
-          },
-        ],
-      },
-      {
-        id: 'languages',
-        title: 'settings.languages',
-        rows: [
-          {
-            id: 'i18n.language',
-            keys: [
-              'settings.language',
-              'settings.languageNote',
-              'settings.language.keywords',
-              'settings.language.system',
-            ],
-            words: Object.keys(catalogs).map((code) => languageName(code)),
-            render: () => this.renderLanguage(),
-          },
-        ],
-      },
-      {
-        id: 'search',
-        title: 'settings.search',
-        rows: [
-          {
-            id: 'search.urlTemplate',
-            keys: ['settings.searchEngine', 'settings.searchEngine.keywords'],
-            words: searchEngines.map((engine) => engine.name),
-            render: () => this.renderSearch(),
-          },
-          {
-            id: 'search.engines',
-            keys: [
-              'settings.searchEngines',
-              'settings.searchEnginesNote',
-              'settings.searchEngines.keywords',
-            ],
-            words: searchEngines.map((engine) => engine.keyword),
-            render: () => this.renderSearchEngines(),
-          },
-          {
-            id: 'search.bangs',
-            keys: ['settings.bangs', 'settings.bangsNote'],
-            words: bangs.map((site) => site.name),
-            render: () => this.renderBangs(),
-          },
-        ],
-      },
-      {
-        id: 'privacy',
-        title: 'settings.privacy',
-        rows: [
-          {
-            id: 'contentBlocker.enabled',
-            keys: [
-              'settings.contentBlocker',
-              'settings.contentBlockerNote',
-              'settings.contentBlocker.keywords',
-            ],
-            render: () =>
-              html`${this.renderToggle(
-                'contentBlocker.enabled',
-                'settings.contentBlocker',
-                'settings.contentBlockerNote',
-              )}${
-                this.blockerFailed
-                  ? html`<p class="row note problem" role="alert">
-                      ${t('settings.contentBlockerFailed')}
-                    </p>`
-                  : nothing
-              }`,
-          },
-          {
-            id: 'contentBlocker.cookieNotices',
-            keys: [
-              'settings.cookieNotices',
-              'settings.cookieNoticesNote',
-              'settings.contentBlocker.keywords',
-            ],
-            render: () =>
-              this.renderToggle(
-                'contentBlocker.cookieNotices',
-                'settings.cookieNotices',
-                'settings.cookieNoticesNote',
-              ),
-          },
-          {
-            id: 'contentBlocker.annoyances',
-            keys: [
-              'settings.annoyances',
-              'settings.annoyancesNote',
-              'settings.contentBlocker.keywords',
-            ],
-            render: () =>
-              this.renderToggle(
-                'contentBlocker.annoyances',
-                'settings.annoyances',
-                'settings.annoyancesNote',
-              ),
-          },
-          {
-            id: 'contentBlocker.allowedSites',
-            keys: [
-              'settings.allowedSites',
-              'settings.allowedSitesNote',
-              'settings.contentBlocker.keywords',
-            ],
-            render: () => this.renderAllowedSites(),
-          },
-          {
-            id: 'privacy.blockThirdPartyCookies',
-            keys: [
-              'settings.thirdPartyCookies',
-              'settings.thirdPartyCookiesNote',
-              'settings.thirdPartyCookies.keywords',
-            ],
-            render: () =>
-              this.renderToggle(
-                'privacy.blockThirdPartyCookies',
-                'settings.thirdPartyCookies',
-                'settings.thirdPartyCookiesNote',
-              ),
-          },
-          {
-            id: 'privacy.httpsFirst',
-            keys: [
-              'settings.httpsFirst',
-              'settings.httpsFirstNote',
-              'settings.httpsFirst.keywords',
-            ],
-            render: () =>
-              this.renderToggle(
-                'privacy.httpsFirst',
-                'settings.httpsFirst',
-                'settings.httpsFirstNote',
-              ),
-          },
-          {
-            id: 'network.secureDns',
-            settings: ['network.secureDns', 'network.secureDnsTemplates'],
-            keys: ['settings.secureDns', 'settings.secureDnsNote', 'settings.secureDns.keywords'],
-            words: secureDnsProviders.map((provider) => provider.name),
-            render: () => this.renderSecureDns(),
-          },
-          {
-            id: 'clear-data',
-            keys: ['settings.clearData', 'settings.clearDataNote', 'settings.clearData.keywords'],
-            render: () => this.renderClearData(),
-          },
-          {
-            id: 'permissions.sites',
-            keys: [
-              'settings.sitePermissions',
-              'settings.sitePermissionsNote',
-              'settings.sitePermissions.keywords',
-            ],
-            render: () => this.renderSitePermissions(),
-          },
-        ],
-      },
-      {
-        id: 'shortcuts',
-        title: 'settings.shortcuts',
-        rows: [
-          ...windowCommands.map((command) => ({
-            id: `shortcut-${command}`,
-            keys: [`shortcut.${command}` as const, 'settings.shortcuts' as const],
-            changed: () => this.hasOwnShortcut(command),
-            render: () => this.renderShortcut(command),
-          })),
-          {
-            id: 'shortcuts-reset',
-            keys: ['settings.shortcuts', 'settings.shortcutsNote', 'settings.shortcuts.keywords'],
-            changed: () => this.client?.get('keys.shortcuts')?.changed === true,
-            render: () => this.renderShortcutsReset(),
-          },
-        ],
-      },
-      {
-        id: 'default-browser',
-        title: 'defaultBrowser.title',
-        rows: [
-          {
-            id: 'default-browser',
-            keys: ['defaultBrowser.title'],
-            render: () =>
-              html`<default-browser .bridge=${this.bridge} .i18n=${this.i18n}></default-browser>`,
-          },
-        ],
-      },
-      {
-        id: 'import',
-        title: 'import.title',
-        plain: true,
-        rows: [
-          {
-            id: 'import',
-            keys: ['import.title', 'import.note'],
-            render: () =>
-              html`<p class="intro">${t('import.note')}</p>
-                <browser-import .bridge=${this.bridge} .i18n=${this.i18n}></browser-import>`,
-          },
-        ],
-      },
-      {
-        id: 'setup',
-        title: 'settings.setup',
-        rows: [
-          {
-            id: 'setup',
-            keys: ['settings.setupGuide', 'settings.setupGuideNote'],
-            render: () =>
-              html`<div class="row">
-                <span class="label">
-                  <span>${t('settings.setupGuide')}</span>
-                  <span class="note">${t('settings.setupGuideNote')}</span>
-                </span>
-                <button @click=${() => void this.bridge?.invoke('settings.openSetup', {})}>
-                  ${t('settings.setupGuideOpen')}
-                </button>
-              </div>`,
-          },
-        ],
-      },
-    ];
+    const sections: PageSection[] = [];
+    for (const section of settingsIndex) {
+      const rows = section.rows.flatMap((row): PageRow[] => {
+        const view = SettingsPage.rowViews[row.id];
+        if (view === undefined) return [];
+        if (row.when !== undefined && this.client?.get(row.when.key)?.value !== row.when.value) {
+          return [];
+        }
+        return [{ ...row, ...view(this) }];
+      });
+      sections.push({ ...section, rows });
+    }
+    return sections;
   }
 
   protected override render(): TemplateResult {
@@ -1256,12 +977,12 @@ export class SettingsPage extends LitElement {
     const words = searchWords(this.query);
     const shown = sections
       .map((section) => {
-        const all = matches(textOf([section.title]), words);
+        const all = matchesAll(textOf([section.title]), words);
         return {
           ...section,
           rows: section.rows.filter(
             (row) =>
-              (all || matches(textOf(row.keys, row.words), words)) &&
+              (all || matchesAll(textOf(row.keys, row.words), words)) &&
               (!this.changedOnly || this.rowChanged(row)),
           ),
         };
@@ -1395,7 +1116,7 @@ export class SettingsPage extends LitElement {
     </span>`;
   }
 
-  private renderChoice(key: keyof typeof choices, label: MessageKey): TemplateResult {
+  private renderChoice(key: ChoiceKey, label: MessageKey): TemplateResult {
     const setting = this.client?.get(key);
     return html`<div class="row">
       ${this.renderLabel(label, setting)}
@@ -2558,22 +2279,39 @@ export class SettingsPage extends LitElement {
     );
   }
 
-  /** A command with its shortcuts, a way to record another and to go back to the default. */
+  /**
+   * A command with its shortcuts, a way to record another and to go back to the default. The
+   * shortcuts that the system gives the command come last; they stay as they are.
+   */
   private renderShortcut(command: WindowCommand): TemplateResult {
     const t = this.t;
     const entry = this.shortcuts?.commands.find((known) => known.command === command);
     const mac = this.shortcuts?.mac ?? false;
-    const name = t(`shortcut.${command}`);
+    const name = t(commandNameKey(command, this.sideTabs()));
     const note = this.shortcutNote?.command === command ? this.shortcutNote : undefined;
     const locked = this.client?.get('keys.shortcuts')?.locked !== false;
+    const shown = entry === undefined ? [] : [...entry.shortcuts, ...entry.system];
+    const system = entry?.system[0];
     return html`<div class="row shortcut" data-command=${command}>
-        <span class="label"><span>${name}</span></span>
+        <span class="label">
+          <span>${name}</span>
+          ${
+            system === undefined
+              ? nothing
+              : html`<span class="note">
+                  ${t('settings.shortcutSystem', {
+                    shortcut: displayShortcut(system, mac, keyNamesOf(this.t)),
+                  })}
+                </span>`
+          }
+        </span>
         <span class="keys">
           ${
-            entry === undefined || entry.shortcuts.length === 0
+            shown.length === 0
               ? html`<span class="note">${t('settings.shortcutNone')}</span>`
-              : entry.shortcuts.map(
-                  (shortcut) => html`<kbd>${displayShortcut(shortcut, mac, this.keyNames())}</kbd>`,
+              : shown.map(
+                  (shortcut) =>
+                    html`<kbd>${displayShortcut(shortcut, mac, keyNamesOf(this.t))}</kbd>`,
                 )
           }
         </span>
@@ -2609,8 +2347,8 @@ export class SettingsPage extends LitElement {
       const other = note.other;
       return html`<p class="row note" role="alert">
         ${t('settings.shortcutTaken', {
-          shortcut: displayShortcut(note.shortcut, mac, this.keyNames()),
-          command: t(`shortcut.${other}`),
+          shortcut: displayShortcut(note.shortcut, mac, keyNamesOf(this.t)),
+          command: t(commandNameKey(other, this.sideTabs())),
         })}
         <button type="button" @click=${() => void this.setShortcut(note.command, [note.shortcut])}>
           ${t('settings.shortcutUseHere', { command: name })}
@@ -2712,35 +2450,16 @@ export class SettingsPage extends LitElement {
     }
   }
 
-  /** The names of keys in the language of the page. */
-  private keyNames(): KeyNames {
-    const t = this.t;
-    return {
-      ctrl: t('key.ctrl'),
-      alt: t('key.alt'),
-      shift: t('key.shift'),
-      win: t('key.win'),
-      keys: {
-        PageUp: t('key.pageUp'),
-        PageDown: t('key.pageDown'),
-        Home: t('key.home'),
-        End: t('key.end'),
-        Insert: t('key.insert'),
-        Delete: t('key.delete'),
-        Backspace: t('key.backspace'),
-        Space: t('key.space'),
-        Escape: t('key.escape'),
-        BrowserBack: t('key.back'),
-        BrowserForward: t('key.forward'),
-        '+': t('key.plus'),
-      },
-    };
-  }
-
   /** Whether a command has shortcuts of people's own instead of its defaults. */
   private hasOwnShortcut(command: WindowCommand): boolean {
     const value = this.client?.get('keys.shortcuts')?.value;
     return typeof value === 'object' && value !== null && Object.hasOwn(value, command);
+  }
+
+  /** Whether the tab strip is at a side, where the tabs to the right of a tab are below it. */
+  private sideTabs(): boolean {
+    const position = this.client?.get('tabs.position')?.value;
+    return position === 'left' || position === 'right';
   }
 
   /** Clearing the browsing data, with a question for the time range and the kinds of data. */
@@ -3099,13 +2818,14 @@ const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
   <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5" />
 </svg>`;
 
-/** A row of the settings page: a setting, or a part such as the import. */
 /** The shortcuts of every command, as the browser tells them. */
 interface ShortcutList {
   readonly mac: boolean;
   readonly commands: readonly {
     readonly command: WindowCommand;
     readonly shortcuts: readonly string[];
+    /** The shortcuts that the system gives the command besides, which stay as they are. */
+    readonly system: readonly string[];
     readonly changed: boolean;
   }[];
 }
@@ -3136,6 +2856,9 @@ function isShortcutList(value: unknown): value is ShortcutList {
         'shortcuts' in entry &&
         Array.isArray(entry.shortcuts) &&
         entry.shortcuts.every((shortcut: unknown) => typeof shortcut === 'string') &&
+        'system' in entry &&
+        Array.isArray(entry.system) &&
+        entry.system.every((shortcut: unknown) => typeof shortcut === 'string') &&
         'changed' in entry &&
         typeof entry.changed === 'boolean',
     )
@@ -3163,68 +2886,19 @@ function hexTheme(id: ThemeId): CustomTheme {
   return { light: palette('light'), dark: palette('dark') };
 }
 
-interface PageRow {
-  /** The setting's key, or the part's name; links name it after `#`. */
-  readonly id: string;
-  /** The settings that the row shows, when they are more than the one its id names. */
-  readonly settings?: readonly string[];
+/** How the page draws a row of the settings index. */
+interface RowView {
+  readonly render: () => TemplateResult;
   /** Whether the row differs from its defaults, for a row that resets in its own way. */
   readonly changed?: () => boolean;
-  /** The texts that find the row, in every language. */
-  readonly keys: readonly MessageKey[];
-  /** Words that find the row in every language, such as the names of search engines. */
-  readonly words?: readonly string[];
-  readonly render: () => TemplateResult;
 }
 
-/** A section of the settings page. */
-interface PageSection {
-  readonly id: string;
-  readonly title: MessageKey;
-  /** Whether the section draws its rows without a frame. */
-  readonly plain?: boolean;
+/** A row of the settings index with its view. */
+type PageRow = SettingsRow & RowView;
+
+/** A section of the settings index with the views of its rows. */
+interface PageSection extends Omit<SettingsSection, 'rows'> {
   readonly rows: readonly PageRow[];
-}
-
-/** The texts of the page in every language, so a word of either language finds a setting. */
-const languages = [new Translator('en'), new Translator('de')];
-
-/** The name of a language in that language, such as Deutsch. */
-function languageName(code: string): string {
-  try {
-    return new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-/** The keys of the names of a choice's options. */
-function optionKeys(key: keyof typeof choices, label: MessageKey): MessageKey[] {
-  return choices[key].map((option) => `${label}.${option}`).filter(isMessageKey);
-}
-
-/** Text in a form that compares without case, accents and ß. */
-function folded(text: string): string {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('ß', 'ss');
-}
-
-/** The words of a search, folded. */
-function searchWords(query: string): string[] {
-  return folded(query)
-    .split(/\s+/)
-    .filter((word) => word !== '');
-}
-
-/** The texts of some keys in every language, and some more words, folded. */
-function textOf(keys: readonly MessageKey[], words: readonly string[] = []): string {
-  return folded(
-    [...keys.flatMap((key) => languages.map((i18n) => i18n.t(key))), ...words].join(' '),
-  );
-}
-
-/** Whether a text holds every word of a search. */
-function matches(text: string, words: readonly string[]): boolean {
-  return words.every((word) => text.includes(word));
 }
 
 /** The permissions that sites ask for, and their names on the page. */

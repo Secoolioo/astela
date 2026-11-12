@@ -4,7 +4,9 @@ import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import {
   FixtureServer,
+  focusPage,
   launch,
+  overlayPage,
   pressNative,
   shellState,
   waitForPage,
@@ -156,20 +158,6 @@ async function useRealFocus(browser: Browser): Promise<void> {
   await session.send('Emulation.setFocusEmulationEnabled', { enabled: false });
 }
 
-/**
- * Gives a view the focus of the window, as a click of the mouse does. Clicks that Playwright
- * sends reach the page without moving the focus between the views of the window.
- */
-async function focusView(browser: Browser, prefix: string): Promise<void> {
-  await browser.main.evaluate(({ webContents }, start) => {
-    webContents
-      .getAllWebContents()
-      .find((contents) => contents.getURL().startsWith(start))
-      ?.focus();
-  }, prefix);
-  await expect.poll(() => viewFocused(browser, prefix)).toBe(true);
-}
-
 /** Whether the view of the browser's own page at the start of an address has the focus. */
 function viewFocused(browser: Browser, prefix: string): Promise<boolean> {
   return browser.main.evaluate(
@@ -249,7 +237,7 @@ test('keeps what was typed when a switch of tabs moves the focus into the page',
     await shell.getByRole('button', { name: 'New tab' }).click();
     await open(browser, `${server.origin}/second.html`);
     await waitForPage(browser, (url) => url.endsWith('/second.html'));
-    await focusView(browser, 'app://shell');
+    await focusPage(browser, browser.shell);
     await address.click();
     await address.fill('typed in the second tab');
     // The browser shows the other tab and gives its page the focus, as after a real key press.
@@ -306,10 +294,10 @@ test('closes the suggestions and leaves the focus and the text in the address ba
     const address = shell.getByRole('textbox', { name: 'Address and search bar' });
     await open(browser, `${server.origin}/index.html`);
     await waitForPage(browser, (url) => url.endsWith('/index.html'));
-    await focusView(browser, 'app://shell');
+    await focusPage(browser, browser.shell);
     await address.click();
     await address.pressSequentially('fixture');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     await expect(list).toBeVisible();
     // Escape closes the list; the typing goes on in the address bar.
@@ -453,16 +441,16 @@ test('opens a suggestion that is clicked after the press moved the focus to the 
     await open(browser, `${server.origin}/index.html`);
     await waitForPage(browser, (url) => url.endsWith('/index.html'));
     await shell.getByRole('button', { name: 'New tab' }).click();
-    await focusView(browser, 'app://shell');
+    await focusPage(browser, browser.shell);
     await address.click();
     await address.pressSequentially('fixture home');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const tab = overlay
       .getByRole('listbox', { name: 'Suggestions' })
       .getByRole('option', { name: /Fixture home.*Switch to this tab/ });
     await expect(tab).toBeVisible();
     // A press of the mouse gives the list the focus before the click arrives.
-    await focusView(browser, 'app://overlay');
+    await focusPage(browser, overlay);
     await tab.click();
     await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
       'title',
@@ -494,7 +482,7 @@ test('suggests bookmarks right after a start on the new tab page', async () => {
   try {
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await address.pressSequentially('fixture home');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     await expect(overlay.locator('[role="option"][data-kind="bookmark"]')).toContainText(
       'Fixture home',
     );
@@ -670,7 +658,7 @@ test('suggests visited pages and open tabs below the address bar and opens them'
     await shell.getByRole('button', { name: 'New tab' }).click();
     // A visited page, chosen with the arrow keys, opens in the active tab.
     await address.pressSequentially('fixture home');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     const home = list.getByRole('option', { name: /Fixture home/ });
     await expect(home).toBeVisible();
@@ -735,7 +723,7 @@ test('opens a suggestion chosen with Enter right after a click on New tab in the
     await delayNewTabAnswer(browser, 3000);
     await shell.getByRole('button', { name: 'New tab' }).click();
     await address.pressSequentially('fixture second');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     const visited = list.getByRole('option', { name: /Fixture second/ });
     await expect(visited).toBeVisible();
@@ -770,7 +758,7 @@ test('keeps the suggestions for what is typed right after a click on New tab whe
     await delayShellState(browser, 2000);
     await shell.getByRole('button', { name: 'New tab' }).click();
     await address.pressSequentially('fixture second');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     const visited = list.getByRole('option', { name: /Fixture second/ });
     await expect(visited).toBeVisible();
@@ -805,7 +793,7 @@ test('opens a suggestion clicked right after a click on New tab in the new tab, 
     await delayNewTabAnswer(browser, 4000);
     await shell.getByRole('button', { name: 'New tab' }).click();
     await address.pressSequentially('fixture second');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     await list.getByRole('option', { name: /Fixture second/ }).click();
     await expect(list).toBeHidden();
@@ -829,7 +817,7 @@ test('keeps what is typed right after a click on New tab when a suggestion chose
     const { second } = await visitSecondPage(browser);
     await address.click();
     await address.pressSequentially('fixture second');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     const visited = list.getByRole('option', { name: /Fixture second/ });
     await expect(visited).toBeVisible();
@@ -870,7 +858,7 @@ test('opens a suggestion chosen right after a click on New tab in the new tab, a
     await pressNative(browser, 'Tab', ['control']);
     await expect.poll(async () => (await shellState(shell)).activeTabId).toBe(front?.id);
     await address.pressSequentially('fixture second');
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const list = overlay.getByRole('listbox', { name: 'Suggestions' });
     const visited = list.getByRole('option', { name: /Fixture second/ });
     await expect(visited).toBeVisible();
@@ -901,7 +889,7 @@ test('keeps what is typed right after a click on New tab when what was typed bef
     const { second } = await visitSecondPage(browser);
     await address.click();
     await address.pressSequentially(second);
-    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const overlay = await overlayPage(browser);
     const entered = overlay
       .getByRole('listbox', { name: 'Suggestions' })
       .getByRole('option')
