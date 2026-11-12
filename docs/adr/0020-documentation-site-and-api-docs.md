@@ -17,7 +17,7 @@ The first version of the site builds the landing page, every page of `docs/`, th
 - The website package depends on TypeScript 6.0.3 directly; no alias is needed because it is a separate workspace package.
 - The API reference has one page per module. With one page per member, the generated module index linked to pages that do not exist.
 - The download page and the download button on the landing page are built from the release data that `pages.yml` collects; without releases, as in pull requests, there is no download page.
-- Mermaid diagrams are rendered in the browser; a render check does not exist yet. `pages.yml` checks the links within the built site with lychee.
+- Mermaid diagrams are rendered in the browser; a render check does not exist yet. `pnpm verify`, and with it every pull request, checks the links within the built site with lychee, without going online (`tools/ci/check-links.sh`); `pages.yml` checks the site that it deploys the same way.
 - Astro 7 needs Node.js 22.23.4 or later; the repository uses Node.js 24 (`.node-version`).
 
 ## Context

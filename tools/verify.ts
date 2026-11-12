@@ -20,6 +20,8 @@ interface Check {
    * CI always runs it.
    */
   readonly optionalLocally?: boolean;
+  /** The program that must be installed for the check, when it is not the executable. */
+  readonly requires?: string;
   /** Extra environment variables for the command. */
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -83,6 +85,13 @@ const checks: readonly Check[] = [
     env: { ASTRO_TELEMETRY_DISABLED: '1' },
   },
   {
+    name: 'links',
+    title: 'Links within the website (lychee, offline)',
+    command: ['bash', 'tools/ci/check-links.sh', 'website/dist'],
+    requires: 'lychee',
+    optionalLocally: true,
+  },
+  {
     name: 'shell',
     title: 'Shell scripts (ShellCheck)',
     command: [
@@ -92,6 +101,8 @@ const checks: readonly Check[] = [
       'app/tests/linux-repos/run.sh',
       'app/tests/linux-repos/live.sh',
       'tools/ci/apt-install.sh',
+      'tools/ci/check-links.sh',
+      'tools/ci/install-lychee.sh',
       'tools/ci/pull-images.sh',
     ],
     optionalLocally: true,
@@ -139,12 +150,9 @@ function main(): number {
   for (const check of selected) {
     console.log(`\n▶ ${check.title}`);
     const [executable, ...args] = check.command;
-    if (
-      check.optionalLocally === true &&
-      process.env['CI'] === undefined &&
-      !isAvailable(executable)
-    ) {
-      console.log(`  skipped: ${executable} is not installed (CI runs this check)`);
+    const needed = check.requires ?? executable;
+    if (check.optionalLocally === true && process.env['CI'] === undefined && !isAvailable(needed)) {
+      console.log(`  skipped: ${needed} is not installed (CI runs this check)`);
       skipped += 1;
       continue;
     }

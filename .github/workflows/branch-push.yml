@@ -37,4 +37,7 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # pnpm verify checks the links of the website it builds; lychee is not on the runner.
+      - name: Install the link checker
+        run: tools/ci/install-lychee.sh
       - run: pnpm verify

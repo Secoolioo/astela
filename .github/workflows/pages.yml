@@ -97,22 +97,9 @@ jobs:
           mkdir -p "$SITE"
           cp -R website/dist/. "$SITE/"
       - name: Check the links
-        env:
-          LYCHEE_VERSION: 0.24.2
-          LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
         run: |
-          archive="lychee-x86_64-unknown-linux-gnu.tar.gz"
-          curl -sSfL -o "$RUNNER_TEMP/$archive" \
-            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/$archive"
-          echo "$LYCHEE_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
-          # Pages serves the site below the repository path, so the check sees the same layout.
-          base=$(node -p "new URL(require('./brand.json').website).pathname")
-          stage="$RUNNER_TEMP/link-check"
-          mkdir -p "$stage$base"
-          cp -R "$SITE/." "$stage$base"
-          "$RUNNER_TEMP/lychee-x86_64-unknown-linux-gnu/lychee" --offline --no-progress \
-            --root-dir "$stage" "$stage/**/*.html"
+          tools/ci/install-lychee.sh
+          tools/ci/check-links.sh "$SITE"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/site
