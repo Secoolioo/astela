@@ -22,6 +22,7 @@ import type {
   SetTabMuted,
   GetFavicon,
   MoveTab,
+  OpenTabMenu,
   StopFinding,
   ToggleBookmark,
 } from '../../shared/ipc/shell-later-contracts.ts';
@@ -48,6 +49,7 @@ interface Requests {
   'tabs.favicon': typeof GetFavicon;
   'tabs.setMuted': typeof SetTabMuted;
   'tabs.move': typeof MoveTab;
+  'tabs.openMenu': typeof OpenTabMenu;
 }
 
 interface Events {

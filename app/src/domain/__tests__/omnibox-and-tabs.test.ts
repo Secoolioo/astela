@@ -221,6 +221,35 @@ describe('TabService', () => {
     expect(changes).toBe(3);
   });
 
+  it('keeps pinned tabs first and opens and moves the other tabs after them', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const a = tabs.open('https://a.example/');
+    const b = tabs.open('https://b.example/');
+    const c = tabs.open('https://c.example/');
+    const order = (): string[] => tabs.all.map((tab) => tab.id);
+    tabs.pin(c, true);
+    tabs.pin(b, true);
+    expect(order()).toEqual([c, b, a]);
+    expect(tabs.all.map((tab) => tab.pinned)).toEqual([true, true, false]);
+    // A tab opened from a pinned tab, or moved to the front, stays after the pinned tabs.
+    tabs.activate(c);
+    const d = tabs.open('https://d.example/');
+    expect(order()).toEqual([c, b, d, a]);
+    tabs.move(a, 0);
+    expect(order()).toEqual([c, b, a, d]);
+    // A pinned tab moves among the pinned tabs only.
+    tabs.move(c, 3);
+    expect(order()).toEqual([b, c, a, d]);
+    tabs.pin(b, false);
+    expect(order()).toEqual([c, b, a, d]);
+    expect(tabs.all[1]?.pinned).toBe(false);
+    // A tab can open right after another one, and pinned when restored.
+    const e = tabs.open('https://e.example/', { after: a });
+    expect(order()).toEqual([c, b, a, e, d]);
+    const f = tabs.open('https://f.example/', { pinned: true, activate: false });
+    expect(order()).toEqual([c, f, b, a, e, d]);
+  });
+
   it('destroys every view on dispose', () => {
     const views = new FakeViews();
     const tabs = new TabService(views, 'about:blank');

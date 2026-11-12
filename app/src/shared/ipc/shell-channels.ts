@@ -14,6 +14,7 @@ export const shellLaterChannels = [
   'tabs.favicon',
   'tabs.setMuted',
   'tabs.move',
+  'tabs.openMenu',
 ] as const;
 
 /**

@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -21,6 +21,10 @@ A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function k
 | Reopen the last closed tab     | `Ctrl+Shift+T`                                  |
 | Next tab                       | `Ctrl+Tab` or `Ctrl+Page Down`                  |
 | Previous tab                   | `Ctrl+Shift+Tab` or `Ctrl+Page Up`              |
+| First to eighth tab            | `Ctrl+1` to `Ctrl+8`                            |
+| Last tab                       | `Ctrl+9`                                        |
+| Move the tab to the left       | `Ctrl+Shift+Page Up`                            |
+| Move the tab to the right      | `Ctrl+Shift+Page Down`                          |
 | Back                           | `Alt+Left Arrow` or the keyboard's Back key     |
 | Forward                        | `Alt+Right Arrow` or the keyboard's Forward key |
 | Reload                         | `F5` or `Ctrl+R`                                |
@@ -57,6 +61,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Reopen the last closed tab     | `Command+Shift+T`                                                     |
 | Next tab                       | `Control+Tab`, `Command+Option+Right Arrow` or `Command+Shift+]`      |
 | Previous tab                   | `Control+Shift+Tab`, `Command+Option+Left Arrow` or `Command+Shift+[` |
+| First to eighth tab            | `Command+1` to `Command+8`                                            |
+| Last tab                       | `Command+9`                                                           |
 | Back                           | `Command+[`                                                           |
 | Forward                        | `Command+]`                                                           |
 | Reload                         | `Command+R`                                                           |

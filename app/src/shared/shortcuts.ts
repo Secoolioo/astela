@@ -10,6 +10,18 @@ export const windowCommands = [
   'tab.reopen',
   'tab.next',
   'tab.previous',
+  'tab.select1',
+  'tab.select2',
+  'tab.select3',
+  'tab.select4',
+  'tab.select5',
+  'tab.select6',
+  'tab.select7',
+  'tab.select8',
+  'tab.selectLast',
+  'tab.moveLeft',
+  'tab.moveRight',
+  'tab.pin',
   'page.back',
   'page.forward',
   'page.reload',
@@ -45,6 +57,18 @@ export type WindowCommand = (typeof windowCommands)[number];
 // key that edits text.
 
 /**
+ * The modifier and 1 to 8 for the tabs at those places, and 9 for the last tab.
+ * @param modifier - `Cmd` on macOS, `Ctrl` elsewhere.
+ */
+function selectShortcuts(modifier: 'Cmd' | 'Ctrl'): (readonly [string, WindowCommand])[] {
+  const places = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+  return [
+    ...places.map((place) => [`${modifier}+${place}`, `tab.select${place}`] as const),
+    [`${modifier}+9`, 'tab.selectLast'],
+  ];
+}
+
+/**
  * macOS. Cmd+Left and Cmd+Right are left out on purpose: they move the caret to the start
  * and the end of a line. Cmd+Tab belongs to the app switcher of the system.
  */
@@ -60,6 +84,7 @@ const macShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+Shift+Tab', 'tab.previous'],
   ['Alt+Cmd+ArrowLeft', 'tab.previous'],
   ['Shift+Cmd+[', 'tab.previous'],
+  ...selectShortcuts('Cmd'),
   ['Cmd+R', 'page.reload'],
   ['Shift+Cmd+H', 'page.home'],
   ['Shift+Cmd+R', 'page.reloadHard'],
@@ -103,6 +128,9 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+PageDown', 'tab.next'],
   ['Ctrl+Shift+Tab', 'tab.previous'],
   ['Ctrl+PageUp', 'tab.previous'],
+  ...selectShortcuts('Ctrl'),
+  ['Ctrl+Shift+PageUp', 'tab.moveLeft'],
+  ['Ctrl+Shift+PageDown', 'tab.moveRight'],
   ['F5', 'page.reload'],
   ['Alt+Home', 'page.home'],
   ['Ctrl+R', 'page.reload'],

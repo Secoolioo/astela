@@ -18,6 +18,7 @@ export const SessionSnapshot = v.object({
         v.object({
           url: v.pipe(v.string(), v.maxLength(8192)),
           title: v.pipe(v.string(), v.maxLength(1024)),
+          pinned: v.optional(v.boolean()),
         }),
       ),
       active: v.pipe(v.number(), v.integer(), v.minValue(0)),
@@ -69,7 +70,11 @@ export function sessionWindow(
   tabs.forEach((tab, index) => {
     if (tab === undefined || !keepsUrl(tab.url)) return;
     if (index === active) keptActive = kept.length;
-    kept.push({ url: tab.url, title: tab.title.slice(0, titleLimit) });
+    kept.push({
+      url: tab.url,
+      title: tab.title.slice(0, titleLimit),
+      ...(tab.pinned === true ? { pinned: true } : {}),
+    });
   });
   if (kept.length === 0) return undefined;
   const bounds = place.bounds === undefined ? undefined : v.safeParse(Bounds, place.bounds);
@@ -88,7 +93,11 @@ const StoredWindow = v.object({
   bounds: v.optional(v.unknown()),
   maximized: v.optional(v.unknown()),
 });
-const StoredTab = v.object({ url: v.string(), title: v.string() });
+const StoredTab = v.object({
+  url: v.string(),
+  title: v.string(),
+  pinned: v.optional(v.boolean()),
+});
 
 /**
  * Reads a stored session. A tab or window that cannot be read is dropped on its own, so

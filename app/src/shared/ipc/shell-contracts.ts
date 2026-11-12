@@ -34,7 +34,8 @@ export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
  * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
  * `problem` why the tab shows no page, which the shell then shows in its place;
  * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
- * `audible` whether the page plays sound, and `muted` whether its sound is muted.
+ * `audible` whether the page plays sound, `muted` whether its sound is muted, and `pinned`
+ * whether the tab is pinned.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -51,6 +52,7 @@ export const TabView = v.strictObject({
   favicon: v.nullable(FaviconKey),
   audible: v.boolean(),
   muted: v.boolean(),
+  pinned: v.boolean(),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

@@ -31,6 +31,7 @@ On `main` now, and in the next beta, 0.1.0-beta.6:
 - **Logo and colors:** a new logo and application icon; its violet is the default accent of the browser and the accent of its website, and its blue shows progress, such as a page that loads.
 - **Tab icons:** each tab shows the icon of its page, a ring while the page loads and a button that mutes a tab that plays sound.
 - **Tabs:** animate when they open, close and move, can be dragged to a new place and stay usable when many are open.
+- **Pinned tabs and a tab menu:** a menu for each tab opens a tab next to it, duplicates, pins, mutes or closes tabs; keys choose tabs, and on Windows and Linux also move them.
 
 ## Planned for 0.1.0
 

@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { FixtureServer, launch, waitForPage } from './harness.ts';
+import type * as Electron from 'electron';
+import { FixtureServer, launch, pressNative, waitForPage, type Browser } from './harness.ts';
 
 test('places the tab strip at a side and fits the page next to it', async () => {
   const browser = await launch([], { settings: { 'tabs.position': 'left' } });
@@ -217,5 +218,113 @@ test('fits many tabs: narrow tabs show their icon, the active one its close butt
     await expect(shell.locator('.tabs')).not.toHaveAttribute('data-after', '');
   } finally {
     await browser.close();
+  }
+});
+
+/** Makes the browser record its menus instead of showing them, so a test can choose items. */
+async function recordMenus(browser: Browser): Promise<void> {
+  await browser.main.evaluate(({ Menu }) => {
+    const recorded: Electron.Menu[] = [];
+    Object.assign(globalThis, { recordedMenus: recorded });
+    Menu.prototype.popup = function popup(this: Electron.Menu) {
+      recorded.push(this);
+    };
+  });
+}
+
+/** Chooses an item of the last menu that the browser built, by its text without access keys. */
+async function choose(browser: Browser, label: string): Promise<void> {
+  await expect
+    .poll(() =>
+      browser.main.evaluate(
+        () => (globalThis as unknown as { recordedMenus: Electron.Menu[] }).recordedMenus.length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await browser.main.evaluate((_electron, text) => {
+    const { recordedMenus } = globalThis as unknown as { recordedMenus: Electron.Menu[] };
+    const menu = recordedMenus.pop();
+    const item = menu?.items.find((candidate) => candidate.label.replaceAll('&', '') === text);
+    if (item === undefined) throw new Error(`No menu item ${text}`);
+    item.click();
+  }, label);
+}
+
+test('pins a tab from its menu, keeps it first and small, and pinned at the next start', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  let browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/index.html`);
+    await address.press('Enter');
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.fill(`${server.origin}/second.html`);
+    await address.press('Enter');
+    const second = shell.getByRole('tab', { name: 'Fixture second' });
+    await expect(second).toBeVisible();
+    await recordMenus(browser);
+    await second.click({ button: 'right' });
+    await choose(browser, 'Pin');
+    const tabs = shell.getByRole('tab');
+    await expect.poll(() => tabs.evaluateAll(titles)).toEqual(['Fixture second', 'Fixture home']);
+    await expect(tabs.first()).toHaveAttribute('data-pinned', '');
+    await expect(tabs.first().locator('.title')).toBeHidden();
+    await expect(tabs.first().getByRole('button', { name: 'Close tab' })).toBeHidden();
+    expect((await tabs.first().boundingBox())?.width).toBeCloseTo(40, 1);
+    // Duplicate opens the page again right after the tab, which is not pinned.
+    await shell.getByRole('tab', { name: 'Fixture home' }).click({ button: 'right' });
+    await choose(browser, 'Duplicate');
+    await expect
+      .poll(() => tabs.evaluateAll(titles))
+      .toEqual(['Fixture second', 'Fixture home', 'Fixture home']);
+    const { profile } = browser;
+    await browser.close({ keepProfile: true });
+    browser = await launch(['--restore-last-session'], { profile });
+    const restored = browser.shell.getByRole('tab');
+    await expect(restored).toHaveCount(3);
+    await expect(restored.first()).toHaveAttribute('data-pinned', '');
+    await expect(restored.first()).toHaveAttribute('title', 'Fixture second');
+  } finally {
+    await browser.close();
+    await server.stop();
+  }
+});
+
+test('switches to a tab by its place and moves the active tab with the keyboard', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    for (const page of ['index.html', 'second.html', 'opened.html']) {
+      if (page !== 'index.html') await shell.getByRole('button', { name: 'New tab' }).click();
+      await address.fill(`${server.origin}/${page}`);
+      await address.press('Enter');
+      await waitForPage(browser, (url) => url.endsWith(`/${page}`));
+    }
+    const tabs = shell.getByRole('tab');
+    const active = shell.locator('[role="tab"][aria-selected="true"]');
+    await pressNative(browser, '1', ['primary']);
+    await expect(active).toHaveAttribute('title', 'Fixture home');
+    await pressNative(browser, '9', ['primary']);
+    await expect(active).toHaveAttribute('title', (await tabs.last().getAttribute('title')) ?? '');
+    // Windows and Linux move the active tab with Ctrl+Shift+Page Up and Page Down.
+    if (process.platform !== 'darwin') {
+      const last = await tabs.last().getAttribute('title');
+      await pressNative(browser, 'PageUp', ['primary', 'shift']);
+      await expect
+        .poll(() => tabs.evaluateAll(titles))
+        .toEqual(['Fixture home', last, 'Fixture second']);
+      await pressNative(browser, 'PageDown', ['primary', 'shift']);
+      await expect
+        .poll(() => tabs.evaluateAll(titles))
+        .toEqual(['Fixture home', 'Fixture second', last]);
+    }
+  } finally {
+    await browser.close();
+    await server.stop();
   }
 });

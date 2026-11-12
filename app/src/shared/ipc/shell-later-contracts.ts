@@ -135,6 +135,18 @@ export const MoveTab = defineRequest({
   capability: 'shell',
 });
 
+/** Opens the menu of a tab at a point of the shell in CSS pixels. */
+export const OpenTabMenu = defineRequest({
+  channel: 'tabs.openMenu',
+  request: v.strictObject({
+    tabId: TabId,
+    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
 /** The request contracts of the shell that load with the first of them. */
 export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = [
   ReopenClosedTab,
@@ -151,4 +163,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   GetFavicon,
   SetTabMuted,
   MoveTab,
+  OpenTabMenu,
 ];
