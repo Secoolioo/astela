@@ -13,3 +13,5 @@ The address bar takes an address or a search. Press `Ctrl+L` (`Command+L` on mac
 ## What you type
 
 What you type stays in the address bar of its tab until you press Enter, press Esc, which brings back the address of the page, or leave the address bar. Switching to another tab with the keyboard shows the address of that tab, and switching back shows what you typed.
+
+A click on **New tab** takes you to the address bar of the new tab at once, also when the tab takes a moment to appear: what you type belongs to the new tab, Enter loads it in the new tab, and the tab you came from keeps its page. After several quick clicks, what you type belongs to the tab of the last click.

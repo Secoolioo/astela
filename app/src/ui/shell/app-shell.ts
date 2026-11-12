@@ -666,6 +666,20 @@ export class AppShell extends LitElement {
   private dragEnded = false;
   /** Whether a dropped tab waits for the browser to move it. */
   private dropPending = false;
+  /**
+   * The tab that the New tab button opens, from the click until the browser named the tab
+   * and its state has it. Meanwhile the address bar is that tab's: what is typed there is
+   * kept for it, and what is entered loads in it, not in the tab that was active before. A
+   * further click replaces it, as the tab of the last click is the one that ends up active.
+   * The tab of the earlier click loses nothing: the click leaves the address bar, which drops
+   * what was typed there, and what was entered loads in the tab of its own click.
+   */
+  private opening: Opening | undefined;
+  /**
+   * The tab that the New tab button opened, when the address bar took input for it while
+   * the shell waited for the tab. The address bar keeps that input when the tab shows.
+   */
+  private openedWithInput: string | undefined;
 
   constructor() {
     super();
@@ -727,6 +741,7 @@ export class AppShell extends LitElement {
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('state')) {
+      this.settleOpening();
       this.dataset['tabs'] = this.state.tabStrip;
       // Tabs move from where they were, unless the whole strip moved to another side.
       const before = changed.get('state');
@@ -768,17 +783,23 @@ export class AppShell extends LitElement {
     if (changed.has('state') && [...this.drafts.keys()].some((id) => !this.hasTab(id))) {
       this.drafts = new Map([...this.drafts].filter(([id]) => this.hasTab(id)));
     }
-    // A tab that becomes active on the new tab page waits for input in the address bar.
+    // A tab that becomes active on the new tab page waits for input in the address bar,
+    // unless the address bar took input for a tab that the New tab button opens: selecting
+    // it would let the next key replace that input.
     const active = this.active;
     if (changed.has('state') && active?.id !== this.focusedTabId) {
       this.focusedTabId = active?.id;
       this.renderRoot
         .querySelector('[role="tab"][aria-selected="true"]')
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      if (active?.url === newTabUrl) {
+      const keepsInput =
+        (this.opening !== undefined && tookInput(this.opening)) ||
+        (active !== undefined && active.id === this.openedWithInput);
+      if (active?.url === newTabUrl && !keepsInput) {
         this.focusAddress();
       }
     }
+    if (changed.has('state')) this.openedWithInput = undefined;
   }
 
   protected override render(): TemplateResult {
@@ -866,7 +887,7 @@ export class AppShell extends LitElement {
               </button>`
             : nothing
         }
-        ${this.renderAddress(active, t)}
+        ${this.renderAddress(this.addressTab, t)}
         ${
           active === undefined || sameZoom(active.zoom, this.state.defaultZoom)
             ? nothing
@@ -1238,18 +1259,50 @@ export class AppShell extends LitElement {
     }
   }
 
-  /** What was typed in the address bar of the active tab and not yet entered. */
+  /**
+   * What was typed in the address bar of the active tab, or of the tab that the New tab
+   * button opens, and not yet entered.
+   */
   private get draft(): string | undefined {
+    if (this.opening !== undefined) return this.opening.draft;
     const id = this.state.activeTabId;
     return id === null ? undefined : this.drafts.get(id);
   }
 
   private setDraft(text: string | undefined): void {
+    if (this.opening !== undefined) {
+      this.opening.draft = text;
+      this.requestUpdate();
+      return;
+    }
     const id = this.state.activeTabId;
     if (id === null) return;
     const drafts = new Map(this.drafts);
     if (text === undefined) drafts.delete(id);
     else drafts.set(id, text);
+    this.drafts = drafts;
+  }
+
+  /** The tab that the address bar shows: the active tab, or none while a new tab opens. */
+  private get addressTab(): TabView | undefined {
+    return this.opening === undefined ? this.active : undefined;
+  }
+
+  /**
+   * Gives the tab that the New tab button opens what was typed for it, once the browser
+   * named the tab and the state has it. Only the answer names the tab: a state can also make
+   * another tab active that the shell did not know at the click, such as the tab of an
+   * earlier click.
+   */
+  private settleOpening(): void {
+    const opening = this.opening;
+    const id = opening?.id;
+    if (opening === undefined || id === undefined || !this.hasTab(id)) return;
+    this.opening = undefined;
+    this.openedWithInput = tookInput(opening) && id === this.state.activeTabId ? id : undefined;
+    const drafts = new Map(this.drafts);
+    if (opening.draft === undefined) drafts.delete(id);
+    else drafts.set(id, opening.draft);
     this.drafts = drafts;
   }
 
@@ -1262,16 +1315,14 @@ export class AppShell extends LitElement {
    * its host first and leaves out `https://` until the field is edited.
    */
   private renderAddress(
-    active: TabView | undefined,
+    tab: TabView | undefined,
     t: (key: Parameters<Translator['t']>[0]) => string,
   ): TemplateResult {
     // A site without a secure connection shows the insecure address that was asked for.
-    const shown = displayUrl(
-      active?.problem?.kind === 'insecure' ? active.problem.url : active?.url,
-    );
+    const shown = displayUrl(tab?.problem?.kind === 'insecure' ? tab.problem.url : tab?.url);
     const draft = this.draft;
     const parts = this.addressFocused || draft !== undefined ? undefined : addressParts(shown);
-    const security = active === undefined ? 'none' : securityOf(active);
+    const security = tab === undefined ? 'none' : securityOf(tab);
     return html`<div class="address" ?data-formatted=${parts !== undefined}>
       ${
         security === 'none'
@@ -1600,8 +1651,36 @@ export class AppShell extends LitElement {
     }
   };
 
+  /**
+   * Asks the browser for a new tab. The answer and the state with the tab come later, so the
+   * address bar is the new tab's from the click on, and takes the focus at once, so that
+   * what is typed right after the click goes there.
+   */
   private readonly newTab = (): void => {
-    void this.bridge?.invoke('tabs.open', {});
+    const bridge = this.bridge;
+    if (bridge === undefined) return;
+    const opening: Opening = {
+      answer: bridge.invoke('tabs.open', {}).then(({ tabId }) => tabId),
+      id: undefined,
+      draft: undefined,
+      entered: false,
+    };
+    this.opening = opening;
+    this.requestUpdate();
+    this.focusAddress();
+    void opening.answer.then(
+      (id) => {
+        if (this.opening !== opening) return;
+        opening.id = id;
+        this.settleOpening();
+      },
+      () => {
+        // Without a new tab, the address bar is the active tab's again.
+        if (this.opening !== opening) return;
+        this.opening = undefined;
+        this.requestUpdate();
+      },
+    );
   };
 
   private close(tabId: string): void {
@@ -1789,16 +1868,26 @@ export class AppShell extends LitElement {
     }
     if (event.key === 'Escape') {
       this.setDraft(undefined);
-      input.value = displayUrl(this.active?.url);
+      input.value = displayUrl(this.addressTab?.url);
       input.select();
     }
     if (event.key !== 'Enter' || input.value.trim() === '') {
       return;
     }
+    const opening = this.opening;
     const tabId = this.state.activeTabId;
-    void (tabId === null
-      ? this.bridge?.invoke('tabs.open', { input: input.value })
-      : this.bridge?.invoke('tabs.navigate', { tabId, input: input.value }));
+    if (opening !== undefined) {
+      // The tab that the New tab button opens loads the input once the browser named it.
+      opening.entered = true;
+      const text = input.value;
+      void opening.answer.then((id) =>
+        this.bridge?.invoke('tabs.navigate', { tabId: id, input: text }),
+      );
+    } else {
+      void (tabId === null
+        ? this.bridge?.invoke('tabs.open', { input: input.value })
+        : this.bridge?.invoke('tabs.navigate', { tabId, input: input.value }));
+    }
     this.setDraft(undefined);
     input.blur();
   };
@@ -1827,6 +1916,23 @@ export class AppShell extends LitElement {
       void this.bridge?.invoke('shell.setInsets', insets);
     }
   }
+}
+
+/** A tab that the New tab button asked the browser for, while the shell waits for it. */
+interface Opening {
+  /** The browser's answer: the id of the new tab. */
+  readonly answer: Promise<string>;
+  /** The id of the new tab, once the browser answered. */
+  id: string | undefined;
+  /** What was typed for the new tab and not yet entered. */
+  draft: string | undefined;
+  /** Whether something was entered for the new tab. */
+  entered: boolean;
+}
+
+/** Whether the address bar took input for a tab that the New tab button opens. */
+function tookInput(opening: Opening): boolean {
+  return opening.entered || opening.draft !== undefined;
 }
 
 /** How a page's connection is shown in the address bar. */
