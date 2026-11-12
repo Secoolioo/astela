@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The line on motion is replaced by [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md).
 
 ## Date
 

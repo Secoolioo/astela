@@ -1,9 +1,8 @@
 /*
- * Design tokens: the only source of colors, spacing, sizes, radii and motion. Themes override
- * these custom properties and nothing else. Radii are 4 px for controls and 6 px for larger
- * surfaces; sizes follow a 4 px grid (docs/architecture/design-system.md). The values here are
- * those of the normal density and the medium text size; the browser sets the others
- * (domain/appearance/appearance.ts).
+ * Design tokens: the only source of colors, spacing, sizes, radii, shadows and motion. Themes
+ * override these custom properties and nothing else. Sizes follow a 4 px grid
+ * (docs/architecture/design-system.md). The values here are those of the normal density and
+ * the medium text size; the browser sets the others (domain/appearance/appearance.ts).
  */
 :root {
   color-scheme: light dark;
@@ -34,11 +33,31 @@
   --control-height: 28px;
   --control-large: 32px;
   --row-height: 48px;
-  --radius-1: 4px;
-  --radius-2: 6px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-strong: 600;
+  /* Small parts, controls, floating surfaces, fields such as the address bar, and the round
+     ends of switches, badges and progress bars. */
+  --radius-1: 6px;
+  --radius-2: 8px;
+  --radius-3: 12px;
+  --radius-field: 10px;
+  --radius-pill: 999px;
   --toolbar-height: 40px;
   --tab-height: 32px;
+  /* Motion: hover and press, small changes, things that open or move, larger movements. */
+  --motion-instant: 60ms;
   --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 220ms;
+  /* One turn of a loading indicator. */
+  --motion-loop: 1000ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0, 1);
+  --ease-in: cubic-bezier(0.3, 0, 1, 1);
+  --ease-linear: linear;
+  /* The only shadow: menus and popovers that float above the page. */
+  --shadow-popover: 0 8px 24px oklch(0% 0 0 / 0.14), 0 1px 3px oklch(0% 0 0 / 0.1);
 
   --surface-0: oklch(97.5% 0.003 260);
   --surface-1: oklch(99.5% 0.002 260);
@@ -65,6 +84,7 @@
     --accent: var(--accent-dark, oklch(72% 0.148 255));
     --focus-ring: var(--accent);
     --danger: oklch(72% 0.15 25);
+    --shadow-popover: 0 8px 24px oklch(0% 0 0 / 0.42), 0 1px 3px oklch(0% 0 0 / 0.3);
   }
 }
 
@@ -81,11 +101,17 @@
   --accent: var(--accent-dark, oklch(72% 0.148 255));
   --focus-ring: var(--accent);
   --danger: oklch(72% 0.15 25);
+  --shadow-popover: 0 8px 24px oklch(0% 0 0 / 0.42), 0 1px 3px oklch(0% 0 0 / 0.3);
 }
 
+/* Nothing moves when the system asks for reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   :root {
+    --motion-instant: 0ms;
     --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-loop: 0ms;
   }
 }
 
