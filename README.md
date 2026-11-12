@@ -2,7 +2,7 @@
 
 A desktop browser for Windows, macOS and Linux, built on Chromium through Electron and written in TypeScript. It has no telemetry, no ads, no sponsored tiles, no news feed and needs no account.
 
-> **Status:** early development. The current beta, 0.1.0-beta.4, is on the [releases page](https://github.com/Secoolioo/astela/releases); the [roadmap](docs/roadmap.md) lists every milestone.
+> **Status:** early development. The current beta, 0.1.0-beta.5, is on the [releases page](https://github.com/Secoolioo/astela/releases); the [roadmap](docs/roadmap.md) lists every milestone.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/screenshot-dark.png">
@@ -11,6 +11,11 @@ A desktop browser for Windows, macOS and Linux, built on Chromium through Electr
 
 ## In place
 
+- **Browsing:** tabs at the top, at the bottom or at either side, find in page, zoom per site, full screen, downloads, site permissions, popups and private windows; a page that cannot load says why.
+- **Your data:** history with search, bookmarks with a bar, session restore, and the import of bookmarks, history and open tabs from other browsers.
+- **Content blocker** with the default filter lists of uBlock Origin, on from the first start, with a switch per site.
+- **Customization:** a settings page with search, themes and colors of your own, density, text size and fonts, a toolbar and a new tab page to arrange, search engines with keywords and `!bangs`, and keyboard shortcuts of your own.
+- **Privacy:** no telemetry, HTTPS-First, DNS over HTTPS, blocked third-party cookies and clearing browsing data.
 - **Packages** for Windows (NSIS installer, MSI), macOS (disk image) and Linux (AppImage, deb, rpm), for x64 and arm64. CI installs and starts every format on every change.
 - **Signed updates** with delta downloads. After two failed starts, the previous version comes back on its own. deb and rpm packages update through APT and DNF repositories.
 - **Policies** from the Windows registry, macOS configuration profiles and JSON files on Linux, read before the first window opens.
@@ -19,9 +24,9 @@ A desktop browser for Windows, macOS and Linux, built on Chromium through Electr
 
 ## Planned for 0.1.0
 
-- Workspaces, tab bars on any side of the window, tab groups and layout presets.
-- Themes with an editor, three density levels, custom shortcuts and a searchable settings page.
-- History, bookmarks, downloads, session restore and private windows.
+- Layout presets with tabs in an integrated title bar, animated tabs, a new address bar with suggestions, and menus in an overlay.
+- A command palette, tab search, sleeping tabs, split view, tab groups, workspaces, a reader view and picture-in-picture.
+- Saved passwords and autofill.
 
 ## Documentation
 
