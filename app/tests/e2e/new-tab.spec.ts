@@ -193,6 +193,8 @@ test('shows the sites opened most often, and none in a private window', async ()
   );
   const privatePage = newTabPages()[kinds.indexOf(true)];
   expect(privatePage).toBeDefined();
+  // The page hides the list only once it has its state, so the check waits for it.
+  await expect(privatePage?.locator('html') ?? top).toHaveAttribute('data-ready', 'true');
   await expect(privatePage?.locator('#top') ?? top).toBeHidden();
   await expect(privatePage?.locator('#search') ?? top).toBeVisible();
 });
@@ -221,7 +223,9 @@ test('paints the background of the settings: a color and an image', async () => 
   await browser.main.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });
   }, image);
-  await settings.getByRole('radio', { name: 'Image' }).check();
+  // The choice takes effect once the image is chosen, after the click.
+  await settings.getByRole('radio', { name: 'Image' }).click();
+  await expect(settings.getByRole('radio', { name: 'Image' })).toBeChecked();
   await expect(settings.getByRole('button', { name: 'Choose image…' })).toBeVisible();
   await pressNative(browser, 'T', ['primary']);
   const tab = await newTabPage();

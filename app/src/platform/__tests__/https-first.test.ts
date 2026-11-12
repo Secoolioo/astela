@@ -78,12 +78,16 @@ describe('HttpsFirst', () => {
 
   it('leaves sites alone when it is off, after continuing, and for other requests', async () => {
     let enabled = false;
-    const https = new HttpsFirst({ enabled: () => enabled, allowlist: () => ['intranet.example'] });
+    // Hosts under public suffixes, which HTTPS-First would upgrade without the exceptions.
+    const https = new HttpsFirst({
+      enabled: () => enabled,
+      allowlist: () => ['intranet.example.com'],
+    });
     const contents = page();
     expect(await https.beforeRequest(request(contents, 1, 'http://example.org/'))).toBeUndefined();
     enabled = true;
     expect(
-      await https.beforeRequest(request(contents, 2, 'http://intranet.example/')),
+      await https.beforeRequest(request(contents, 2, 'http://intranet.example.com/')),
     ).toBeUndefined();
     https.allow(contents, 'http://example.org/page');
     expect(await https.beforeRequest(request(contents, 3, 'http://example.org/'))).toBeUndefined();
@@ -92,7 +96,10 @@ describe('HttpsFirst', () => {
     expect(await https.beforeRequest(request(other, 4, 'http://example.org/'))).toEqual({
       redirectURL: 'https://example.org/',
     });
-    const image = { ...request(contents, 5, 'http://cdn.example/a.png'), resourceType: 'image' };
+    const image = {
+      ...request(contents, 5, 'http://cdn.example.com/a.png'),
+      resourceType: 'image',
+    };
     expect(await https.beforeRequest(image as OnBeforeRequestListenerDetails)).toBeUndefined();
   });
 
