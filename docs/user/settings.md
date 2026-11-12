@@ -43,6 +43,8 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Show home button:** from 0.1.0-beta.5, a home button next to Reload, which opens the home page in the current tab. `Alt+Home` (`Command+Shift+H` on macOS) does the same, also without the button.
 - **Home page:** the page of the home button. An empty field opens the new tab page.
 
+On macOS, Astela reopens its windows itself, as **Open** says, so macOS does not ask whether to reopen them, also not after Astela quit unexpectedly.
+
 ## New tab page
 
 - **Show the search field** and **Show a clock:** from 0.1.0-beta.5, what the [new tab page](new-tab-page.md) shows. The search field is on and the clock off by default; the clock shows the time of your computer and changes once a minute while the page shows.

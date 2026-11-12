@@ -1,6 +1,8 @@
 /**
  * Installs a package silently, starts the browser in self-test mode, checks the report and
- * the Electron fuses, and uninstalls the package again.
+ * the Electron fuses, and uninstalls the package again. Before each phase it prints a line
+ * `## <phase>`, and `## log <path>` for each log of Windows Installer, which the watchdog of
+ * the CI step reports when the test hangs (tools/package/watchdog.ts).
  *
  * Usage: `node tools/package/smoke.ts <format> <package-file-or-directory>`
  * Formats: `nsis`, `msi`, `dmg`, `appimage`, `appimage-no-sandbox`, `deb`, `dir`.
@@ -53,18 +55,32 @@ const expectedFuses: Readonly<Record<string, 'Enabled' | 'Disabled'>> = {
 };
 
 /**
- * Runs a command and fails on a non-zero exit code. An installer that hangs fails after
- * five minutes instead of blocking the job until its own timeout.
+ * Marks the start of a phase of the test.
+ * @param name - The phase, such as `install`.
+ */
+function phase(name: string): void {
+  console.log(`## ${name}`);
+}
+
+/**
+ * Runs a command and fails on a non-zero exit code. A command that hangs, such as an
+ * installer, fails after its time limit instead of blocking the job until its own timeout.
  * @param command - Program.
  * @param args - Arguments.
+ * @param timeoutMs - The time limit; five minutes unless given.
  */
-function run(command: string, args: readonly string[]): SpawnSyncReturns<string> {
+function run(
+  command: string,
+  args: readonly string[],
+  timeoutMs = 5 * 60_000,
+): SpawnSyncReturns<string> {
   console.log(`$ ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 5 * 60_000,
+    timeout: timeoutMs,
     killSignal: 'SIGKILL',
+    windowsHide: true,
   });
   if (result.error !== undefined) {
     throw new Error(`${command} did not finish: ${result.error.message}`, { cause: result.error });
@@ -75,6 +91,27 @@ function run(command: string, args: readonly string[]): SpawnSyncReturns<string>
     );
   }
   return result;
+}
+
+/**
+ * Runs Windows Installer without its user interface and with a verbose log. It normally takes
+ * seconds and fails after three minutes; a failure prints the end of the log.
+ * @param args - The action and the package, such as `/i` and the path of the MSI file.
+ * @param log - The log file.
+ */
+function msiexec(args: readonly string[], log: string): void {
+  console.log(`## log ${log}`);
+  try {
+    // `!` writes each line at once. Windows Installer otherwise flushes its log every 20 lines,
+    // so the lines of an action that hangs could still be in memory when the end is read.
+    run('msiexec', [...args, '/qn', '/norestart', '/l*v!', log], 3 * 60_000);
+  } catch (error) {
+    // Windows Installer writes its log as UTF-16; the end names the failing action.
+    if (existsSync(log)) {
+      console.log(readFileSync(log, 'utf16le').split(/\r?\n/).slice(-60).join('\n'));
+    }
+    throw error;
+  }
 }
 
 /**
@@ -93,6 +130,7 @@ function registryValue(key: string, name: string): string | undefined {
   const result = spawnSync('reg', ['query', key, ...(name === '' ? ['/ve'] : ['/v', name])], {
     encoding: 'utf8',
     timeout: 60_000,
+    windowsHide: true,
   });
   if (result.status !== 0) return undefined;
   return /REG_\w+\s+(.*?)\s*$/m.exec(result.stdout)?.[1];
@@ -142,6 +180,7 @@ function stopBrowser(child: ChildProcess, executable: string): void {
     spawnSync('taskkill', ['/F', '/T', '/IM', basename(executable)], {
       stdio: 'ignore',
       timeout: 60_000,
+      windowsHide: true,
     });
     return;
   }
@@ -162,9 +201,12 @@ function stopBrowser(child: ChildProcess, executable: string): void {
  * @param args - Extra arguments.
  */
 async function selfTest(executable: string, args: readonly string[] = []): Promise<Report> {
+  phase('self-test');
   const dir = mkdtempSync(join(tmpdir(), 'smoke-'));
   const reportPath = join(dir, 'report.json');
   console.log(`$ ${executable} ${[...args, `--smoke-test=${reportPath}`].join(' ')}`);
+  // Unlike the other commands, the browser starts without windowsHide, which would hide its
+  // first window as well.
   const child = spawn(executable, [...args, `--smoke-test=${reportPath}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
@@ -178,6 +220,7 @@ async function selfTest(executable: string, args: readonly string[] = []): Promi
       done(exitCode);
     });
   });
+  phase('stop browser');
   stopBrowser(child, executable);
   child.stdout.destroy();
   child.stderr.destroy();
@@ -217,6 +260,7 @@ function checkReport(report: Report, sandbox: boolean): void {
  * @param app - Executable, or the `.app` bundle on macOS.
  */
 function checkFuses(app: string): void {
+  phase('fuses');
   const cli = join(root, 'tools/node_modules/@electron/fuses/dist/bin.js');
   const output = run(process.execPath, [cli, 'read', '--app', app]).stdout;
   const wrong = Object.entries(expectedFuses).filter(
@@ -262,12 +306,15 @@ async function main(): Promise<void> {
   const pkg = resolve(input);
   switch (format) {
     case 'nsis': {
+      phase('install');
       run(pkg, ['/S']);
       const dir = join(process.env['LOCALAPPDATA'] ?? '', 'Programs', brand.slug);
       const exe = join(dir, `${brand.slug}.exe`);
       checkFuses(exe);
       checkReport(await selfTest(exe), true);
+      phase('link registration');
       checkLinkRegistration(true);
+      phase('uninstall');
       const uninstaller = find(dir, (name) => /^Uninstall .*\.exe$/.test(name));
       if (uninstaller === undefined) throw new Error('No uninstaller found');
       run(uninstaller, ['/S']);
@@ -284,16 +331,8 @@ async function main(): Promise<void> {
       break;
     }
     case 'msi': {
-      const log = join(tmpdir(), 'msi-install.log');
-      try {
-        run('msiexec', ['/i', pkg, '/qn', '/norestart', '/l*v', log]);
-      } catch (error) {
-        // Windows Installer writes its log as UTF-16; the end names the failing action.
-        if (existsSync(log)) {
-          console.log(readFileSync(log, 'utf16le').split(/\r?\n/).slice(-60).join('\n'));
-        }
-        throw error;
-      }
+      phase('install');
+      msiexec(['/i', pkg], join(tmpdir(), 'msi-install.log'));
       const exe = join(
         process.env['ProgramFiles'] ?? 'C:\\Program Files',
         brand.productName,
@@ -301,11 +340,13 @@ async function main(): Promise<void> {
       );
       checkFuses(exe);
       checkReport(await selfTest(exe), true);
-      run('msiexec', ['/x', pkg, '/qn', '/norestart']);
+      phase('uninstall');
+      msiexec(['/x', pkg], join(tmpdir(), 'msi-uninstall.log'));
       if (existsSync(exe)) throw new Error('The MSI uninstall left the program behind');
       break;
     }
     case 'dmg': {
+      phase('install');
       const mount = mkdtempSync(join(tmpdir(), 'dmg-'));
       const target = mkdtempSync(join(tmpdir(), 'apps-'));
       run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, pkg]);
@@ -314,6 +355,7 @@ async function main(): Promise<void> {
       run('ditto', [bundle, join(target, `${brand.productName}.app`)]);
       run('hdiutil', ['detach', mount]);
       const app = join(target, `${brand.productName}.app`);
+      phase('signature');
       run('codesign', ['--verify', '--deep', '--strict', app]);
       checkFuses(app);
       const binary = find(join(app, 'Contents', 'MacOS'), (_name, path) => statSync(path).isFile());
@@ -322,6 +364,7 @@ async function main(): Promise<void> {
       break;
     }
     case 'appimage': {
+      phase('install');
       run('chmod', ['+x', pkg]);
       installAppImageProfile();
       checkReport(await selfTest(pkg), true);
@@ -330,16 +373,19 @@ async function main(): Promise<void> {
     case 'appimage-no-sandbox': {
       // Without the profile on a restricted system, the launcher must open the sandbox help
       // page instead of the browser.
+      phase('install');
       run('chmod', ['+x', pkg]);
       const report = await selfTest(pkg);
       if (report.mode !== 'sandbox-help') throw new Error('Expected the sandbox help mode');
       break;
     }
     case 'deb': {
+      phase('install');
       run('sudo', ['apt-get', 'install', '-y', pkg]);
       const exe = `/opt/${brand.productName}/${brand.slug}`;
       checkFuses(exe);
       checkReport(await selfTest(exe), true);
+      phase('uninstall');
       run('sudo', ['apt-get', 'remove', '-y', brand.slug]);
       break;
     }
