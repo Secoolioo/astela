@@ -67,5 +67,16 @@
   "settings.themeExportTitle": "Export the theme",
   "settings.themeImportTitle": "Import a theme",
   "settings.newTabImageTitle": "Choose a background image",
-  "settings.imageFileType": "Images"
+  "settings.imageFileType": "Images",
+  "tabMenu.newTabRight": "New tab to the &right",
+  "tabMenu.reload": "&Reload",
+  "tabMenu.duplicate": "&Duplicate",
+  "tabMenu.pin": "&Pin",
+  "tabMenu.unpin": "Un&pin",
+  "tabMenu.mute": "&Mute tab",
+  "tabMenu.unmute": "Un&mute tab",
+  "tabMenu.close": "&Close",
+  "tabMenu.closeOthers": "Close &other tabs",
+  "tabMenu.closeRight": "Close tabs to the righ&t",
+  "tabMenu.reopen": "R&eopen closed tab"
 }

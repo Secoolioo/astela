@@ -13,6 +13,7 @@ import {
   SetTabMuted,
   GetFavicon,
   MoveTab,
+  OpenTabMenu,
   StopFinding,
   ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
@@ -68,6 +69,12 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
   router.handle(GetFavicon, ({ key }) => favicons.get(key) ?? null);
+  router.handle(OpenTabMenu, async ({ tabId, x, y }, { sender }) => {
+    const window = windowOf(sender);
+    const { popupTabMenu } = await import('./tab-menu.ts');
+    popupTabMenu(window, tabId, { x, y });
+    return null;
+  });
   router.handle(MoveTab, ({ tabId, index }, { sender }) => {
     const { tabs } = windowOf(sender);
     if (tabs.all.some((tab) => tab.id === tabId)) tabs.move(tabId, index);

@@ -39,6 +39,8 @@ export interface Tab {
   readonly audible: boolean;
   /** Whether the sound of the tab is muted. */
   readonly muted: boolean;
+  /** Whether the tab is pinned: pinned tabs come first and are small. */
+  readonly pinned: boolean;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -76,6 +78,10 @@ export interface OpenTabOptions {
   readonly lazy?: boolean;
   /** Title to show until the page reports its own, such as the title of a restored tab. */
   readonly title?: string;
+  /** Opens the tab pinned, at the end of the pinned tabs. */
+  readonly pinned?: boolean;
+  /** Opens the tab right after this tab instead of after the active one. */
+  readonly after?: TabId;
 }
 
 /** Token for the {@link TabService} of a window. */
@@ -94,6 +100,7 @@ const tabFields = [
   'favicon',
   'audible',
   'muted',
+  'pinned',
 ] as const;
 
 /** How many closed tabs can be reopened. */
@@ -163,9 +170,15 @@ export class TabService implements Disposable {
       favicon: null,
       audible: false,
       muted: false,
+      pinned: options.pinned === true,
     };
     const activate = options.activate ?? true;
-    this.tabs.splice(this.insertionIndex(activate), 0, tab);
+    const index = tab.pinned
+      ? this.pinnedCount
+      : options.after === undefined
+        ? this.insertionIndex(activate)
+        : this.indexOf(options.after) + 1;
+    this.tabs.splice(Math.max(index, tab.pinned ? 0 : this.pinnedCount), 0, tab);
     this.views.create(id, url, lazy);
     if (activate) {
       this.activate(id);
@@ -231,8 +244,30 @@ export class TabService implements Disposable {
   move(id: TabId, index: number): void {
     const [tab] = this.tabs.splice(this.indexOf(id), 1);
     if (tab === undefined) return;
-    this.tabs.splice(Math.max(0, Math.min(index, this.tabs.length)), 0, tab);
+    // Pinned tabs stay among the pinned tabs, the others after them.
+    const pinned = this.pinnedCount;
+    const [first, last] = tab.pinned ? [0, pinned] : [pinned, this.tabs.length];
+    this.tabs.splice(Math.max(first, Math.min(index, last)), 0, tab);
     this.changeEmitter.fire();
+  }
+
+  /**
+   * Pins a tab, which moves it to the end of the pinned tabs, or unpins it, which moves it
+   * right after them.
+   * @param id - The tab.
+   * @param pinned - Whether the tab is pinned.
+   */
+  pin(id: TabId, pinned: boolean): void {
+    const [tab] = this.tabs.splice(this.indexOf(id), 1);
+    if (tab === undefined) return;
+    this.tabs.splice(this.pinnedCount, 0, { ...tab, pinned });
+    this.changeEmitter.fire();
+  }
+
+  /** How many tabs are pinned; they are the first tabs. */
+  private get pinnedCount(): number {
+    const index = this.tabs.findIndex((tab) => !tab.pinned);
+    return index === -1 ? this.tabs.length : index;
   }
 
   /**

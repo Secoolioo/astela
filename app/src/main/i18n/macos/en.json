@@ -67,5 +67,16 @@
   "settings.themeExportTitle": "Export Theme",
   "settings.themeImportTitle": "Import Theme",
   "settings.newTabImageTitle": "Choose a Background Image",
-  "settings.imageFileType": "Images"
+  "settings.imageFileType": "Images",
+  "tabMenu.newTabRight": "New Tab to the Right",
+  "tabMenu.reload": "Reload",
+  "tabMenu.duplicate": "Duplicate",
+  "tabMenu.pin": "Pin",
+  "tabMenu.unpin": "Unpin",
+  "tabMenu.mute": "Mute Tab",
+  "tabMenu.unmute": "Unmute Tab",
+  "tabMenu.close": "Close",
+  "tabMenu.closeOthers": "Close Other Tabs",
+  "tabMenu.closeRight": "Close Tabs to the Right",
+  "tabMenu.reopen": "Reopen Closed Tab"
 }
