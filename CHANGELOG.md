@@ -2,6 +2,29 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
+## [0.1.0-beta.6] - 2026-11-12
+
+The sixth beta gives the browser its new logo and a calmer, more modern look. Tabs show the icons of their pages, move smoothly and can be dragged, pinned and muted; the address bar shows the site first, says how secure its connection is and suggests open tabs, bookmarks and visited pages; and the window controls move into the top row of the browser. Installed copies of 0.1.0-beta.5 receive it as an update.
+
+### Fixes
+
+- Start on macOS: after Astela quit unexpectedly, macOS no longer asks at the next start whether to reopen its windows, a question that held back the start until someone answered. Astela reopens its windows itself, as the setting **Open** on startup says.
+
+### Features
+
+- Tabs: each tab shows the icon of its page, a ring while the page loads and a button that mutes a tab that plays sound. Icons load like the images of the page, without cookies; the filter lists block them where they block the images of the page, and private windows keep theirs apart. Tabs open, close and move with short animations, and a surface slides to the active tab. A tab can be dragged to another place; with many tabs, the tabs narrow down to their icons and the tab strip scrolls, also with the mouse wheel.
+- Tab menu and pinned tabs: a right click on a tab opens a menu to open a new tab next to it, to duplicate, pin, mute or close the tab, or to close the other tabs or those after it. Pinned tabs stay at the start, show only their icon and come back after a restart. `Ctrl+1` to `Ctrl+8` choose a tab and `Ctrl+9` the last one (`Command` on macOS), also on most keyboards whose top row types other characters, such as French and Czech ones; on Windows and Linux, `Ctrl+Shift+PageUp` and `Ctrl+Shift+PageDown` move the active tab.
+- Address bar: shows the site of a page first, without `https://`, and a chip next to it says whether the connection is secure, not secure, or a page of Astela; a site whose certificate you accepted after its warning counts as not secure. What you type stays with its tab until you enter it or press Escape, and a bar along the bottom of the toolbar shows that the active tab loads.
+- Suggestions: while you type, a list below the address bar suggests what Enter will do, open tabs to switch to, bookmarks and visited pages. The arrow keys and Enter or a click choose a suggestion; Escape closes the list and keeps what you typed.
+- Title bar: the window controls are drawn in the top row of the browser, so pages get more room. The setting **Title bar** keeps the title bar of the system instead, after a restart.
+- Logo and colors: Astela has a new logo and application icon, and the colors of the logo are the colors of the browser: its violet is the default accent, and progress, such as the loading of a page or of a download, shows in its blue. An accent that you chose stays.
+- Controls: switches with a sliding knob, softer segmented controls, buttons that give way when pressed, and a bookmark star that pops when it is set.
+- Design: shared tokens for motion, radii and shadows; when the system asks for reduced motion, nothing moves.
+
+### Performance
+
+- The session is saved again only after a change that it keeps, such as a new address, a new title or a pinned tab, instead of after every change of a tab, such as its loading progress.
+
 ## [0.1.0-beta.5] - 2026-11-12
 
 The fifth beta lets you adjust the browser to the way you work. The settings page finds every setting, shows what you changed and saves the settings in a file; themes, the density, the text size and the fonts change the look; the toolbar, the new tab page, the search engines and the keyboard shortcuts can be changed; and new privacy settings open sites over HTTPS first, look up addresses over encrypted DNS and block third-party cookies. Installed copies of 0.1.0-beta.4 receive it as an update.
