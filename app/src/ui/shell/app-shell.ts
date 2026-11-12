@@ -363,13 +363,34 @@ export class AppShell extends LitElement {
       .tab .favicon {
         margin-inline: auto;
       }
-      .tab[aria-selected='true'] .favicon {
+      .tab[aria-selected='true']:not([data-pinned]) .favicon {
         display: none;
       }
-      .tab[aria-selected='true'] .close {
+      .tab[aria-selected='true']:not([data-pinned]) .close {
         display: grid;
         margin-inline: auto;
       }
+    }
+    /* Pinned tabs come first and show their icon only; at a side, they keep their title. */
+    .tab[data-pinned] {
+      flex: none;
+      width: 40px;
+    }
+    .tab[data-pinned] .title,
+    .tab[data-pinned] .close {
+      display: none;
+    }
+    .tab[data-pinned] .favicon {
+      margin-inline: auto;
+    }
+    [aria-orientation='vertical'] .tab[data-pinned] {
+      width: auto;
+    }
+    [aria-orientation='vertical'] .tab[data-pinned] .title {
+      display: block;
+    }
+    [aria-orientation='vertical'] .tab[data-pinned] .favicon {
+      margin-inline: 0;
     }
     .title {
       flex: 1;
@@ -811,10 +832,13 @@ export class AppShell extends LitElement {
         class="tab"
         role="tab"
         data-id=${tab.id}
+        ?data-pinned=${tab.pinned}
         tabindex=${selected ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
+        aria-label=${title}
         title=${title}
         @pointerdown=${(e: PointerEvent) => this.startDrag(e, tab.id)}
+        @contextmenu=${(e: MouseEvent) => this.openTabMenu(e, tab.id)}
         @click=${() => this.activateTab(tab.id)}
         @auxclick=${(e: MouseEvent) => e.button === 1 && this.close(tab.id)}
       >
@@ -1152,6 +1176,16 @@ export class AppShell extends LitElement {
       });
     }
     return this.favicons.get(key);
+  }
+
+  /** Opens the menu of a tab where it was clicked with the secondary button. */
+  private openTabMenu(event: MouseEvent, tabId: string): void {
+    event.preventDefault();
+    void this.bridge?.invoke('tabs.openMenu', {
+      tabId,
+      x: Math.max(0, Math.round(event.clientX)),
+      y: Math.max(0, Math.round(event.clientY)),
+    });
   }
 
   private setMuted(tabId: string, muted: boolean): void {

@@ -351,6 +351,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           favicon: tab.favicon,
           audible: tab.audible,
           muted: tab.muted,
+          pinned: tab.pinned,
         }),
       ),
       activeTabId: this.tabs.active?.id ?? null,
@@ -657,6 +658,29 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         if (next !== undefined) this.tabs.activate(next.id);
         break;
       }
+      case 'tab.select1':
+      case 'tab.select2':
+      case 'tab.select3':
+      case 'tab.select4':
+      case 'tab.select5':
+      case 'tab.select6':
+      case 'tab.select7':
+      case 'tab.select8':
+      case 'tab.selectLast': {
+        const target =
+          command === 'tab.selectLast' ? all.at(-1) : all[Number(command.slice(-1)) - 1];
+        if (target !== undefined) this.tabs.activate(target.id);
+        break;
+      }
+      case 'tab.moveLeft':
+      case 'tab.moveRight':
+        if (active !== undefined) {
+          this.tabs.move(active.id, Math.max(0, index + (command === 'tab.moveRight' ? 1 : -1)));
+        }
+        break;
+      case 'tab.pin':
+        if (active !== undefined) this.tabs.pin(active.id, !active.pinned);
+        break;
       case 'page.reload':
       case 'page.back':
       case 'page.forward':
@@ -1095,6 +1119,36 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
+   * Runs an item of the menu of a tab.
+   * @param id - The tab.
+   * @param action - What to do with it.
+   */
+  tabAction(id: TabId, action: 'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight'): void {
+    const tab = this.tabs.all.find((candidate) => candidate.id === id);
+    if (tab === undefined) return;
+    switch (action) {
+      case 'newTabRight':
+        this.tabs.open(this.options.newTabUrl, { after: id });
+        break;
+      case 'duplicate':
+        this.tabs.open(tab.url, { after: id, title: tab.title });
+        break;
+      case 'closeOthers':
+      case 'closeRight': {
+        const index = this.tabs.all.indexOf(tab);
+        // Pinned tabs stay; they are closed one by one.
+        const closing = this.tabs.all.filter(
+          (other, place) =>
+            other.id !== id && !other.pinned && (action === 'closeOthers' || place > index),
+        );
+        if (closing.length > 0) this.tabs.activate(id);
+        for (const other of closing) this.tabs.close(other.id);
+        break;
+      }
+    }
+  }
+
+  /**
    * Mutes the sound of a tab, or turns it on again.
    * @param id - The tab.
    * @param muted - Whether the sound is muted.
@@ -1368,6 +1422,7 @@ export class WindowManager implements Disposable {
           activate: false,
           lazy: index !== stored.active,
           title: tab.title,
+          pinned: tab.pinned === true,
         }),
       );
       const active = ids[stored.active] ?? ids[0];

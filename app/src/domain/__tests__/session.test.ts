@@ -36,6 +36,17 @@ describe('session', () => {
     });
   });
 
+  it('keeps which tabs are pinned', () => {
+    const pinned = { ...tab('https://mail.example/'), pinned: true };
+    expect(
+      parseSession({
+        version: 1,
+        windows: [{ tabs: [pinned, { ...tab('https://a.example/'), pinned: false }], active: 1 }],
+      }),
+    ).toEqual({ version: 1, windows: [{ tabs: [pinned, tab('https://a.example/')], active: 1 }] });
+    expect(sessionWindow([pinned], 0)).toEqual({ tabs: [pinned], active: 0 });
+  });
+
   it('keeps the rest of a session when one tab or window cannot be read', () => {
     const long = 'x'.repeat(5000);
     const session = parseSession({
