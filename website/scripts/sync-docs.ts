@@ -98,7 +98,7 @@ function main(): void {
     writeFileSync(join(website, 'src', 'content', 'docs', 'changelog.md'), page(title, body));
   }
   mkdirSync(join(website, 'public'), { recursive: true });
-  cpSync(join(root, 'assets', 'brand', 'app-icon.svg'), join(website, 'public', 'favicon.svg'));
+  cpSync(join(root, 'assets', 'brand', 'app-icon.png'), join(website, 'public', 'favicon.png'));
   console.log(`Synced the documentation into ${relative(root, generated)}`);
 }
 

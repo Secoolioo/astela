@@ -30,6 +30,7 @@
   "settings.colorMode.light": "Light",
   "settings.colorMode.dark": "Dark",
   "settings.accent": "Accent color",
+  "settings.accent.astela": "Astela",
   "settings.accent.blue": "Blue",
   "settings.accent.teal": "Teal",
   "settings.accent.green": "Green",

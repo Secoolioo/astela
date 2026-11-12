@@ -1,13 +1,10 @@
 # Brand assets
 
-| File            | Content                                                                                |
-| --------------- | -------------------------------------------------------------------------------------- |
-| `app-icon.svg`  | Application icon: the mark in white on a flat plate in the light accent color #1570d1. |
-| `logo-mark.svg` | The mark alone in one color (`currentColor`), for 16 px use, print and dark surfaces.  |
-| `wordmark.svg`  | The name in lowercase, as outlines in one color (`currentColor`).                      |
+| File           | Content                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `logo.webp`    | The logo: the mark above the name, on its dark background, 1254 × 1254 px.               |
+| `app-icon.png` | The application icon at 256 × 256 px: the mark on a plate in the dark color of the logo. |
 
-The mark is a browser window with a full-height side panel and a toolbar: the layouts Astela is built around, with tab bars on any side. It is drawn with one stroke width and small inner radii, without gradients, shadows or effects (see [design rules](../../docs/architecture/design-system.md#design-rules)). The rounded plate of the application icon follows the icon grid of the operating systems.
+The logo is a letter A in a gradient from violet to blue, with an orbit around it and a four-pointed star, all with a glow, on a dark indigo background with arcs of light in two corners ([ADR 0049](../../docs/adr/0049-logo-and-colors-of-the-brand.md)). Its colors are the colors of the browser: the violet is the default accent and the blue the color of progress (see [design rules](../../docs/architecture/design-system.md#design-rules)). The gradient, the glow and the star stay in the logo and the application icon.
 
-The wordmark is set in Inter Display SemiBold (SIL Open Font License 1.1) and converted to outlines, so it needs no font.
-
-`app/build/icon.png` is rendered from `app-icon.svg` at 1024 × 1024 px by `node tools/brand/render-icon.ts`. electron-builder derives the Windows, macOS and Linux icons from that file. Render it again after every change to the SVG and commit both files.
+`node tools/brand/render-icon.ts` renders the application icon from `logo.webp`: `app/build/icon.png` at 1024 × 1024 px, from which electron-builder derives the Windows, macOS and Linux icons, and `app-icon.png` for the website. The plate follows the icon grids of the operating systems, and the logo fades into it towards its edges. Render both again after every change to the logo and commit them.

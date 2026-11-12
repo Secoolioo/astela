@@ -22,7 +22,7 @@ Thumbs.db
 # Website build, the pages synced from docs/ and the generated API reference
 website/dist/
 website/.astro/
-website/public/favicon.svg
+website/public/favicon.png
 website/src/content/docs/api/
 website/src/content/docs/docs/
 website/src/content/docs/changelog.md

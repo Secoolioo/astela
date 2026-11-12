@@ -97,7 +97,7 @@ export class AppShell extends LitElement {
     }
     .downloads .ring circle {
       fill: none;
-      stroke: var(--accent);
+      stroke: var(--accent-secondary);
       stroke-width: 2;
     }
     /* Tells a private window apart; its colors come from tokens.css. */
@@ -302,7 +302,7 @@ export class AppShell extends LitElement {
       animation: turn var(--motion-loop) var(--ease-linear) infinite;
     }
     .spinner circle {
-      stroke: var(--accent);
+      stroke: var(--accent-secondary);
       stroke-width: 2;
     }
     @keyframes turn {

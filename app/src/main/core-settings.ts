@@ -110,7 +110,7 @@ export const AccentSetting = defineSetting({
     v.picklist(accentPresets),
     v.pipe(v.string(), v.regex(/^#[0-9a-f]{6}$/i, 'Must be a preset or a #rrggbb color')),
   ]),
-  default: 'blue',
+  default: 'astela',
   scope: 'global',
   ui: { section: 'appearance', control: 'color', order: 2 },
 });

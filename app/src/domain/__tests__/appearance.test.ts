@@ -41,6 +41,23 @@ describe('accent colors', () => {
     expect(parse(yellow.dark).l).toBeCloseTo(oklchFromHex('#ffcc00').l, 2);
   });
 
+  it("pairs Astela's violet with the blue of its logo for progress, and no other accent", () => {
+    const { secondary } = accentColors('astela');
+    expect(secondary).toEqual({
+      light: 'oklch(55.0% 0.180 265.0)',
+      dark: 'oklch(72.0% 0.145 265.0)',
+    });
+    if (secondary === undefined) throw new Error('Astela has a second color');
+    expect(contrastRatio(parse(secondary.light), lightSurface)).toBeGreaterThan(
+      minimumAccentContrast - 0.02,
+    );
+    expect(contrastRatio(parse(secondary.dark), darkSurface)).toBeGreaterThan(
+      minimumAccentContrast - 0.02,
+    );
+    expect(accentColors('blue').secondary).toBeUndefined();
+    expect(accentColors('#2a7f62').secondary).toBeUndefined();
+  });
+
   it('writes out the colors of the presets as the color math computes them', () => {
     for (const preset of accentPresets) {
       expect(presetAccentColors[preset]).toEqual(accentColors(preset));
@@ -85,6 +102,24 @@ describe('appearanceCss', () => {
     expect(roomy).toContain('--line-height-ui:20px');
     expect(roomy).toContain('--font-ui:"Inter Display",var(--font-system)');
     expect(roomy.length).toBeLessThan(4096);
+  });
+
+  it('sets the color of progress only for an accent that has one', () => {
+    const astela = appearanceCss({
+      accent: accentColors('astela'),
+      density: 'normal',
+      textSize: 'medium',
+      font: '',
+    });
+    expect(astela).toContain('--accent-secondary-light:oklch(55.0% 0.180 265.0)');
+    expect(astela).toContain('--accent-secondary-dark:oklch(72.0% 0.145 265.0)');
+    const green = appearanceCss({
+      accent: accentColors('green'),
+      density: 'normal',
+      textSize: 'medium',
+      font: '',
+    });
+    expect(green).not.toContain('--accent-secondary');
   });
 
   it('keeps the font of the system for a name that could break out of the style sheet', () => {

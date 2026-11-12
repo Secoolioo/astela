@@ -42,6 +42,40 @@ test('applies the stored color mode, accent and density before the first paint',
   }
 });
 
+/** The accent of a page and the color of its progress. */
+function accentTokens(): { accent: string; progress: string } {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    accent: style.getPropertyValue('--accent').trim(),
+    progress: style.getPropertyValue('--accent-secondary').trim(),
+  };
+}
+
+test('starts with the violet of the logo and shows progress in its blue', async () => {
+  const browser = await launch();
+  try {
+    // Playwright emulates a light color scheme in the pages it attaches to.
+    const astela = { accent: 'oklch(55.0% 0.240 290.0)', progress: 'oklch(55.0% 0.180 265.0)' };
+    await expect.poll(() => browser.shell.evaluate(accentTokens)).toEqual(astela);
+    const page = await waitForPage(browser, (url) => url.startsWith('app://newtab'));
+    expect(await page.evaluate(accentTokens)).toEqual(astela);
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill('app://settings/#appearance.accent');
+    await address.press('Enter');
+    const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    // A theme has the name Astela as well, so the test looks only at the accent colors.
+    const accents = settings.getByRole('radiogroup', { name: 'Accent color' });
+    await expect(accents.getByRole('radio', { name: 'Astela' })).toBeChecked();
+    // Another accent shows progress in its own color.
+    await accents.getByRole('radio', { name: 'Green' }).check();
+    await expect
+      .poll(() => browser.shell.evaluate(accentTokens))
+      .toEqual({ accent: 'oklch(54.8% 0.150 150.0)', progress: 'oklch(54.8% 0.150 150.0)' });
+  } finally {
+    await browser.close();
+  }
+});
+
 /** The tokens of motion, shape and depth that a page uses. */
 function motionTokens(): Record<string, string> {
   const style = getComputedStyle(document.documentElement);
