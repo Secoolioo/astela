@@ -147,6 +147,53 @@ export const OpenTabMenu = defineRequest({
   capability: 'shell',
 });
 
+/** Shows the suggestions for text typed in the address bar, below the field. */
+export const SuggestAddresses = defineRequest({
+  channel: 'omnibox.suggest',
+  request: v.strictObject({
+    text: v.pipe(v.string(), v.maxLength(2000)),
+    // The tab whose address bar the text is typed in, where a chosen suggestion opens; without
+    // it, the tab that the shell asked for last, which the shell does not know yet.
+    tabId: v.optional(TabId),
+    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    width: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(20000)),
+    rowHeight: v.pipe(v.number(), v.integer(), v.minValue(16), v.maxValue(120)),
+  }),
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Marks the next or the previous suggestion, as the arrow keys do; past the last or the first
+ * one, none is marked. The response is the marked place, or -1.
+ */
+export const SelectSuggestion = defineRequest({
+  channel: 'omnibox.select',
+  request: v.strictObject({ step: v.picklist([-1, 1]) }),
+  response: v.pipe(v.number(), v.integer(), v.minValue(-1), v.maxValue(7)),
+  capability: 'shell',
+});
+
+/**
+ * Opens the marked suggestion, as Enter does; `false` when none is marked, and the shell opens
+ * what was typed instead.
+ */
+export const AcceptSuggestion = defineRequest({
+  channel: 'omnibox.accept',
+  request: Empty,
+  response: v.boolean(),
+  capability: 'shell',
+});
+
+/** Closes the suggestions of the address bar. */
+export const CloseSuggestions = defineRequest({
+  channel: 'omnibox.close',
+  request: Empty,
+  response: Done,
+  capability: 'shell',
+});
+
 /** The request contracts of the shell that load with the first of them. */
 export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = [
   ReopenClosedTab,
@@ -164,4 +211,8 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   SetTabMuted,
   MoveTab,
   OpenTabMenu,
+  SuggestAddresses,
+  SelectSuggestion,
+  AcceptSuggestion,
+  CloseSuggestions,
 ];

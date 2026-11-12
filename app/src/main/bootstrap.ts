@@ -782,6 +782,16 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         allowCertificate: (contents) => certificates.allow(contents),
         allowInsecure: (contents, address) => httpsFirst.allow(contents, address),
         folderContents: (folder) => bookmarks?.contents(folder) ?? [],
+        suggestions: {
+          overlay: overlayOptions,
+          target: async (text) => {
+            const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
+            return resolveOmniboxInput(text, await searchTemplate(), await searchShortcuts());
+          },
+          history: async (text) =>
+            (await data.call('history', text, 10)).map(({ title, url }) => ({ title, url })),
+          bookmarks: () => bookmarks?.pages() ?? [],
+        },
         openShieldPopover: async (window, anchor) => {
           const { openShieldPopover } = await import('./shield-popover.ts');
           openShieldPopover(window, anchor, {

@@ -64,6 +64,12 @@ export class Bookmarks {
     return this.contents(bookmarkRoots.bar).map(({ id, title, url }) => ({ id, title, url }));
   }
 
+  /** Every bookmark, without folders; the first call loads the bookmarks. */
+  pages(): { title: string; url: string }[] {
+    this.loaded ??= this.load();
+    return this.rows.flatMap(({ title, url }) => (url === null ? [] : [{ title, url }]));
+  }
+
   /**
    * The bookmarks and folders in a folder, in their order.
    * @param folder - The folder's id.

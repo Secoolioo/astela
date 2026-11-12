@@ -215,6 +215,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly entries = new Map<TabId, TabEntry>();
   /** The overlay while it shows something; a change of the visible tab closes it. */
   overlay: OverlayHandle | undefined;
+  /**
+   * The tab that the shell asked for last. The shell's address bar is that tab's from the
+   * click on New tab on, also while the shell does not know the tab yet.
+   */
+  openedByShell: TabId | undefined;
   /** The find bar of the active tab, or `null` while it is closed. */
   private finding: FindState | null = null;
   /** What the find bar looked for last, to look for it again. */
@@ -384,6 +389,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   openTab(url?: string): TabId {
     const id = this.tabs.open(url);
+    this.openedByShell = id;
     this.publishNow();
     return id;
   }

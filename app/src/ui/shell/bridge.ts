@@ -23,6 +23,10 @@ import type {
   GetFavicon,
   MoveTab,
   OpenTabMenu,
+  SuggestAddresses,
+  SelectSuggestion,
+  AcceptSuggestion,
+  CloseSuggestions,
   StopFinding,
   ToggleBookmark,
 } from '../../shared/ipc/shell-later-contracts.ts';
@@ -50,11 +54,15 @@ interface Requests {
   'tabs.setMuted': typeof SetTabMuted;
   'tabs.move': typeof MoveTab;
   'tabs.openMenu': typeof OpenTabMenu;
+  'omnibox.suggest': typeof SuggestAddresses;
+  'omnibox.select': typeof SelectSuggestion;
+  'omnibox.accept': typeof AcceptSuggestion;
+  'omnibox.close': typeof CloseSuggestions;
 }
 
 interface Events {
   'shell.stateChanged': ShellState;
-  'shell.command': 'omnibox.focus' | 'find.focus' | 'downloads.open';
+  'shell.command': 'omnibox.focus' | 'omnibox.done' | 'find.focus' | 'downloads.open';
 }
 
 /** The API that the shell's preload script exposes. */

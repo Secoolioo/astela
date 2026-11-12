@@ -61,29 +61,34 @@ export class WindowOverlay implements OverlayHandle {
    * @param content - What to show.
    * @param onClose - Called once when the content closes or is replaced, such as to cancel
    *   what it asked for.
+   * @param bounds - Where the overlay lies in the window, for a list that leaves the rest of
+   *   the window to the shell and the page and does not take the focus; the whole window
+   *   otherwise.
    */
-  open(content: OverlayContent, onClose?: () => void): void {
+  open(content: OverlayContent, onClose?: () => void, bounds?: Electron.Rectangle): void {
     this.settle();
     this.onClose = onClose;
     const view = (this.view ??= this.create());
     const base = this.window.window;
     const { width, height } = base.getContentBounds();
-    view.setBounds({ x: 0, y: 0, width, height });
+    view.setBounds(bounds ?? { x: 0, y: 0, width, height });
     // Adding a view that the window holds already moves it to the top.
     base.contentView.addChildView(view);
     this.window.overlay = this;
     this.shown = content;
     // Focusing the view would raise a window in the background, such as for a site's question.
-    if (base.isFocused()) view.webContents.focus();
+    if (base.isFocused() && bounds === undefined) view.webContents.focus();
     this.options.router.publish(OverlayChanged, view.webContents, content);
   }
 
   /**
    * Changes what an open overlay shows, without taking the focus.
    * @param content - What to show.
+   * @param bounds - Where the overlay lies now, for a list that changed its length.
    */
-  update(content: OverlayContent): void {
+  update(content: OverlayContent, bounds?: Electron.Rectangle): void {
     if (this.shown === null || this.view === undefined) return;
+    if (bounds !== undefined) this.view.setBounds(bounds);
     this.shown = content;
     this.options.router.publish(OverlayChanged, this.view.webContents, content);
   }

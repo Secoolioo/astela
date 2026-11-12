@@ -14,6 +14,10 @@ import {
   GetFavicon,
   MoveTab,
   OpenTabMenu,
+  SuggestAddresses,
+  SelectSuggestion,
+  AcceptSuggestion,
+  CloseSuggestions,
   StopFinding,
   ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
@@ -24,6 +28,7 @@ import type {
 } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { FolderEntry } from './browser-menu.ts';
+import type { SuggestionDependencies } from './suggestions.ts';
 
 /** What the later requests of the shell need from the composition root. */
 export interface LaterShellDependencies {
@@ -39,6 +44,8 @@ export interface LaterShellDependencies {
   readonly allowInsecure: (contents: WebContents, address: string) => void;
   /** The bookmarks and folders in a folder of the bookmarks bar. */
   readonly folderContents: (folder: number) => readonly FolderEntry[];
+  /** Where the suggestions of the address bar come from. */
+  readonly suggestions: Omit<SuggestionDependencies, 'router' | 'windows'>;
   /** Opens the content blocker's popover of a window at its button. */
   readonly openShieldPopover: (
     window: BrowserWindowController,
@@ -69,6 +76,33 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
   router.handle(GetFavicon, ({ key }) => favicons.get(key) ?? null);
+  const suggestions = {
+    ...dependencies.suggestions,
+    router,
+    windows: (): readonly BrowserWindowController[] => windows.all,
+  };
+  router.handle(SuggestAddresses, async ({ text, tabId, ...place }, { sender }) => {
+    const window = windowOf(sender);
+    const { suggest } = await import('./suggestions.ts');
+    await suggest(window, text, place, suggestions, tabId);
+    return null;
+  });
+  router.handle(SelectSuggestion, async ({ step }, { sender }) => {
+    const window = windowOf(sender);
+    const { select } = await import('./suggestions.ts');
+    return select(window, step);
+  });
+  router.handle(AcceptSuggestion, async (_request, { sender }) => {
+    const window = windowOf(sender);
+    const { accept } = await import('./suggestions.ts');
+    return accept(window);
+  });
+  router.handle(CloseSuggestions, async (_request, { sender }) => {
+    const window = windowOf(sender);
+    const { close } = await import('./suggestions.ts');
+    close(window);
+    return null;
+  });
   router.handle(OpenTabMenu, async ({ tabId, x, y }, { sender }) => {
     const window = windowOf(sender);
     const { popupTabMenu } = await import('./tab-menu.ts');

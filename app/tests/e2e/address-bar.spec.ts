@@ -76,6 +76,31 @@ async function delayNewTabAnswer(browser: Browser, delay: number): Promise<void>
   }, delay);
 }
 
+/**
+ * Holds back a command that the browser sends the shell, such as the one that tells it that a
+ * suggestion opened.
+ * @param browser - The running browser.
+ * @param command - The command.
+ * @param delay - How long it waits, in milliseconds.
+ */
+async function delayShellCommand(browser: Browser, command: string, delay: number): Promise<void> {
+  await browser.main.evaluate(
+    ({ webContents }, { held, wait }) => {
+      const shell = webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL().startsWith('app://shell'));
+      if (shell === undefined) throw new Error('The shell was not found');
+      const send = shell.send.bind(shell);
+      shell.send = (channel: string, ...args: unknown[]): void => {
+        if (channel === 'shell.command' && args[0] === held) {
+          setTimeout(() => send(channel, ...args), wait);
+        } else send(channel, ...args);
+      };
+    },
+    { held: command, wait: delay },
+  );
+}
+
 /** Opens a page in the first tab and returns its address. */
 async function openFirstPage(browser: Browser): Promise<string> {
   const first = `${server.origin}/index.html`;
@@ -327,5 +352,244 @@ test('shows that the active tab loads along the bottom of the toolbar', async ()
   } finally {
     await browser.close();
     await new Promise<void>((done) => slow.close(() => done()));
+  }
+});
+
+test('suggests visited pages and open tabs below the address bar and opens them', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const active = shell.locator('[role="tab"][aria-selected="true"]');
+    await open(browser, `${server.origin}/index.html`);
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    // The history keeps the title that a page showed. A page left before its title arrived,
+    // as on a busy machine, has none, and the typed words would not find it.
+    await expect(active).toHaveAttribute('title', 'Fixture home');
+    await open(browser, `${server.origin}/second.html`);
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await expect(active).toHaveAttribute('title', 'Fixture second');
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    // A visited page, chosen with the arrow keys, opens in the active tab.
+    await address.pressSequentially('fixture home');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const home = list.getByRole('option', { name: /Fixture home/ });
+    await expect(home).toBeVisible();
+    // Typing goes on in the address bar while the suggestions show.
+    await expect(address).toBeFocused();
+    const options = await list.getByRole('option').allTextContents();
+    const place = options.findIndex((text) => text.includes('Fixture home'));
+    for (let step = 0; step <= place; step += 1) await address.press('ArrowDown');
+    await expect(home).toHaveAttribute('aria-selected', 'true');
+    await address.press('Enter');
+    await expect(list).toBeHidden();
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+    await expect(shell.getByRole('tab')).toHaveCount(2);
+    // An open tab, clicked, becomes the active tab.
+    await address.click();
+    await address.pressSequentially('fixture second');
+    const tab = list.getByRole('option', { name: /Fixture second.*Switch to this tab/ });
+    await tab.click();
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+      'title',
+      'Fixture second',
+    );
+    await expect(shell.getByRole('tab')).toHaveCount(2);
+    // Escape closes the suggestions first and keeps what was typed.
+    await address.click();
+    await address.pressSequentially('fixture');
+    await expect(list).toBeVisible();
+    await address.press('Escape');
+    await expect(list).toBeHidden();
+    await expect(address).toHaveValue('fixture');
+  } finally {
+    await browser.close();
+  }
+});
+
+/**
+ * Leaves the second page in the history, with its title, opens the first page in the first tab
+ * and returns the addresses of both.
+ */
+async function visitSecondPage(browser: Browser): Promise<{ first: string; second: string }> {
+  const active = browser.shell.locator('[role="tab"][aria-selected="true"]');
+  const second = `${server.origin}/second.html`;
+  await open(browser, second);
+  await waitForPage(browser, (url) => url.endsWith('/second.html'));
+  await expect(active).toHaveAttribute('title', 'Fixture second');
+  return { first: await openFirstPage(browser), second };
+}
+
+test('opens a suggestion chosen with Enter right after a click on New tab in the new tab', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { first, second } = await visitSecondPage(browser);
+    // The suggestion is chosen before the shell knows of the new tab and before the browser
+    // answered.
+    await delayShellState(browser, 1500);
+    await delayNewTabAnswer(browser, 3000);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.pressSequentially('fixture second');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const visited = list.getByRole('option', { name: /Fixture second/ });
+    await expect(visited).toBeVisible();
+    const options = await list.getByRole('option').allTextContents();
+    const place = options.findIndex((text) => text.includes('Fixture second'));
+    for (let step = 0; step <= place; step += 1) await address.press('ArrowDown');
+    await expect(visited).toHaveAttribute('aria-selected', 'true');
+    await address.press('Enter');
+    await expect(list).toBeHidden();
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    // The address bar left the page that the suggestion opened, and stays out of its way when
+    // the new tab shows.
+    await expect(address).not.toBeFocused();
+    // The tab that was active before kept its page and its address.
+    await tabs.nth(0).click();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps the suggestions for what is typed right after a click on New tab when the new tab shows, and opens a clicked one there', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { first, second } = await visitSecondPage(browser);
+    await delayShellState(browser, 2000);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.pressSequentially('fixture second');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const visited = list.getByRole('option', { name: /Fixture second/ });
+    await expect(visited).toBeVisible();
+    // The new tab shows, and the suggestions for what was typed for it stay: the arrow keys
+    // still mark them.
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue('fixture second');
+    const options = await list.getByRole('option').allTextContents();
+    const place = options.findIndex((text) => text.includes('Fixture second'));
+    for (let step = 0; step <= place; step += 1) await address.press('ArrowDown');
+    await expect(visited).toHaveAttribute('aria-selected', 'true');
+    await visited.click();
+    await expect(list).toBeHidden();
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens a suggestion clicked right after a click on New tab in the new tab, also before the browser answered', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { first, second } = await visitSecondPage(browser);
+    // The suggestion is clicked before the shell knows of the new tab and before the browser
+    // answered.
+    await delayShellState(browser, 3000);
+    await delayNewTabAnswer(browser, 4000);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.pressSequentially('fixture second');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    await list.getByRole('option', { name: /Fixture second/ }).click();
+    await expect(list).toBeHidden();
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    // The address bar left the page that the suggestion opened, and stays out of its way when
+    // the new tab shows.
+    await expect(address).not.toBeFocused();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps what is typed right after a click on New tab when a suggestion chosen before the click opens', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { second } = await visitSecondPage(browser);
+    await address.click();
+    await address.pressSequentially('fixture second');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const visited = list.getByRole('option', { name: /Fixture second/ });
+    await expect(visited).toBeVisible();
+    const options = await list.getByRole('option').allTextContents();
+    const place = options.findIndex((text) => text.includes('Fixture second'));
+    for (let step = 0; step <= place; step += 1) await address.press('ArrowDown');
+    await expect(visited).toHaveAttribute('aria-selected', 'true');
+    // The shell learns that the suggestion opened in the first tab only after the click on New
+    // tab and what is typed for the new tab, and of the new tab even later.
+    await delayShellCommand(browser, 'omnibox.done', 1000);
+    await delayShellState(browser, 2000);
+    await address.press('Enter');
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.fill('typed for the new tab');
+    await expect.poll(() => tabUrls(browser)).toEqual([second, 'app://newtab/']);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue('typed for the new tab');
+    await expect(address).toBeFocused();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens a suggestion chosen right after a click on New tab in the new tab, also when another tab comes to the front first', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const { first, second } = await visitSecondPage(browser);
+    const [front] = (await shellState(shell)).tabs;
+    // Before the shell knows of the new tab or has the browser's answer, the browser shows
+    // the first tab again, as when a page brings its tab to the front.
+    await delayShellState(browser, 3000);
+    await delayNewTabAnswer(browser, 4000);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await expect.poll(async () => (await shellState(shell)).tabs.length).toBe(2);
+    await pressNative(browser, 'Tab', ['control']);
+    await expect.poll(async () => (await shellState(shell)).activeTabId).toBe(front?.id);
+    await address.pressSequentially('fixture second');
+    const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const visited = list.getByRole('option', { name: /Fixture second/ });
+    await expect(visited).toBeVisible();
+    const options = await list.getByRole('option').allTextContents();
+    const place = options.findIndex((text) => text.includes('Fixture second'));
+    for (let step = 0; step <= place; step += 1) await address.press('ArrowDown');
+    await expect(visited).toHaveAttribute('aria-selected', 'true');
+    await address.press('Enter');
+    // The suggestion loads in the new tab, as what is typed and entered would; the tab in front
+    // keeps its page.
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+  } finally {
+    await browser.close();
   }
 });
