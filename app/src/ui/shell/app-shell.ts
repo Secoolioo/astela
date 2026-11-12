@@ -284,12 +284,38 @@ export class AppShell extends LitElement {
       white-space: nowrap;
       text-overflow: ellipsis;
     }
-    .loading {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
+    /* The page's icon, or a turning ring while the page loads. */
+    .favicon {
+      display: grid;
+      place-items: center;
       flex: none;
+      width: 16px;
+      height: 16px;
+      color: var(--text-2);
+    }
+    .favicon img {
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+    }
+    .spinner {
+      animation: turn var(--motion-loop) var(--ease-linear) infinite;
+    }
+    .spinner circle {
+      stroke: var(--accent);
+      stroke-width: 2;
+    }
+    @keyframes turn {
+      to {
+        transform: rotate(1turn);
+      }
+    }
+    .sound {
+      width: var(--control-small);
+      height: var(--control-small);
+    }
+    .sound[aria-pressed='true'] {
+      color: var(--text-2);
     }
     button {
       cursor: default;
@@ -396,6 +422,8 @@ export class AppShell extends LitElement {
   private reportedInsets = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
   private barOverflow = 0;
+  /** Icons of pages by their keys, `undefined` while the browser is asked for one. */
+  private readonly favicons = new Map<string, string | undefined>();
 
   constructor() {
     super();
@@ -644,8 +672,22 @@ export class AppShell extends LitElement {
         @click=${() => void this.bridge?.invoke('tabs.activate', { tabId: tab.id })}
         @auxclick=${(e: MouseEvent) => e.button === 1 && this.close(tab.id)}
       >
-        ${tab.loading ? html`<span class="loading" role="img" aria-label=${t('shell.loading')}></span>` : nothing}
+        ${this.renderTabIcon(tab, t)}
         <span class="title">${title}</span>
+        ${
+          tab.audible || tab.muted
+            ? html`<button
+                class="icon sound"
+                tabindex="-1"
+                title=${t(tab.muted ? 'shell.unmuteTab' : 'shell.muteTab')}
+                aria-label=${t(tab.muted ? 'shell.unmuteTab' : 'shell.muteTab')}
+                aria-pressed=${tab.muted ? 'true' : 'false'}
+                @click=${(e: Event) => (e.stopPropagation(), this.setMuted(tab.id, !tab.muted))}
+              >
+                ${tab.muted ? icons.soundOff : icons.sound}
+              </button>`
+            : nothing
+        }
         <button
           class="icon close"
           tabindex="-1"
@@ -656,6 +698,44 @@ export class AppShell extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  /** The icon of a tab: a turning ring while it loads, else its page's icon. */
+  private renderTabIcon(
+    tab: TabView,
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): TemplateResult {
+    if (tab.loading) {
+      return html`<span class="favicon" role="img" aria-label=${t('shell.loading')}>
+        <svg class="spinner" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="30 100" />
+        </svg>
+      </span>`;
+    }
+    const icon = tab.favicon === null ? undefined : this.favicon(tab.favicon);
+    return html`<span class="favicon" aria-hidden="true"
+      >${icon === undefined ? (pageIcon(tab.url) ?? icons.globe) : html`<img src=${icon} alt="" />`}</span
+    >`;
+  }
+
+  /**
+   * The icon of a key as a `data:` address, once the browser sent it; the first call asks.
+   * @param key - The key of the icon.
+   */
+  private favicon(key: string): string | undefined {
+    if (!this.favicons.has(key)) {
+      this.favicons.set(key, undefined);
+      void this.bridge?.invoke('tabs.favicon', { key }).then((icon) => {
+        if (icon === null) return;
+        this.favicons.set(key, icon);
+        this.requestUpdate();
+      });
+    }
+    return this.favicons.get(key);
+  }
+
+  private setMuted(tabId: string, muted: boolean): void {
+    void this.bridge?.invoke('tabs.setMuted', { tabId, muted });
   }
 
   private renderBookmarksBar(
@@ -1135,8 +1215,47 @@ function percent(factor: number, language: string | undefined): string {
   return new Intl.NumberFormat(language, { style: 'percent' }).format(factor);
 }
 
+/**
+ * The icon of one of the browser's own pages, which have no page icons of their own.
+ * @param url - The address of the tab.
+ */
+function pageIcon(url: string): TemplateResult | undefined {
+  if (url === newTabUrl || !url.startsWith('app://')) return undefined;
+  const page = hostOf(url);
+  if (page === 'settings') return icons.settings;
+  if (page === 'history') return icons.history;
+  if (page === 'bookmarks') return icons.star;
+  return undefined;
+}
+
 /** Icons drawn after Lucide (ISC license), inlined so the shell needs no icon requests. */
 const icons = {
+  globe: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20" />
+  </svg>`,
+  settings: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"
+    />
+    <circle cx="12" cy="12" r="3" />
+  </svg>`,
+  history: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5M12 7v5l4 2" />
+  </svg>`,
+  sound: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"
+    />
+    <path d="M16 9a5 5 0 0 1 0 6M19.4 18.4a9 9 0 0 0 0-12.8" />
+  </svg>`,
+  soundOff: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"
+    />
+    <path d="m22 9-6 6M16 9l6 6" />
+  </svg>`,
   up: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>`,
   down: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>`,
   plus: html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>`,

@@ -225,7 +225,8 @@ test('asks for the sign-in of a tab in the background once the tab shows', async
       response.end('<!doctype html><title>Members</title><p>Signed in as tester</p>');
       return;
     }
-    asked += 1;
+    // The page asks; the icon that the browser looks for is asked for without a sign-in.
+    if (request.url === '/members.html') asked += 1;
     response.statusCode = 401;
     response.setHeader('WWW-Authenticate', 'Basic realm="Fixture members"');
     response.end('<!doctype html><title>Members</title><p>Not signed in</p>');
