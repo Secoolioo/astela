@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Builds on [ADR 0030](0030-request-pipeline-and-content-blocker.md) for the request pipeline.
+Accepted. Builds on [ADR 0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) for the request pipeline.
 
 ## Date
 
