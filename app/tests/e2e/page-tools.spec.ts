@@ -439,6 +439,8 @@ test('gives later pages of an open tab the default zoom that the settings have n
     const settings = await waitForPage(browser, (shown) => shown.startsWith('app://settings'));
     await settings.getByRole('combobox', { name: 'Page zoom' }).selectOption('1.25');
     await browser.shell.getByRole('tab').first().click();
+    // What is typed belongs to the tab that the address bar shows, so the switch comes first.
+    await expect(browser.shell.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
     const fresh = `http://fresh.test:${port}/find.html`;
     await go(fresh);
     await expect.poll(() => factor(fresh)).toBeCloseTo(1.25);

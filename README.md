@@ -32,10 +32,11 @@ On `main` now, and in the next beta, 0.1.0-beta.6:
 - **Tab icons:** each tab shows the icon of its page, a ring while the page loads and a button that mutes a tab that plays sound.
 - **Tabs:** animate when they open, close and move, can be dragged to a new place and stay usable when many are open.
 - **Pinned tabs and a tab menu:** a menu for each tab opens a tab next to it, duplicates, pins, mutes or closes tabs; keys choose tabs, and on Windows and Linux also move them.
+- **Address bar:** shows the site first with a lock for HTTPS and **Not secure** for HTTP, and shows the loading of a page.
 
 ## Planned for 0.1.0
 
-- Layout presets with tabs in an integrated title bar, a new address bar with suggestions, and menus in an overlay.
+- Layout presets with tabs in an integrated title bar, suggestions in the address bar and menus in an overlay.
 - A command palette, tab search, sleeping tabs, split view, tab groups, workspaces, a reader view and picture-in-picture.
 - Saved passwords and autofill.
 
