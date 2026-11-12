@@ -69,6 +69,7 @@
   "settings.newTabImageTitle": "Choose a Background Image",
   "settings.imageFileType": "Images",
   "tabMenu.newTabRight": "New Tab to the Right",
+  "tabMenu.newTabBelow": "New Tab Below",
   "tabMenu.reload": "Reload",
   "tabMenu.duplicate": "Duplicate",
   "tabMenu.pin": "Pin",
@@ -78,5 +79,6 @@
   "tabMenu.close": "Close",
   "tabMenu.closeOthers": "Close Other Tabs",
   "tabMenu.closeRight": "Close Tabs to the Right",
+  "tabMenu.closeBelow": "Close Tabs Below",
   "tabMenu.reopen": "Reopen Closed Tab"
 }

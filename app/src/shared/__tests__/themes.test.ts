@@ -6,6 +6,8 @@ import {
   themeBackgrounds,
   themeColors,
   themeIds,
+  themeToolbars,
+  toolbarColors,
   windowColors,
 } from '../themes.ts';
 
@@ -38,6 +40,11 @@ describe('built-in themes', () => {
       themeBackgrounds[id].dark,
     );
   });
+
+  it.each(themeIds)('have the toolbar colors of their toolbar in %s', (id) => {
+    expect(hexFromOklch(color(builtInThemes[id].light['surface-1']))).toBe(themeToolbars[id].light);
+    expect(hexFromOklch(color(builtInThemes[id].dark['surface-1']))).toBe(themeToolbars[id].dark);
+  });
 });
 
 describe('themeColors and windowColors', () => {
@@ -54,6 +61,12 @@ describe('themeColors and windowColors', () => {
       dark: themeBackgrounds.astela.dark,
     });
     expect(windowColors('true-dark', custom).dark).toBe('#000000');
+    // The toolbar has the color of the panels, surface-1.
+    expect(toolbarColors('custom', { light: { 'surface-1': '#fafafa' }, dark: {} })).toEqual({
+      light: '#fafafa',
+      dark: themeToolbars.astela.dark,
+    });
+    expect(toolbarColors('paper', custom)).toEqual(themeToolbars.paper);
   });
 });
 

@@ -251,9 +251,24 @@ test('forgets a window that closed, also when its focus arrives after it closed'
     );
     await pressNative(browser, 'N', ['primary']);
     await expect.poll(() => windowCount(browser)).toBe(2);
-    // The new window closes at once. The focus that it got while it opened can reach it only
-    // after it closed, as on macOS when a window closes right after it opened. A link from
-    // another app that comes then opens in the window that is still open.
+    // Both windows show their shell and their new tab page.
+    await expect
+      .poll(() =>
+        browser.main.evaluate(
+          ({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter(
+                (contents) =>
+                  ['app://shell/', 'app://newtab/'].includes(contents.getURL()) &&
+                  !contents.isLoading(),
+              ).length,
+        ),
+      )
+      .toBe(4);
+    // The new window closes. The focus that it got while it opened can reach it only after it
+    // closed, as on macOS when a window closes right after it opened. A link from another app
+    // that comes then opens in the window that is still open.
     const link = `${server.origin}/second.html`;
     await browser.main.evaluate(
       async ({ app, BaseWindow }, { ids, url }) => {

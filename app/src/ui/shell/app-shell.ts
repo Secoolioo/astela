@@ -5,8 +5,10 @@ import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
+import { controlsRoom } from '../../shared/window-controls.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
+import { TabIcons } from './tab-icons.ts';
 
 /**
  * The browser shell: tab strip, navigation buttons and the address bar. It renders the
@@ -630,18 +632,29 @@ export class AppShell extends LitElement {
       }
     }
     /* With the browser's title bar, the top row moves the window and leaves room for the
-       window controls; what can be clicked in it stays clickable. */
+       window controls where the window has them; what can be clicked in it stays clickable. */
     :host([data-titlebar]) .top-row {
       -webkit-app-region: drag;
+      padding-inline: calc(var(--titlebar-start, 0px) + var(--space-2))
+        calc(var(--titlebar-end, 0px) + var(--space-2));
     }
     :host([data-titlebar]) .top-row :is(button, input, [role='tab'], .address) {
       -webkit-app-region: no-drag;
     }
-    :host([data-titlebar='start']) .top-row {
-      padding-inline-start: calc(var(--titlebar-size) + var(--space-2));
+    /* A click next to a popover of the overlay closes it instead of moving the window. */
+    :host([data-titlebar][data-covered]) .top-row {
+      -webkit-app-region: no-drag;
     }
-    :host([data-titlebar='end']) .top-row {
-      padding-inline-end: calc(var(--titlebar-size) + var(--space-2));
+    /* Free room after the last button moves the window also when the tabs fill the row or the
+       address bar fills the toolbar. */
+    :host([data-titlebar]) [role='tablist'].top-row::after {
+      content: '';
+      flex: 1 0 var(--space-7);
+    }
+    :host([data-titlebar]) nav.top-row::after {
+      content: '';
+      flex: none;
+      width: var(--space-7);
     }
     :focus-visible {
       outline: 2px solid var(--focus-ring);
@@ -659,8 +672,14 @@ export class AppShell extends LitElement {
   `;
 
   declare state: ShellState;
-  /** What was typed in the address bar of each tab and not yet entered. */
+  /**
+   * What was typed in the address bar of each tab and not yet entered. It stays when the focus
+   * leaves the field, and goes when it is entered, with a second Escape, or when the tab's page
+   * changes its address while the field does not have the focus.
+   */
   declare drafts: ReadonlyMap<string, string>;
+  /** The address of each tab's page at the last update, to notice when a page moves on. */
+  private readonly addresses = new Map<string, string>();
   /** Whether suggestions for what was typed may be showing. */
   private suggesting = false;
   /** The suggestion that the arrow keys marked, or -1. */
@@ -668,8 +687,9 @@ export class AppShell extends LitElement {
   /** The address bar that suggestions were asked for last, which a click on one leaves. */
   private suggestionsFor: AddressOwner = null;
   /**
-   * The address bar of a suggestion chosen with Enter, until the browser opened it. A click on
-   * New tab may give the address bar to the new tab meanwhile.
+   * The address bar of a suggestion chosen with Enter, or of the list that the focus may have
+   * gone to for a click, until the browser opened the suggestion. A click on New tab may give
+   * the address bar to the new tab meanwhile.
    */
   private chosenFor: AddressOwner | undefined;
   declare addressFocused: boolean;
@@ -688,11 +708,16 @@ export class AppShell extends LitElement {
   private reportedInsets = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
   private barOverflow = 0;
-  /** Icons of pages by their keys, `undefined` while the browser is asked for one. */
-  private readonly favicons = new Map<string, string | undefined>();
+  /** The icons of the pages of the tabs. */
+  private readonly favicons = new TabIcons(
+    (key) => this.bridge?.invoke('tabs.favicon', { key }) ?? Promise.resolve(null),
+    () => this.requestUpdate(),
+  );
   /** Where each tab and the active tab's surface were before a change, to move them from. */
   private readonly tabsBefore = new Map<string, { element: HTMLElement; rect: DOMRect }>();
   private indicatorBefore: DOMRect | undefined;
+  /** The slide of the active tab's surface while it runs, and the place where it ends. */
+  private indicatorSlide: { readonly animation: Animation; readonly to: Place } | undefined;
   /** The tab that the pointer drags, where the drag started and where the tabs were. */
   private dragging:
     | {
@@ -714,15 +739,24 @@ export class AppShell extends LitElement {
    * and its state has it. Meanwhile the address bar is that tab's: what is typed there is
    * kept for it, and what is entered loads in it, not in the tab that was active before. A
    * further click replaces it, as the tab of the last click is the one that ends up active.
-   * The tab of the earlier click loses nothing: the click leaves the address bar, which drops
-   * what was typed there, and what was entered loads in the tab of its own click.
+   * The tab of the earlier click loses nothing: what was typed for it stays with it, as when
+   * the focus leaves the address bar, and what was entered loads in the tab of its own click.
    */
   private opening: Opening | undefined;
+  /**
+   * Tabs of earlier clicks on New tab that a further click replaced after something was typed
+   * for them. Each gets what was typed for it once the browser named it and the state has it.
+   */
+  private readonly replacedOpenings = new Set<Opening>();
   /**
    * The tab that the New tab button opened, when the address bar took input for it while
    * the shell waited for the tab. The address bar keeps that input when the tab shows.
    */
   private openedWithInput: string | undefined;
+  /** Where Electron draws the window controls, on Windows and Linux. */
+  private windowControls: WindowControls | undefined;
+  /** The room for the window controls that the top row has, to change it only when it moves. */
+  private titleBarRoom = '';
 
   constructor() {
     super();
@@ -738,6 +772,7 @@ export class AppShell extends LitElement {
       defaultZoom: 1,
       toolbar: ['bookmark', 'shield', 'downloads'],
       titleBar: null,
+      covered: false,
     };
     this.drafts = new Map();
     this.addressFocused = false;
@@ -746,6 +781,8 @@ export class AppShell extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.addEventListener('mouseup', this.onMouseUp);
+    this.windowControls = windowControls();
+    this.windowControls?.addEventListener('geometrychange', this.placeTitleBar);
     const bridge = this.bridge;
     if (bridge === undefined) {
       return;
@@ -761,6 +798,7 @@ export class AppShell extends LitElement {
     );
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
     this.resizeObserver = new ResizeObserver(() => {
+      this.placeTitleBar();
       this.reportInsets();
       this.layoutBookmarksBar();
       this.placeIndicator(false);
@@ -778,6 +816,7 @@ export class AppShell extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener('mouseup', this.onMouseUp);
+    this.windowControls?.removeEventListener('geometrychange', this.placeTitleBar);
     this.resizeObserver?.disconnect();
     for (const unsubscribe of this.unsubscribers.splice(0)) {
       unsubscribe();
@@ -788,12 +827,10 @@ export class AppShell extends LitElement {
     if (changed.has('state')) {
       this.settleOpening();
       this.dataset['tabs'] = this.state.tabStrip;
-      const titleBar = this.state.titleBar;
-      if (titleBar === null) delete this.dataset['titlebar'];
-      else {
-        this.dataset['titlebar'] = titleBar.side;
-        this.style.setProperty('--titlebar-size', `${titleBar.size}px`);
-      }
+      // The shell keeps the icons of its tabs only.
+      this.favicons.keep(this.state.tabs.flatMap((tab) => tab.favicon ?? []));
+      this.toggleAttribute('data-covered', this.state.covered);
+      this.placeTitleBar();
       // Tabs move from where they were, unless the whole strip moved to another side.
       const before = changed.get('state');
       if (
@@ -821,8 +858,9 @@ export class AppShell extends LitElement {
     }
     if (changed.has('state')) {
       if (this.dragging?.moved !== true) {
-        this.animateTabs();
+        // The surface learns where the active tab goes before the tabs start to move there.
         this.placeIndicator(true);
+        this.animateTabs();
       }
       this.markHiddenTabs();
       this.reportInsets();
@@ -830,10 +868,7 @@ export class AppShell extends LitElement {
       this.takeFindFocus();
       this.takeDownloadsOpening();
     }
-    // Drafts of tabs that closed are gone.
-    if (changed.has('state') && [...this.drafts.keys()].some((id) => !this.hasTab(id))) {
-      this.drafts = new Map([...this.drafts].filter(([id]) => this.hasTab(id)));
-    }
+    if (changed.has('state')) this.dropStaleDrafts();
     // A tab that becomes active on the new tab page waits for input in the address bar,
     // unless the address bar took input for a tab that the New tab button opens: selecting
     // it would let the next key replace that input.
@@ -1070,7 +1105,14 @@ export class AppShell extends LitElement {
         rect: element.getBoundingClientRect(),
       });
     }
-    this.indicatorBefore = this.tabStrip?.querySelector('.indicator')?.getBoundingClientRect();
+    // While a tab is dragged, the active tab draws its surface itself; the surface moves on
+    // from there.
+    const strip = this.tabStrip;
+    const surface =
+      strip?.hasAttribute('data-dragging') === true
+        ? strip.querySelector(':scope > .tab[aria-selected="true"]')
+        : strip?.querySelector('.indicator');
+    this.indicatorBefore = surface?.getBoundingClientRect();
     // A dropped tab moves from where it was dropped, not from where the drag left it.
     if (this.dropPending) {
       this.dropPending = false;
@@ -1140,8 +1182,8 @@ export class AppShell extends LitElement {
   }
 
   /**
-   * Puts the active tab's surface under the active tab, sliding it from the tab that was
-   * active before when `animate` is set.
+   * Puts the active tab's surface under the active tab, where the tab stays once it has
+   * moved, sliding it from the tab that was active before when `animate` is set.
    */
   private placeIndicator(animate: boolean): void {
     const strip = this.tabStrip;
@@ -1156,7 +1198,7 @@ export class AppShell extends LitElement {
     }
     indicator.hidden = false;
     const box = strip.getBoundingClientRect();
-    const rect = active.getBoundingClientRect();
+    const rect = layoutRect(active);
     const x = rect.left - box.left - strip.clientLeft + strip.scrollLeft;
     const y = rect.top - box.top - strip.clientTop + strip.scrollTop;
     indicator.style.width = `${rect.width}px`;
@@ -1164,6 +1206,15 @@ export class AppShell extends LitElement {
     indicator.style.transform = `translate(${x}px, ${y}px)`;
     const before = this.indicatorBefore;
     this.indicatorBefore = undefined;
+    const to: Place = { x, y, width: rect.width, height: rect.height };
+    const slide = this.indicatorSlide;
+    if (slide !== undefined && slide.animation.playState === 'running') {
+      // The browser publishes its state again and again, such as while a page loads: a slide
+      // to the same place goes on instead of starting again from where it is.
+      if (samePlace(slide.to, to)) return;
+      slide.animation.cancel();
+    }
+    this.indicatorSlide = undefined;
     const length = motionOf(this, '--motion-slow');
     if (
       !animate ||
@@ -1171,12 +1222,12 @@ export class AppShell extends LitElement {
       length === 0 ||
       rect.width === 0 ||
       rect.height === 0 ||
-      (before.left === rect.left && before.top === rect.top && before.width === rect.width)
+      (near(before.left, rect.left) && near(before.top, rect.top) && near(before.width, rect.width))
     ) {
       return;
     }
     const from = `translate(${x + before.left - rect.left}px, ${y + before.top - rect.top}px)`;
-    indicator.animate(
+    const animation = indicator.animate(
       [
         {
           transform: `${from} scale(${before.width / rect.width}, ${before.height / rect.height})`,
@@ -1185,6 +1236,7 @@ export class AppShell extends LitElement {
       ],
       { duration: length, easing: easingOf(this, '--ease-standard') },
     );
+    this.indicatorSlide = { animation, to };
   }
 
   /** Marks the sides of the tab strip behind which tabs are hidden. */
@@ -1219,6 +1271,12 @@ export class AppShell extends LitElement {
     ) {
       return;
     }
+    // A drag whose release never came ends before the next one starts, and the tabs go back
+    // at once, so the next drag measures them where they are.
+    if (this.dragging?.moved === true) {
+      this.clearDrag();
+      this.placeIndicator(false);
+    }
     const tabs = this.tabElements();
     this.dragging = {
       id,
@@ -1237,6 +1295,11 @@ export class AppShell extends LitElement {
     const drag = this.dragging;
     const strip = this.tabStrip;
     if (drag === undefined || strip === null || event.pointerId !== drag.pointer) return;
+    // The button was released where the tab strip did not see it, such as in a menu.
+    if ((event.buttons & 1) === 0) {
+      this.cancelDrag();
+      return;
+    }
     const vertical = this.vertical;
     const offset = (vertical ? event.clientY : event.clientX) - drag.start;
     if (!drag.moved && Math.abs(offset) < 4) return;
@@ -1294,11 +1357,27 @@ export class AppShell extends LitElement {
       }, 1000);
       return;
     }
+    this.putTabsBack();
+  };
+
+  /**
+   * Ends a drag whose release went elsewhere, such as to the menu that a Control-click opens
+   * on macOS, and puts the tabs back.
+   */
+  private cancelDrag(): void {
+    const drag = this.dragging;
+    this.dragging = undefined;
+    if (drag?.moved === true) this.putTabsBack();
+  }
+
+  /** Moves the tabs from where a drag left them back to their places, with the surface. */
+  private putTabsBack(): void {
     this.measureTabs();
     this.clearDrag();
+    // The surface learns where the active tab goes before the tabs start to move there.
+    this.placeIndicator(true);
     this.animateTabs();
-    this.placeIndicator(false);
-  };
+  }
 
   /** The space between two tabs. */
   private tabGap(): number {
@@ -1353,7 +1432,9 @@ export class AppShell extends LitElement {
    * the others once the shell has it.
    */
   private ownerNow(owner: AddressOwner): AddressOwner {
-    return isOpening(owner) && owner !== this.opening && owner.id !== undefined ? owner.id : owner;
+    const waiting =
+      isOpening(owner) && (owner === this.opening || this.replacedOpenings.has(owner));
+    return isOpening(owner) && !waiting && owner.id !== undefined ? owner.id : owner;
   }
 
   /** Forgets what was typed in the address bar of a tab, as its input opened. */
@@ -1369,25 +1450,60 @@ export class AppShell extends LitElement {
   }
 
   /**
-   * Gives the tab that the New tab button opens what was typed for it, once the browser
-   * named the tab and the state has it. Only the answer names the tab: a state can also make
-   * another tab active that the shell did not know at the click, such as the tab of an
+   * Gives the tabs that the New tab button opens what was typed for them, each once the
+   * browser named the tab and the state has it. Only the answer names a tab: a state can also
+   * make another tab active that the shell did not know at the click, such as the tab of an
    * earlier click.
    */
   private settleOpening(): void {
+    const drafts = new Map(this.drafts);
+    let settled = false;
+    for (const replaced of this.replacedOpenings) {
+      const id = replaced.id;
+      if (id === undefined || !this.hasTab(id)) continue;
+      this.replacedOpenings.delete(replaced);
+      if (replaced.draft !== undefined) drafts.set(id, replaced.draft);
+      settled = true;
+    }
     const opening = this.opening;
     const id = opening?.id;
-    if (opening === undefined || id === undefined || !this.hasTab(id)) return;
-    this.opening = undefined;
-    this.openedWithInput = tookInput(opening) && id === this.state.activeTabId ? id : undefined;
-    const drafts = new Map(this.drafts);
-    if (opening.draft === undefined) drafts.delete(id);
-    else drafts.set(id, opening.draft);
-    this.drafts = drafts;
+    if (opening !== undefined && id !== undefined && this.hasTab(id)) {
+      this.opening = undefined;
+      this.openedWithInput = tookInput(opening) && id === this.state.activeTabId ? id : undefined;
+      if (opening.draft === undefined) drafts.delete(id);
+      else drafts.set(id, opening.draft);
+      settled = true;
+    }
+    if (settled) this.drafts = drafts;
   }
 
   private hasTab(id: string): boolean {
     return this.state.tabs.some((tab) => tab.id === id);
+  }
+
+  /**
+   * Drops the drafts of tabs that closed, and of tabs whose page moved to another address while
+   * their address bar did not have the focus.
+   */
+  private dropStaleDrafts(): void {
+    const moved = new Set<string>();
+    for (const tab of this.state.tabs) {
+      const before = this.addresses.get(tab.id);
+      if (before !== undefined && before !== tab.url) moved.add(tab.id);
+      this.addresses.set(tab.id, tab.url);
+    }
+    for (const id of this.addresses.keys()) {
+      if (!this.hasTab(id)) this.addresses.delete(id);
+    }
+    // While a new tab opens, the address bar edits what is typed for that tab.
+    const editing =
+      this.addressFocused && this.opening === undefined ? this.state.activeTabId : null;
+    const stale = [...this.drafts.keys()].filter(
+      (id) => !this.hasTab(id) || (moved.has(id) && id !== editing),
+    );
+    if (stale.length > 0) {
+      this.drafts = new Map([...this.drafts].filter(([id]) => !stale.includes(id)));
+    }
   }
 
   /**
@@ -1437,8 +1553,10 @@ export class AppShell extends LitElement {
           }}
           @keydown=${this.onAddressKey}
           @blur=${() => {
+            // What was typed stays with the tab; the browser keeps the list open if the
+            // focus went to it, for the click that chooses a suggestion for this address bar.
+            if (this.suggesting) this.chosenFor = this.suggestionsFor;
             this.addressFocused = false;
-            this.setDraft(undefined);
             this.closeSuggestions();
           }}
         />
@@ -1465,31 +1583,20 @@ export class AppShell extends LitElement {
         </svg>
       </span>`;
     }
-    const icon = tab.favicon === null ? undefined : this.favicon(tab.favicon);
+    const icon = tab.favicon === null ? undefined : this.favicons.get(tab.favicon);
     return html`<span class="favicon" aria-hidden="true"
       >${icon === undefined ? (pageIcon(tab.url) ?? icons.globe) : html`<img src=${icon} alt="" />`}</span
     >`;
   }
 
   /**
-   * The icon of a key as a `data:` address, once the browser sent it; the first call asks.
-   * @param key - The key of the icon.
+   * Opens the menu of a tab where it was clicked with the secondary button. A Control-click
+   * opens it on macOS as well, with the primary button, whose release the menu takes: that
+   * press drags nothing.
    */
-  private favicon(key: string): string | undefined {
-    if (!this.favicons.has(key)) {
-      this.favicons.set(key, undefined);
-      void this.bridge?.invoke('tabs.favicon', { key }).then((icon) => {
-        if (icon === null) return;
-        this.favicons.set(key, icon);
-        this.requestUpdate();
-      });
-    }
-    return this.favicons.get(key);
-  }
-
-  /** Opens the menu of a tab where it was clicked with the secondary button. */
   private openTabMenu(event: MouseEvent, tabId: string): void {
     event.preventDefault();
+    this.cancelDrag();
     void this.bridge?.invoke('tabs.openMenu', {
       tabId,
       x: Math.max(0, Math.round(event.clientX)),
@@ -1750,16 +1857,18 @@ export class AppShell extends LitElement {
       draft: undefined,
       entered: false,
     };
+    const replaced = this.opening;
+    if (replaced?.draft !== undefined) this.replacedOpenings.add(replaced);
     this.opening = opening;
     this.requestUpdate();
     this.focusAddress();
     void opening.answer.then(
       (id) => {
-        if (this.opening !== opening) return;
         opening.id = id;
         this.settleOpening();
       },
       () => {
+        this.replacedOpenings.delete(opening);
         // Without a new tab, the address bar is the active tab's again.
         if (this.opening !== opening) return;
         this.opening = undefined;
@@ -1969,39 +2078,54 @@ export class AppShell extends LitElement {
       input.select();
     }
     if (event.key === 'Enter' && this.suggestion !== -1) {
+      const typed = input.value;
       // The browser opens the suggestion in the tab that the list is for, also in the tab that
       // the New tab button opens while the shell still waits for that tab.
       const owner = this.addressOwner;
-      if (this.opening !== undefined) this.opening.entered = true;
+      if (isOpening(owner)) owner.entered = true;
       this.chosenFor = owner;
-      void this.bridge?.invoke('omnibox.accept', {}).then((opened) => {
-        if (!opened && this.chosenFor === owner) this.chosenFor = undefined;
-      });
       this.suggestion = -1;
       this.suggesting = false;
+      // A newer list may have come without the mark; then what was typed opens, for the tab
+      // that it was typed for.
+      void this.bridge?.invoke('omnibox.accept', {}).then((opened) => {
+        if (opened) return;
+        if (this.chosenFor === owner) this.chosenFor = undefined;
+        if (typed.trim() !== '') this.enter(typed, input, owner);
+      });
       return;
     }
     if (event.key !== 'Enter' || input.value.trim() === '') {
       return;
     }
     this.closeSuggestions();
-    const opening = this.opening;
-    const tabId = this.state.activeTabId;
-    if (opening !== undefined) {
+    this.enter(input.value, input, this.addressOwner);
+  };
+
+  /**
+   * Opens what was typed in an address bar: in its tab, or in the tab that the New tab button
+   * opens once the browser named it. The address bar is left if it is still that tab's: a
+   * click on New tab may have given it to the new tab before a late fallback of Enter.
+   * @param text - What was typed.
+   * @param input - The address bar.
+   * @param owner - Whose address bar it was when the text was entered.
+   */
+  private enter(text: string, input: HTMLInputElement, owner: AddressOwner): void {
+    if (isOpening(owner)) {
       // The tab that the New tab button opens loads the input once the browser named it.
-      opening.entered = true;
-      const text = input.value;
-      void opening.answer.then((id) =>
+      owner.entered = true;
+      void owner.answer.then((id) =>
         this.bridge?.invoke('tabs.navigate', { tabId: id, input: text }),
       );
     } else {
-      void (tabId === null
-        ? this.bridge?.invoke('tabs.open', { input: input.value })
-        : this.bridge?.invoke('tabs.navigate', { tabId, input: input.value }));
+      void (owner === null
+        ? this.bridge?.invoke('tabs.open', { input: text })
+        : this.bridge?.invoke('tabs.navigate', { tabId: owner, input: text }));
     }
-    this.setDraft(undefined);
-    input.blur();
-  };
+    const now = this.ownerNow(owner);
+    this.dropInput(now);
+    if (now === this.addressOwner) input.blur();
+  }
 
   /** Asks for the suggestions for what is typed, below the address bar. */
   private suggest(text: string): void {
@@ -2064,6 +2188,34 @@ export class AppShell extends LitElement {
     input?.select();
   }
 
+  /**
+   * Leaves room in the top row for the window controls, where the window has them: the shell
+   * moves its tabs and buttons out of their way, and removes the room in full screen and with
+   * the title bar of the system, where the state has no title bar.
+   */
+  private readonly placeTitleBar = (): void => {
+    const titleBar = this.state.titleBar;
+    if (titleBar === null) {
+      delete this.dataset['titlebar'];
+      this.titleBarRoom = '';
+      return;
+    }
+    const controls = this.windowControls;
+    const free = controls?.visible === true ? controls.getTitlebarAreaRect() : undefined;
+    const room = controlsRoom(
+      titleBar,
+      free === undefined
+        ? undefined
+        : { x: free.x, width: free.width, height: free.height, viewport: window.innerWidth },
+    );
+    const key = JSON.stringify(room);
+    if (key === this.titleBarRoom) return;
+    this.titleBarRoom = key;
+    this.dataset['titlebar'] = room.side;
+    this.style.setProperty('--titlebar-start', `${String(room.start)}px`);
+    this.style.setProperty('--titlebar-end', `${String(room.end)}px`);
+  };
+
   /** Tells the browser where the content area is, so the page covers exactly that area. */
   private reportInsets(): void {
     const content = this.renderRoot.querySelector('.content')?.getBoundingClientRect();
@@ -2112,6 +2264,27 @@ function isOpening(owner: AddressOwner | undefined): owner is Opening {
   return typeof owner === 'object' && owner !== null;
 }
 
+/**
+ * The part of the Window Controls Overlay API that the shell reads, which the DOM types of
+ * TypeScript do not have. Electron gives it to the views of windows whose window controls
+ * Chromium draws, on Windows and Linux.
+ */
+interface WindowControls extends EventTarget {
+  readonly visible: boolean;
+  getTitlebarAreaRect(): DOMRect;
+}
+
+/** The Window Controls Overlay API of the shell's window, if the engine has it. */
+function windowControls(): WindowControls | undefined {
+  const overlay: unknown = Reflect.get(navigator, 'windowControlsOverlay');
+  return isWindowControls(overlay) ? overlay : undefined;
+}
+
+/** Whether a value is the Window Controls Overlay API. */
+function isWindowControls(value: unknown): value is WindowControls {
+  return value instanceof EventTarget && 'visible' in value && 'getTitlebarAreaRect' in value;
+}
+
 /** How a page's connection is shown in the address bar. */
 type Security = 'secure' | 'insecure' | 'internal' | 'none';
 
@@ -2122,19 +2295,24 @@ const securityLabels = {
 } as const;
 
 /**
- * How secure the connection of a tab's page is: over HTTPS, without encryption to another
- * computer, or one of the browser's own pages. Local addresses and pages without one show
- * nothing.
+ * How secure the connection of a tab's page is: secure over HTTPS with a trusted
+ * certificate; not secure without encryption to another computer, or with a certificate that
+ * is not trusted, also after the user accepted it; or one of the browser's own pages. Local
+ * addresses, pages without one and pages that could not be loaded or crashed show nothing.
  */
 function securityOf(tab: TabView): Security {
-  if (tab.problem?.kind === 'insecure') return 'insecure';
+  const problem = tab.problem?.kind;
+  if (problem === 'insecure' || problem === 'certificate') return 'insecure';
+  if (problem !== undefined) return 'none';
   const url = tab.url;
   if (url === newTabUrl || url === 'about:blank') return 'none';
   if (url.startsWith('app://')) return 'internal';
-  if (/^https:/i.test(url)) return 'secure';
+  if (/^https:/i.test(url)) return tab.certificateException ? 'insecure' : 'secure';
   if (!/^http:/i.test(url)) return 'none';
   const host = hostOf(url).replace(/:\d+$/, '');
-  return host === 'localhost' || host === '[::1]' || host.startsWith('127.') ? 'none' : 'insecure';
+  return host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host)
+    ? 'none'
+    : 'insecure';
 }
 
 /**
@@ -2165,6 +2343,46 @@ function displayUrl(url: string | undefined): string {
 /** A zoom factor as a percentage in the shell's language, such as 125 %. */
 function percent(factor: number, language: string | undefined): string {
   return new Intl.NumberFormat(language, { style: 'percent' }).format(factor);
+}
+
+/** Where the active tab's surface goes in the tab strip, and its size. */
+interface Place {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Whether two lengths in pixels are the same but for rounding. */
+function near(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.5;
+}
+
+/** Whether two places are the same but for rounding. */
+function samePlace(a: Place, b: Place): boolean {
+  return near(a.x, b.x) && near(a.y, b.y) && near(a.width, b.width) && near(a.height, b.height);
+}
+
+/**
+ * Where the layout puts an element, without the transform that draws it elsewhere for now,
+ * such as an animation that moves a tab to its place or lets a new tab grow there. Tabs only
+ * move, and scale about their center.
+ * @param element - The element.
+ */
+function layoutRect(element: Element): DOMRect {
+  const rect = element.getBoundingClientRect();
+  const transform = getComputedStyle(element).transform;
+  if (transform === 'none' || transform === '') return rect;
+  const { a, d, e, f } = new DOMMatrixReadOnly(transform);
+  if (a <= 0 || d <= 0) return rect;
+  const width = rect.width / a;
+  const height = rect.height / d;
+  return new DOMRect(
+    rect.left - e - (width * (1 - a)) / 2,
+    rect.top - f - (height * (1 - d)) / 2,
+    width,
+    height,
+  );
 }
 
 /**

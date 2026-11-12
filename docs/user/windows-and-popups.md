@@ -20,7 +20,7 @@ The content blocker keeps popups that its filter lists name from opening; see [C
 `Ctrl+Shift+N` (`Command+Shift+N` on macOS), or New private window in the menu, opens a private window. It is dark and shows **Private** in the toolbar.
 
 - Pages you open in a private window are not kept in the history, and private windows are not restored at the next start.
-- Cookies and other site data of private windows stay in memory, apart from those of regular windows. Astela deletes them when you close the last private window; the next private window starts empty.
+- Cookies and other site data of private windows stay in memory, apart from those of regular windows, and so do the icons of their pages. Astela deletes them when you close the last private window; the next private window starts empty.
 - Sites ask again before they use the camera, notifications and the like, and Astela forgets the answers when the last private window closes. Changes to the zoom of a site are not kept.
 - Files you download stay in your downloads folder. The list of downloads shows them only in private windows, and downloads that still run when you close the last private window are canceled.
 - Bookmarks you add and settings you change in a private window are kept.

@@ -33,6 +33,8 @@ export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
  * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
  * `problem` why the tab shows no page, which the shell then shows in its place;
+ * `certificateException` whether the page is from a site whose certificate was not trusted
+ * and was accepted after the warning, so its connection does not count as secure;
  * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
  * `audible` whether the page plays sound, `muted` whether its sound is muted, and `pinned`
  * whether the tab is pinned.
@@ -48,6 +50,7 @@ export const TabView = v.strictObject({
   blocking: v.picklist(['on', 'off', 'none', 'failed']),
   bookmarked: v.boolean(),
   problem: v.nullable(TabProblem),
+  certificateException: v.boolean(),
   zoom: v.pipe(v.number(), v.minValue(0.25), v.maxValue(5)),
   favicon: v.nullable(FaviconKey),
   audible: v.boolean(),
@@ -78,7 +81,8 @@ export type FindState = v.InferOutput<typeof FindState>;
 /**
  * Where the window controls lie in the top row when the browser draws the title bar: at its
  * start or end, how much room they take and how high the row is. The state has `null` with
- * the system's title bar.
+ * the system's title bar and in full screen, where the system hides the controls. On Windows
+ * and Linux, the shell takes their place and room from the window once the window reports them.
  */
 const TitleBarArea = v.strictObject({
   side: v.picklist(['start', 'end']),
@@ -100,8 +104,10 @@ const DownloadsSummary = v.strictObject({
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
  * the window is a private window, `home` whether the toolbar has a home button,
- * `defaultZoom` the zoom of sites without a zoom of their own, and `toolbar` the buttons
- * next to the address bar in their order.
+ * `defaultZoom` the zoom of sites without a zoom of their own, `toolbar` the buttons next
+ * to the address bar in their order, and `covered` whether the overlay covers the window, as a
+ * popover or a question does, so that a click next to it reaches the overlay instead of moving
+ * the window.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -115,6 +121,7 @@ export const ShellState = v.strictObject({
   defaultZoom: v.number(),
   toolbar: v.array(v.picklist(toolbarItems)),
   titleBar: v.nullable(TitleBarArea),
+  covered: v.boolean(),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

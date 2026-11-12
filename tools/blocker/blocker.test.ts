@@ -150,6 +150,18 @@ describe('build', () => {
       assert.equal(blocked('http://127.0.0.1:8080/fixture-ad.js', 'script'), true);
       assert.equal(blocked('http://127.0.0.1:8080/fixture-tracker.gif', 'image'), true);
       assert.equal(blocked('http://127.0.0.1:8080/app.js', 'script'), false);
+      // The icon of a fixture page is blocked only as an image of a fixture page.
+      const icon = (sourceUrl: string, type: 'image' | 'other'): boolean =>
+        engine.match(
+          Request.fromRawDetails({
+            url: 'http://127.0.0.1:8080/fixture-icon.png',
+            sourceUrl,
+            type,
+          }),
+        ).match;
+      assert.equal(icon('http://127.0.0.1:8080/blocked-icon.html', 'image'), true);
+      assert.equal(icon('http://127.0.0.1:8080/blocked-icon.html', 'other'), false);
+      assert.equal(icon('', 'image'), false);
       // A redirect filter names its stand-in, which the data carries.
       const redirected = engine.match(
         Request.fromRawDetails({

@@ -62,8 +62,10 @@ test('asks before a site shows notifications, keeps the answer and lets the sett
     expect(await page.evaluate(() => Notification.requestPermission())).toBe('granted');
     expect(await page.evaluate(() => Notification.permission)).toBe('granted');
 
-    // The settings list the answer, in a tab of their own.
-    await pressNative(browser, 'T', ['primary']);
+    // The settings list the answer, in a tab of their own. The page has the focus again, so
+    // the key goes to it, as a key of the keyboard would.
+    await pressNative(browser, 'T', ['primary'], server.origin);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     const field = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await field.fill('app://settings');
     await field.press('Enter');
@@ -244,7 +246,7 @@ test('asks about the location and the clipboard, and only the visible tab asks',
     expect(await read).toBe('Copied text');
 
     // A tab in the background gets no question and no permission.
-    await pressNative(browser, 'T', ['primary']);
+    await pressNative(browser, 'T', ['primary'], server.origin);
     await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     expect(await page.evaluate(() => Notification.requestPermission())).toBe('denied');
     await expect(prompt).toBeHidden();

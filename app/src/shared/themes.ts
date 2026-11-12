@@ -127,6 +127,22 @@ export const themeBackgrounds: Readonly<
   'true-dark': { light: '#f5f7f9', dark: '#000000' },
 };
 
+/**
+ * The toolbar color of each built-in theme, `surface-1` as `#rrggbb`, which the window controls
+ * of Windows and Linux take when the toolbar is the top row. They are written out like the
+ * window colors; a test checks that they match.
+ */
+export const themeToolbars: Readonly<
+  Record<ThemeId, { readonly light: string; readonly dark: string }>
+> = {
+  astela: { light: '#fdfdff', dark: '#1f2226' },
+  paper: { light: '#fffbf6', dark: '#25221f' },
+  forest: { light: '#f9fefa', dark: '#1d221f' },
+  ocean: { light: '#fafdff', dark: '#1a2026' },
+  slate: { light: '#fdfdfd', dark: '#1e1e1e' },
+  'true-dark': { light: '#fdfdff', dark: '#060606' },
+};
+
 /** A color that people chose, as `#rrggbb`. */
 const Hex = v.pipe(v.string(), v.regex(/^#[0-9a-f]{6}$/i));
 
@@ -184,6 +200,22 @@ export function windowColors(
   return {
     light: custom.light['surface-0'] ?? themeBackgrounds.astela.light,
     dark: custom.dark['surface-0'] ?? themeBackgrounds.astela.dark,
+  };
+}
+
+/**
+ * The toolbar colors of a theme choice, light and dark.
+ * @param theme - The choice.
+ * @param custom - The colors that people chose.
+ */
+export function toolbarColors(
+  theme: ThemeChoice,
+  custom: CustomTheme,
+): { readonly light: string; readonly dark: string } {
+  if (theme !== 'custom') return themeToolbars[theme];
+  return {
+    light: custom.light['surface-1'] ?? themeToolbars.astela.light,
+    dark: custom.dark['surface-1'] ?? themeToolbars.astela.dark,
   };
 }
 

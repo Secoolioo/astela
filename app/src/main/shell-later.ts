@@ -21,7 +21,6 @@ import {
   StopFinding,
   ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
-import { favicons } from '../platform/electron/favicons.ts';
 import type {
   BrowserWindowController,
   WindowManager,
@@ -75,7 +74,10 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
-  router.handle(GetFavicon, ({ key }) => favicons.get(key) ?? null);
+  router.handle(
+    GetFavicon,
+    async ({ key }, { sender }) => (await windowOf(sender).favicon(key)) ?? null,
+  );
   const suggestions = {
     ...dependencies.suggestions,
     router,
@@ -99,8 +101,8 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(CloseSuggestions, async (_request, { sender }) => {
     const window = windowOf(sender);
-    const { close } = await import('./suggestions.ts');
-    close(window);
+    const { dismiss } = await import('./suggestions.ts');
+    dismiss(window);
     return null;
   });
   router.handle(OpenTabMenu, async ({ tabId, x, y }, { sender }) => {

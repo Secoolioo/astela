@@ -20,3 +20,5 @@ $removeparam=fixture_tracking
 127.0.0.1##.fixture-promo:has-text(Sponsored)
 127.0.0.1##.fixture-remove:remove()
 ||127.0.0.1^*/fixture-popup.html$popup
+! An image that the lists block only as an image of the fixture pages, such as their icon.
+||127.0.0.1^*/fixture-icon.png$image,domain=127.0.0.1

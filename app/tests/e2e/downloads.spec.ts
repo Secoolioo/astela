@@ -4,12 +4,14 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { launch, pressNative, waitForPage, type Browser } from './harness.ts';
+import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
 
 const mac = process.platform === 'darwin';
 /** The large download comes in parts with a pause between them, so a test can catch it. */
 const part = Buffer.alloc(64 * 1024, 7);
 const parts = 40;
+/** The icon of a page with a download, in its address. */
+const icon = readFileSync(join(import.meta.dirname, 'fixtures', 'image.png')).toString('base64');
 
 let server: Server;
 let origin = '';
@@ -45,6 +47,12 @@ test.beforeAll(async () => {
         '<!doctype html><title>Fixture downloads</title>' +
           '<a href="/report.txt">Report</a> <a href="/large.bin">Large</a> ' +
           '<a href="/Large.bin">Second copy</a>',
+      );
+    } else if (path === '/icon') {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(
+        '<!doctype html><title>Fixture download icon</title>' +
+          `<link rel="icon" href="data:image/png;base64,${icon}"><a href="/report.txt">Report</a>`,
       );
     } else {
       response.writeHead(404).end();
@@ -136,6 +144,31 @@ test('saves downloads in the downloads folder under a free name and lists them',
     await downloads.getByRole('button', { name: 'Remove from list: report.txt' }).click();
     await expect(items).toHaveCount(1);
     expect(existsSync(join(folder, 'report.txt'))).toBe(true);
+  } finally {
+    await browser.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('keeps the icon of a page whose link starts a download', async () => {
+  const browser = await launch();
+  const folder = mkdtempSync(join(tmpdir(), 'downloads-'));
+  try {
+    await useFolder(browser, folder);
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${origin}/icon`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url === `${origin}/icon`);
+    const tabIcon = browser.shell
+      .getByRole('tab', { name: 'Fixture download icon' })
+      .locator('.favicon img');
+    await expect(tabIcon).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await page.getByRole('link', { name: 'Report' }).click();
+    await expect.poll(() => existsSync(join(folder, 'report.txt'))).toBe(true);
+    // The link started no new page: the page stays, and so does its icon.
+    await expect.poll(async () => (await shellState(browser.shell)).tabs[0]?.loading).toBe(false);
+    await expect(tabIcon).toHaveAttribute('src', /^data:image\/png;base64,/);
+    expect((await shellState(browser.shell)).tabs[0]?.favicon).toMatch(/^[0-9a-f]{16}$/);
   } finally {
     await browser.close();
     rmSync(folder, { recursive: true, force: true });

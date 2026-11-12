@@ -5,6 +5,7 @@ import {
   type SuggestionSource,
 } from '../domain/navigation/suggestions.ts';
 import type { TabId } from '../domain/tabs/tab-service.ts';
+import type { WebContents } from 'electron';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions } from '../platform/electron/overlay.ts';
@@ -22,8 +23,8 @@ export interface SuggestionDependencies {
   readonly target: (text: string) => Promise<OmniboxTarget | undefined>;
   /** Visited pages that match the text, the most relevant first. */
   readonly history: (text: string) => Promise<readonly SuggestionSource[]>;
-  /** The bookmarks. */
-  readonly bookmarks: () => readonly SuggestionSource[];
+  /** The bookmarks, which load with the first suggestions if nothing loaded them before. */
+  readonly bookmarks: () => Promise<readonly SuggestionSource[]>;
 }
 
 /** Where the list goes: below the address bar, as wide as it, and the height of a row. */
@@ -72,9 +73,10 @@ export async function suggest(
   const state = shown.get(window) ?? { items: [], selected: -1, request, tabId: undefined };
   state.request = request;
   shown.set(window, state);
-  const [target, history] = await Promise.all([
+  const [target, history, bookmarks] = await Promise.all([
     deps.target(text).catch(() => undefined),
     deps.history(text).catch(() => []),
+    deps.bookmarks().catch(() => []),
   ]);
   if (state.request !== request || window.window.isDestroyed()) return;
   // The text is for the tab of the address bar, which is not always the active tab: after a
@@ -85,7 +87,7 @@ export async function suggest(
     tabs: window.tabs.all
       .filter((tab) => tab.id !== own)
       .map(({ id, title, url }) => ({ id, title, url })),
-    bookmarks: deps.bookmarks(),
+    bookmarks,
     history,
   });
   if (items.length === 0) {
@@ -108,6 +110,20 @@ export async function suggest(
   if (overlay.content?.kind === 'suggestions') overlay.update(content, bounds);
   else overlay.open(content, () => shown.delete(window), bounds);
   track(window, overlay);
+  watchFocus(overlay, window);
+}
+
+const watched = new WeakSet<WebContents>();
+
+/** Closes the list of a window when the focus that a press gave it goes elsewhere. */
+function watchFocus(
+  overlay: { readonly contents: WebContents | undefined },
+  window: BrowserWindowController,
+): void {
+  const contents = overlay.contents;
+  if (contents === undefined || watched.has(contents)) return;
+  watched.add(contents);
+  contents.on('blur', () => close(window));
 }
 
 /**
@@ -139,6 +155,17 @@ export function accept(window: BrowserWindowController): boolean {
   if (item === undefined) return false;
   open(window, item, state?.tabId);
   return true;
+}
+
+/**
+ * Closes the suggestions when the shell no longer wants them, unless the list has the focus:
+ * pressing the mouse on it moves the focus there before the click that chooses a suggestion
+ * arrives. The list then closes when it loses the focus again.
+ * @param window - The window.
+ */
+export function dismiss(window: BrowserWindowController): void {
+  if (existingOverlay(window)?.contents?.isFocused() === true) return;
+  close(window);
 }
 
 /**

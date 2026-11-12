@@ -23,6 +23,7 @@ Every item in this section is designed to be covered by an automated test.
 - `setWindowOpenHandler` lets pages open only tabs and popup windows of the browser, never free-floating windows.
 - The shell, the overlay and internal pages must never navigate away from `app://`; `will-navigate` and `will-redirect` guards enforce this.
 - Web tabs can neither navigate to, embed nor load `app://` pages.
+- Web pages cannot mark parts of the window that move it: a user style sheet in every web document keeps `app-region` and `window-drag` of every element at their initial value, so with the title bar of the browser, no page takes clicks from the tabs, the address bar or the overlay ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)).
 - `shell.openExternal` is limited to allowlisted schemes and requires confirmation.
 
 ### Content Security Policy
@@ -45,6 +46,7 @@ The permission handlers, the navigation and window guards and the `app://` regis
 
 - Client certificates are never selected automatically. The `select-client-certificate` handler will call `preventDefault()` and show a selection UI.
 - Certificate errors will show a dedicated interstitial page.
+- A certificate that the user accepts after the warning holds for its host and fingerprint for the rest of the session of the page (`app/src/platform/electron/certificates.ts`). Electron does not tell the browser process which certificate a page came with, so every tab whose page is on a host with such an exception in its session has `certificateException` set in its `TabView`, and the address bar shows that page, like the warning itself, as not secure. Content that a page embeds from such a host does not change how the address bar shows the page.
 - `setCertificateVerifyProc` never accepts certificates wholesale.
 
 ### Fuses
@@ -84,6 +86,18 @@ Chromium's HTTPS upgrades are not available in Electron (as of October 2026), so
 - HTTPS-First is on by default; the setting `privacy.httpsFirst` and the `HttpsOnlyMode` policy turn it off.
 
 There is one mode: Chromium's HTTPS upgrades that fall back without a warning are not offered.
+
+### Page icons
+
+Electron only reports the addresses of a page's icons, so the browser process loads the icons that the tabs show itself (`app/src/platform/electron/favicons.ts`), in the session of the page:
+
+- The request goes like an image of the page: with the referrer that pages send by default (`strict-origin-when-cross-origin`) and with `Sec-Fetch-Dest: image`. The `RequestPipeline` therefore sees an image request of the page, and the content blocker applies its rules for images, third parties and domains to it. The request carries no cookies.
+- An `https://` page gets no icon from an `http://` address.
+- Reading stops as soon as an icon is larger than 100 KB, also when the server declares no size or the size of a compressed body. A tab loads one icon at a time: a newer icon of its page, or another page, stops the load that runs.
+- Each session keeps icons of its own and remembers which addresses it loaded for each origin of a page, so that a site cannot tell from a request that does not come that the icon was shown in another session or on another site. The icons of private windows go when the last private window closes. An address whose icon could not be loaded is asked for again after a minute.
+- The shell of a window keeps the icons of its current tabs only.
+
+What the request pipeline cannot do for icons: the network stack follows the redirects of an icon, also from `https://` to `http://`, and it drops the referrer on such a redirect, so the content blocker sees no page for that step. A blocked icon does not count on the shield, because its request belongs to no tab. The browser process does not know the referrer policy of a page, so its icons always get the default one.
 
 ### DNS over HTTPS
 
@@ -202,6 +216,7 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 - `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
 - Private windows load web pages in a session in memory of their own, with the same guards, pipeline and content blocker; its data is deleted after the last private window closed ([ADR 0041](../adr/0041-private-windows-with-a-session-in-memory.md)).
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
+- Web pages cannot move the window with regions of `app-region`: the frame preload gives every web document a user style sheet against them, and the browser process gives it to the first document of a page that a script opened, where no preload runs, and to every document of a tab once it is parsed ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)).
 - All `app://` pages carry the strict Content Security Policy with Trusted Types.
 - Client certificates are never selected automatically.
 - The user agent carries neither the app nor the Electron token.

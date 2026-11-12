@@ -69,14 +69,16 @@
   "settings.newTabImageTitle": "Hintergrundbild wählen",
   "settings.imageFileType": "Bilder",
   "tabMenu.newTabRight": "Neuer Tab &rechts",
+  "tabMenu.newTabBelow": "Neuer Tab da&runter",
   "tabMenu.reload": "&Neu laden",
   "tabMenu.duplicate": "&Duplizieren",
-  "tabMenu.pin": "&Anheften",
+  "tabMenu.pin": "An&heften",
   "tabMenu.unpin": "&Lösen",
   "tabMenu.mute": "Tab &stummschalten",
   "tabMenu.unmute": "&Ton des Tabs einschalten",
   "tabMenu.close": "S&chließen",
   "tabMenu.closeOthers": "&Andere Tabs schließen",
   "tabMenu.closeRight": "Tabs rechts schl&ießen",
+  "tabMenu.closeBelow": "Tabs darunter schl&ießen",
   "tabMenu.reopen": "Geschlossenen Tab &wieder öffnen"
 }

@@ -8,9 +8,13 @@ import { launch, pressNative, shellState, waitForPage, type Browser } from './ha
 
 let server: Server;
 let origin = '';
+/** How often the server was asked for the icon of the page with an icon. */
+let iconRequests = 0;
+const icon = readFileSync(join(import.meta.dirname, 'fixtures', 'image.png'));
 
 const pages: Readonly<Record<string, string>> = {
   '/regular': '<title>Fixture regular</title>',
+  '/icon': '<title>Fixture icon</title><link rel="icon" href="/icon.png">',
   '/private': '<title>Fixture private</title><a href="/report.txt">Report</a>',
   '/opener':
     '<title>Fixture private opener</title>' +
@@ -30,6 +34,10 @@ test.beforeAll(async () => {
         'content-disposition': 'attachment; filename="private-report.txt"',
       });
       response.end('Fixture report\n');
+    } else if (path === '/icon.png') {
+      iconRequests += 1;
+      response.writeHead(200, { 'content-type': 'image/png' });
+      response.end(icon);
     } else {
       response.writeHead(404).end();
     }
@@ -75,6 +83,13 @@ async function openPrivate(browser: Browser): Promise<Page> {
   const [shell] = await shells(browser, true);
   if (shell === undefined) throw new Error('No private window');
   return shell;
+}
+
+/** Waits until the tab of the page with an icon shows the icon in the window of a shell. */
+function shown(shell: Page): Promise<void> {
+  return expect(
+    shell.getByRole('tab', { name: 'Fixture icon' }).locator('.favicon img'),
+  ).toHaveAttribute('src', /^data:image\/png;base64,/);
 }
 
 /** Opens a page of the server in the window of a shell. */
@@ -209,6 +224,24 @@ test('keeps no history, session, cookies or answers of a private window', async 
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('loads the icons of a private window apart from those of regular windows', async () => {
+  const browser = await launch();
+  try {
+    const before = iconRequests;
+    await openIn(browser, browser.shell, '/icon');
+    await shown(browser.shell);
+    expect(iconRequests - before).toBe(1);
+    // A private window asks the site for the icon itself, so the site cannot tell from a
+    // request that does not come that a regular window showed the icon.
+    const shell = await openPrivate(browser);
+    await openIn(browser, shell, '/icon');
+    await shown(shell);
+    expect(iconRequests - before).toBe(2);
+  } finally {
+    await browser.close();
   }
 });
 

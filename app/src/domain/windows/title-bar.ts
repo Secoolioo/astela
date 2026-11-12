@@ -17,6 +17,8 @@ const sidebarWidth = 240;
 /**
  * Where the window controls lie in an integrated title bar, in CSS pixels: at the start of
  * the top row on macOS, where the three buttons of the window sit, and at its end elsewhere.
+ * On Windows and Linux, the shell takes their place and width from the window as soon as the
+ * window reports them, as a Linux desktop may put its buttons at the start.
  */
 export interface TitleBarArea {
   readonly side: 'start' | 'end';
@@ -39,6 +41,41 @@ export function titleBarArea(platform: string, density: Density, side: TabStripS
   return platform === 'darwin'
     ? { side: 'start', size: 76, height }
     : { side: 'end', size: 138, height };
+}
+
+/** The window controls that Chromium draws on Windows and Linux. */
+export interface ControlsOverlay {
+  /** Their background, as `#rrggbb`. */
+  readonly color: string;
+  /** The color of their symbols. */
+  readonly symbolColor: string;
+  /** Their height, that of the top row. */
+  readonly height: number;
+}
+
+/**
+ * The window controls of Windows and Linux: in the color of the row that they sit on, the
+ * background of the window behind a tab strip at the top and the toolbar's color otherwise,
+ * with symbols that can be read on it, and as high as the row.
+ * @param area - Where the controls are.
+ * @param colors - The background of the window and the color of the toolbar, as `#rrggbb`.
+ * @param side - Where the tab strip is.
+ */
+export function controlsOverlay(
+  area: TitleBarArea,
+  colors: { readonly window: string; readonly toolbar: string },
+  side: TabStripSide,
+): ControlsOverlay {
+  const color = side === 'top' ? colors.window : colors.toolbar;
+  return { color, symbolColor: isDark(color) ? '#e8eaed' : '#1f2329', height: area.height };
+}
+
+/** Whether a color such as `#14161A` is dark. */
+function isDark(color: string): boolean {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color);
+  if (match === null) return false;
+  const [r, g, b] = [match[1], match[2], match[3]].map((part) => Number.parseInt(part ?? '0', 16));
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0) < 128;
 }
 
 /**

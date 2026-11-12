@@ -4,13 +4,15 @@ import {
   type AST,
 } from '@ghostery/adblocker-extended-selectors';
 import { ipcRenderer, webFrame } from 'electron';
+import { noAppRegionCss } from '../shared/app-region.ts';
 
 /**
- * Runs in every frame of web pages, top frames and iframes alike, and applies the content
- * blocker's rules for the frame's address: element hiding rules as a style sheet, and
- * scriptlets in the page's own world before the page's scripts run. Rules that depend on
- * the page's elements follow once the document exists and whenever new elements appear.
- * The script exposes nothing to the page.
+ * Runs in every frame of web pages, top frames and iframes alike. It first keeps the frame
+ * from marking parts of the window that move it, whether the content blocker is on or not,
+ * and then applies the content blocker's rules for the frame's address: element hiding rules
+ * as a style sheet, and scriptlets in the page's own world before the page's scripts run.
+ * Rules that depend on the page's elements follow once the document exists and whenever new
+ * elements appear. The script exposes nothing to the page.
  */
 
 /** A procedural rule: the elements of its selector are hidden or changed by its directive. */
@@ -76,6 +78,10 @@ const cookieGuard = `(() => {
   }
   if ('SharedWorker' in globalThis) lock(globalThis, 'SharedWorker', { value: undefined });
 })();`;
+
+// Before the page has styles or scripts: a page that marks a region with app-region would
+// move the window from the tabs, the address bar or a question above it.
+webFrame.insertCSS(noAppRegionCss, { cssOrigin: 'user' });
 
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');
 if (isFrameRules(rules)) {

@@ -32,7 +32,7 @@ On `main` now, and in the next beta, 0.1.0-beta.6:
 - **Tab icons:** each tab shows the icon of its page, a ring while the page loads and a button that mutes a tab that plays sound.
 - **Tabs:** animate when they open, close and move, can be dragged to a new place and stay usable when many are open.
 - **Pinned tabs and a tab menu:** a menu for each tab opens a tab next to it, duplicates, pins, mutes or closes tabs; keys choose tabs, and on Windows and Linux also move them.
-- **Address bar:** shows the site first with a lock for HTTPS and **Not secure** for HTTP, and shows the loading of a page.
+- **Address bar:** shows the site first and whether its connection is secure, keeps what you typed in each tab and shows the loading of a page.
 - **Suggestions:** while you type, a list below the address bar suggests open tabs to switch to, bookmarks and visited pages.
 - **Title bar:** the window controls sit in the top row of the browser, so pages get more room; a setting keeps the title bar of the system.
 - **Controls:** switches with a sliding knob, softer segmented controls, buttons that give way when pressed and a bookmark star that pops when it is set.
