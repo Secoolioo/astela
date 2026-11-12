@@ -96,10 +96,11 @@ jobs:
           pnpm --dir website run build
           mkdir -p "$SITE"
           cp -R website/dist/. "$SITE/"
+      # lychee joins the PATH through $GITHUB_PATH, which only later steps see.
+      - name: Install the link checker
+        run: tools/ci/install-lychee.sh
       - name: Check the links
-        run: |
-          tools/ci/install-lychee.sh
-          tools/ci/check-links.sh "$SITE"
+        run: tools/ci/check-links.sh "$SITE"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/site
