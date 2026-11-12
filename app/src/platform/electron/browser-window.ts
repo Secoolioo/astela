@@ -1412,6 +1412,9 @@ export class WindowManager implements Disposable {
 
   /** Fires after windows opened or closed, or their tabs changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
+  private readonly keptEmitter = new Emitter<void>();
+  /** Fires after windows opened or closed, or their tabs changed in a way that a session keeps. */
+  readonly onDidChangeKept: Event<void> = this.keptEmitter.event;
   private readonly boundsEmitter = new Emitter<void>();
   /** Fires while a window moves or changes its size. */
   readonly onDidMove: Event<void> = this.boundsEmitter.event;
@@ -1526,6 +1529,7 @@ export class WindowManager implements Disposable {
     const controller = new BrowserWindowController(this.options, place);
     this.windows.add(controller);
     const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
+    const kept = controller.tabs.onDidChangeKept(() => this.keptEmitter.fire());
     // The session keeps where each window is.
     const moved = (): void => this.boundsEmitter.fire();
     controller.window.on('move', moved);
@@ -1546,9 +1550,11 @@ export class WindowManager implements Disposable {
     });
     controller.window.on('closed', () => {
       listener.dispose();
+      kept.dispose();
       forget();
       this.windows.delete(controller);
       this.changeEmitter.fire();
+      this.keptEmitter.fire();
       if (controller.isPrivate && ![...this.windows].some((other) => other.isPrivate)) {
         this.options.onPrivateWindowsClosed?.();
       }
