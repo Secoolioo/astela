@@ -2,7 +2,7 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
-## [0.1.0-beta.5] - 2026-11-11
+## [0.1.0-beta.5] - 2026-11-12
 
 The fifth beta lets you adjust the browser to the way you work. The settings page finds every setting, shows what you changed and saves the settings in a file; themes, the density, the text size and the fonts change the look; the toolbar, the new tab page, the search engines and the keyboard shortcuts can be changed; and new privacy settings open sites over HTTPS first, look up addresses over encrypted DNS and block third-party cookies. Installed copies of 0.1.0-beta.4 receive it as an update.
 
@@ -13,6 +13,7 @@ The fifth beta lets you adjust the browser to the way you work. The settings pag
 - Find in page: Enter right after typing goes on to the next match also while the page still looks for the typed text; before, it could stay on the first match.
 - Windows: on Linux, a window that closes right after it opened, such as a popup that closes itself at once, no longer makes the browser crash.
 - Windows: a link from another app, and on macOS an item of the menu bar, opens in a window that is still open, also when another window closed right after it opened.
+- Errors: an error in the browser process that no code catches is written to its log; before, a box showed it and kept the browser from quitting.
 
 ### Features
 
@@ -33,7 +34,7 @@ The fifth beta lets you adjust the browser to the way you work. The settings pag
 
 ### Performance
 
-- Each start reads less code: the code of the main process is minified, with the names of functions and classes kept for stack traces, and rarer requests of the toolbar load when they are first needed. The main process now reads 103 KiB before its first window, down from 148 KiB in 0.1.0-beta.4.
+- Each start reads less code: the code of the main process is minified, with the names of functions and classes kept for stack traces, and rarer requests of the toolbar load when they are first needed. The main process now reads 117 KiB before its first window, down from 148 KiB in 0.1.0-beta.4.
 
 ### Security
 
