@@ -2,7 +2,14 @@ import { expect, test } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { FixtureServer, launch, pressNative, waitForPage, type Browser } from './harness.ts';
+import {
+  FixtureServer,
+  launch,
+  pressNative,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 import { selfSignedCertificate } from './tls.ts';
 
 const server = new FixtureServer();
@@ -26,6 +33,62 @@ async function open(browser: Browser, url: string): Promise<void> {
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await address.fill(url);
   await address.press('Enter');
+}
+
+/**
+ * Holds back each message that tells the shell its state, so that the shell learns of a
+ * change only some time after the browser made it, as on a busy computer.
+ * @param browser - The running browser.
+ * @param delay - How long each message waits, in milliseconds.
+ */
+async function delayShellState(browser: Browser, delay: number): Promise<void> {
+  await browser.main.evaluate(({ webContents }, wait) => {
+    const shell = webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL().startsWith('app://shell'));
+    if (shell === undefined) throw new Error('The shell was not found');
+    const send = shell.send.bind(shell);
+    shell.send = (channel: string, ...args: unknown[]): void => {
+      if (channel === 'shell.stateChanged') setTimeout(() => send(channel, ...args), wait);
+      else send(channel, ...args);
+    };
+  }, delay);
+}
+
+/**
+ * Holds back the browser's answer to the shell's request for a new tab.
+ * @param browser - The running browser.
+ * @param delay - How long the answer waits, in milliseconds.
+ */
+async function delayNewTabAnswer(browser: Browser, delay: number): Promise<void> {
+  await browser.shell.evaluate((wait) => {
+    const shell = document.querySelector('app-shell') as unknown as {
+      bridge: { invoke(channel: string, request: unknown): Promise<unknown> };
+    };
+    const bridge = shell.bridge;
+    const invoke = bridge.invoke.bind(bridge);
+    bridge.invoke = (channel, request) => {
+      const answer = invoke(channel, request);
+      return channel === 'tabs.open'
+        ? answer.then((value) => new Promise((done) => setTimeout(() => done(value), wait)))
+        : answer;
+    };
+  }, delay);
+}
+
+/** Opens a page in the first tab and returns its address. */
+async function openFirstPage(browser: Browser): Promise<string> {
+  const first = `${server.origin}/index.html`;
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await open(browser, first);
+  await waitForPage(browser, (url) => url.endsWith('/index.html'));
+  await expect(address).toHaveValue(first);
+  return first;
+}
+
+/** The addresses of the tabs, in their order. */
+async function tabUrls(browser: Browser): Promise<string[]> {
+  return (await shellState(browser.shell)).tabs.map((tab) => tab.url);
 }
 
 test('keeps what was typed in the address bar of each tab until it is entered', async () => {
@@ -53,6 +116,142 @@ test('keeps what was typed in the address bar of each tab until it is entered', 
     await address.focus();
     await address.press('Escape');
     await expect(address).toHaveValue(`${server.origin}/second.html`);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps what is typed right after a click on New tab for the new tab, however late the shell learns of it', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const first = await openFirstPage(browser);
+    const second = `${server.origin}/second.html`;
+    // The browser answers at once, but its state with the new tab reaches the shell only
+    // after the address bar was typed into.
+    await delayShellState(browser, 600);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.fill(second);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    // The tab that was active before kept its page and its address.
+    await tabs.nth(0).click();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('loads what is entered right after a click on New tab in the new tab, also before the browser answered', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const first = await openFirstPage(browser);
+    const second = `${server.origin}/second.html`;
+    // The state with the new tab reaches the shell before the answer to its request, and
+    // both come after the address was typed and entered.
+    await delayShellState(browser, 600);
+    await delayNewTabAnswer(browser, 1200);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await address.fill(second);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    // The tab that was active before kept its page and its address.
+    await tabs.nth(0).click();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const { clicks, stateFirst } of [
+  { clicks: 1, stateFirst: true },
+  { clicks: 1, stateFirst: false },
+  { clicks: 2, stateFirst: true },
+  { clicks: 2, stateFirst: false },
+]) {
+  const opens =
+    clicks === 1
+      ? 'a new tab opens and after it shows for that tab'
+      : 'two new tabs open and after they show for the second one';
+  const order = stateFirst
+    ? 'the shell learns of a new tab before the browser answers'
+    : 'the browser answers before the shell learns of a new tab';
+  test(`keeps what is typed while ${opens}, when ${order}`, async () => {
+    const browser = await launch();
+    try {
+      const shell = browser.shell;
+      const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+      const tabs = shell.getByRole('tab');
+      const first = await openFirstPage(browser);
+      const second = `${server.origin}/second.html`;
+      const typedBefore = second.slice(0, 10);
+      await delayShellState(browser, 600);
+      if (stateFirst) await delayNewTabAnswer(browser, 1200);
+      for (let click = 0; click < clicks; click += 1) {
+        await shell.getByRole('button', { name: 'New tab' }).click();
+      }
+      // Part of the address is typed before the shell knows of any new tab, the rest once
+      // the tab of the last click shows.
+      await address.fill(typedBefore);
+      await expect(tabs.nth(clicks)).toHaveAttribute('aria-selected', 'true');
+      await expect(address).toHaveValue(typedBefore);
+      await shell.keyboard.type(second.slice(typedBefore.length));
+      await expect(address).toHaveValue(second);
+      await shell.keyboard.press('Enter');
+      await waitForPage(browser, (url) => url.endsWith('/second.html'));
+      const opened = Array.from({ length: clicks - 1 }, () => 'app://newtab/');
+      await expect.poll(() => tabUrls(browser)).toEqual([first, ...opened, second]);
+      // The tab of an earlier click shows the new tab page and nothing that was typed.
+      if (clicks === 2) {
+        await tabs.nth(1).click();
+        await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+        await expect(address).toHaveValue('');
+      }
+      // The tab that was active before kept its page and its address.
+      await tabs.nth(0).click();
+      await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+      await expect(address).toHaveValue(first);
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test('takes what is typed right after a click on New tab into the address bar of the new tab', async () => {
+  const browser = await launch();
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const tabs = shell.getByRole('tab');
+    const first = await openFirstPage(browser);
+    const second = `${server.origin}/second.html`;
+    // The keys are typed at once, without a click into the address bar, and before the
+    // shell knows of the new tab.
+    await delayShellState(browser, 600);
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await shell.keyboard.type(second);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(second);
+    await shell.keyboard.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/second.html'));
+    await expect.poll(() => tabUrls(browser)).toEqual([first, second]);
+    // The tab that was active before kept its page and its address.
+    await tabs.nth(0).click();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(address).toHaveValue(first);
   } finally {
     await browser.close();
   }

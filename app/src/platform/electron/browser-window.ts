@@ -375,6 +375,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.tabs.navigate(id, page === '' ? this.options.newTabUrl : page);
   }
 
+  /**
+   * Opens a tab that the shell asked for and sends the shell its state at once. The shell
+   * waits for a state with the new tab, which a tab that closes again before the next frame
+   * would otherwise never be in.
+   * @param url - URL to load; defaults to the blank page.
+   * @returns The new tab's id.
+   */
+  openTab(url?: string): TabId {
+    const id = this.tabs.open(url);
+    this.publishNow();
+    return id;
+  }
+
   /** Sends the shell its state again, for example after the layout settings changed. */
   refreshShell(): void {
     this.schedulePublish();

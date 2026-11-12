@@ -1059,7 +1059,7 @@ function registerShellHandlers(
   router.handle(GetShellState, (_request, { sender }) => windowOf(sender).state());
   router.handle(OpenTab, async ({ input }, { sender }) => {
     const url = input === undefined ? undefined : await target(input);
-    return { tabId: windowOf(sender).tabs.open(url) };
+    return { tabId: windowOf(sender).openTab(url) };
   });
   router.handle(
     ActivateTab,
