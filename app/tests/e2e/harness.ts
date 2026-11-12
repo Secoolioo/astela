@@ -260,9 +260,18 @@ export async function launch(
   const [inspectorMatch, devtoolsMatch] = await Promise.all([inspector, devtools]);
   for (let i = 0; !existsSync(report); i += 1) {
     if (i > 300 || child.exitCode !== null) {
+      // A browser process that still answers tells what its views wait for.
+      const reached =
+        child.exitCode === null
+          ? await within(
+              MainProcess.connect(inspectorMatch[1] ?? ''),
+              answerTime,
+              'The browser process',
+            ).catch(() => undefined)
+          : undefined;
       await reportFailedStart(
         child,
-        undefined,
+        reached,
         profile,
         devtoolsMatch[1] ?? '',
         'The shell did not become ready',
@@ -494,8 +503,11 @@ function systemProcesses(): string {
       : limit === 'unlimited'
         ? 'no limit for one user'
         : `at most ${limit} for one user`;
-  const program = basename(process.env['E2E_APP'] ?? 'astela').replace(/\.exe$/i, '');
-  const browser = all.filter((name) => name.startsWith(program));
+  // The helpers of the program on macOS take the product's name: astela, Astela Helper.
+  const program = basename(process.env['E2E_APP'] ?? 'astela')
+    .replace(/\.exe$/i, '')
+    .toLowerCase();
+  const browser = all.filter((name) => name.toLowerCase().startsWith(program));
   const ofUser = mine === undefined ? '' : `, ${String(mine.length)} of this user`;
   const browserList = counted(browser)
     .map(([name, count]) => `${String(count)} ${name}`)

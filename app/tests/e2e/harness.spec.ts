@@ -62,6 +62,10 @@ test('records and stops a browser that does not let the harness connect', async 
     /^Processes of the computer: \d+, \d+ of this user \((at most \d+|no limit) for one user\)$/m,
   );
   expect(text).toMatch(/^Processes of the browser: [1-9]\d* \((.*, )?\d+ astela(, |\)$)/m);
+  // On macOS the helpers of the browser take the product's name.
+  if (process.platform === 'darwin') {
+    expect(text).toMatch(/^Processes of the browser: .*\d+ Astela Helper/m);
+  }
 });
 
 test('names the page that does not answer in the record of a start', async () => {
