@@ -16,7 +16,8 @@ import type { ShellBridge } from './bridge.ts';
 export class AppShell extends LitElement {
   static override properties = {
     state: { state: true },
-    editing: { state: true },
+    drafts: { state: true },
+    addressFocused: { state: true },
   };
 
   /** Styles of the shell, scoped to its shadow root. */
@@ -485,6 +486,7 @@ export class AppShell extends LitElement {
       font-variant-numeric: tabular-nums;
     }
     nav {
+      position: relative;
       grid-area: nav;
       border-bottom: 1px solid var(--border-1);
       display: flex;
@@ -494,16 +496,120 @@ export class AppShell extends LitElement {
       padding: 0 var(--space-2);
       background: var(--surface-1);
     }
-    input {
+    /* The address bar: a quiet field that shows the site first and a soft ring with focus. */
+    .address {
+      position: relative;
+      display: flex;
+      align-items: center;
       flex: 1;
       min-width: 0;
-      height: var(--control-height);
-      padding: 0 var(--space-3);
-      border: 1px solid var(--border-1);
-      border-radius: var(--radius-1);
-      background: var(--surface-0);
+      height: var(--control-large);
+      border-radius: var(--radius-field);
+      background: var(--surface-2);
+      transition:
+        background-color var(--motion-instant) var(--ease-standard),
+        box-shadow var(--motion-fast) var(--ease-standard);
+    }
+    .address:hover {
+      background: var(--surface-hover);
+    }
+    .address:focus-within {
+      background: var(--surface-1);
+      box-shadow: 0 0 0 2px var(--focus-ring);
+    }
+    .address input {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      padding: 0 var(--space-3) 0 var(--space-2);
+      border: 0;
+      background: transparent;
       color: var(--text-1);
       font: inherit;
+    }
+    .address input:focus-visible {
+      outline: none;
+    }
+    .address input::placeholder {
+      color: var(--text-2);
+    }
+    /* Until the field is edited, the address shows with its host first and without https. */
+    .address[data-formatted] input {
+      color: transparent;
+    }
+    .field {
+      position: relative;
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+    }
+    .url {
+      position: absolute;
+      inset: 0;
+      padding: 0 var(--space-3) 0 var(--space-2);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .url .host {
+      color: var(--text-1);
+    }
+    .url .rest {
+      color: var(--text-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .security {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex: none;
+      height: var(--control-small);
+      margin-inline-start: var(--space-1);
+      padding: 0 var(--space-1);
+      border-radius: var(--radius-pill);
+      color: var(--text-2);
+      font-size: var(--font-size-small);
+      white-space: nowrap;
+    }
+    .security[data-kind='insecure'] {
+      padding-inline-end: var(--space-2);
+      background: var(--surface-1);
+      color: var(--danger);
+    }
+    /* The loading of the active tab, along the bottom of the toolbar. */
+    .progress {
+      position: absolute;
+      inset: auto 0 -1px;
+      height: 2px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .progress::after {
+      content: '';
+      display: block;
+      width: 40%;
+      height: 100%;
+      border-radius: var(--radius-pill);
+      background: var(--accent-secondary);
+      animation: progress var(--motion-loop) var(--ease-standard) infinite;
+    }
+    @keyframes progress {
+      from {
+        transform: translateX(-100%);
+      }
+      to {
+        transform: translateX(250%);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .progress::after {
+        width: 100%;
+        opacity: 0.5;
+      }
     }
     :focus-visible {
       outline: 2px solid var(--focus-ring);
@@ -521,7 +627,9 @@ export class AppShell extends LitElement {
   `;
 
   declare state: ShellState;
-  declare editing: string | undefined;
+  /** What was typed in the address bar of each tab and not yet entered. */
+  declare drafts: ReadonlyMap<string, string>;
+  declare addressFocused: boolean;
   /** Whether the focused address bar had all of its text selected before an update. */
   private addressSelected = false;
   bridge: ShellBridge | undefined;
@@ -573,7 +681,8 @@ export class AppShell extends LitElement {
       defaultZoom: 1,
       toolbar: ['bookmark', 'shield', 'downloads'],
     };
-    this.editing = undefined;
+    this.drafts = new Map();
+    this.addressFocused = false;
   }
 
   override connectedCallback(): void {
@@ -634,7 +743,7 @@ export class AppShell extends LitElement {
     const input = this.renderRoot.querySelector('input');
     this.addressSelected =
       input !== null &&
-      this.editing === undefined &&
+      this.draft === undefined &&
       this.shadowRoot?.activeElement === input &&
       input.selectionStart === 0 &&
       input.selectionEnd === input.value.length;
@@ -655,8 +764,9 @@ export class AppShell extends LitElement {
       this.takeFindFocus();
       this.takeDownloadsOpening();
     }
-    if (changed.has('state') && this.active === undefined) {
-      this.editing = undefined;
+    // Drafts of tabs that closed are gone.
+    if (changed.has('state') && [...this.drafts.keys()].some((id) => !this.hasTab(id))) {
+      this.drafts = new Map([...this.drafts].filter(([id]) => this.hasTab(id)));
     }
     // A tab that becomes active on the new tab page waits for input in the address bar.
     const active = this.active;
@@ -756,24 +866,7 @@ export class AppShell extends LitElement {
               </button>`
             : nothing
         }
-        <input
-          type="text"
-          spellcheck="false"
-          autocomplete="off"
-          aria-label=${t('shell.address')}
-          placeholder=${t('shell.addressPlaceholder')}
-          .value=${
-            this.editing ??
-            displayUrl(
-              // A site without a secure connection shows the insecure address that was asked for.
-              active?.problem?.kind === 'insecure' ? active.problem.url : active?.url,
-            )
-          }
-          @focus=${(e: FocusEvent) => inputOf(e)?.select()}
-          @input=${(e: InputEvent) => (this.editing = inputOf(e)?.value)}
-          @keydown=${this.onAddressKey}
-          @blur=${() => (this.editing = undefined)}
-        />
+        ${this.renderAddress(active, t)}
         ${
           active === undefined || sameZoom(active.zoom, this.state.defaultZoom)
             ? nothing
@@ -815,6 +908,7 @@ export class AppShell extends LitElement {
         >
           ${icons.menu}
         </button>
+        ${active?.loading === true ? html`<div class="progress" aria-hidden="true"></div>` : nothing}
       </nav>
       ${this.renderBookmarksBar(t)} ${this.renderFind()}
       <div class="content">${active?.problem ? this.renderProblem(active) : nothing}</div>
@@ -1142,6 +1236,85 @@ export class AppShell extends LitElement {
       element.removeAttribute('data-dragged');
       element.style.transform = '';
     }
+  }
+
+  /** What was typed in the address bar of the active tab and not yet entered. */
+  private get draft(): string | undefined {
+    const id = this.state.activeTabId;
+    return id === null ? undefined : this.drafts.get(id);
+  }
+
+  private setDraft(text: string | undefined): void {
+    const id = this.state.activeTabId;
+    if (id === null) return;
+    const drafts = new Map(this.drafts);
+    if (text === undefined) drafts.delete(id);
+    else drafts.set(id, text);
+    this.drafts = drafts;
+  }
+
+  private hasTab(id: string): boolean {
+    return this.state.tabs.some((tab) => tab.id === id);
+  }
+
+  /**
+   * The address bar: how secure the connection of the page is, and its address, which shows
+   * its host first and leaves out `https://` until the field is edited.
+   */
+  private renderAddress(
+    active: TabView | undefined,
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): TemplateResult {
+    // A site without a secure connection shows the insecure address that was asked for.
+    const shown = displayUrl(
+      active?.problem?.kind === 'insecure' ? active.problem.url : active?.url,
+    );
+    const draft = this.draft;
+    const parts = this.addressFocused || draft !== undefined ? undefined : addressParts(shown);
+    const security = active === undefined ? 'none' : securityOf(active);
+    return html`<div class="address" ?data-formatted=${parts !== undefined}>
+      ${
+        security === 'none'
+          ? nothing
+          : html`<span
+              class="security"
+              data-kind=${security}
+              role="img"
+              aria-label=${t(securityLabels[security])}
+              title=${t(securityLabels[security])}
+              >${securityIcons[security]}${
+                security === 'insecure' ? html`<span>${t('shell.notSecure')}</span>` : nothing
+              }</span
+            >`
+      }
+      <div class="field">
+        <input
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label=${t('shell.address')}
+          placeholder=${t('shell.addressPlaceholder')}
+          .value=${draft ?? shown}
+          @focus=${(e: FocusEvent) => {
+            this.addressFocused = true;
+            inputOf(e)?.select();
+          }}
+          @input=${(e: InputEvent) => this.setDraft(inputOf(e)?.value)}
+          @keydown=${this.onAddressKey}
+          @blur=${() => {
+            this.addressFocused = false;
+            this.setDraft(undefined);
+          }}
+        />
+        ${
+          parts === undefined
+            ? nothing
+            : html`<div class="url" aria-hidden="true">
+                <span class="host">${parts.host}</span><span class="rest">${parts.rest}</span>
+              </div>`
+        }
+      </div>
+    </div>`;
   }
 
   /** The icon of a tab: a turning ring while it loads, else its page's icon. */
@@ -1615,7 +1788,7 @@ export class AppShell extends LitElement {
       return;
     }
     if (event.key === 'Escape') {
-      this.editing = undefined;
+      this.setDraft(undefined);
       input.value = displayUrl(this.active?.url);
       input.select();
     }
@@ -1626,7 +1799,7 @@ export class AppShell extends LitElement {
     void (tabId === null
       ? this.bridge?.invoke('tabs.open', { input: input.value })
       : this.bridge?.invoke('tabs.navigate', { tabId, input: input.value }));
-    this.editing = undefined;
+    this.setDraft(undefined);
     input.blur();
   };
 
@@ -1656,6 +1829,48 @@ export class AppShell extends LitElement {
   }
 }
 
+/** How a page's connection is shown in the address bar. */
+type Security = 'secure' | 'insecure' | 'internal' | 'none';
+
+const securityLabels = {
+  secure: 'shell.secure',
+  insecure: 'shell.notSecure',
+  internal: 'shell.internalPage',
+} as const;
+
+/**
+ * How secure the connection of a tab's page is: over HTTPS, without encryption to another
+ * computer, or one of the browser's own pages. Local addresses and pages without one show
+ * nothing.
+ */
+function securityOf(tab: TabView): Security {
+  if (tab.problem?.kind === 'insecure') return 'insecure';
+  const url = tab.url;
+  if (url === newTabUrl || url === 'about:blank') return 'none';
+  if (url.startsWith('app://')) return 'internal';
+  if (/^https:/i.test(url)) return 'secure';
+  if (!/^http:/i.test(url)) return 'none';
+  const host = hostOf(url).replace(/:\d+$/, '');
+  return host === 'localhost' || host === '[::1]' || host.startsWith('127.') ? 'none' : 'insecure';
+}
+
+/**
+ * An address split into the host, which the address bar shows first, and the rest; secure
+ * and insecure web addresses leave their scheme out, as the field shows how secure they are.
+ * @param address - The address that the field holds.
+ */
+function addressParts(address: string): { host: string; rest: string } | undefined {
+  if (address === '') return undefined;
+  try {
+    const url = new URL(address);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return { host: address, rest: '' };
+    const rest = `${url.pathname === '/' ? '' : url.pathname}${url.search}${url.hash}`;
+    return { host: url.host, rest };
+  } catch {
+    return { host: address, rest: '' };
+  }
+}
+
 function inputOf(event: Event): HTMLInputElement | undefined {
   return event.target instanceof HTMLInputElement ? event.target : undefined;
 }
@@ -1673,6 +1888,18 @@ function percent(factor: number, language: string | undefined): string {
  * The icon of one of the browser's own pages, which have no page icons of their own.
  * @param url - The address of the tab.
  */
+const securityIcons = {
+  get secure(): TemplateResult {
+    return icons.lock;
+  },
+  get insecure(): TemplateResult {
+    return icons.warning;
+  },
+  get internal(): TemplateResult {
+    return icons.browser;
+  },
+};
+
 function pageIcon(url: string): TemplateResult | undefined {
   if (url === newTabUrl || !url.startsWith('app://')) return undefined;
   const page = hostOf(url);
@@ -1684,6 +1911,18 @@ function pageIcon(url: string): TemplateResult | undefined {
 
 /** Icons drawn after Lucide (ISC license), inlined so the shell needs no icon requests. */
 const icons = {
+  lock: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect width="16" height="11" x="4" y="11" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>`,
+  warning: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3" />
+    <path d="M12 9v4M12 17h.01" />
+  </svg>`,
+  browser: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect width="20" height="16" x="2" y="4" rx="2" />
+    <path d="M2 9h20" />
+  </svg>`,
   globe: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="10" />
     <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20" />

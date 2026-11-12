@@ -475,11 +475,12 @@ test('scales the controls with the density, and the text with the text size and 
   const page = await openSettings();
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   const height = (): Promise<string> => address.evaluate((input) => getComputedStyle(input).height);
-  expect(await height()).toBe('28px');
+  // The address bar has the height of a large control at each density.
+  expect(await height()).toBe('32px');
   await page.getByRole('radio', { name: 'Compact' }).check();
-  await expect.poll(height).toBe('24px');
+  await expect.poll(height).toBe('28px');
   await page.getByRole('radio', { name: 'Comfortable' }).check();
-  await expect.poll(height).toBe('32px');
+  await expect.poll(height).toBe('40px');
   const body = (property: 'fontSize' | 'fontFamily') => () =>
     page.evaluate((name) => getComputedStyle(document.body)[name], property);
   expect(await body('fontSize')()).toBe('13px');
