@@ -2,6 +2,43 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); prereleases (`-beta.N`) are published on the beta channel.
 
+## [0.1.0-beta.5] - 2026-11-11
+
+The fifth beta lets you adjust the browser to the way you work. The settings page finds every setting, shows what you changed and saves the settings in a file; themes, the density, the text size and the fonts change the look; the toolbar, the new tab page, the search engines and the keyboard shortcuts can be changed; and new privacy settings open sites over HTTPS first, look up addresses over encrypted DNS and block third-party cookies. Installed copies of 0.1.0-beta.4 receive it as an update.
+
+### Fixes
+
+- Address bar: an address that is selected as a whole stays selected when the page changes it, for example on a redirect, so that typing replaces it.
+- New tab page: typing right after a new tab opened, or right after the start, goes on in the address bar; before, the new tab page could take the focus while it loaded, and the keys went to the page.
+- Find in page: Enter right after typing goes on to the next match also while the page still looks for the typed text; before, it could stay on the first match.
+- Windows: on Linux, a window that closes right after it opened, such as a popup that closes itself at once, no longer makes the browser crash.
+- Windows: a link from another app, and on macOS an item of the menu bar, opens in a window that is still open, also when another window closed right after it opened.
+
+### Features
+
+- Settings page: a search field finds settings by their names, their descriptions and other words, in English and in German, and a wide window lists the sections at the left. Every section and every setting has an address of its own, such as `app://settings/#privacy`. **Show changed settings** lists what differs from the defaults; settings can be reset one by one or all at once, saved in a file and read from one. Settings that a policy sets show a lock, and recommended ones say so.
+- Language: the browser can use English or German instead of the language of the system, and **Restart now** applies the change with the windows and tabs that were open.
+- Appearance: themes, namely Astela, Paper, Forest, Ocean and Slate in a light and a dark mode, and True Dark with a black dark mode for OLED screens, and colors of your own, with a warning for text with too little contrast, saved in and read from theme files. The density now also sets the size of buttons and fields and the space between them, in the browser's own pages as well. New settings set the text size and the font of the browser, the default fonts and text size of web pages, and the zoom of sites that you have not zoomed.
+- Toolbar: the buttons of the bookmark star, the content blocker and the downloads can be shown, hidden and ordered, and a home button opens a page of your choice (`Alt+Home`, `Command+Shift+H` on macOS).
+- New tab page: the search field and a clock can be shown or hidden, and the page can show up to 12 shortcuts of your choice, up to 8 of your most visited sites and a background of one color, a gradient or an image of yours.
+- Search: a keyword before a search, such as `@google`, searches with that engine; search engines of your own can be added; and a `!bang` such as `!w` searches a site, here Wikipedia.
+- Keyboard shortcuts: the shortcut of each command can be changed on the settings page, which asks before it takes keys from another command, and reset; the menus show the shortcuts you chose. Keys that type or edit text, such as pasting, stay with the pages.
+- Start: the browser can open a list of pages at start.
+- Downloads: the folder of downloads can be chosen, which saving a page suggests as well, and the browser can ask where to save each file.
+- Clear browsing data: clears the history of a time range, cookies and other site data, and the cache.
+- HTTPS-First: sites open over HTTPS, also from `http://` links; a site without a secure connection, or without an answer within 10 seconds, shows a warning before its insecure address loads. Local addresses, such as `localhost` or the `fritz.box` of a router, keep theirs.
+- Secure DNS: addresses are looked up over DNS over HTTPS where the provider of the system offers it, or always with a provider you choose.
+- Third-party cookies: blocked by default, by Chromium's own blocking, in requests and responses and for the scripts and workers of other sites; a change of the setting takes full effect after a restart, which the settings page offers.
+- Policies: `RestoreOnStartup`, `RestoreOnStartupURLs`, `HomepageLocation`, `ShowHomeButton`, `DownloadDirectory`, `PromptForDownloadLocation`, `ApplicationLocaleValue`, `HttpsOnlyMode`, `HttpAllowlist`, `DnsOverHttpsMode`, `DnsOverHttpsTemplates` and `BlockThirdPartyCookies`.
+
+### Performance
+
+- Each start reads less code: the code of the main process is minified, with the names of functions and classes kept for stack traces, and rarer requests of the toolbar load when they are first needed. The main process now reads 103 KiB before its first window, down from 148 KiB in 0.1.0-beta.4.
+
+### Security
+
+- Electron 45.2.3 with the current Chromium security fixes.
+
 ## [0.1.0-beta.4] - 2026-11-10
 
 The fourth beta fixes what a test of 0.1.0-beta.3 on real websites found and adds the basics of a browser for every day. Sites that the content blocker broke, such as YouTube, load again; the browser's own pages scroll; pages that cannot load say why; and find in page, zoom, full screen, the developer tools, printing, site permissions, downloads, popups and private windows work as in other browsers. Installed copies of 0.1.0-beta.3 receive it as an update.

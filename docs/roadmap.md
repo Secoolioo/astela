@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`; `0.1.0-beta.3` adds the setup guide, the new tab page, settings, the content blocker, history, bookmarks, session restore and the import from other browsers; `0.1.0-beta.4` adds the working basics listed below. Everything after it is still a plan; scope and order may change as the work progresses.
+> **Status:** `0.1.0-beta.1`, the walking skeleton below, was the first release; `0.1.0-beta.2` adds context menus and the keyboard shortcuts of each system and proved the live update from `0.1.0-beta.1`; `0.1.0-beta.3` adds the setup guide, the new tab page, settings, the content blocker, history, bookmarks, session restore and the import from other browsers; `0.1.0-beta.4` adds the working basics and `0.1.0-beta.5` the customization listed below. Everything after it is still a plan; scope and order may change as the work progresses.
 
 ## Vision
 
@@ -179,12 +179,12 @@ A full test of `0.1.0-beta.3` on real websites found pages that the content bloc
   - **Windows:** popups that keep their opener, new and private windows, remembered window positions, and a fuller browser menu.
 - **`0.1.0-beta.5`, customization:**
   - **Settings:** a settings page generated from the settings schema, with search, deep links, export, import and reset.
-  - **Look and layout:** a density that scales spacing, radii and text; UI and web fonts; layout presets with an integrated title bar; themes with an editor.
+  - **Look:** a density that scales spacing, radii and text; UI and web fonts; themes with an editor.
   - **Browser parts:** a customizable toolbar and new tab page; search engines with keywords and bangs; editable keyboard shortcuts.
   - **Startup, data and network:** startup and home pages, default zoom, the download folder, clearing browsing data, HTTPS-First, DNS over HTTPS and blocking third-party cookies.
 - **`0.1.0-beta.6`, a calm, modern look:**
   - **Tokens:** motion, radius, type and elevation tokens, with no motion when the system asks for reduced motion.
-  - **Tabs:** animated tabs with favicons, pinned tabs and a tab menu.
+  - **Tabs and layout:** animated tabs with favicons, pinned tabs and a tab menu; layout presets with tabs in an integrated title bar, which moved here from `0.1.0-beta.5` to come with the new tabs.
   - **Address bar:** a new address bar with site information and suggestions from history, bookmarks and open tabs.
   - **Menus and controls:** browser menus and popovers in an overlay; switches and segmented controls; a refined dark mode.
 - **`0.1.0-beta.7`, more:** a command palette, tab search, sleeping tabs, split view, tab groups, workspaces, a reader view, a picture-in-picture button and an exact session restore with the back and forward history of each tab.
