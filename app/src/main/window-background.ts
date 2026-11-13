@@ -4,7 +4,7 @@ import { nativeTheme } from 'electron';
 let colors = { light: '#f5f7f9', dark: '#14161a' };
 
 /** `--surface-1` of the theme in light and dark mode, the color of the toolbar, as `#rrggbb`. */
-let toolbar = { light: '#fdfdff', dark: '#1f2226' };
+let toolbar = { light: '#fdfdff', dark: '#1c1e22' };
 
 /**
  * Sets the window colors of the theme.

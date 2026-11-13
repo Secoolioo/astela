@@ -67,6 +67,14 @@
   --text-2: oklch(45% 0.01 260);
   --border-1: oklch(88% 0.006 260);
   /*
+   * Mixed from the palette, so every theme has them (ADR 0051): the line of separators and of
+   * the outlines of panels and floating surfaces, and the surface of popovers, suggestions and
+   * dialogs. In light mode they are the line and the panels themselves; the outlines of
+   * controls keep --border-1.
+   */
+  --line-1: var(--border-1);
+  --surface-raised: var(--surface-1);
+  /*
    * The browser sets --accent-light and --accent-dark from the accent setting, and a second
    * color for progress where the accent has one; Astela's own accent is the violet and the
    * blue of its logo.
@@ -77,15 +85,21 @@
   --danger: oklch(52% 0.19 25);
 }
 
+/*
+ * The dark surfaces step evenly, 3.5 % lightness apart; lines are calmer than the outlines of
+ * controls, and popovers lie half a step above the panels.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
     --surface-0: oklch(20% 0.008 260);
-    --surface-1: oklch(25% 0.009 260);
-    --surface-2: oklch(29% 0.01 260);
-    --surface-hover: oklch(33% 0.011 260);
+    --surface-1: oklch(23.5% 0.009 260);
+    --surface-2: oklch(27% 0.01 260);
+    --surface-hover: oklch(30.5% 0.011 260);
     --text-1: oklch(95% 0.005 260);
     --text-2: oklch(75% 0.01 260);
-    --border-1: oklch(36% 0.01 260);
+    --border-1: oklch(34% 0.01 260);
+    --line-1: color-mix(in oklch, var(--border-1) 60%, transparent);
+    --surface-raised: color-mix(in oklch, var(--surface-1), var(--surface-2));
     --accent: var(--accent-dark, oklch(72% 0.157 290));
     --accent-secondary: var(--accent-secondary-dark, var(--accent));
     --focus-ring: var(--accent);
@@ -98,12 +112,14 @@
 :root[data-private] {
   color-scheme: dark;
   --surface-0: oklch(20% 0.008 260);
-  --surface-1: oklch(25% 0.009 260);
-  --surface-2: oklch(29% 0.01 260);
-  --surface-hover: oklch(33% 0.011 260);
+  --surface-1: oklch(23.5% 0.009 260);
+  --surface-2: oklch(27% 0.01 260);
+  --surface-hover: oklch(30.5% 0.011 260);
   --text-1: oklch(95% 0.005 260);
   --text-2: oklch(75% 0.01 260);
-  --border-1: oklch(36% 0.01 260);
+  --border-1: oklch(34% 0.01 260);
+  --line-1: color-mix(in oklch, var(--border-1) 60%, transparent);
+  --surface-raised: color-mix(in oklch, var(--surface-1), var(--surface-2));
   --accent: var(--accent-dark, oklch(72% 0.157 290));
   --accent-secondary: var(--accent-secondary-dark, var(--accent));
   --focus-ring: var(--accent);

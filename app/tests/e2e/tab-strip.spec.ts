@@ -774,7 +774,7 @@ test('fits the window controls to the top row when the density, the colors or th
     if (mac) {
       await expect.poll(controls).toEqual({ x: 14, y: 9 });
     } else {
-      await expect.poll(controls).toEqual({ color: '#1f2226', symbolColor: '#e8eaed', height: 32 });
+      await expect.poll(controls).toEqual({ color: '#1c1e22', symbolColor: '#e8eaed', height: 32 });
       await expect.poll(drawnHeight).toBe(32);
     }
   } finally {

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { builtInThemes } from '../../shared/themes.ts';
+import { parseColor } from '../../shared/color.ts';
+import { builtInThemes, themeIds } from '../../shared/themes.ts';
 import {
   accentColors,
   accentPresets,
+  accentSurfaces,
   contrastRatio,
   minimumAccentContrast,
   oklchFromHex,
@@ -71,6 +73,63 @@ describe('accent colors', () => {
     expect(contrastRatio(oklchFromHex('#000000'), oklchFromHex('#ffffff'))).toBeCloseTo(21, 1);
     expect(contrastRatio(oklchFromHex('#777777'), oklchFromHex('#ffffff'))).toBeCloseTo(4.48, 1);
     expect(oklchFromHex('not a color')).toEqual(oklchFromHex('#000000'));
+  });
+});
+
+/**
+ * The surfaces of a theme's dark palette, with the raised surface of popovers, which
+ * `tokens.css` mixes half way between the panels and the fields in OKLCH.
+ */
+function darkSurfaces(id: (typeof themeIds)[number]) {
+  const dark = builtInThemes[id].dark;
+  const color = (token: 'surface-0' | 'surface-1' | 'surface-2' | 'surface-hover') => {
+    const parsed = parseColor(dark[token]);
+    if (parsed === undefined) throw new Error(`Not a color: ${dark[token]}`);
+    return parsed;
+  };
+  const [panel, field] = [color('surface-1'), color('surface-2')];
+  return {
+    'surface-0': color('surface-0'),
+    'surface-1': panel,
+    'surface-2': field,
+    'surface-hover': color('surface-hover'),
+    raised: { l: (panel.l + field.l) / 2, c: (panel.c + field.c) / 2, h: panel.h },
+  };
+}
+
+describe('accents on the dark surfaces of the built-in themes', () => {
+  it.each(themeIds)('are solved against a surface that none of %s is lighter than', (id) => {
+    for (const [name, surface] of Object.entries(darkSurfaces(id))) {
+      expect(surface.l, `lightness of ${name}`).toBeLessThanOrEqual(accentSurfaces.dark.l);
+    }
+  });
+
+  it.each(themeIds)('stay readable on every surface of %s', (id) => {
+    for (const [name, surface] of Object.entries(darkSurfaces(id))) {
+      for (const accent of accentPresets) {
+        // Rounding to one decimal of a percent costs at most a hundredth of the ratio.
+        expect(
+          contrastRatio(parse(accentColors(accent).dark), surface),
+          `${accent} on ${name}`,
+        ).toBeGreaterThan(minimumAccentContrast - 0.02);
+      }
+    }
+  });
+});
+
+describe('the accent bar of the row that the arrow keys mark', () => {
+  it.each(themeIds)('stands out from the color under the pointer of %s in both modes', (id) => {
+    for (const mode of ['light', 'dark'] as const) {
+      const row = parseColor(builtInThemes[id][mode]['surface-hover']);
+      if (row === undefined) throw new Error(`No color under the pointer in ${id}`);
+      for (const accent of accentPresets) {
+        // UI components and their states need 3:1 (docs/architecture/design-system.md).
+        expect(
+          contrastRatio(parse(accentColors(accent)[mode]), row),
+          `${accent} in the ${mode} mode`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+    }
   });
 });
 

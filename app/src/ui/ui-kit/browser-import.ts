@@ -75,7 +75,7 @@ export class BrowserImport extends LitElement {
       margin: 0;
       padding: 0;
       list-style: none;
-      border: 1px solid var(--border-1);
+      border: 1px solid var(--line-1);
       border-radius: var(--radius-2);
       background: var(--surface-1);
     }
@@ -87,7 +87,7 @@ export class BrowserImport extends LitElement {
       padding: 0 var(--space-3);
     }
     li + li {
-      border-top: 1px solid var(--border-1);
+      border-top: 1px solid var(--line-1);
     }
     .name {
       flex: 1;

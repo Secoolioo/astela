@@ -106,7 +106,7 @@ CI will run a drift check in every pull request: it will regenerate every artifa
 
 ## Themes
 
-> **Implementation status (0.1.0-beta.5):** themes are palettes of seven color tokens for each mode: five built-in themes and True Dark, and one custom theme whose colors are edited on the settings page with contrast warnings, exported and imported as files. See [ADR 0043](../adr/0043-themes-as-palettes-edited-on-the-settings-page.md). The theme files in the profile, the separate editor page, derived states and themes per workspace below are not implemented.
+> **Implementation status (0.1.0-beta.7):** themes are palettes of seven color tokens for each mode: five built-in themes and True Dark, and one custom theme whose colors are edited on the settings page with contrast warnings, exported and imported as files. See [ADR 0043](../adr/0043-themes-as-palettes-edited-on-the-settings-page.md). Since 0.1.0-beta.7, the dark palettes of the built-in themes step evenly, and every view mixes a calmer line (`--line-1`) and a raised surface for popovers (`--surface-raised`) from the palette that applies to it, so the custom theme gets them as well ([ADR 0051](../adr/0051-calmer-dark-mode-mixed-from-the-palette.md)). The theme files in the profile, the separate editor page, derived hover, pressed and disabled states and themes per workspace below are not implemented.
 
 ### Theme files
 
