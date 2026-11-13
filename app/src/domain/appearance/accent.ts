@@ -36,6 +36,16 @@ function isPreset(accent: string): accent is AccentPreset {
 const lightSurface: Oklch = { l: 0.995, c: 0.002, h: 260 };
 const darkSurface: Oklch = { l: 0.33, c: 0.011, h: 260 };
 
+/**
+ * The surfaces that accents are solved against, by color mode. No dark surface of a built-in
+ * theme is lighter than the dark one, so accents keep their contrast on every dark surface,
+ * which a test checks (ADR 0051).
+ */
+export const accentSurfaces: { readonly light: Oklch; readonly dark: Oklch } = {
+  light: lightSurface,
+  dark: darkSurface,
+};
+
 /** Contrast that accents keep against those surfaces, as WCAG requires for text. */
 export const minimumAccentContrast = 4.5;
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amends [ADR 0013](0013-theme-system-and-design-tokens.md) on the built-in themes, the theme editor and theme files.
+Accepted. Amends [ADR 0013](0013-theme-system-and-design-tokens.md) on the built-in themes, the theme editor and theme files. [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md) changes the dark palettes of the built-in themes and mixes two more tokens from every palette; a theme keeps its seven tokens.
 
 ## Date
 

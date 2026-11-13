@@ -66,32 +66,29 @@ const astela: ThemeColors = {
   },
   dark: {
     'surface-0': 'oklch(20% 0.008 260)',
-    'surface-1': 'oklch(25% 0.009 260)',
-    'surface-2': 'oklch(29% 0.01 260)',
-    'surface-hover': 'oklch(33% 0.011 260)',
+    'surface-1': 'oklch(23.5% 0.009 260)',
+    'surface-2': 'oklch(27% 0.01 260)',
+    'surface-hover': 'oklch(30.5% 0.011 260)',
     'text-1': 'oklch(95% 0.005 260)',
     'text-2': 'oklch(75% 0.01 260)',
-    'border-1': 'oklch(36% 0.01 260)',
+    'border-1': 'oklch(34% 0.01 260)',
   },
 };
 
 /**
  * The colors of the built-in themes. Astela's are those of `tokens.css`; every theme keeps a
- * contrast of at least 4.5:1 for its texts on its surfaces, which a test checks.
+ * contrast of at least 4.5:1 for its texts on its surfaces, and the dark surfaces of every
+ * theme but True Dark step evenly, 3.5 % lightness apart (ADR 0051), which tests check.
  */
 export const builtInThemes: Readonly<Record<ThemeId, ThemeColors>> = {
   astela,
   paper: {
     light: palette([96.5, 99, 92, 89.5, 24, 46, 87], { c: 0.012, h: 80 }, { c: 0.015, h: 60 }),
-    dark: palette([21, 25.5, 29.5, 33.5, 94, 75, 36], { c: 0.01, h: 70 }, { c: 0.012, h: 80 }),
+    dark: palette([21, 24.5, 28, 31.5, 94, 75, 35], { c: 0.01, h: 70 }, { c: 0.012, h: 80 }),
   },
   forest: {
     light: palette([96.8, 99.2, 92.5, 90, 23, 45, 87.5], { c: 0.01, h: 155 }, { c: 0.02, h: 160 }),
-    dark: palette(
-      [20, 24.5, 28.5, 32.5, 94.5, 75, 35.5],
-      { c: 0.014, h: 160 },
-      { c: 0.012, h: 155 },
-    ),
+    dark: palette([20, 23.5, 27, 30.5, 94.5, 75, 34.5], { c: 0.014, h: 160 }, { c: 0.012, h: 155 }),
   },
   ocean: {
     light: palette(
@@ -99,11 +96,11 @@ export const builtInThemes: Readonly<Record<ThemeId, ThemeColors>> = {
       { c: 0.012, h: 230 },
       { c: 0.025, h: 240 },
     ),
-    dark: palette([19.5, 24, 28, 32, 95, 75, 35], { c: 0.02, h: 245 }, { c: 0.012, h: 230 }),
+    dark: palette([19.5, 23, 26.5, 30, 95, 75, 34], { c: 0.02, h: 245 }, { c: 0.012, h: 230 }),
   },
   slate: {
     light: palette([97, 99.5, 92.5, 90, 21, 44, 87], { c: 0, h: 0 }, { c: 0, h: 0 }),
-    dark: palette([19, 23.5, 27.5, 31.5, 95, 74, 34], { c: 0, h: 0 }, { c: 0, h: 0 }),
+    dark: palette([19, 22.5, 26, 29.5, 95, 74, 33], { c: 0, h: 0 }, { c: 0, h: 0 }),
   },
   'true-dark': {
     light: astela.light,
@@ -135,13 +132,31 @@ export const themeBackgrounds: Readonly<
 export const themeToolbars: Readonly<
   Record<ThemeId, { readonly light: string; readonly dark: string }>
 > = {
-  astela: { light: '#fdfdff', dark: '#1f2226' },
-  paper: { light: '#fffbf6', dark: '#25221f' },
-  forest: { light: '#f9fefa', dark: '#1d221f' },
-  ocean: { light: '#fafdff', dark: '#1a2026' },
-  slate: { light: '#fdfdfd', dark: '#1e1e1e' },
+  astela: { light: '#fdfdff', dark: '#1c1e22' },
+  paper: { light: '#fffbf6', dark: '#23201d' },
+  forest: { light: '#f9fefa', dark: '#1a201c' },
+  ocean: { light: '#fafdff', dark: '#181e23' },
+  slate: { light: '#fdfdfd', dark: '#1c1c1c' },
   'true-dark': { light: '#fdfdff', dark: '#060606' },
 };
+
+/**
+ * The colors of states, as `tokens.css` has them for each color mode: `danger` for errors and
+ * what is not safe. Themes do not change them; a test checks that they stay readable on the
+ * dark surfaces of every built-in theme.
+ */
+export const statusColors: Readonly<
+  Record<'danger', { readonly light: string; readonly dark: string }>
+> = {
+  danger: { light: 'oklch(52% 0.19 25)', dark: 'oklch(72% 0.15 25)' },
+};
+
+/**
+ * How much of `border-1` the calm line of separators keeps in each color mode, as `tokens.css`
+ * mixes `--line-1` from it (ADR 0051). Pictures that cannot use the token, such as the window
+ * previews of the setup guide, draw their lines with it; a test checks that it matches.
+ */
+export const lineOpacity: Readonly<{ light: number; dark: number }> = { light: 1, dark: 0.6 };
 
 /** A color that people chose, as `#rrggbb`. */
 const Hex = v.pipe(v.string(), v.regex(/^#[0-9a-f]{6}$/i));

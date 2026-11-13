@@ -167,9 +167,9 @@ export class OverlayPage extends LitElement {
         padding: 0;
         overflow: hidden;
         list-style: none;
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-3);
-        background: var(--surface-1);
+        background: var(--surface-raised);
         box-shadow: var(--shadow-popover);
         animation: drop var(--motion-fast) var(--ease-out);
       }
@@ -180,6 +180,7 @@ export class OverlayPage extends LitElement {
         }
       }
       .suggestions li {
+        position: relative;
         display: flex;
         align-items: center;
         gap: var(--space-2);
@@ -190,6 +191,25 @@ export class OverlayPage extends LitElement {
       .suggestions li:hover,
       .suggestions li[aria-selected='true'] {
         background: var(--surface-hover);
+      }
+      /* The row that the arrow keys mark, which Enter opens, also carries a bar in the accent:
+         the step from the raised surface to the color under the pointer is too small to see on
+         its own, and the pointer may rest on another row. */
+      .suggestions li[aria-selected='true']::before {
+        content: '';
+        position: absolute;
+        inset-block: var(--space-2);
+        inset-inline-start: var(--space-1);
+        width: 3px;
+        border-radius: var(--radius-pill);
+        background: var(--accent);
+      }
+      /* Forced colors take every surface away; the bar keeps the color of the system's mark. */
+      @media (forced-colors: active) {
+        .suggestions li[aria-selected='true']::before {
+          forced-color-adjust: none;
+          background: Highlight;
+        }
       }
       .suggestions .kind {
         display: grid;
@@ -228,9 +248,9 @@ export class OverlayPage extends LitElement {
         width: var(--width, ${width}px);
         box-sizing: border-box;
         padding: var(--space-3);
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
-        background: var(--surface-1);
+        background: var(--surface-raised);
       }
       .site {
         margin: 0;
@@ -256,7 +276,7 @@ export class OverlayPage extends LitElement {
         justify-content: space-between;
         gap: var(--space-2);
         padding: var(--space-2) 0;
-        border-top: 1px solid var(--border-1);
+        border-top: 1px solid var(--line-1);
       }
       .note {
         margin: var(--space-2) 0 0;
@@ -292,9 +312,9 @@ export class OverlayPage extends LitElement {
         box-sizing: border-box;
         transform: translateX(-50%);
         padding: var(--space-3);
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
-        background: var(--surface-1);
+        background: var(--surface-raised);
       }
       .dialog h2 {
         margin: 0 0 var(--space-2);
@@ -365,7 +385,7 @@ export class OverlayPage extends LitElement {
         flex-direction: column;
         gap: 2px;
         padding: var(--space-2) 0;
-        border-top: 1px solid var(--border-1);
+        border-top: 1px solid var(--line-1);
       }
       .downloads .name {
         overflow: hidden;

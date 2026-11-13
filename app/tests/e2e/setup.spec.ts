@@ -54,6 +54,71 @@ test('guides a new profile through its look, tabs and search engine', async () =
   }
 });
 
+/** The colors of the window, the toolbar and the separators, as the tokens of a page give them. */
+function tokenColors(): { window: string; bar: string; line: string } {
+  const probe = document.createElement('div');
+  document.body.append(probe);
+  const computed = (value: string): string => {
+    probe.style.borderTop = `1px solid ${value}`;
+    return getComputedStyle(probe).borderTopColor;
+  };
+  const colors = {
+    window: computed('var(--surface-0)'),
+    bar: computed('var(--surface-1)'),
+    line: computed('var(--line-1)'),
+  };
+  probe.remove();
+  return colors;
+}
+
+/**
+ * The colors that the preview of a color mode card draws its rectangles in, in their order: a
+ * fill drawn at an opacity gives the color with that alpha.
+ */
+function drawnColors(page: Page, card: string): Promise<string[]> {
+  return page
+    .locator('label.card', { has: page.getByRole('radio', { name: card, exact: true }) })
+    .locator('rect')
+    .evaluateAll((rects) =>
+      rects.map((rect) => {
+        const style = getComputedStyle(rect);
+        return style.fillOpacity === '1'
+          ? style.fill
+          : style.fill.replace(/\)$/, ` / ${style.fillOpacity})`);
+      }),
+    );
+}
+
+test('draws the previews of the color modes in the colors of each mode', async () => {
+  const browser = await launch([], { firstRun: true });
+  try {
+    const page = await waitForPage(browser, (url) => url.startsWith('app://setup'));
+    await page.getByRole('button', { name: 'Get started' }).click();
+    await expect(page.getByRole('radio', { name: 'Dark', exact: true })).toBeVisible();
+    // A window preview draws the window, the toolbar and the line below it, then two lines.
+    await page.emulateMedia({ colorScheme: 'light' });
+    const light = await page.evaluate(tokenColors);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const dark = await page.evaluate(tokenColors);
+    expect(dark.line).toMatch(/ \/ 0\.6\)$/);
+    const look = (colors: typeof light): string[] => [colors.window, colors.bar, colors.line];
+    expect((await drawnColors(page, 'Light')).slice(0, 3)).toEqual(look(light));
+    expect((await drawnColors(page, 'Dark')).slice(0, 3)).toEqual(look(dark));
+    // The system mode shows the light half and the dark half.
+    const system = await drawnColors(page, 'System');
+    expect([...system.slice(0, 3), ...system.slice(5, 8)]).toEqual([...look(light), ...look(dark)]);
+    // The lists of the guide lie inside the same line.
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const options = page.locator('.options').first();
+    await expect(options).toBeVisible();
+    expect(await options.evaluate((element) => getComputedStyle(element).borderTopColor)).toBe(
+      dark.line,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
 test('opens the setup guide again from the settings page', async () => {
   const browser = await launch();
   try {

@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
 import { brand } from '../../shared/brand.ts';
 import { searchEngines } from '../../shared/search-engines.ts';
+import { builtInThemes, lineOpacity } from '../../shared/themes.ts';
 import { isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
 import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
 import { SettingsClient, paintSwatches, type PageBridge } from '../ui-kit/settings-client.ts';
@@ -18,21 +19,24 @@ interface PreviewColors {
   readonly window: string;
   readonly bar: string;
   readonly line: string;
+  /** How much of the line the separator below the bar keeps, as `--line-1` does. */
+  readonly lineOpacity: number;
 }
 
-/** Light and dark surfaces of the window previews, matching the design tokens. */
-const previewColors: Readonly<Record<'light' | 'dark', PreviewColors>> = {
-  light: {
-    window: 'oklch(97.5% 0.003 260)',
-    bar: 'oklch(99.5% 0.002 260)',
-    line: 'oklch(88% 0.006 260)',
-  },
-  dark: {
-    window: 'oklch(20% 0.008 260)',
-    bar: 'oklch(25% 0.009 260)',
-    line: 'oklch(36% 0.01 260)',
-  },
-} as const;
+/**
+ * The surfaces of a window preview in one color mode: the window, the toolbar and the line of
+ * Astela's palette, which are those of `tokens.css`. The guide shows both modes at once, so it
+ * cannot take them from the tokens of the page.
+ */
+function previewColors(mode: 'light' | 'dark'): PreviewColors {
+  const palette = builtInThemes.astela[mode];
+  return {
+    window: palette['surface-0'],
+    bar: palette['surface-1'],
+    line: palette['border-1'],
+    lineOpacity: lineOpacity[mode],
+  };
+}
 
 /**
  * The setup guide that opens on the first start of a profile: look, tab layout and search
@@ -78,12 +82,12 @@ export class SetupGuide extends LitElement {
       .options {
         display: flex;
         flex-direction: column;
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
         background: var(--surface-1);
       }
       .options > * + * {
-        border-top: 1px solid var(--border-1);
+        border-top: 1px solid var(--line-1);
       }
       .option {
         display: flex;
@@ -590,7 +594,7 @@ function previewWindow(x: number, width: number, colors: PreviewColors): Templat
   return svg`
     <rect x=${x} y="0" width=${width} height="90" fill=${colors.window} />
     <rect x=${x} y="0" width=${width} height="16" fill=${colors.bar} />
-    <rect x=${x} y="16" width=${width} height="1" fill=${colors.line} />
+    <rect x=${x} y="16" width=${width} height="1" fill=${colors.line} fill-opacity=${colors.lineOpacity} />
     <rect x=${x + 12} y="30" width=${Math.min(width - 24, 80)} height="6" rx="3" fill=${colors.line} />
     <rect x=${x + 12} y="42" width=${Math.min(width - 24, 56)} height="6" rx="3" fill=${colors.line} />`;
 }
@@ -599,8 +603,8 @@ function previewWindow(x: number, width: number, colors: PreviewColors): Templat
 function modePreview(mode: (typeof colorModes)[number]): TemplateResult {
   const parts =
     mode === 'system'
-      ? svg`${previewWindow(0, 80, previewColors.light)}${previewWindow(80, 80, previewColors.dark)}`
-      : previewWindow(0, 160, previewColors[mode]);
+      ? svg`${previewWindow(0, 80, previewColors('light'))}${previewWindow(80, 80, previewColors('dark'))}`
+      : previewWindow(0, 160, previewColors(mode));
   return html`<svg viewBox="0 0 160 90" aria-hidden="true">${parts}</svg>`;
 }
 

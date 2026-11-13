@@ -74,7 +74,7 @@ export class AppShell extends LitElement {
       justify-content: flex-end;
       gap: var(--space-1);
       padding: 2px var(--space-2);
-      border-bottom: 1px solid var(--border-1);
+      border-bottom: 1px solid var(--line-1);
       background: var(--surface-1);
     }
     .find input {
@@ -186,7 +186,7 @@ export class AppShell extends LitElement {
     }
     .bookmarks {
       grid-area: bar;
-      border-bottom: 1px solid var(--border-1);
+      border-bottom: 1px solid var(--line-1);
       background: var(--surface-1);
       display: flex;
       align-items: center;
@@ -254,10 +254,10 @@ export class AppShell extends LitElement {
       border-inline: 1px solid transparent;
     }
     .tabs[data-before] {
-      border-inline-start-color: var(--border-1);
+      border-inline-start-color: var(--line-1);
     }
     .tabs[data-after] {
-      border-inline-end-color: var(--border-1);
+      border-inline-end-color: var(--line-1);
     }
     /* The active tab's surface, which slides from tab to tab. */
     .indicator {
@@ -300,7 +300,7 @@ export class AppShell extends LitElement {
     }
     :host([data-tabs='bottom']) [role='tablist'] {
       padding: 0 var(--space-2) var(--space-1);
-      border-top: 1px solid var(--border-1);
+      border-top: 1px solid var(--line-1);
     }
     [aria-orientation='vertical'] {
       flex-direction: column;
@@ -316,16 +316,16 @@ export class AppShell extends LitElement {
       border-block: 1px solid transparent;
     }
     [aria-orientation='vertical'] .tabs[data-before] {
-      border-block-start-color: var(--border-1);
+      border-block-start-color: var(--line-1);
     }
     [aria-orientation='vertical'] .tabs[data-after] {
-      border-block-end-color: var(--border-1);
+      border-block-end-color: var(--line-1);
     }
     :host([data-tabs='left']) [role='tablist'] {
-      border-right: 1px solid var(--border-1);
+      border-right: 1px solid var(--line-1);
     }
     :host([data-tabs='right']) [role='tablist'] {
-      border-left: 1px solid var(--border-1);
+      border-left: 1px solid var(--line-1);
     }
     [aria-orientation='vertical'] .tab {
       flex: none;
@@ -517,7 +517,7 @@ export class AppShell extends LitElement {
     nav {
       position: relative;
       grid-area: nav;
-      border-bottom: 1px solid var(--border-1);
+      border-bottom: 1px solid var(--line-1);
       display: flex;
       align-items: center;
       gap: var(--space-1);

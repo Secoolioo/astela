@@ -138,7 +138,7 @@ export class SettingsPage extends LitElement {
         color: var(--text-2);
       }
       .slot + .slot {
-        border-top: 1px solid var(--border-1);
+        border-top: 1px solid var(--line-1);
       }
       .slot {
         display: grid;
@@ -362,9 +362,9 @@ export class SettingsPage extends LitElement {
         gap: var(--space-2);
         margin: var(--space-3) 0 0;
         padding: var(--space-2) var(--space-3);
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
-        background: var(--surface-1);
+        background: var(--surface-raised);
       }
       .lock {
         width: 12px;
@@ -374,9 +374,9 @@ export class SettingsPage extends LitElement {
       }
       dialog {
         max-width: 420px;
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
-        background: var(--surface-1);
+        background: var(--surface-raised);
         color: var(--text-1);
       }
       dialog::backdrop {
@@ -411,7 +411,7 @@ export class SettingsPage extends LitElement {
         color: var(--text-2);
       }
       section {
-        border: 1px solid var(--border-1);
+        border: 1px solid var(--line-1);
         border-radius: var(--radius-2);
         background: var(--surface-1);
       }
@@ -425,7 +425,7 @@ export class SettingsPage extends LitElement {
         box-sizing: border-box;
       }
       .row + .row {
-        border-top: 1px solid var(--border-1);
+        border-top: 1px solid var(--line-1);
       }
       .label {
         display: flex;

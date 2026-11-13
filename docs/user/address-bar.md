@@ -1,6 +1,6 @@
 # Address bar
 
-> **Status:** available from 0.1.0-beta.1; the view of the address and the connection, the loading bar, what you type kept for each tab, and the suggestions from 0.1.0-beta.6.
+> **Status:** available from 0.1.0-beta.1; the view of the address and the connection, the loading bar, what you type kept for each tab, and the suggestions from 0.1.0-beta.6; the bar that marks a suggestion from 0.1.0-beta.7.
 
 The address bar takes an address or a search. Press `Ctrl+L` (`Command+L` on macOS) to go to it; see [Keyboard shortcuts](keyboard-shortcuts.md).
 
@@ -18,4 +18,4 @@ A click on **New tab** takes you to the address bar of the new tab at once, also
 
 ## Suggestions
 
-While you type, a list below the address bar suggests what to open: first what Enter does, a search or an address, then open tabs, bookmarks and pages from your history whose title or address contains every word you typed, up to eight. Typing goes on in the address bar. The arrow keys mark a suggestion and Enter opens it; a click opens one too. An open tab becomes the active tab instead of opening again. Esc closes the list and keeps what you typed; a second Esc brings back the address of the page.
+While you type, a list below the address bar suggests what to open: first what Enter does, a search or an address, then open tabs, bookmarks and pages from your history whose title or address contains every word you typed, up to eight. Typing goes on in the address bar. The arrow keys mark a suggestion, which a bar in the accent color shows at its start, and Enter opens it; a click opens one too. An open tab becomes the active tab instead of opening again. Esc closes the list and keeps what you typed; a second Esc brings back the address of the page.

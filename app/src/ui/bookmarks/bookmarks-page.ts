@@ -91,13 +91,13 @@ export class BookmarksPage extends LitElement {
       list-style: none;
     }
     .list {
-      border: 1px solid var(--border-1);
+      border: 1px solid var(--line-1);
       border-radius: var(--radius-2);
       background: var(--surface-1);
     }
     li + li,
     .nested > li:first-child {
-      border-top: 1px solid var(--border-1);
+      border-top: 1px solid var(--line-1);
     }
     .nested {
       padding-inline-start: 20px;
