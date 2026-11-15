@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -517,13 +517,17 @@ function focusedInFront(browser: Browser): Promise<number | null> {
  * Puts the first window in full screen as the green button of macOS does: macOS itself does
  * it, without Electron's setFullScreen() and without the browser's command. Its action goes to
  * the window in use, so the browser first comes to the front, as with a click on the window,
- * when another app is in front.
- * @returns Whether the window is in full screen, or on its way there, after at most 5 s.
+ * when another app is in front. As with a click, the button acts in an event of its own once
+ * the window has the focus, not within the report of macOS that the window got the focus:
+ * Electron itself never asks AppKit for full screen from within such a report.
+ * @returns Whether macOS has started to move the window into full screen, after at most 15 s.
+ *   macOS marks the window as in full screen as its animation starts; Electron reports
+ *   'enter-full-screen' only once the animation has ended.
  */
 function fullScreenFromSystem(browser: Browser): Promise<boolean> {
   return browser.main.evaluate(({ app, BaseWindow, Menu }) => {
-    const send = (): void => {
-      Menu.sendActionToFirstResponder('toggleFullScreen:');
+    const press = (): void => {
+      setTimeout(() => Menu.sendActionToFirstResponder('toggleFullScreen:'), 0);
     };
     return new Promise<boolean>((done) => {
       const found = BaseWindow.getAllWindows()[0];
@@ -532,31 +536,153 @@ function fullScreenFromSystem(browser: Browser): Promise<boolean> {
         return;
       }
       const window: Electron.BaseWindow = found;
-      const timer = setTimeout(finish, 5000);
-      function finish(): void {
-        clearTimeout(timer);
-        window.off('focus', send);
-        window.off('enter-full-screen', finish);
-        done(window.isFullScreen());
-      }
-      window.once('enter-full-screen', finish);
+      const started = Date.now();
+      const check = setInterval(() => {
+        const on = !window.isDestroyed() && window.isFullScreen();
+        if (!on && Date.now() - started < 15_000) return;
+        clearInterval(check);
+        window.off('focus', press);
+        done(on);
+      }, 10);
       if (window.isFocused()) {
-        send();
+        press();
         return;
       }
-      window.once('focus', send);
+      window.once('focus', press);
       if (BaseWindow.getFocusedWindow() === null) app.focus({ steal: true });
       window.focus();
     });
   });
 }
 
+/** Where the first window is, and whether it is maximized or in full screen. */
+function firstPlace(browser: Browser): Promise<
+  | {
+      readonly bounds: Electron.Rectangle;
+      readonly normal: Electron.Rectangle;
+      readonly maximized: boolean;
+      readonly fullScreen: boolean;
+    }
+  | undefined
+> {
+  return browser.main.evaluate(({ BaseWindow }) => {
+    const window = BaseWindow.getAllWindows()[0];
+    return window === undefined
+      ? undefined
+      : {
+          bounds: window.getBounds(),
+          normal: window.getNormalBounds(),
+          maximized: window.isMaximized(),
+          fullScreen: window.isFullScreen(),
+        };
+  });
+}
+
+/** What a test notes of the first window, in milliseconds since the browser started. */
+interface PlaceNote {
+  readonly event: string;
+  readonly at: number;
+  readonly bounds?: Electron.Rectangle;
+  readonly normal?: Electron.Rectangle;
+  readonly maximized?: boolean;
+  readonly fullScreen?: boolean;
+  readonly workArea?: Electron.Rectangle;
+}
+
+/**
+ * Notes from now on what happens to the first window, with where it is then: each change of
+ * its place, of being maximized and of full screen, and the start of the quit. The browser
+ * prints the notes as it starts to quit, and the test attaches them, so that they show what
+ * macOS did, also when the test fails. A test notes more with `notePlace` in the browser.
+ * @returns The notes of the browser, once it started to quit.
+ */
+async function notePlaces(browser: Browser): Promise<() => readonly PlaceNote[]> {
+  let printed = '';
+  browser.process.stderr?.on('data', (chunk: Buffer) => {
+    printed += chunk.toString();
+  });
+  await browser.main.evaluate(({ app, BaseWindow, screen }) => {
+    const window = BaseWindow.getAllWindows()[0];
+    if (window === undefined) return;
+    const notes: unknown[] = [
+      {
+        event: 'work area',
+        at: Math.round(performance.now()),
+        workArea: screen.getDisplayMatching(window.getBounds()).workArea,
+      },
+    ];
+    const note = (event: string): void => {
+      notes.push(
+        window.isDestroyed()
+          ? { event, at: Math.round(performance.now()) }
+          : {
+              event,
+              at: Math.round(performance.now()),
+              bounds: window.getBounds(),
+              normal: window.getNormalBounds(),
+              maximized: window.isMaximized(),
+              fullScreen: window.isFullScreen(),
+            },
+      );
+    };
+    Reflect.set(globalThis, 'notePlace', note);
+    note('noted from now on');
+    window.on('move', () => note('move'));
+    window.on('resize', () => note('resize'));
+    window.on('maximize', () => note('maximize'));
+    window.on('unmaximize', () => note('unmaximize'));
+    window.on('enter-full-screen', () => note('enter-full-screen'));
+    window.on('leave-full-screen', () => note('leave-full-screen'));
+    app.once('before-quit', () => {
+      note('before-quit');
+      process.stderr.write(`Window places: ${JSON.stringify(notes)}\n`);
+    });
+  });
+  return () => {
+    const line = /^Window places: (.*)$/m.exec(printed)?.[1];
+    return line === undefined ? [] : (JSON.parse(line) as PlaceNote[]);
+  };
+}
+
+/** Notes of a start of the browser that noted nothing. */
+const noNotes = (): readonly PlaceNote[] => [];
+
+/**
+ * Quits the browser and attaches the notes that it printed as it quit to the test, in a file
+ * in the folder of the test, which CI keeps, as for the record of the browser.
+ */
+async function closeNoting(
+  browser: Browser,
+  name: string,
+  notes: () => readonly PlaceNote[],
+  options?: { readonly keepProfile?: boolean },
+): Promise<void> {
+  try {
+    await browser.close(options);
+  } finally {
+    const file = test.info().outputPath(`${name.replaceAll(/\W+/g, '-')}.json`);
+    writeFileSync(file, JSON.stringify(notes(), null, 1));
+    await test.info().attach(name, { path: file, contentType: 'application/json' });
+  }
+}
+
+/** What the session that the browser wrote last keeps of the first window. */
+function keptWindow(profile: string): unknown {
+  const session = JSON.parse(readFileSync(join(profile, 'data', 'session.json'), 'utf8')) as {
+    windows: unknown[];
+  };
+  return session.windows[0];
+}
+
 test('restores a window in full screen where it was', async () => {
   const browser = await launch();
   const { profile } = browser;
   const place = { x: 40, y: 60, width: 800, height: 500 };
+  let first = noNotes;
+  let second = noNotes;
   try {
     try {
+      first = await notePlaces(browser);
       await browser.main.evaluate(({ BaseWindow }, wanted) => {
         BaseWindow.getAllWindows()[0]?.setBounds(wanted);
       }, place);
@@ -565,17 +691,18 @@ test('restores a window in full screen where it was', async () => {
       await toggleFullScreen(browser);
       await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
     } finally {
-      await browser.close({ keepProfile: true });
+      await closeNoting(browser, 'window places, first start', first, { keepProfile: true });
     }
     const again = await launch([], { profile });
     try {
+      second = await notePlaces(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
       // Out of full screen, the window is where it was before.
       await toggleFullScreen(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
       await expect.poll(() => firstBounds(again)).toEqual(place);
     } finally {
-      await again.close();
+      await closeNoting(again, 'window places, second start', second);
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
@@ -589,26 +716,47 @@ test('restores a maximized window in full screen, and maximized once it leaves f
   );
   const browser = await launch();
   const { profile } = browser;
+  let first = noNotes;
+  let second = noNotes;
   try {
     try {
+      first = await notePlaces(browser);
       await browser.main.evaluate(({ BaseWindow }) => {
         BaseWindow.getAllWindows()[0]?.maximize();
+        // Whether Electron reported the end of the zoom before maximize() returned.
+        (Reflect.get(globalThis, 'notePlace') as ((event: string) => void) | undefined)?.(
+          'maximize() returned',
+        );
       });
       await expect.poll(() => maximized(browser)).toBe(true);
       await toggleFullScreen(browser);
       await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
     } finally {
-      await browser.close({ keepProfile: true });
+      await closeNoting(browser, 'window places, first start', first, { keepProfile: true });
     }
+    expect(keptWindow(profile)).toMatchObject({ maximized: true, fullScreen: true });
     const again = await launch([], { profile });
     try {
+      second = await notePlaces(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
-      // Out of full screen, the window is maximized again, as it was before.
+      // On macOS, Electron gives in full screen the place that the window goes back to once it
+      // is no longer maximized, where it opened. Electron takes that place from where the
+      // window is when it maximizes, and the window keeps it.
+      const restored = await firstPlace(again);
+      // Out of full screen, the window is maximized again, as it was before. macOS marks the
+      // window as out of full screen as its animation starts, and the window is maximized
+      // again, where macOS does not do it, once the animation has ended.
       await toggleFullScreen(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
-      await expect.poll(() => maximized(again)).toBe(true);
+      await expect
+        .poll(() => firstPlace(again), { timeout: 15_000 })
+        .toMatchObject({
+          maximized: true,
+          fullScreen: false,
+          ...(mac ? { normal: restored?.normal } : {}),
+        });
     } finally {
-      await again.close();
+      await closeNoting(again, 'window places, second start', second);
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
@@ -621,8 +769,11 @@ test('restores a window that the green button of macOS put in full screen where 
   const { profile } = browser;
   const place = { x: 40, y: 60, width: 800, height: 500 };
   let moved: Electron.Rectangle | undefined;
+  let first = noNotes;
+  let second = noNotes;
   try {
     try {
+      first = await notePlaces(browser);
       await browser.main.evaluate(({ BaseWindow }, wanted) => {
         BaseWindow.getAllWindows()[0]?.setBounds(wanted);
       }, place);
@@ -634,20 +785,33 @@ test('restores a window that the green button of macOS put in full screen where 
       });
       moved = await firstBounds(browser);
       expect(moved).not.toEqual(place);
-      await expect.poll(() => fullScreenFromSystem(browser), { timeout: 30_000 }).toBe(true);
+      // The browser quits right after macOS started to move the window into full screen, which
+      // can be before the animation ended: the window counts as in full screen from its start.
+      expect(await fullScreenFromSystem(browser)).toBe(true);
       await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
     } finally {
-      await browser.close({ keepProfile: true });
+      await closeNoting(browser, 'window places, first start', first, { keepProfile: true });
     }
+    // Whether this run quit during the animation, where only the window's own mark of macOS
+    // tells that it is in full screen, depends on how long the animation takes on the machine.
+    const reported = first().some((note) => note.event === 'enter-full-screen');
+    test.info().annotations.push({
+      type: 'Quit',
+      description: reported
+        ? 'Electron had reported the full screen when the browser started to quit'
+        : 'The browser started to quit while macOS moved the window into full screen',
+    });
+    expect(keptWindow(profile)).toMatchObject({ bounds: moved, fullScreen: true });
     const again = await launch([], { profile });
     try {
+      second = await notePlaces(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
       // Out of full screen, the window is where people moved it.
       await toggleFullScreen(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
       await expect.poll(() => firstBounds(again)).toEqual(moved);
     } finally {
-      await again.close();
+      await closeNoting(again, 'window places, second start', second);
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
