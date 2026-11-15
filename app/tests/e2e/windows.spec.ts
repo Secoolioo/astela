@@ -739,22 +739,17 @@ test('restores a maximized window in full screen, and maximized once it leaves f
     try {
       second = await notePlaces(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
-      // On macOS, Electron gives in full screen the place that the window goes back to once it
-      // is no longer maximized, where it opened. Electron takes that place from where the
-      // window is when it maximizes, and the window keeps it.
-      const restored = await firstPlace(again);
       // Out of full screen, the window is maximized again, as it was before. macOS marks the
       // window as out of full screen as its animation starts, and the window is maximized
-      // again, where macOS does not do it, once the animation has ended.
+      // again, where macOS does not do it, once the animation has ended. The place that a
+      // maximized window would go back to says nothing here on macOS: Electron gives the frame
+      // that it set last, which macOS fits into the screen each time it is set, so it changes
+      // with the size of the screen of the machine.
       await toggleFullScreen(again);
       await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
       await expect
         .poll(() => firstPlace(again), { timeout: 15_000 })
-        .toMatchObject({
-          maximized: true,
-          fullScreen: false,
-          ...(mac ? { normal: restored?.normal } : {}),
-        });
+        .toMatchObject({ maximized: true, fullScreen: false });
     } finally {
       await closeNoting(again, 'window places, second start', second);
     }
@@ -829,6 +824,11 @@ test('restores windows in the order they were used, the window used last at the 
       const firstId = await browser.main.evaluate(
         ({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.id ?? 0,
       );
+      // People press the shortcut in the window that they use, with the browser in front, so
+      // the new window has the focus as it opens. A browser that started behind another app
+      // and never came to the front leaves it to macOS which window, if any, gets the focus
+      // once the browser comes to the front.
+      await expect.poll(() => useWindow(browser, firstId)).toBe(firstId);
       await pressNative(browser, 'N', ['primary'], server.origin);
       await expect.poll(() => windowCount(browser)).toBe(2);
       const other = await otherShell(browser);
