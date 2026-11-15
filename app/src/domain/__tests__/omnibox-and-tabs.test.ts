@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveOmniboxInput } from '../navigation/omnibox.ts';
 import { TabService, type TabViewPort } from '../tabs/tab-service.ts';
+import type { TabHistory } from '../tabs/view-history.ts';
 
 const template = 'https://search.example/?q=%s';
 
@@ -83,8 +84,11 @@ describe('resolveOmniboxInput', () => {
 
 class FakeViews implements TabViewPort {
   readonly log: string[] = [];
-  create(id: string, url: string): void {
-    this.log.push(`create ${id} ${url}`);
+  /** The histories that tabs were made with, by tab. */
+  readonly histories = new Map<string, TabHistory>();
+  create(id: string, url: string, lazy?: boolean, history?: TabHistory): void {
+    this.log.push(`create ${id} ${url}${lazy === true ? ' lazy' : ''}`);
+    if (history !== undefined) this.histories.set(id, history);
   }
   show(id: string): void {
     this.log.push(`show ${id}`);
@@ -296,6 +300,54 @@ describe('TabService', () => {
     tabs.update(id, { url: 'https://a.example/next' });
     tabs.open('https://b.example/');
     expect(kept).toBe(3);
+  });
+
+  it('tells a session whether only the title of a page changed, which it may write later', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const id = tabs.open('https://a.example/');
+    const changes: boolean[] = [];
+    tabs.onDidChangeKept(({ titleOnly }) => changes.push(titleOnly));
+    tabs.update(id, { title: '(1) A' });
+    tabs.update(id, { title: '(1) A', loading: true });
+    tabs.update(id, { title: '(2) A', loading: false });
+    tabs.update(id, { url: 'https://a.example/next', title: 'Next' });
+    tabs.update(id, { pinned: true, title: 'Pinned' });
+    tabs.open('https://b.example/');
+    tabs.close(id);
+    expect(changes).toEqual([true, true, false, false, false, false]);
+  });
+
+  it('opens a tab with its back and forward history, also one that loads when it shows', () => {
+    const views = new FakeViews();
+    const tabs = new TabService(views, 'about:blank');
+    const history: TabHistory = {
+      views: [
+        { entries: [{ url: 'app://newtab/', title: 'New tab' }], index: 0 },
+        {
+          entries: [
+            { url: 'https://a.example/', title: 'A' },
+            { url: 'https://b.example/', title: 'B' },
+          ],
+          index: 0,
+        },
+      ],
+      view: 1,
+    };
+    const restored = tabs.open('https://a.example/', { lazy: true, activate: false, history });
+    const plain = tabs.open('https://c.example/', { lazy: true, activate: false });
+    expect(views.log).toEqual([
+      `create ${restored} https://a.example/ lazy`,
+      `create ${plain} https://c.example/ lazy`,
+    ]);
+    expect(views.histories.get(restored)).toBe(history);
+    expect(views.histories.has(plain)).toBe(false);
+    // A tab without a view knows where Back and Forward go from its history alone.
+    expect(
+      tabs.all.map(({ canGoBack, canGoForward, loading }) => [canGoBack, canGoForward, loading]),
+    ).toEqual([
+      [true, true, false],
+      [false, false, false],
+    ]);
   });
 
   it('destroys every view on dispose', () => {

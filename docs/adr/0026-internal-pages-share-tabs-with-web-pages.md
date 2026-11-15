@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) keeps the views of a tab with their entries in the session, so Back and Forward cross the browser's own pages also after a restart; a view of an internal page restores its entries once the handlers of its page have loaded, and only entries of the kind of their view come back.
 
 ## Date
 

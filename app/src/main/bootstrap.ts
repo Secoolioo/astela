@@ -45,7 +45,12 @@ import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-en
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { webFontPreferences } from '../domain/appearance/appearance.ts';
-import { parseSession, restoredWindows } from '../domain/session/session.ts';
+import {
+  parseSession,
+  restoredWindows,
+  sessionStart,
+  type SessionSnapshot,
+} from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
@@ -780,6 +785,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
           webSession: () => session.fromPartition(webPartition),
+          // Clearing the whole history also clears the lists that the session files keep.
+          forgetTabHistories: async () => {
+            windows.forgetTabHistories();
+            await sessionStore.forgetHistories();
+          },
           newTabFolder,
           shortcuts: {
             table: () => shortcuts,
@@ -996,14 +1006,27 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   if (showSetup) {
     settings.set(SetupShownSetting, true);
   }
-  // A restart from the settings page brings the tabs back, whatever the startup setting says.
-  const startup = settings.get(StartupSetting);
-  const lastSession =
-    !showSetup && (startup === 'restore' || app.commandLine.hasSwitch(restoreSessionSwitch))
-      ? parseSession(await savedSession)
-      : undefined;
+  // A restart from the settings page brings the tabs back, whatever the startup setting says,
+  // and so does a start after the browser did not quit normally, as after a crash, unless a
+  // mandatory policy sets what the browser opens at start.
+  const startup = settings.inspect(StartupSetting);
+  const stored = await savedSession;
+  const restores = sessionStart(startup, {
+    restart: app.commandLine.hasSwitch(restoreSessionSwitch),
+    unclean: stored.unclean,
+    setup: showSetup,
+  });
+  // Only a start that restores the session parses its file.
+  const lastSession = restores === undefined ? undefined : parseSession(await stored.data());
+  if (restores === 'crash' && lastSession !== undefined) {
+    logger.info('The browser did not quit normally; the last session comes back', {
+      windows: lastSession.windows.length,
+      tabs: lastSession.windows.reduce((sum, window) => sum + window.tabs.length, 0),
+    });
+  }
   // The pages of the settings open like a session: in one window, and only the first loads.
-  const startPages = startup === 'pages' && !showSetup ? settings.get(StartupPagesSetting) : [];
+  const startPages =
+    startup.value === 'pages' && !showSetup ? settings.get(StartupPagesSetting) : [];
   const startWindows =
     lastSession === undefined
       ? startPages.length === 0
@@ -1030,18 +1053,32 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   if (startLinks.length > 0) openLinks(startLinks);
   // The session follows every change of tabs and windows; an empty one, after the last window
   // closed, is not kept, so the next start restores that window.
-  const keepSession = (): void => {
+  const takeSession = (): SessionSnapshot | undefined => {
     const snapshot = windows.snapshot();
-    if (snapshot.windows.length > 0) sessionStore.schedule(snapshot);
+    return snapshot.windows.length > 0 ? snapshot : undefined;
   };
-  // A count of blocked requests or a page that loads does not build the session again.
-  windows.onDidChangeKept(keepSession);
+  const keepSession = (): void => {
+    const snapshot = takeSession();
+    if (snapshot !== undefined) sessionStore.schedule(snapshot);
+  };
+  // A count of blocked requests or a page that loads does not build the session again, and a
+  // new title alone, as of a page that counts down, builds and writes it only later.
+  windows.onDidChangeKept(({ titleOnly }) => {
+    if (titleOnly) sessionStore.scheduleLater(takeSession);
+    else keepSession();
+  });
   windows.onDidMove(keepSession);
   marks['window'] = Math.round(performance.now());
-  // A start counts as healthy after 10 s with a loaded shell, or when it quits normally.
+  // A start counts as healthy after 10 s with a loaded shell, or when it quits normally. From
+  // the first shell on, the browser marks that it runs, until it quits normally.
   first.shellContents.once('did-finish-load', () => {
     shellLoaded = true;
     setTimeout(() => boot.guard.markHealthy(app.getVersion()), 10_000).unref();
+    sessionStore
+      .markRunning()
+      .catch((error: unknown) =>
+        logger.debug('The browser could not mark that it runs', { error: String(error) }),
+      );
   });
   if (smokeTest !== undefined) {
     // Loaded long before; the shell cannot finish loading while this continues.

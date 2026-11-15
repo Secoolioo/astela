@@ -36,6 +36,52 @@ describe('ViewHistory', () => {
   });
 });
 
+describe('the history of a tab', () => {
+  it('gives the views of a tab from the oldest on, and takes them back in the same order', () => {
+    const history = new ViewHistory();
+    history.leave(view('app://newtab/'));
+    history.leave(view('app://history/'));
+    const web = view('https://a.example/', 'https://b.example/');
+    history.leave(web);
+    // Back twice: the web view and the history page come after the new tab page.
+    expect(history.goBack(view('https://c.example/'))).toEqual(web);
+    expect(history.goBack(web)).toEqual(view('app://history/'));
+    const tab = history.toTabHistory(view('app://history/'));
+    expect(tab).toEqual({
+      views: [view('app://newtab/'), view('app://history/'), web, view('https://c.example/')],
+      view: 1,
+    });
+    const { views, current } = ViewHistory.fromTabHistory(tab);
+    expect(current).toEqual(view('app://history/'));
+    expect([views.canGoBack, views.canGoForward]).toEqual([true, true]);
+    expect(views.toTabHistory(current)).toEqual(tab);
+    expect(views.goForward(current)).toEqual(web);
+    expect(views.goBack(web)).toEqual(view('app://history/'));
+    expect(views.goBack(view('app://history/'))).toEqual(view('app://newtab/'));
+  });
+
+  it('keeps at most 50 earlier views of a history that comes back', () => {
+    const views = Array.from({ length: 60 }, (_, at) => view(`https://${at}.example/`));
+    const { views: kept, current } = ViewHistory.fromTabHistory({ views, view: 59 });
+    expect(current).toEqual(view('https://59.example/'));
+    expect(kept.toTabHistory(current).views).toEqual(views.slice(9));
+  });
+
+  it('forgets the earlier and the later views when it is cleared', () => {
+    const history = new ViewHistory();
+    history.leave(view('app://newtab/'));
+    history.leave(view('https://a.example/'));
+    history.goBack(view('https://b.example/'));
+    expect([history.canGoBack, history.canGoForward]).toEqual([true, true]);
+    history.clear();
+    expect([history.canGoBack, history.canGoForward]).toEqual([false, false]);
+    expect(history.toTabHistory(view('https://c.example/'))).toEqual({
+      views: [view('https://c.example/')],
+      view: 0,
+    });
+  });
+});
+
 describe('search engines', () => {
   it('offers plain https search URLs with one query placeholder', () => {
     expect(searchEngines.map((engine) => engine.id)).toEqual([

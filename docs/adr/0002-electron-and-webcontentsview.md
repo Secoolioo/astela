@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) makes restored tabs and tabs that sleep one kind of tab without a view, which keeps its back and forward history and gets its view again when it shows.
 
 ## Date
 

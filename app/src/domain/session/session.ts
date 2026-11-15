@@ -1,5 +1,14 @@
 import * as v from 'valibot';
 import { tabPageOf } from '../../shared/internal-pages.ts';
+import {
+  currentEntry,
+  currentOnly,
+  parseTabHistory,
+  sessionLimits,
+  TabHistoryShape,
+  trimHistory,
+} from '../tabs/tab-history.ts';
+import type { TabHistory } from '../tabs/view-history.ts';
 import type { WindowBounds } from '../windows/window-bounds.ts';
 
 /** A flag of a tab or a window, such as whether it is pinned. */
@@ -17,7 +26,11 @@ const Bounds = v.object({
  * The tabs of the open windows, and where the windows were, as the session keeps them. The
  * format stays at version 1: a field that a later version adds is optional, and objects of
  * version 1 ignore the fields they do not know, so 0.1.0-beta.6 still reads the session of a
- * later version with every tab, such as after a rollback.
+ * later version with every tab, such as after a rollback. Since 0.1.0-beta.7, a tab keeps its
+ * back and forward history (`history`): its views with their entries, within the limits of
+ * the session; and a window whether people put it in full screen (`fullScreen`), which a
+ * page in full screen does not count as. The windows come in the order in which they were
+ * used, the window used last at the end.
  */
 export const SessionSnapshot = v.object({
   version: v.literal(1),
@@ -28,11 +41,13 @@ export const SessionSnapshot = v.object({
           url: v.pipe(v.string(), v.maxLength(8192)),
           title: v.pipe(v.string(), v.maxLength(1024)),
           pinned: v.optional(v.boolean()),
+          history: v.optional(TabHistoryShape),
         }),
       ),
       active: v.pipe(v.number(), v.integer(), v.minValue(0)),
       bounds: v.optional(Bounds),
       maximized: v.optional(v.boolean()),
+      fullScreen: v.optional(v.boolean()),
     }),
   ),
 });
@@ -67,6 +82,36 @@ export function keepsUrl(url: string): boolean {
 /** A tab as a session keeps it. */
 type SessionTab = SessionWindow['tabs'][number];
 
+/** A tab that a session is to keep, with its history as far as it is known. */
+export interface KeptTab {
+  readonly url: string;
+  readonly title: string;
+  readonly pinned?: boolean;
+  readonly history?: TabHistory | undefined;
+}
+
+/**
+ * The histories as a session keeps them, by the history of a tab: open tabs give the same
+ * history again until their page changes, so each one is cut to the limits only once.
+ */
+const trimmed = new WeakMap<TabHistory, TabHistory | null>();
+
+/**
+ * The history that a session keeps of a tab: within the limits of the session, and only when
+ * it shows the tab's address.
+ * @param tab - The tab.
+ */
+function keptHistory(tab: KeptTab): TabHistory | undefined {
+  const { history } = tab;
+  if (history === undefined) return undefined;
+  let kept = trimmed.get(history);
+  if (kept === undefined) {
+    kept = trimHistory(history, sessionLimits) ?? null;
+    trimmed.set(history, kept);
+  }
+  return kept !== null && currentEntry(kept)?.url === tab.url ? kept : undefined;
+}
+
 /**
  * Checks an optional field of a tab or a window of a session on its own, so that a field
  * that cannot be kept costs only itself, and not the tab or the window that holds it.
@@ -89,7 +134,7 @@ function optionalField<T>(schema: v.GenericSchema<unknown, T>, value: unknown): 
  * @returns The window, or `undefined` when no tab is left.
  */
 export function sessionWindow(
-  tabs: readonly (SessionTab | undefined)[],
+  tabs: readonly (KeptTab | undefined)[],
   active: number,
   extras: SessionWindowExtras = {},
 ): SessionWindow | undefined {
@@ -98,10 +143,12 @@ export function sessionWindow(
   tabs.forEach((tab, index) => {
     if (tab === undefined || !keepsUrl(tab.url)) return;
     if (index === active) keptActive = kept.length;
+    const history = keptHistory(tab);
     kept.push({
       url: tab.url,
       title: tab.title.slice(0, titleLimit),
       ...(tab.pinned === true ? { pinned: true } : {}),
+      ...(history === undefined ? {} : { history }),
     });
   });
   if (kept.length === 0) return undefined;
@@ -111,8 +158,58 @@ export function sessionWindow(
     active: keptActive,
     ...(bounds === undefined ? {} : { bounds }),
     ...(extras.maximized === undefined ? {} : { maximized: extras.maximized }),
+    ...(extras.fullScreen === undefined ? {} : { fullScreen: extras.fullScreen }),
   };
 }
+
+/**
+ * A session whose tabs keep only the entry that they show, with its page state, as after the
+ * whole history was cleared.
+ * @param session - The session.
+ */
+export function withoutTabHistories(session: SessionSnapshot): SessionSnapshot {
+  return {
+    version: session.version,
+    windows: session.windows.map((window) =>
+      Object.assign({}, window, {
+        tabs: window.tabs.map((tab) =>
+          tab.history === undefined
+            ? tab
+            : Object.assign({}, tab, { history: currentOnly(tab.history) }),
+        ),
+      }),
+    ),
+  };
+}
+
+/** Why a start brings the last session back: people asked for it, or the last run crashed. */
+export type SessionStart = 'asked' | 'crash';
+
+/**
+ * Whether a start brings the last session back. It does when the startup setting or a restart
+ * from the settings page asks for it, and after the last run did not quit normally, as after a
+ * crash, unless a mandatory policy sets what the browser opens at start, as on shared
+ * computers. A recommended policy is a default that people may change, so it does not keep the
+ * session away. The setup guide of a new profile opens instead of a session.
+ * @param startup - The setting `startup.page`, with whether a mandatory policy sets it.
+ * @param start - Whether a restart asks for the session, whether the last run did not quit
+ *   normally, and whether the setup guide opens.
+ * @returns Why the session comes back, or `undefined` when it does not.
+ */
+export function sessionStart(
+  startup: { readonly value: string; readonly locked: boolean },
+  start: { readonly restart: boolean; readonly unclean: boolean; readonly setup: boolean },
+): SessionStart | undefined {
+  if (start.setup) return undefined;
+  if (startup.value === 'restore' || start.restart) return 'asked';
+  return start.unclean && !startup.locked ? 'crash' : undefined;
+}
+
+/**
+ * How many characters of page states a session file keeps at most: 4 MiB. A file that is not
+ * larger holds no more; a larger one goes through `fitSession` of `fit-session.ts` first.
+ */
+export const sessionBudget = 4 * 1024 * 1024;
 
 const StoredSession = v.object({ version: v.literal(1), windows: v.array(v.unknown()) });
 /** A window as the session file holds it; its optional fields are read on their own. */
@@ -121,12 +218,14 @@ const StoredWindow = v.object({
   active: v.number(),
   bounds: v.optional(v.unknown()),
   maximized: v.optional(v.unknown()),
+  fullScreen: v.optional(v.unknown()),
 });
 /** A tab as the session file holds it; its optional fields are read on their own. */
 const StoredTab = v.object({
   url: v.string(),
   title: v.string(),
   pinned: v.optional(v.unknown()),
+  history: v.optional(v.unknown()),
 });
 
 /**
@@ -134,11 +233,18 @@ const StoredTab = v.object({
  * @param stored - What the session file holds for the tab.
  * @returns The tab, or `undefined` when its address or title cannot be read.
  */
-function storedTab(stored: unknown): SessionTab | undefined {
+function storedTab(stored: unknown): KeptTab | undefined {
   const tab = v.safeParse(StoredTab, stored);
   if (!tab.success) return undefined;
   const { url, title, pinned } = tab.output;
-  return optionalField(Flag, pinned) === true ? { url, title, pinned: true } : { url, title };
+  const history =
+    tab.output.history === undefined ? undefined : parseTabHistory(tab.output.history, url);
+  return {
+    url,
+    title,
+    ...(optionalField(Flag, pinned) === true ? { pinned: true } : {}),
+    ...(history === undefined ? {} : { history }),
+  };
 }
 
 /**
@@ -160,9 +266,11 @@ export function parseSession(data: unknown): SessionSnapshot | undefined {
     // A window whose place cannot be read opens where the system puts it.
     const bounds = optionalField(Bounds, window.output.bounds);
     const maximized = optionalField(Flag, window.output.maximized);
+    const fullScreen = optionalField(Flag, window.output.fullScreen);
     const kept = sessionWindow(window.output.tabs.map(storedTab), window.output.active, {
       ...(bounds === undefined ? {} : { bounds }),
       ...(maximized === undefined ? {} : { maximized }),
+      ...(fullScreen === undefined ? {} : { fullScreen }),
     });
     return kept === undefined ? [] : [kept];
   });
@@ -175,12 +283,18 @@ export interface RestoredTab {
   /** The title that the tab shows until its page loads and reports its own. */
   readonly title: string;
   readonly pinned?: boolean;
+  /** The back and forward history of the tab, whose current entry is the tab's address. */
+  readonly history?: TabHistory;
 }
 
-/** Where a window that opens again was: its bounds on the screens, and whether it was maximized. */
+/**
+ * Where a window that opens again was: its bounds on the screens, and whether it was
+ * maximized or in full screen.
+ */
 export interface RestoredPlace {
   readonly bounds?: WindowBounds;
   readonly maximized?: boolean;
+  readonly fullScreen?: boolean;
 }
 
 /** A window that opens again, such as from a session, with its tabs. */
@@ -201,12 +315,18 @@ export interface RestoredWindow {
  * @param session - The session, as {@link parseSession} read it.
  */
 export function restoredWindows(session: SessionSnapshot): RestoredWindow[] {
-  return session.windows.map(({ tabs, active, bounds, maximized }) => ({
-    tabs: tabs.map(({ url, title, pinned }) => ({ url, title, pinned: pinned === true })),
+  return session.windows.map(({ tabs, active, bounds, maximized, fullScreen }) => ({
+    tabs: tabs.map(({ url, title, pinned, history }) => ({
+      url,
+      title,
+      pinned: pinned === true,
+      ...(history === undefined ? {} : { history }),
+    })),
     active,
     place: {
       ...(bounds === undefined ? {} : { bounds }),
       ...(maximized === undefined ? {} : { maximized }),
+      ...(fullScreen === undefined ? {} : { fullScreen }),
     },
   }));
 }

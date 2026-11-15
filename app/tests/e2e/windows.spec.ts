@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -10,6 +11,7 @@ import {
   pressNative,
   shellState,
   startAgain,
+  tabViews,
   waitForPage,
   type Browser,
 } from './harness.ts';
@@ -400,5 +402,170 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
     }
   } finally {
     rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+/** Whether the first window is in full screen. */
+function fullScreen(browser: Browser): Promise<boolean | undefined> {
+  return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isFullScreen());
+}
+
+/** Where the first window is. */
+function firstBounds(browser: Browser): Promise<Electron.Rectangle | undefined> {
+  return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds());
+}
+
+/** Puts the window in full screen with its shortcut, or takes it out. */
+function toggleFullScreen(browser: Browser): Promise<void> {
+  return pressNative(browser, mac ? 'F' : 'F11', mac ? ['control', 'primary'] : []);
+}
+
+/** The address that the active tab of each window shows, in the order in which they opened. */
+async function shownByWindow(browser: Browser): Promise<string[]> {
+  const ids = await browser.main.evaluate(({ BaseWindow }) =>
+    BaseWindow.getAllWindows()
+      .map((window) => window.id)
+      .toSorted((a, b) => a - b),
+  );
+  const views = await Promise.all(ids.map((id) => tabViews(browser, id)));
+  return views.map((list) => list[0]?.url ?? '');
+}
+
+test('restores a window in full screen where it was', async () => {
+  const browser = await launch();
+  const { profile } = browser;
+  const place = { x: 40, y: 60, width: 800, height: 500 };
+  try {
+    try {
+      await browser.main.evaluate(({ BaseWindow }, wanted) => {
+        BaseWindow.getAllWindows()[0]?.setBounds(wanted);
+      }, place);
+      await expect.poll(() => firstBounds(browser)).toEqual(place);
+      // On macOS, full screen moves the window into a space of its own, with an animation.
+      await toggleFullScreen(browser);
+      await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    const again = await launch([], { profile });
+    try {
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
+      // Out of full screen, the window is where it was before.
+      await toggleFullScreen(again);
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
+      await expect.poll(() => firstBounds(again)).toEqual(place);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('restores windows in the order they were used, the window used last at the end', async () => {
+  const browser = await launch();
+  const { profile } = browser;
+  const home = `${server.origin}/index.html`;
+  const second = `${server.origin}/second.html`;
+  try {
+    try {
+      await open(browser, home);
+      const firstId = await browser.main.evaluate(
+        ({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.id ?? 0,
+      );
+      await pressNative(browser, 'N', ['primary'], server.origin);
+      await expect.poll(() => windowCount(browser)).toBe(2);
+      const other = await otherShell(browser);
+      await expect(other.getByRole('tab')).toHaveCount(1);
+      const address = other.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill(second);
+      await address.press('Enter');
+      await waitForPage(browser, (url) => url === second);
+      // The first window is used again, after the second one.
+      await expect.poll(() => focusedWindow(browser)).not.toBe(firstId);
+      await browser.main.evaluate(({ BaseWindow }, id) => {
+        BaseWindow.fromId(id)?.focus();
+      }, firstId);
+      await expect.poll(() => focusedWindow(browser)).toBe(firstId);
+      await expect
+        .poll(() => {
+          const file = join(profile, 'data', 'session.json');
+          if (!existsSync(file)) return [];
+          const session = JSON.parse(readFileSync(file, 'utf8')) as {
+            windows: { tabs: { url: string }[] }[];
+          };
+          return session.windows.map((window) => window.tabs[0]?.url);
+        })
+        .toEqual([second, home]);
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    // The window used last opens last, so it ends up in front of the other, with the focus.
+    const again = await launch([], { profile });
+    try {
+      await expect.poll(() => shownByWindow(again)).toEqual([second, home]);
+      const last = await again.main.evaluate(({ BaseWindow }) =>
+        Math.max(...BaseWindow.getAllWindows().map((window) => window.id)),
+      );
+      // The focus stays there once the shells of both windows have loaded.
+      await expect
+        .poll(() =>
+          again.main.evaluate(({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL().startsWith('app://shell'))
+              .map((contents) => contents.isLoading()),
+          ),
+        )
+        .toEqual([false, false]);
+      await expect.poll(() => focusedWindow(again)).toBe(last);
+      await new Promise((done) => setTimeout(done, 1000));
+      expect(await focusedWindow(again)).toBe(last);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+/** When the session file was last written: each write puts a new file in its place. */
+function writtenAt(profile: string): string {
+  const { ino, mtimeMs } = statSync(join(profile, 'data', 'session.json'));
+  return `${String(ino)}@${String(mtimeMs)}`;
+}
+
+/** Waits until the session file has not been written for longer than its delay of a second. */
+async function settled(profile: string): Promise<string> {
+  for (;;) {
+    const before = existsSync(join(profile, 'data', 'session.json')) ? writtenAt(profile) : '';
+    await new Promise((done) => setTimeout(done, 1500));
+    if (before !== '' && writtenAt(profile) === before) return before;
+  }
+}
+
+test('writes the session again for the focus of a regular window only when it changes their order', async () => {
+  const browser = await launch();
+  const { profile } = browser;
+  try {
+    await open(browser, `${server.origin}/index.html`);
+    const regular = await focusedWindow(browser);
+    await pressNative(browser, 'N', ['primary', 'shift']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    await expect.poll(() => focusedWindow(browser)).not.toBe(regular);
+    const privateWindow = await focusedWindow(browser);
+    const written = await settled(profile);
+    // The session keeps no private window, so the focus that moves between the two changes
+    // nothing that it keeps.
+    for (const id of [regular, privateWindow, regular, privateWindow]) {
+      await browser.main.evaluate(({ BaseWindow }, window) => {
+        if (window !== null) BaseWindow.fromId(window)?.focus();
+      }, id);
+      await expect.poll(() => focusedWindow(browser)).toBe(id);
+    }
+    await new Promise((done) => setTimeout(done, 1500));
+    expect(writtenAt(profile)).toBe(written);
+  } finally {
+    await browser.close();
   }
 });

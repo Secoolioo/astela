@@ -10,15 +10,19 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 
 /**
  * Connects the history page to the data service: it lists and searches the history, deletes
- * pages from it, and opens a page in its own tab or a new one.
+ * pages from it, and opens a page in its own tab or a new one. Clearing the history also
+ * clears the back and forward history of the tabs and of the session.
  * @param router - IPC router.
  * @param data - The data service.
  * @param windows - Open windows.
+ * @param forgetTabHistories - Forgets the back and forward history of the tabs and of the
+ *   session files.
  */
 export function connectHistoryPage(
   router: IpcRouter,
   data: DataClient,
   windows: WindowManager,
+  forgetTabHistories: () => Promise<void>,
 ): void {
   router.handle(ListHistory, async ({ query, before }) => {
     const entries = await data.call('history', query, 200, before ?? Number.MAX_SAFE_INTEGER);
@@ -32,6 +36,7 @@ export function connectHistoryPage(
   });
   router.handle(ClearHistory, async () => {
     await data.call('clearHistory');
+    await forgetTabHistories();
     return null;
   });
   router.handle(OpenFromHistory, ({ url, newTab }, { sender }) => {

@@ -14,7 +14,7 @@ export interface ShutdownDependencies {
   readonly logger: Logger;
   readonly clock: Clock;
   readonly settings: Pick<JsonFileSettingsStore, 'flush'>;
-  readonly sessions: Pick<JsonFileSessionStore, 'schedule' | 'flush'>;
+  readonly sessions: Pick<JsonFileSessionStore, 'schedule' | 'flush' | 'markClean'>;
   readonly windows: Pick<WindowManager, 'snapshot' | 'dispose'>;
   /** The session of web pages, whose storage and cookies are written to disk. */
   readonly web: Session;
@@ -24,9 +24,10 @@ export interface ShutdownDependencies {
 }
 
 /**
- * Shuts the browser down: saves the settings, the session, the storage and the cookies of web
- * pages, waiting for them up to the time limit of the lifecycle, then closes the windows and
- * the data service, and installs an update that is ready.
+ * Shuts the browser down: saves the settings, the session with the page states of now, such as
+ * scroll positions, the storage and the cookies of web pages, waiting for them up to the time
+ * limit of the lifecycle, then closes the windows and the data service, and installs an update
+ * that is ready. Once the session is written, the browser marks that it quit normally.
  * @param dependencies - What to keep and to close.
  */
 export async function shutDown(dependencies: ShutdownDependencies): Promise<void> {
@@ -34,9 +35,16 @@ export async function shutDown(dependencies: ShutdownDependencies): Promise<void
   const lifecycle = new Lifecycle(logger, dependencies.clock, {});
   lifecycle.onWillShutdown((e) => {
     e.join(dependencies.settings.flush(), 'settings');
-    const snapshot = windows.snapshot();
+    const snapshot = windows.snapshot({ fresh: true });
     if (snapshot.windows.length > 0) sessions.schedule(snapshot);
-    e.join(sessions.flush(), 'session');
+    // A browser that stops before the session is written restores it at the next start.
+    const session = sessions
+      .flush()
+      .then(() => sessions.markClean())
+      .catch((error: unknown) =>
+        logger.debug('The browser could not mark that it quit', { error: String(error) }),
+      );
+    e.join(session, 'session');
     web.flushStorageData();
     e.join(web.cookies.flushStore(), 'cookies');
   });

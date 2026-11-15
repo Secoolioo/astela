@@ -88,7 +88,8 @@ export function settingView(
  * @param startValues - The values, as JSON, that the settings which need a restart had when
  *   the browser started.
  * @param browsingData - The data service and the session of web pages, whose data the page
- *   clears.
+ *   clears, and what forgets the back and forward history of the tabs and of the session files
+ *   when the whole history goes.
  * @param shortcuts - The shortcuts of the windows, and a way to wait for a key press of a page.
  * @param newTabFolder - The folder in the profile of the background image of the new tab page.
  * @returns A disposable that stops publishing changes.
@@ -99,7 +100,11 @@ export function connectSettingsPage(
   definitions: readonly SettingDefinition<unknown>[],
   internal: Session,
   startValues: ReadonlyMap<string, string>,
-  browsingData: { readonly data: Pick<DataClient, 'call'>; readonly web: () => Session },
+  browsingData: {
+    readonly data: Pick<DataClient, 'call'>;
+    readonly web: () => Session;
+    readonly forgetTabHistories: () => Promise<void>;
+  },
   shortcuts: {
     readonly table: () => ReadonlyMap<string, WindowCommand>;
     readonly overrides: () => ShortcutOverrides;
@@ -223,6 +228,8 @@ export function connectSettingsPage(
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page clears data');
     const { clearBrowsingData } = await import('./clear-data.ts');
     await clearBrowsingData(request, browsingData.data, browsingData.web(), Date.now());
+    // Entries carry no time, so only clearing all of the history clears the tabs' histories.
+    if (request.history && request.range === 'all') await browsingData.forgetTabHistories();
     return null;
   });
   router.handle(RestartBrowser, (_request, { sender }) => {

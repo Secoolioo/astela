@@ -23,6 +23,7 @@ Every item in this section is designed to be covered by an automated test.
 - `setWindowOpenHandler` lets pages open only tabs and popup windows of the browser, never free-floating windows.
 - The shell, the overlay and internal pages must never navigate away from `app://`; `will-navigate` and `will-redirect` guards enforce this.
 - Web tabs can neither navigate to, embed nor load `app://` pages.
+- A tab that comes back with its history, after a restart or when it wakes, restores only entries of the kind of their view: web pages in web views, and in the view of one of the browser's own pages, which has its preload, only that page. `navigationHistory.restore()` loads whatever address an entry has, also a `file:` address in a web view, so a changed `session.json` could otherwise bring a web page into a view with a preload, or a local file into a tab ([ADR 0053](../adr/0053-sleeping-tabs-and-an-exact-session.md)). Page states are kept only as base64 text, at most 32 KiB per entry and 128 KiB per tab.
 - Web pages cannot mark parts of the window that move it: a user style sheet in every web document keeps `app-region` and `window-drag` of every element at their initial value, so with the title bar of the browser, no page takes clicks from the tabs, the address bar or the overlay ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)).
 - `shell.openExternal` is limited to allowlisted schemes and requires confirmation.
 
@@ -192,6 +193,7 @@ GitHub and GitHub Pages see the IP address during update checks. The privacy sta
 - The WebRTC IP handling policy is `default_public_interface_only`.
 - Referrers will be trimmed.
 - Secrets are kept in the operating system's key store (see [data](data.md)).
+- The session keeps the page states of the tabs, so the values of form fields reach `session.json`, as in Chromium; Chromium leaves password fields out of them, private windows are never saved, and clearing the whole history clears the back and forward lists of the tabs and of the session, in `session.json` and in its backup `session.json.bak` ([data](data.md#implementation-status)).
 - Third-party cookies are blocked by default, by Chromium's own blocking from the start of the browser; the request pipeline and a script in the frames of other sites cover the time until a restart ([ADR 0044](../adr/0044-third-party-cookies-blocked-by-chromium.md)).
 
 ### Later privacy features
@@ -216,6 +218,7 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 - `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
 - Private windows load web pages in a session in memory of their own, with the same guards, pipeline and content blocker; its data is deleted after the last private window closed ([ADR 0041](../adr/0041-private-windows-with-a-session-in-memory.md)).
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
+- Restored histories bring back only entries of the kind of their view, and page states only as base64 text within their limits ([ADR 0053](../adr/0053-sleeping-tabs-and-an-exact-session.md)).
 - Web pages cannot move the window with regions of `app-region`: the frame preload gives every web document a user style sheet against them, and the browser process gives it to the first document of a page that a script opened, where no preload runs, and to every document of a tab once it is parsed ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)).
 - All `app://` pages carry the strict Content Security Policy with Trusted Types.
 - Client certificates are never selected automatically.

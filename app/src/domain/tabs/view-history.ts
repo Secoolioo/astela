@@ -12,6 +12,16 @@ export interface ViewSnapshot {
   readonly index: number;
 }
 
+/**
+ * The history of a tab across its views, as a session keeps it: the views from the oldest to
+ * the newest, each with its entries, and the view that the tab shows.
+ */
+export interface TabHistory {
+  readonly views: readonly ViewSnapshot[];
+  /** Index of the view that the tab shows among {@link TabHistory.views}. */
+  readonly view: number;
+}
+
 /** How many views of a tab are kept for Back. */
 const viewLimit = 50;
 
@@ -22,8 +32,27 @@ const viewLimit = 50;
  * cross the switch.
  */
 export class ViewHistory {
+  /** The earlier views, the nearest last. */
   private readonly back: ViewSnapshot[] = [];
+  /** The later views, the nearest last. */
   private forward: ViewSnapshot[] = [];
+
+  /**
+   * The views of a tab's history, and the view that it shows, such as for a tab that comes
+   * back with its history.
+   * @param history - The history.
+   * @returns The views before and after the view that the tab shows, and that view.
+   */
+  static fromTabHistory(history: TabHistory): { views: ViewHistory; current: ViewSnapshot } {
+    const views = new ViewHistory();
+    const current = history.views[history.view];
+    if (current === undefined) {
+      throw new RangeError('The history has no view at its index');
+    }
+    views.back.push(...history.views.slice(Math.max(0, history.view - viewLimit), history.view));
+    views.forward = history.views.slice(history.view + 1).toReversed();
+    return { views, current };
+  }
 
   /** Whether an earlier view exists. */
   get canGoBack(): boolean {
@@ -45,6 +74,20 @@ export class ViewHistory {
     if (this.back.length > viewLimit) {
       this.back.shift();
     }
+    this.forward = [];
+  }
+
+  /**
+   * The whole history of the tab, with the view that it shows now.
+   * @param current - History of the view that the tab shows.
+   */
+  toTabHistory(current: ViewSnapshot): TabHistory {
+    return { views: [...this.back, current, ...this.forward.toReversed()], view: this.back.length };
+  }
+
+  /** Forgets the earlier and the later views, as when the whole history is cleared. */
+  clear(): void {
+    this.back.length = 0;
     this.forward = [];
   }
 
