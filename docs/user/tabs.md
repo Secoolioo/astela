@@ -1,6 +1,6 @@
 # Tabs
 
-> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, and tab search, from 0.1.0-beta.7.
 
 ## What a tab shows
 
@@ -15,6 +15,10 @@ Drag a tab along the tab strip to move it; the other tabs make room for it, and 
 ## Many tabs
 
 Tabs get narrower as you open more of them. Narrow tabs show only the icon of their page, and the active tab shows its close button instead; a middle click closes any tab. When the tabs no longer fit, the tab strip scrolls, also with the mouse wheel, and a line marks each side behind which tabs are hidden.
+
+## Finding a tab
+
+Tab search finds a tab in any window: press `Ctrl+Shift+A` (`Command+Shift+A` on macOS), or choose **Search tabs…** in the browser menu. With an empty field, it lists the tabs of this window in their order, the active one marked **Current tab**, and then the tabs of the other windows, the window you used last first. Type words of a tab's title or address to narrow the list, and press Enter or click a tab to switch to it; a tab of another window brings its window to the front. Private windows find only the tabs of private windows, and regular windows only those of regular windows. Tab search is the [command palette](command-palette.md) for the open tabs: `%` and a space in front of the words in the palette do the same, and the palette finds open tabs among its other results too.
 
 ## Pinned tabs
 

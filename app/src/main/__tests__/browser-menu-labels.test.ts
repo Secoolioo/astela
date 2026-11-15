@@ -33,6 +33,7 @@ const context: CommandContext = {
   webPage: true,
   privateWindows: true,
   developerTools: true,
+  palette: true,
 };
 
 /** The browser menu and its submenu with more tools, in a language on a system. */
@@ -70,9 +71,9 @@ describe('the texts of the browser menu', () => {
   );
 
   it('use the agreed access keys, which other menus of the browser keep free', () => {
-    expect(keys('en-US', 'linux').join('')).toBe('twizhdbfpvosaq');
-    expect(keys('en-US', 'win32').join('')).toBe('twizhdbfpvosax');
-    expect(keys('de', 'linux').join('')).toBe('tfpzvdlsuhweüb');
+    expect(keys('en-US', 'linux').join('')).toBe('twizhdbcrfpvosaq');
+    expect(keys('en-US', 'win32').join('')).toBe('twizhdbcrfpvosax');
+    expect(keys('de', 'linux').join('')).toBe('tfpzvdlarsuhweüb');
   });
 
   it('write German without the marks of access keys on macOS', () => {

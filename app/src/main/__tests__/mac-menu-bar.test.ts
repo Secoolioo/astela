@@ -60,14 +60,53 @@ describe('macMenuBar', () => {
   });
 });
 
-/** The window used last, whose overlay shows a popover or the suggestions, and what it did. */
-function front(coversWindow: boolean): {
+/** The texts and shortcuts of the items of the View menu, while the palette is on or off. */
+function view(palette: boolean): unknown[] {
+  const template = macMenuBar(() => undefined, shortcutTable('darwin'), {
+    palette,
+  }) as unknown as MenuItemConstructorOptions[];
+  const menu = template.find((item) => item.label?.replaceAll('&', '') === 'Darstellung');
+  return (Array.isArray(menu?.submenu) ? menu.submenu : []).map((item) =>
+    item.type === 'separator' ? '-' : [item.label?.replaceAll('&', ''), item.accelerator],
+  );
+}
+
+describe('the View menu of macOS', () => {
+  it('starts with the command palette and tab search while the palette is on', () => {
+    expect(view(true).slice(0, 4)).toEqual([
+      ['Befehlspalette…', 'Cmd+K'],
+      ['Tabs durchsuchen…', 'Shift+Cmd+A'],
+      '-',
+      ['Suchen…', 'Cmd+F'],
+    ]);
+  });
+
+  it('has neither while the palette is off', () => {
+    const shown = view(false);
+    expect(shown[0]).toEqual(['Suchen…', 'Cmd+F']);
+    expect(JSON.stringify(shown)).not.toContain('Befehlspalette');
+    expect(JSON.stringify(shown)).not.toContain('Tabs durchsuchen');
+  });
+});
+
+/**
+ * The window used last, whose overlay shows a popover or the suggestions, and what it did; the
+ * popover takes some commands, as the palette takes its own.
+ */
+function front(
+  coversWindow: boolean,
+  takes: readonly string[] = [],
+): {
   windows: Parameters<typeof runFromMenuBar>[0];
   done: string[];
 } {
   const done: string[] = [];
   const window = {
-    overlay: { coversWindow, close: () => void done.push('close') },
+    overlay: {
+      coversWindow,
+      close: () => void done.push('close'),
+      offer: (command: string) => takes.includes(command) && done.push(`took ${command}`) > 0,
+    },
     execute: (command: string) => void done.push(command),
   };
   const windows = { lastUsed: window, open: () => window } as unknown as Parameters<
@@ -81,6 +120,14 @@ describe('runFromMenuBar', () => {
     const { windows, done } = front(true);
     runFromMenuBar(windows, 'find.open', () => undefined);
     expect(done).toEqual(['close', 'find.open']);
+  });
+
+  it('lets the popover take a command, as the palette takes its own, which then does not run', () => {
+    const { windows, done } = front(true, ['palette.open']);
+    runFromMenuBar(windows, 'palette.open', () => undefined);
+    expect(done).toEqual(['took palette.open']);
+    runFromMenuBar(windows, 'find.open', () => undefined);
+    expect(done).toEqual(['took palette.open', 'close', 'find.open']);
   });
 
   it('leaves the suggestions of the address bar, which cover only a part of the window', () => {

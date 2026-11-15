@@ -1,7 +1,8 @@
 import * as v from 'valibot';
-import { shortcutPattern } from '../shortcuts.ts';
+import { shortcutPattern, windowCommands } from '../shortcuts.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 import { OverlayAnchor } from './overlay-anchor.ts';
+import { FaviconKey } from './shell-contracts.ts';
 
 /**
  * The content blocker's popover for the active tab: the domain that an exception covers,
@@ -238,6 +239,45 @@ const BookmarkEditor = v.strictObject({
 /** The popover of the bookmark star. */
 export type BookmarkEditor = v.InferOutput<typeof BookmarkEditor>;
 
+/** A command of the window. */
+const PaletteCommandId = v.picklist(windowCommands);
+
+/** The name of a row of the settings page, such as `appearance.density`, or of a section. */
+const SettingsRowId = v.pipe(v.string(), v.regex(/^[a-z][a-zA-Z0-9.-]{0,63}$/));
+
+/**
+ * The command palette, which covers the window: the number of the time it opened, which its
+ * requests name, whether it searches everything or the open tabs, the area of the pages that it
+ * lies at the top of, whether it runs on macOS, whether the tab strip is at a side, the commands
+ * that can run now with their shortcuts, the commands that the palette ran last, and the rows of
+ * the settings page whose setting the browser does not offer on this system.
+ */
+const CommandPalette = v.strictObject({
+  kind: v.literal('palette'),
+  session: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
+  scope: v.picklist(['all', 'tabs']),
+  area: OverlayAnchor,
+  mac: v.boolean(),
+  vertical: v.boolean(),
+  commands: v.pipe(
+    v.array(
+      v.strictObject({
+        id: PaletteCommandId,
+        shortcuts: v.pipe(
+          v.array(v.pipe(v.string(), v.maxLength(40), v.regex(shortcutPattern))),
+          v.maxLength(4),
+        ),
+      }),
+    ),
+    v.maxLength(100),
+  ),
+  recent: v.pipe(v.array(PaletteCommandId), v.maxLength(5)),
+  absent: v.pipe(v.array(SettingsRowId), v.maxLength(100)),
+});
+
+/** The command palette. */
+export type CommandPalette = v.InferOutput<typeof CommandPalette>;
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
 export const OverlayContent = v.nullable(
@@ -250,6 +290,7 @@ export const OverlayContent = v.nullable(
     SuggestionList,
     MenuPopover,
     BookmarkEditor,
+    CommandPalette,
   ]),
 );
 
@@ -411,4 +452,111 @@ export const OpenDownloadsFolder = defineRequest({
   request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',
+});
+
+/** What the palette looks for: everything, the open tabs, the bookmarks or the history. */
+const PaletteScope = v.picklist(['all', 'tabs', 'bookmarks', 'history']);
+
+/**
+ * A result of the palette from the browser process: an open tab with the icon of its page and
+ * where it is, a bookmark, a visited page, a search with the host of its search engine, or an
+ * address to open.
+ */
+const PaletteItem = v.variant('kind', [
+  v.strictObject({
+    kind: v.literal('tab'),
+    title: v.pipe(v.string(), v.maxLength(1024)),
+    url: v.pipe(v.string(), v.maxLength(2048)),
+    favicon: v.nullable(FaviconKey),
+    place: v.picklist(['current', 'window', 'other']),
+  }),
+  v.strictObject({
+    kind: v.picklist(['bookmark', 'history']),
+    title: v.pipe(v.string(), v.maxLength(1024)),
+    url: v.pipe(v.string(), v.maxLength(2048)),
+  }),
+  v.strictObject({
+    kind: v.literal('search'),
+    query: v.pipe(v.string(), v.maxLength(200)),
+    host: v.pipe(v.string(), v.maxLength(253)),
+  }),
+  v.strictObject({ kind: v.literal('url'), url: v.pipe(v.string(), v.maxLength(2048)) }),
+]);
+
+/** A result of the palette from the browser process. */
+export type PaletteItem = v.InferOutput<typeof PaletteItem>;
+
+/**
+ * Tells the palette that one of its two shortcuts was pressed while it shows: the shortcut of
+ * the scope that shows closes it, the other one switches to its scope.
+ */
+export const PaletteShortcut = defineEvent({
+  channel: 'overlay.paletteShortcut',
+  payload: v.picklist(['all', 'tabs']),
+  capability: 'overlay',
+});
+
+/**
+ * Asks the browser process for the open tabs, bookmarks, visited pages and the address or the
+ * search that match some text. The answer has a number, which a choice names, and, with the
+ * first request after the palette opened, what was typed before its field was ready and
+ * whether Enter was pressed then.
+ */
+export const QueryPalette = defineRequest({
+  channel: 'overlay.paletteQuery',
+  request: v.strictObject({
+    session: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
+    scope: PaletteScope,
+    text: v.pipe(v.string(), v.maxLength(200)),
+  }),
+  response: v.strictObject({
+    answer: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    typed: v.pipe(v.string(), v.maxLength(200)),
+    enter: v.boolean(),
+    items: v.pipe(v.array(PaletteItem), v.maxLength(250)),
+  }),
+  capability: 'overlay',
+  ratePerSecond: 60,
+});
+
+/** Opens a result of an answer of the palette by its place, and closes the palette. */
+export const ChoosePaletteItem = defineRequest({
+  channel: 'overlay.paletteChoose',
+  request: v.strictObject({
+    answer: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
+    index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(249)),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Runs a command of the window from the palette, and closes the palette; the browser process
+ * checks again that it can run.
+ */
+export const RunPaletteCommand = defineRequest({
+  channel: 'overlay.paletteRun',
+  request: v.strictObject({ command: PaletteCommandId }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Opens the settings at a row of the settings page, and closes the palette. */
+export const OpenPaletteSetting = defineRequest({
+  channel: 'overlay.paletteSetting',
+  request: v.strictObject({ id: SettingsRowId }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * The icon of the page of an open tab, as a `data:` address, for a tab of a window of the same
+ * kind as the palette's; `null` without one.
+ */
+export const GetPaletteFavicon = defineRequest({
+  channel: 'overlay.favicon',
+  request: v.strictObject({ key: FaviconKey }),
+  response: v.nullable(v.pipe(v.string(), v.startsWith('data:image/'), v.maxLength(200_000))),
+  capability: 'overlay',
+  ratePerSecond: 250,
 });

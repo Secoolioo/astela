@@ -373,6 +373,14 @@ export const settingsIndex: readonly SettingsSection[] = [
     id: 'shortcuts',
     title: 'settings.shortcuts',
     rows: [
+      {
+        id: 'commandPalette.enabled',
+        keys: [
+          'settings.commandPalette',
+          'settings.commandPaletteNote',
+          'settings.commandPalette.keywords',
+        ],
+      },
       ...windowCommands.map((command): SettingsRow => ({
         id: shortcutRowId(command),
         // Both names of a command find its row, wherever the tab strip is.

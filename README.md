@@ -31,11 +31,12 @@ On `main` now, and in the next beta, 0.1.0-beta.7:
 
 - **Dark mode:** calmer lines and evener surfaces, mixed from the colors of the theme.
 - **Menus:** the browser menu with its zoom row, the bookmark star and the folders of the bookmarks bar open as popovers.
+- **Command palette:** `Ctrl+K` (`Command+K` on macOS) finds and runs commands, and finds open tabs, bookmarks, history and settings; `Ctrl+Shift+A` (`Command+Shift+A`) searches the open tabs alone.
 
 ## Planned for 0.1.0
 
 - Layout presets such as a compact and a zen layout, and site information in the address bar.
-- A command palette, tab search, sleeping tabs, split view, tab groups, workspaces, a reader view and picture-in-picture.
+- Sleeping tabs, split view, tab groups, workspaces, a reader view and picture-in-picture.
 - Saved passwords and autofill.
 
 ## Documentation

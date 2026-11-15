@@ -50,6 +50,7 @@ import {
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
 import { AltTap } from '../../domain/windows/alt-tap.ts';
+import { HeldTyping, type TypedText } from '../../domain/palette/held-typing.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
@@ -143,6 +144,13 @@ export interface BrowserWindowOptions {
   readonly developerTools?: () => boolean;
   /** Tells the version of the browser, or quits it, for the commands of the browser itself. */
   readonly onAppCommand?: (window: BrowserWindowController, command: AppCommand) => void;
+  /**
+   * Opens the command palette of a window, which searches everything or the open tabs; the
+   * window holds the keys typed until the palette asks for them.
+   */
+  readonly openPalette?: (window: BrowserWindowController, scope: PaletteOpening) => void;
+  /** Whether the command palette is on, which a setting or a policy can turn off. */
+  readonly commandPalette?: () => boolean;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
@@ -210,6 +218,9 @@ export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools
 /** The commands of the browser itself rather than of a window. */
 export type AppCommand = 'app.about' | 'app.quit';
 
+/** What the command palette searches when it opens: everything, or the open tabs. */
+export type PaletteOpening = 'all' | 'tabs';
+
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
   /** Whether the overlay covers the whole window, rather than a list below the address bar. */
@@ -223,6 +234,11 @@ export interface OverlayHandle {
   close(how?: 'animate' | 'now'): void;
   /** Puts the overlay above the other views of the window again, after one of them was added. */
   raise(): void;
+  /**
+   * Offers a command to what the overlay shows, as its shortcut does.
+   * @returns Whether the popover took it, so that the command does not run.
+   */
+  offer(command: WindowCommand): boolean;
 }
 
 /** Where a window opens, and whether it is a popup that a page opened. */
@@ -281,6 +297,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly altTap = new AltTap();
   /** The view whose key press of Alt armed {@link altTap}; its release elsewhere opens nothing. */
   private altFrom: number | undefined;
+  /** The keys typed after the shortcut of the command palette, until the palette is ready. */
+  private readonly heldTyping = new HeldTyping(() => performance.now(), process.platform);
+  /** Whether the pointer was pressed in the shell since the shortcut of the command palette. */
+  private pressedSinceHold = false;
+  /** Stops noting the presses of the pointer in the shell, once the held keys are let go. */
+  private unwatchPresses: (() => void) | undefined;
   /** The find bar of the active tab, or `null` while it is closed. */
   private finding: FindState | null = null;
   /** What the find bar looked for last, to look for it again. */
@@ -538,11 +560,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /**
    * Opens a tab that the shell asked for and sends the shell its state at once. The shell
    * waits for a state with the new tab, which a tab that closes again before the next frame
-   * would otherwise never be in.
+   * would otherwise never be in. A click in the shell after the shortcut of the command
+   * palette, such as on New tab while the palette still loads, turns to the new tab: the
+   * palette does not open, and the keys typed after the click reach the shell, whose address
+   * bar is the new tab's. A request of a click before the shortcut that comes late leaves the
+   * palette alone.
    * @param url - URL to load; defaults to the blank page.
    * @returns The new tab's id.
    */
   openTab(url?: string): TabId {
+    if (this.pressedSinceHold) this.heldTyping.cancel();
     const id = this.tabs.open(url);
     this.openedByShell = id;
     this.publishNow();
@@ -972,6 +999,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
         break;
+      case 'palette.open':
+      case 'tabs.search':
+        this.options.openPalette?.(this, command === 'tabs.search' ? 'tabs' : 'all');
+        break;
       case 'menu.open':
         // The shortcut closes the menu that is open; the shell opens it at its button.
         if (this.overlay?.popover?.kind === 'menu') this.overlay.close();
@@ -1086,7 +1117,55 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       webPage: this.activeShowsWebPage,
       privateWindows: this.options.privateWindows?.() ?? true,
       developerTools: this.options.developerTools?.() ?? true,
+      palette: this.options.openPalette !== undefined && (this.options.commandPalette?.() ?? true),
     };
+  }
+
+  /**
+   * Holds the keys typed in the window from now on, while the command palette gets ready, so
+   * that they go to its field and not to the page or the shell. Until the keys are let go, the
+   * window notes whether the pointer is pressed in the shell, for {@link openTab}.
+   */
+  holdTyping(): void {
+    this.heldTyping.hold();
+    this.pressedSinceHold = false;
+    const contents = this.shell.webContents;
+    if (this.unwatchPresses !== undefined || contents.isDestroyed()) return;
+    const onInput = (_event: unknown, input: Electron.InputEvent): void => {
+      if (input.type === 'mouseDown' || input.type === 'touchStart') this.pressedSinceHold = true;
+    };
+    contents.on('input-event', onInput);
+    this.unwatchPresses = () => {
+      contents.off('input-event', onInput);
+    };
+  }
+
+  /**
+   * Takes a key press while keys are held for the command palette.
+   * @param input - The key press, before its view sees it.
+   * @returns Whether the palette gets the key, so that its view must not.
+   */
+  holdKey(input: Input): boolean {
+    return this.heldTyping.take(input);
+  }
+
+  /**
+   * Whether Escape was pressed while keys were held for the command palette, or the hold was
+   * given up for a new tab.
+   */
+  get typingCancelled(): boolean {
+    return this.heldTyping.wasCancelled;
+  }
+
+  /**
+   * Lets the keys that were held for the command palette go, as it is ready or does not open.
+   * @returns What was typed, for the palette's field.
+   */
+  releaseTyping(): TypedText {
+    this.unwatchPresses?.();
+    this.unwatchPresses = undefined;
+    this.pressedSinceHold = false;
+    return this.heldTyping.release();
   }
 
   /**
@@ -1249,6 +1328,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // Alt+Left and the like are no Alt alone.
       this.altTap.reset();
       this.execute(command);
+      return;
+    }
+    // The keys typed right after the shortcut of the command palette go to the palette.
+    if (this.holdKey(input)) {
+      event.preventDefault();
+      this.altTap.reset();
       return;
     }
     this.tapAlt(input, contentsId);
@@ -1939,6 +2024,16 @@ export class WindowManager implements Disposable {
       }
     });
     return controller;
+  }
+
+  /**
+   * The open windows in the order in which they had the focus, the one that had it last first;
+   * windows that never had it come after them, the newest first.
+   */
+  get byFocus(): readonly BrowserWindowController[] {
+    const focused = this.focusOrder.toReversed();
+    const others = [...this.windows].filter((window) => !focused.includes(window)).toReversed();
+    return [...focused, ...others].filter((window) => this.windows.has(window));
   }
 
   /** The open window that had the focus last, or else the newest open window. */

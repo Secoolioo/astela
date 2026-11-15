@@ -22,6 +22,8 @@
   "menu.blockerListFull": "The list of sites without blocking is full.",
   "menu.history": "&History",
   "menu.bookmarks": "&Bookmarks",
+  "menu.commandPalette": "&Command palette…",
+  "menu.searchTabs": "Sea&rch tabs…",
   "menu.emptyFolder": "(empty)",
   "menu.title": "Menu",
   "menu.moreBookmarks": "More bookmarks",

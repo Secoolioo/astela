@@ -42,6 +42,8 @@ export type BrowserMenuText =
   | 'history'
   | 'downloads'
   | 'bookmarks'
+  | 'commandPalette'
+  | 'searchTabs'
   | 'find'
   | 'print'
   | 'savePage'
@@ -106,10 +108,11 @@ const separator: ModelEntry = { type: 'separator' };
 
 /**
  * The browser menu of a window: new tabs and windows, the zoom row, the history, downloads and
- * bookmarks, the tools of the page with a submenu for more of them, the settings, About and
- * Quit, which Windows calls Exit. Items whose command cannot run now, such as the page tools on
- * the browser's own pages, cannot be chosen; New private window is missing when a policy
- * forbids private windows.
+ * bookmarks, the command palette and tab search, the tools of the page with a submenu for more
+ * of them, the settings, About and Quit, which Windows calls Exit. Items whose command cannot
+ * run now, such as the page tools on the browser's own pages, cannot be chosen; New private
+ * window is missing when a policy forbids private windows, and the palette's items while the
+ * palette is off.
  * @param input - The window, its shortcuts and its zoom.
  * @param text - The texts of the items, in the language of the menus.
  */
@@ -157,6 +160,9 @@ export function browserMenu(
       item('downloads', 'downloads.open'),
       item('bookmarks', 'bookmarks.open'),
       separator,
+      ...(context.palette
+        ? [item('commandPalette', 'palette.open'), item('searchTabs', 'tabs.search'), separator]
+        : []),
       item('find', 'find.open'),
       item('print', 'page.print'),
       item('savePage', 'page.save'),

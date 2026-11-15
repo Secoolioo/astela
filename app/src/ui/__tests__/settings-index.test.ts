@@ -39,9 +39,10 @@ describe('settingsIndex', () => {
     for (const candidate of rows) expect(candidate.keys.length).toBeGreaterThan(0);
   });
 
-  it('lists the shortcut of every command in the order of the commands, after them the reset and Alt', () => {
+  it('lists the switch of the palette first, then the shortcut of every command in their order, after them the reset and Alt', () => {
     const shortcuts = settingsIndex.find((section) => section.id === 'shortcuts')?.rows ?? [];
     expect(shortcuts.map((candidate) => candidate.id)).toEqual([
+      'commandPalette.enabled',
       ...windowCommands.map((command) => shortcutRowId(command)),
       'shortcuts-reset',
       'keys.altOpensMenu',

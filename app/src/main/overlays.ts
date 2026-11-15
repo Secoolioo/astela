@@ -1,8 +1,23 @@
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
-import { WindowOverlay, type OverlayOptions } from '../platform/electron/overlay.ts';
+import {
+  WindowOverlay,
+  type OverlayKeys,
+  type OverlayOptions,
+} from '../platform/electron/overlay.ts';
 import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import { CloseOverlay, GetOverlay, OverlayExited } from '../shared/ipc/overlay-contracts.ts';
+import { paletteCommands } from '../shared/shortcuts.ts';
+
+/**
+ * How a site's question handles the shortcuts of the window: those of the command palette do
+ * nothing, from the keyboard and from the menu bar of macOS, because the palette never takes
+ * the place of a question and closing it would refuse the site without an answer (ADR 0052).
+ * Every other shortcut closes the question and runs.
+ */
+export const questionKeys: OverlayKeys = {
+  onCommand: (command) => paletteCommands.includes(command),
+};
 
 const overlays = new WeakMap<BrowserWindowController, WindowOverlay>();
 const bySender = new Map<number, WindowOverlay>();

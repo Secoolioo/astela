@@ -25,6 +25,8 @@ export interface CommandContext {
   readonly privateWindows: boolean;
   /** Whether people may open the developer tools, which a policy can forbid. */
   readonly developerTools: boolean;
+  /** Whether the command palette is on, which a setting or a policy can turn off. */
+  readonly palette: boolean;
 }
 
 /**
@@ -61,6 +63,9 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
       return true;
     case 'window.newPrivate':
       return context.privateWindows;
+    case 'palette.open':
+    case 'tabs.search':
+      return context.palette;
     case 'tab.reopen':
       return context.canReopen;
     case 'tab.close':

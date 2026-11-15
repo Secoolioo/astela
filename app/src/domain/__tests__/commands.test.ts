@@ -26,6 +26,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   webPage: true,
   privateWindows: true,
   developerTools: true,
+  palette: true,
   ...change,
 });
 

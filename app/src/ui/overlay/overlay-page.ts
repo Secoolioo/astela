@@ -1,10 +1,15 @@
 import { switchStyles } from '../ui-kit/choice-styles.ts';
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
-import type { BookmarkEditor, MenuPopover } from '../../shared/ipc/overlay-contracts.ts';
+import type {
+  BookmarkEditor,
+  CommandPalette as PaletteContent,
+  MenuPopover,
+} from '../../shared/ipc/overlay-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import { popoverStyles } from '../ui-kit/popover-styles.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
+import type { CommandPalette } from './command-palette.ts';
 import type { OverlayBookmark } from './overlay-bookmark.ts';
 import type { OverlayMenu } from './overlay-menu.ts';
 import { placePopover } from './placement.ts';
@@ -87,7 +92,15 @@ interface Suggestions {
 }
 
 type Content =
-  Shield | Login | Permission | Screen | DownloadsList | Suggestions | MenuPopover | BookmarkEditor;
+  | Shield
+  | Login
+  | Permission
+  | Screen
+  | DownloadsList
+  | Suggestions
+  | MenuPopover
+  | BookmarkEditor
+  | PaletteContent;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -115,13 +128,14 @@ const isContent = (value: unknown): value is Content =>
     'suggestions',
     'menu',
     'bookmark',
+    'palette',
   ].includes(String(value.kind));
 
 /**
  * The kinds of content with an element of their own, which gives the focus to its first item
  * or field and handles Escape itself, such as a menu that closes its submenu first.
  */
-const ownElement = new Set<Content['kind']>(['menu', 'bookmark']);
+const ownElement = new Set<Content['kind']>(['menu', 'bookmark', 'palette']);
 
 /** What the buttons of a download do. */
 type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'folder' | 'retry' | 'remove';
@@ -563,14 +577,22 @@ export class OverlayPage extends LitElement {
     if (
       next !== null &&
       (previous?.kind !== next.kind ||
-        (next.kind === 'menu' && previous.kind === 'menu' && !sameMenu(previous, next)))
+        (next.kind === 'menu' && previous.kind === 'menu' && !sameMenu(previous, next)) ||
+        (next.kind === 'palette' &&
+          previous.kind === 'palette' &&
+          next.session !== previous.session))
     ) {
       this.opened += 1;
       this.shownKey = this.opened;
     }
     this.content = next;
     this.entering = next !== null && next.kind !== previous?.kind;
-    document.title = next === null ? this.pageTitle : (nameOf(next) ?? this.pageTitle);
+    document.title =
+      next === null
+        ? this.pageTitle
+        : next.kind === 'palette'
+          ? this.t(next.scope === 'tabs' ? 'palette.titleTabs' : 'palette.title')
+          : (nameOf(next) ?? this.pageTitle);
     if (next === null) return;
     if (next.kind === 'screen') this.chosen = undefined;
     if (next.kind === 'permission') this.arm(next.id);
@@ -614,8 +636,8 @@ export class OverlayPage extends LitElement {
     if (leaving === null) return;
     const container = this.renderRoot.querySelector('.leaving');
     const nested = [
-      ...(container?.querySelectorAll<OverlayMenu | OverlayBookmark>(
-        'overlay-menu, overlay-bookmark',
+      ...(container?.querySelectorAll<OverlayMenu | OverlayBookmark | CommandPalette>(
+        'overlay-menu, overlay-bookmark, command-palette',
       ) ?? []),
     ];
     await Promise.all(nested.map((element) => element.updateComplete));
@@ -719,6 +741,15 @@ export class OverlayPage extends LitElement {
           .i18n=${this.i18n}
           .leaving=${leaving}
         ></overlay-menu>`;
+    }
+    if (content.kind === 'palette') {
+      return html`<div class="backdrop" @click=${this.close}></div>
+        <command-palette
+          .content=${content}
+          .bridge=${this.bridge}
+          .i18n=${this.i18n}
+          .leaving=${leaving}
+        ></command-palette>`;
     }
     if (content.kind === 'bookmark') {
       // A click next to the popover saves the bookmark, as Done does.
@@ -1064,7 +1095,8 @@ function sameMenu(a: MenuPopover, b: MenuPopover): boolean {
 
 /**
  * The name of a menu, which the page takes as its title, so that a screen reader names the
- * view when the menu takes the focus; `undefined` for other content.
+ * view when the menu takes the focus; `undefined` for other content. The command palette
+ * names the page after itself in the same way.
  */
 function nameOf(content: Content): string | undefined {
   if (content.kind !== 'menu') return undefined;

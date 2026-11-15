@@ -1,5 +1,6 @@
 import type { Input } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HeldTyping } from '../../domain/palette/held-typing.ts';
 import type { OverlayContent } from '../../shared/ipc/overlay-contracts.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
 import type { BrowserWindowController, OverlayHandle } from '../electron/browser-window.ts';
@@ -76,7 +77,11 @@ function windowOf(): {
   focus: string[];
   executed: string[];
   emit: (event: string) => void;
+  typing: HeldTyping;
+  windowFocus: { focused: boolean };
 } {
+  const typing = new HeldTyping(() => 0, 'linux');
+  const windowFocus = { focused: true };
   const listeners = new Map<string, (() => void)[]>();
   const children: FakeView[] = [];
   const focus: string[] = [];
@@ -85,9 +90,20 @@ function windowOf(): {
   const listen = (event: string, listener: () => void): void => {
     listeners.set(event, [...(listeners.get(event) ?? []), listener]);
   };
+  // A listener added with once goes after its first event, as in Node.js.
+  const listenOnce = (event: string, listener: () => void): void => {
+    const once = (): void => {
+      listeners.set(
+        event,
+        (listeners.get(event) ?? []).filter((other) => other !== once),
+      );
+      listener();
+    };
+    listen(event, once);
+  };
   const base = {
     isDestroyed: () => false,
-    isFocused: () => true,
+    isFocused: () => windowFocus.focused,
     getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
     contentView: {
       addChildView: (view: FakeView) => {
@@ -98,7 +114,7 @@ function windowOf(): {
       },
     },
     on: listen,
-    once: listen,
+    once: listenOnce,
   };
   const window = {
     window: base,
@@ -108,6 +124,10 @@ function windowOf(): {
     focusContent: () => void focus.push('content'),
     shortcuts: () => shortcutTable('linux'),
     execute: (command: string) => void executed.push(command),
+    holdKey: (input: Input) => typing.take(input),
+    get typingCancelled() {
+      return typing.wasCancelled;
+    },
   } as unknown as BrowserWindowController;
   const overlay = new WindowOverlay(window, {
     url: 'app://overlay/',
@@ -124,7 +144,7 @@ function windowOf(): {
   const emit = (event: string): void => {
     for (const listener of listeners.get(event) ?? []) listener();
   };
-  return { window, overlay, published, children, focus, executed, emit };
+  return { window, overlay, published, children, focus, executed, emit, typing, windowFocus };
 }
 
 const shield: OverlayContent = {
@@ -219,6 +239,34 @@ describe('WindowOverlay', () => {
     overlay.open(shield, { focusBack: 'shell' });
     overlay.close();
     expect(focus).toEqual(['shell']);
+  });
+
+  it('gives the focus back when its window gets the focus again, after it closed in the background', () => {
+    const { overlay, focus, emit, windowFocus } = windowOf();
+    overlay.open(shield);
+    windowFocus.focused = false;
+    overlay.close();
+    expect(focus).toEqual([]);
+    windowFocus.focused = true;
+    emit('focus');
+    expect(focus).toEqual(['content']);
+    // A popover that opened meanwhile keeps the focus.
+    overlay.open(shield);
+    windowFocus.focused = false;
+    overlay.close();
+    overlay.open(shield);
+    windowFocus.focused = true;
+    emit('focus');
+    expect(focus).toEqual(['content']);
+    // A question that opened in the background never had the focus, so it gives none back.
+    overlay.close('now');
+    expect(focus).toEqual(['content', 'content']);
+    windowFocus.focused = false;
+    overlay.open(shield);
+    overlay.close();
+    windowFocus.focused = true;
+    emit('focus');
+    expect(focus).toEqual(['content', 'content']);
   });
 
   it('lets a popover that opens take the place of one that leaves, and keeps the view', () => {
@@ -363,6 +411,44 @@ describe('WindowOverlay', () => {
     expect(executed).toEqual(['tab.new']);
     // A key that is no shortcut goes on to the page.
     expect(press(children[0], key('a'))).toBe(true);
+  });
+
+  it('offers a command of the menu bar to the popover as its shortcut does, and runs nothing itself', () => {
+    const { overlay, executed } = windowOf();
+    // With nothing open, nothing takes the command.
+    expect(overlay.offer('palette.open')).toBe(false);
+    const asked: string[] = [];
+    overlay.open(shield, {
+      keys: { onCommand: (command) => (asked.push(command), command === 'palette.open') },
+    });
+    expect(overlay.offer('palette.open')).toBe(true);
+    expect(overlay.offer('tab.new')).toBe(false);
+    expect(asked).toEqual(['palette.open', 'tab.new']);
+    // Whoever offered the command closes the popover and runs it.
+    expect(overlay.content).toEqual(shield);
+    expect(executed).toEqual([]);
+    // A popover without keys of its own takes nothing.
+    overlay.open(shield);
+    expect(overlay.offer('palette.open')).toBe(false);
+  });
+
+  it('keeps the keys that the window holds for the palette from its page, and closes with Escape among them', () => {
+    const { overlay, children, typing } = windowOf();
+    const onClose = vi.fn();
+    overlay.open(shield, { onClose });
+    typing.hold();
+    expect(press(children[0], key('z'))).toBe(false);
+    expect(press(children[0], key('z', 'keyUp'))).toBe(false);
+    // A key that types nothing goes on to the page.
+    expect(press(children[0], key('Tab'))).toBe(true);
+    expect(overlay.content).toEqual(shield);
+    expect(press(children[0], key('Escape'))).toBe(false);
+    expect(overlay.content).toBeNull();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(typing.release()).toEqual({ text: 'z', enter: false, cancelled: true });
+    // Once the keys go, the page gets them again.
+    overlay.open(shield);
+    expect(press(children[0], key('z'))).toBe(true);
   });
 
   it.runIf(process.platform !== 'darwin')(
