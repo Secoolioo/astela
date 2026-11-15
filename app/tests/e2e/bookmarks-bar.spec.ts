@@ -95,7 +95,11 @@ test('shows the bookmarks bar with its bookmarks and folders', async () => {
     await expect(bar.getByRole('button', { name: 'A bookmark with a long title 12' })).toBeHidden();
     await expect(bar.getByRole('button', { name: 'Fixture home' })).toBeVisible();
     await more.click();
-    const hidden = await overlayMenu(browser, 'More bookmarks');
+    // The menus of macOS write English in title case, as the empty folder says (Empty) there.
+    const hidden = await overlayMenu(
+      browser,
+      process.platform === 'darwin' ? 'More Bookmarks' : 'More bookmarks',
+    );
     await expect(more).toHaveAttribute('aria-expanded', 'true');
     const entries = await menuEntries(hidden);
     expect(entries.at(-1)).toBe('A bookmark with a long title 12');
