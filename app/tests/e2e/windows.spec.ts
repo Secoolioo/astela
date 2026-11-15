@@ -3,12 +3,11 @@ import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
-  chooseMenuItem,
+  chooseFromMenu,
   FixtureServer,
   launch,
+  openBrowserMenu,
   pressNative,
-  recordedMenu,
-  recordMenus,
   shellState,
   startAgain,
   waitForPage,
@@ -369,19 +368,15 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
       await pressNative(browser, 'N', ['primary'], server.origin);
       await expect.poll(() => windowCount(browser)).toBe(2);
       // The menu offers new windows too, with the other tools.
-      await recordMenus(browser);
-      await browser.shell.getByRole('button', { name: 'Menu', exact: true }).click();
-      const newWindow = mac ? 'New Window' : 'New &window';
-      await expect
-        .poll(async () => (await recordedMenu(browser)).items)
-        .toEqual(
-          expect.arrayContaining(
-            mac
-              ? [newWindow, 'Downloads', 'Zoom', 'Find…', 'Print…', 'More Tools', 'Quit Astela']
-              : [newWindow, '&Downloads', '&Zoom', '&Find…', '&Print…', 'More t&ools'],
-          ),
-        );
-      await chooseMenuItem(browser, [newWindow]);
+      const menu = await openBrowserMenu(browser);
+      const newWindow = mac ? 'New Window' : 'New window';
+      for (const name of mac
+        ? [newWindow, 'Downloads', 'Find…', 'Print…', 'More Tools', 'Quit Astela']
+        : [newWindow, 'Downloads', 'Find…', 'Print…', 'More tools']) {
+        await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+      }
+      await expect(menu.getByRole('group', { name: 'Zoom' })).toBeVisible();
+      await chooseFromMenu(menu, [newWindow]);
       await expect.poll(() => windowCount(browser)).toBe(3);
       // The first window goes to a place of its own, which the next start restores. It fits
       // the smallest screen of the test machines, 1024 × 768 with the menu bar and the Dock

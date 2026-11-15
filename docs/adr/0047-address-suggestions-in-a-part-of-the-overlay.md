@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) for the overlay view.
+Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) for the overlay view. Under [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md), the suggestions still leave the window at once, without the motion of the popovers.
 
 ## Date
 

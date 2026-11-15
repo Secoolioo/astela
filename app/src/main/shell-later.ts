@@ -1,11 +1,13 @@
 import type { WebContents } from 'electron';
-import type { OverlayAnchor } from '../shared/ipc/overlay-anchor.ts';
+import type { PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
   FindInPage,
   OpenBlockerPopover,
   OpenBookmarkFolder,
+  OpenBookmarkPopover,
   OpenDownloads,
   OpenMenu,
+  PrepareOverlay,
   ProceedInsecurely,
   ProceedUnsafely,
   ReopenClosedTab,
@@ -19,36 +21,41 @@ import {
   AcceptSuggestion,
   CloseSuggestions,
   StopFinding,
-  ToggleBookmark,
 } from '../shared/ipc/shell-later-contracts.ts';
+import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type {
   BrowserWindowController,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
+import type { Logger } from '../kernel/logging/logger.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
-import type { FolderEntry } from './browser-menu.ts';
+import type { OverlayOptions } from '../platform/electron/overlay.ts';
+import type { Bookmarks } from './bookmarks.ts';
 import type { SuggestionDependencies } from './suggestions.ts';
 
 /** What the later requests of the shell need from the composition root. */
 export interface LaterShellDependencies {
   readonly router: IpcRouter;
   readonly windows: WindowManager;
-  /** Whether people may open private windows. */
-  readonly privateWindows: () => boolean;
+  readonly logger: Logger;
+  /** What the overlays of all windows share, for the menus and the popover of the star. */
+  readonly overlay: OverlayOptions;
   /** Shows the list of downloads of a window at its button. */
-  readonly openDownloads: (window: BrowserWindowController, anchor: OverlayAnchor) => void;
+  readonly openDownloads: (window: BrowserWindowController, anchor: PopoverAnchor) => void;
   /** Accepts the certificate that a page was refused, for this session. */
   readonly allowCertificate: (contents: WebContents) => boolean;
   /** Allows the insecure address of a site for the session of a page. */
   readonly allowInsecure: (contents: WebContents, address: string) => void;
   /** The bookmarks and folders in a folder of the bookmarks bar. */
   readonly folderContents: (folder: number) => readonly FolderEntry[];
+  /** The bookmarks of the browser process, which load with the first of their users. */
+  readonly bookmarks: () => Promise<Bookmarks>;
   /** Where the suggestions of the address bar come from. */
   readonly suggestions: Omit<SuggestionDependencies, 'router' | 'windows'>;
   /** Opens the content blocker's popover of a window at its button. */
   readonly openShieldPopover: (
     window: BrowserWindowController,
-    anchor: OverlayAnchor,
+    anchor: PopoverAnchor,
   ) => Promise<void>;
 }
 
@@ -59,6 +66,12 @@ export interface LaterShellDependencies {
  */
 export function registerLaterShellHandlers(dependencies: LaterShellDependencies): void {
   const { router, windows } = dependencies;
+  const menus = {
+    windows,
+    router,
+    overlay: dependencies.overlay,
+    folderContents: dependencies.folderContents,
+  };
   const windowOf = (sender: WebContents): BrowserWindowController => {
     const window = windows.forShell(sender);
     if (window === undefined) throw new Error('No window for this shell');
@@ -120,14 +133,31 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
     SetTabMuted,
     ({ tabId, muted }, { sender }) => (windowOf(sender).setMuted(tabId, muted), null),
   );
-  router.handle(
-    ToggleBookmark,
-    (_request, { sender }) => (windowOf(sender).execute('bookmark.toggle'), null),
-  );
-  router.handle(OpenMenu, async (position, { sender }) => {
+  router.handle(OpenBookmarkPopover, async (anchor, { sender }) => {
     const window = windowOf(sender);
-    const { popupBrowserMenu } = await import('./browser-menu.ts');
-    popupBrowserMenu(window, position, { privateWindows: dependencies.privateWindows() });
+    const [{ openBookmarkPopover }, bookmarks] = await Promise.all([
+      import('./bookmark-popover.ts'),
+      dependencies.bookmarks(),
+    ]);
+    await openBookmarkPopover(window, anchor, {
+      windows,
+      router,
+      overlay: dependencies.overlay,
+      bookmarks,
+      logger: dependencies.logger,
+    });
+    return null;
+  });
+  router.handle(OpenMenu, async (anchor, { sender }) => {
+    const window = windowOf(sender);
+    const { openBrowserMenu } = await import('./menu-popover.ts');
+    openBrowserMenu(window, anchor, menus);
+    return null;
+  });
+  router.handle(PrepareOverlay, async (_request, { sender }) => {
+    const window = windowOf(sender);
+    const { overlayOf } = await import('./overlays.ts');
+    overlayOf(window, dependencies.overlay, router).prepare();
     return null;
   });
   router.handle(OpenDownloads, (anchor, { sender }) => {
@@ -143,21 +173,11 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
     windows.forShell(sender)?.proceedInsecurely(tabId, dependencies.allowInsecure);
     return null;
   });
-  router.handle(OpenBookmarkFolder, async ({ id, from, x, y }, { sender }) => {
+  router.handle(OpenBookmarkFolder, async ({ id, from, ...anchor }, { sender }) => {
     const window = windows.forShell(sender);
     if (window === undefined) return null;
-    const { popupBookmarkFolder } = await import('./browser-menu.ts');
-    popupBookmarkFolder(
-      window,
-      { x, y },
-      { id, from },
-      dependencies.folderContents,
-      (url, newTab) => {
-        const active = window.tabs.active;
-        if (newTab || active === undefined) window.tabs.open(url);
-        else window.tabs.navigate(active.id, url);
-      },
-    );
+    const { openFolderMenu } = await import('./menu-popover.ts');
+    openFolderMenu(window, anchor, { id, from }, menus);
     return null;
   });
   router.handle(OpenBlockerPopover, async (anchor, { sender }) => {

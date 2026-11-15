@@ -1,4 +1,4 @@
-import type { RequestOf, ResponseOf } from '../../shared/ipc/contract.ts';
+import type { PayloadOf, RequestOf, ResponseOf } from '../../shared/ipc/contract.ts';
 import type {
   ActivateTab,
   CloseTab,
@@ -6,6 +6,7 @@ import type {
   NavigateTab,
   OpenTab,
   SetShellInsets,
+  ShellCommand,
   ShellState,
   TabAction,
 } from '../../shared/ipc/shell-contracts.ts';
@@ -13,8 +14,10 @@ import type {
   FindInPage,
   OpenBlockerPopover,
   OpenBookmarkFolder,
+  OpenBookmarkPopover,
   OpenDownloads,
   OpenMenu,
+  PrepareOverlay,
   ProceedInsecurely,
   ProceedUnsafely,
   ReopenClosedTab,
@@ -28,7 +31,6 @@ import type {
   AcceptSuggestion,
   CloseSuggestions,
   StopFinding,
-  ToggleBookmark,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
@@ -48,8 +50,9 @@ interface Requests {
   'tabs.find': typeof FindInPage;
   'tabs.stopFind': typeof StopFinding;
   'tabs.resetZoom': typeof ResetZoom;
-  'shell.toggleBookmark': typeof ToggleBookmark;
+  'shell.openBookmarkPopover': typeof OpenBookmarkPopover;
   'shell.openBookmarkFolder': typeof OpenBookmarkFolder;
+  'shell.prepareOverlay': typeof PrepareOverlay;
   'tabs.favicon': typeof GetFavicon;
   'tabs.setMuted': typeof SetTabMuted;
   'tabs.move': typeof MoveTab;
@@ -62,7 +65,7 @@ interface Requests {
 
 interface Events {
   'shell.stateChanged': ShellState;
-  'shell.command': 'omnibox.focus' | 'omnibox.done' | 'find.focus' | 'downloads.open';
+  'shell.command': PayloadOf<typeof ShellCommand>;
 }
 
 /** The API that the shell's preload script exposes. */

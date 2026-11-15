@@ -1,7 +1,8 @@
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import { WindowOverlay, type OverlayOptions } from '../platform/electron/overlay.ts';
-import { CloseOverlay, GetOverlay } from '../shared/ipc/overlay-contracts.ts';
+import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
+import { CloseOverlay, GetOverlay, OverlayExited } from '../shared/ipc/overlay-contracts.ts';
 
 const overlays = new WeakMap<BrowserWindowController, WindowOverlay>();
 const bySender = new Map<number, WindowOverlay>();
@@ -24,6 +25,11 @@ export function overlayOf(
     router.handle(GetOverlay, (_request, { sender }) => bySender.get(sender.id)?.content ?? null);
     router.handle(CloseOverlay, (_request, { sender }) => {
       bySender.get(sender.id)?.close();
+      return null;
+    });
+    // The page tells when a popover that closed has left, so the view can leave the window.
+    router.handle(OverlayExited, (_request, { sender }) => {
+      bySender.get(sender.id)?.exited();
       return null;
     });
   }
@@ -74,4 +80,26 @@ export function windowOfOverlay(
  */
 export function existingOverlay(window: BrowserWindowController): WindowOverlay | undefined {
   return overlays.get(window);
+}
+
+/**
+ * Where the focus goes when a popover of a button of the shell closes: back to the shell when
+ * the keyboard opened the popover there, so that the keyboard goes on from its button, and
+ * to the page otherwise.
+ * @param window - The window of the button.
+ * @param anchor - The button, and whether the keyboard opened the popover.
+ */
+export function focusBackOf(
+  window: BrowserWindowController,
+  anchor: PopoverAnchor,
+): 'shell' | 'content' {
+  return anchor.keyboard && window.shellContents.isFocused() ? 'shell' : 'content';
+}
+
+/**
+ * The rectangle of the button of a popover, which the popover's page needs to place it.
+ * @param anchor - The button, and whether the keyboard opened the popover.
+ */
+export function rectOf(anchor: PopoverAnchor): OverlayAnchor {
+  return { x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height };
 }

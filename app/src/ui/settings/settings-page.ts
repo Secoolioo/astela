@@ -925,6 +925,14 @@ export class SettingsPage extends LitElement {
       render: () => page.renderShortcutsReset(),
       changed: () => page.client?.get('keys.shortcuts')?.changed === true,
     }),
+    'keys.altOpensMenu': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'keys.altOpensMenu',
+          'settings.altOpensMenu',
+          'settings.altOpensMenuNote',
+        ),
+    }),
     'default-browser': (page) => ({
       render: () =>
         html`<default-browser .bridge=${page.bridge} .i18n=${page.i18n}></default-browser>`,
@@ -961,6 +969,8 @@ export class SettingsPage extends LitElement {
         if (row.when !== undefined && this.client?.get(row.when.key)?.value !== row.when.value) {
           return [];
         }
+        // A setting that the browser does not offer on this system has no row.
+        if (row.onlyWhereOffered === true && this.client?.get(row.id) === undefined) return [];
         return [{ ...row, ...view(this) }];
       });
       sections.push({ ...section, rows });

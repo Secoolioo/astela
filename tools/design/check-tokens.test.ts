@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { resolve } from 'node:path';
-import { checkTokens, problemsIn } from './check-tokens.ts';
+import { checkTokens, problemsIn, reducedMotionProblems } from './check-tokens.ts';
 
 /** The line and the rule of each problem in a text. */
 function found(text: string): [number, string][] {
@@ -135,6 +135,58 @@ describe('problemsIn', () => {
       'const wait = 3; // The delay is 2s.',
     ].join('\n');
     assert.deepEqual(found(code), []);
+  });
+});
+
+/** The line and the text of each motion token that reduced motion leaves moving. */
+function moving(css: string): [number, string][] {
+  return reducedMotionProblems('tokens.css', css).map(({ line, rule, text }) => {
+    assert.equal(rule, 'reduced-motion');
+    return [line, text];
+  });
+}
+
+describe('reducedMotionProblems', () => {
+  it('reports a motion token that the block for reduced motion does not set to 0', () => {
+    const css = [
+      ':root {',
+      '  --motion-fast: 120ms;',
+      '  --motion-enter: 140ms;',
+      '  /* --motion-old: 90ms; */',
+      '  --motion-exit: 100ms;',
+      '}',
+      '@media (prefers-reduced-motion: reduce) {',
+      '  :root {',
+      '    --motion-fast: 0ms;',
+      '    --motion-exit: 50ms;',
+      '  }',
+      '}',
+    ].join('\n');
+    assert.deepEqual(moving(css), [
+      [3, '--motion-enter: 140ms;'],
+      [5, '--motion-exit: 100ms;'],
+    ]);
+  });
+
+  it('accepts the tokens of popovers when reduced motion sets them to 0, in any unit', () => {
+    const css = [
+      ':root { --motion-enter: 140ms; --motion-exit: 100ms; --motion-loop: 1s; }',
+      ':root[data-private] { color-scheme: dark; }',
+      '@media (prefers-reduced-motion: reduce) {',
+      '  :root { --motion-enter: 0ms; --motion-exit: 0s; --motion-loop: 0; }',
+      '}',
+    ].join('\n');
+    assert.deepEqual(moving(css), []);
+  });
+
+  it('does not count a zero outside the block for reduced motion', () => {
+    const css = [
+      '@media (prefers-color-scheme: dark) { :root { --motion-exit: 0ms; } }',
+      ':root { --motion-exit: 100ms; }',
+    ].join('\n');
+    assert.deepEqual(moving(css), [
+      [1, '@media (prefers-color-scheme: dark) { :root { --motion-exit: 0ms; } }'],
+    ]);
   });
 });
 

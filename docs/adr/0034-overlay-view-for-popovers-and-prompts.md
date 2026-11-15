@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Implements the overlay view of the [architecture overview](../architecture/overview.md).
+Accepted. Implements the overlay view of the [architecture overview](../architecture/overview.md). [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) extends it: the browser menu and the folders of the bookmarks bar open in the overlay, a popover that closes leaves with its motion before the view leaves the window, the focus goes back to the shell after a popover that the keyboard opened there, Escape belongs to the page for menus and the popover of the star, and the view may be made a moment before a popover opens, when the pointer reaches the menu button or the button takes the focus, but still never at the start. A crash or a hang of its page takes the view out of the window.
 
 ## Date
 

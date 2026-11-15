@@ -86,6 +86,7 @@ import {
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
+  AltOpensMenuSetting,
   BlockThirdPartyCookiesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
@@ -638,7 +639,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       if (/^https?:/i.test(url)) void loadBookmarks().then((list) => list.has(url));
       return false;
     },
-    toggleBookmark: (url, title) => void loadBookmarks().then((list) => list.toggle(url, title)),
     // The bookmarks bar loads the bookmarks only while it shows.
     bookmarksBar: () => {
       if (!settings.get(BookmarksBarSetting)) return null;
@@ -690,6 +690,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       httpsFirst.insecureAddressFor(contents, failed, stopped),
     shortcuts: () => shortcuts,
     shortcutRecorder,
+    altOpensMenu: () => process.platform !== 'darwin' && settings.get(AltOpensMenuSetting),
     onPageCommand: (window, command, contents) =>
       void import('./page-tools.ts').then(({ runPageCommand }) =>
         runPageCommand(window, command, contents, {
@@ -805,12 +806,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       registerLaterShellHandlers({
         router,
         windows,
-        privateWindows: privateWindowsAllowed,
+        logger,
+        overlay: overlayOptions,
         openDownloads: (window, anchor) =>
           void loadDownloads().then((list) => list.open(window, anchor)),
         allowCertificate: (contents) => certificates.allow(contents),
         allowInsecure: (contents, address) => httpsFirst.allow(contents, address),
         folderContents: (folder) => bookmarks?.contents(folder) ?? [],
+        bookmarks: loadBookmarks,
         suggestions: {
           overlay: overlayOptions,
           target: async (text) => {

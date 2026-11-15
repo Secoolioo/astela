@@ -34,6 +34,11 @@ export interface SettingsRow {
   readonly words?: readonly string[];
   /** A setting and its value without which the page leaves the row out. */
   readonly when?: { readonly key: string; readonly value: unknown };
+  /**
+   * Whether the page leaves the row out where the browser does not offer its setting, as on a
+   * system that lacks what the setting changes, such as Alt opening the menu on macOS.
+   */
+  readonly onlyWhereOffered?: boolean;
 }
 
 /** A section of the settings page, with its rows in their order. */
@@ -379,6 +384,16 @@ export const settingsIndex: readonly SettingsSection[] = [
       {
         id: 'shortcuts-reset',
         keys: ['settings.shortcuts', 'settings.shortcutsNote', 'settings.shortcuts.keywords'],
+      },
+      // Alt alone opens the menu on Windows and Linux; macOS opens its menus from the menu bar.
+      {
+        id: 'keys.altOpensMenu',
+        keys: [
+          'settings.altOpensMenu',
+          'settings.altOpensMenuNote',
+          'settings.altOpensMenu.keywords',
+        ],
+        onlyWhereOffered: true,
       },
     ],
   },

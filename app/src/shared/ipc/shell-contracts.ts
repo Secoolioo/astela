@@ -100,6 +100,19 @@ const DownloadsSummary = v.strictObject({
 });
 
 /**
+ * The popover of a button of the shell that the overlay shows, so that the button shows it as
+ * open: the browser menu, the menu of a folder of the bookmarks bar with the folder's id (that
+ * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's
+ * and the list of downloads. `folder` is `null` for all but folders.
+ */
+export const ShellPopover = v.strictObject({
+  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads']),
+  folder: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+});
+/** The popover of a button of the shell that the overlay shows. */
+export type ShellPopover = v.InferOutput<typeof ShellPopover>;
+
+/**
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
@@ -107,7 +120,8 @@ const DownloadsSummary = v.strictObject({
  * `defaultZoom` the zoom of sites without a zoom of their own, `toolbar` the buttons next
  * to the address bar in their order, and `covered` whether the overlay covers the window, as a
  * popover or a question does, so that a click next to it reaches the overlay instead of moving
- * the window.
+ * the window, and `popover` the popover of a button of the shell that the overlay shows, or
+ * `null`.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -122,6 +136,7 @@ export const ShellState = v.strictObject({
   toolbar: v.array(v.picklist(toolbarItems)),
   titleBar: v.nullable(TitleBarArea),
   covered: v.boolean(),
+  popover: v.nullable(ShellPopover),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -203,10 +218,21 @@ export const ShellStateChanged = defineEvent({
   capability: 'shell',
 });
 
-/** Asks the shell to run a UI command, such as focusing the address bar after a shortcut. */
+/**
+ * Asks the shell to run a UI command, such as focusing the address bar after a shortcut, or
+ * opening the browser menu or the popover of the bookmark star at its button, which only the
+ * shell knows.
+ */
 export const ShellCommand = defineEvent({
   channel: 'shell.command',
-  payload: v.picklist(['omnibox.focus', 'omnibox.done', 'find.focus', 'downloads.open']),
+  payload: v.picklist([
+    'omnibox.focus',
+    'omnibox.done',
+    'find.focus',
+    'downloads.open',
+    'menu.open',
+    'bookmark.edit',
+  ]),
   capability: 'shell',
 });
 

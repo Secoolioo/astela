@@ -1,0 +1,71 @@
+# 0050. Browser menus and popovers in the overlay
+
+## Status
+
+Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0047](0047-address-suggestions-in-a-part-of-the-overlay.md), and amends [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md) and the platform rule of the [design system](../architecture/design-system.md#design-rules).
+
+## Date
+
+2026-11-10
+
+## Context
+
+Until 0.1.0-beta.6, the browser menu and the menus of the folders of the bookmarks bar were native menus, built with `Menu.buildFromTemplate` and opened with `popup()` on every system. A native menu can hold only items in a list: no zoom row that stays open while the page zooms, no motion, and no popover of the bookmark star with a name and a folder. A native menu also keeps the event loop of the browser process in a loop of its own while it is open, and the end-to-end tests could only record such menus instead of using them.
+
+The popovers of the overlay, the shield's and the list of downloads, appeared and vanished without motion, had the radius of a control and no shadow, against ADR 0046, and always gave the focus back to the page, also after the keyboard opened them from the toolbar. A site's question for a permission was refused whenever the overlay showed anything but the shield, because the overlay could not tell a popover that may give way from a prompt that may not. The command palette, site information, tab groups and workspaces of 0.1.0-beta.7 add six more kinds of content to the overlay, so these rules have to be settled once, for all of them.
+
+## Decision
+
+- **The browser menu in the overlay, on every system:** the menu button, F10 and Alt alone open the browser menu as a popover of the overlay: new tabs and windows, a zoom row, the history, downloads and bookmarks, the tools of the page with a submenu for more of them, the settings, About and Quit, which Windows calls Exit. The zoom row has zoom out, the zoom of the page, which resets it, zoom in and full screen; the menu stays open while the page zooms. One pure model in `app/src/domain/menus/browser-menu.ts` makes the menu from the window commands, their shortcuts and the rule of `domain/commands/availability.ts`, which disables what cannot run now; later items of 0.1.0-beta.7 join it there. The overlay's page only names places in the menu (`overlay.chooseMenuItem`, `overlay.openSubmenu`), and the browser process finds the command, the address or the folder that a place stands for in the menu that it sent.
+- **The folders of the bookmarks bar in the overlay:** the folder buttons and the » button open the same menu element with the folder's bookmarks and its folders as submenus, at most 500 entries per level and 20 levels, as before. Titles show as they are, an `&` included, and letters move to the next item that starts with them.
+- **The popover of the star:** the star, `Ctrl+D` and `Cmd+D` add a page without a bookmark to the bookmarks bar, as before, and open a popover with its name, a list of the folders and Remove and Done. Done, Enter and a click next to the popover save the name and the folder; Escape closes without saving. The folders are a list in the popover (`<select size="6">`), never a menu of the system, which macOS would draw. Without the star in the toolbar, the popover opens at the menu button.
+- **What stays native:** the context menus of pages and of the address bar, the menu of a tab and the menu bar of macOS. A command of the menu bar of macOS closes a popover that covers the window before it runs. A unit test (`app/src/main/__tests__/native-menus.test.ts`) allows `Menu.buildFromTemplate`, `.popup(` and `setApplicationMenu` only in `context-menu.ts`, `tab-menu.ts`, the menu bar of `browser-menu.ts` and `bootstrap.ts`, and no `<select>` without a size in the overlay.
+- **Opening:** `WindowOverlay.open(content, options)` takes `onClose`, `bounds`, `popover` (the button of the shell that the popover belongs to), `focusBack`, `keys` and `yieldsToQuestions`. The shell sends the rectangle of the button with `keyboard`, which is true for Enter or Space on the button, whose click has no count, and for F10, Alt, `Ctrl+D` and `Ctrl+J`. `ShellState.popover` tells the shell which popover shows, so its button gets `aria-expanded` and a pressed look.
+- **The exit handshake:** a popover that covers the window leaves the page with its motion; the view stays in the window until the page sends `overlay.exited`, or for 250 ms at most (`exitFallbackMs`). The suggestions of the address bar and a change of the window's size take the view out of the window at once, and a popover that opens meanwhile takes the place of the one that leaves. Every popover leaves as the elements that showed it, with the open submenus of a menu and what was typed into a prompt or the popover of the star; only a popover that opens anew gets new elements.
+- **Motion:** two more durations, `--motion-enter` (140 ms) with `--ease-out` and `--motion-exit` (100 ms) with `--ease-in`, for the surfaces of the overlay that open and close. A popover at a button fades and moves 4 px when it enters and 2 px when it leaves (`app/src/ui/overlay/popover-motion.ts`); a question in the middle of the window only fades. Both durations are 0 with reduced motion, so nothing starts to move, and `tools/design/check-tokens.ts` checks that every `--motion-*` token of `tokens.css` is 0 in the block for reduced motion.
+- **Look and place:** every popover of the overlay has `--radius-3`, `--shadow-popover`, `--surface-raised` and `--line-1` (`app/src/ui/ui-kit/popover-styles.ts`, [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md)). One module places them (`app/src/ui/overlay/placement.ts`): below the button, the browser menu lined up with the end of a button in the right half of the window and with its start otherwise, the menu of a folder with the start of its button, above the button without room below, and scrolling inside when neither side has room; submenus open next to their item, to the left at the edge of the window. The shield and the list of downloads keep their end at the end of their button.
+- **Focus:** after a popover that the keyboard opened from the shell, the focus goes back to the shell, on the button that opened it; otherwise to the page, as before. The menus give the focus to their first item when the keyboard opened them, and to the menu itself for the pointer, whose first arrow down reaches the first item.
+- **Keys per kind:** Escape belongs to the page for the menus and the popover of the star, so that a submenu closes before its menu; for every other kind, and while the page loads or does not answer, the browser process closes the overlay. Neither closes it while an input method composes text, which takes Escape for itself. A crash of the page or a hang that Chromium reports takes the view out of the window at once, and a crashed page loads again with the next popover. A shortcut of the browser asks the popover first (`keys.onCommand`), which lets a menu close on the shortcut of the browser menu, F10, without opening another; otherwise the overlay closes and the window runs the command, as ADR 0034 says. Alt alone closes a menu (`keys.closeOnAlt`). The menus follow the menu pattern of WAI-ARIA: the arrows move and go round past separators and disabled items, Home and End go to the ends, Right, Enter and Space open a submenu, Left and Escape close it, Tab closes the menu, and a letter chooses the item of its access key on Windows and Linux or moves to the next item that starts with it on macOS and in folders.
+- **Questions of sites:** a question may take the place of a popover that gives way (`yieldsToQuestions`): the shield and the menus, and later site information. Prompts and editors with what was typed into them keep their place, such as the popover of the star, the sign-in prompt and later the command palette; so do the suggestions and the list of downloads, as before. `busy()` of `app/src/main/permission-prompt.ts` reads the flag instead of the kind.
+- **F10 and Alt:** F10 is the default of the new window command `menu.open` on Windows and Linux; macOS has none, and people can give it one. Alt pressed and released alone opens the menu too (`app/src/domain/windows/alt-tap.ts`), unless the setting `keys.altOpensMenu` turns it off, which has no policy, like the shortcuts. Alt arms only without Ctrl, Shift or Meta and while no button of the pointer is held; any other key disarms it, as do composing text, a press or a release of the pointer, a turn of its wheel or a drag in the view while Alt is down, a release in another view and the loss of the focus, and a page in full screen opens nothing. The check runs after the shortcut recorder and the commands, where the palette's keys go before it later.
+- **Preparing the overlay:** the shell asks once per window for the overlay when the pointer reaches the menu button or the button takes the focus (`shell.prepareOverlay`), so that the first popover does not wait for the overlay's page. `WindowOverlay.prepare()` makes the view and loads its page without making it part of the window. Nothing is prepared at the start, while the browser is idle or while Alt is down: Alt starts many shortcuts, such as `Alt+Left Arrow` and the keys of the workspaces, `Alt+1` to `Alt+9`, and each would start a renderer for the overlay (17 to 28 MB).
+- **Lazy:** the menus and the popover of the star load with their first request (`app/src/main/menu-popover.ts`, `app/src/main/bookmark-popover.ts`); the start-up path gains the command, the tap of Alt and the fields of the state.
+
+### Alt alone on Windows
+
+Windows turns the release of a lone Alt (`WM_SYSKEYUP`) into `WM_SYSCOMMAND` with `SC_KEYMENU`, and only the default handling of that message (`DefWindowProc`) enters the mode of the system menu, which would take the next key. The source of the versions that this release ships was checked: `HWNDMessageHandler::OnSysCommand` of Chromium 156.0.8078.80 (`ui/views/win/hwnd_message_handler.cc`) returns for an `SC_KEYMENU` from the keyboard after it hands the window an accelerator for Alt, without `DefWindowProc`, and the handler of Electron 45.2.3 that runs before it (`NativeWindowViews::PreHandleMSG` in `shell/browser/native_window_views_win.cc`) leaves `SC_KEYMENU` to Chromium. A `BaseWindow` has no menu bar that takes the accelerator, so Windows does not enter the mode of the system menu. The end-to-end tests cannot show this, as they send their keys to the views with `sendInputEvent`, below the messages of the system, and the change was tested on Linux only. The check by hand on the `windows-2025` runner or a Windows machine is still open: Alt pressed and released, then an arrow key, which must move in the browser menu. If Windows takes the next key, `keys.altOpensMenu` turns Alt off, and F10 stays.
+
+### Deviations from the design
+
+- The zoom row lies between two separators, after the new tabs and windows and before the history, so that it groups as the other parts of the menu.
+- Without a page that zooms, such as on the browser's own pages, only the buttons of the zoom row that zoom cannot be chosen; full screen can, as its command runs everywhere.
+- What leaves the page and what enters are the surfaces themselves, not a wrapper around them, as a transform of a wrapper would move the surfaces that it holds.
+- Nothing is prepared while Alt is down, as the plan of 0.1.0-beta.7 decided against the design, because Alt starts the keys of the workspaces.
+- The tap of Alt also ends with a release of the pointer, a move with a button held, and Alt that goes down while a button is held, so that Alt during a drag that started before it opens nothing; the design named only a press of the pointer and its wheel.
+- The browser process closes a menu or the popover of the star with Escape itself while the overlay's page loads or does not answer, and takes the view out of the window when the page crashes or hangs; the design left Escape of these kinds to the page alone.
+
+## Consequences
+
+Positive:
+
+- The browser menu has a zoom row, motion and the look of the browser on every system, and its items are disabled by the same rule as the palette's commands.
+- The star names, moves and removes a bookmark, which only the bookmarks page could do.
+- Keyboard users get F10 and Alt, access keys, type-ahead and the focus back at the button they came from; screen readers get `menu`, `menuitem`, `group` and `separator`, `aria-expanded` on the buttons and the zoom read out.
+- A site may ask for a permission while a menu or the shield shows; later popovers choose with one flag.
+- The end-to-end tests use the menus as a person does, instead of recording native menus.
+
+Negative:
+
+- A click in the 100 ms that a popover takes to leave is lost; with reduced motion, the view leaves at once.
+- The first popover of a window still starts a renderer for the overlay, unless the pointer reached the menu button before.
+- The second click on the star no longer removes the bookmark; the popover's Remove does.
+- macOS users get the browser's own menu at the menu button instead of a menu of the system; the menu bar stays.
+- A page of the overlay that hangs keeps the popover until Chromium reports the hang, after some seconds; until then, Escape does not close a menu, but a click next to it, a shortcut, a change of the window's size or of the tab do.
+
+## Alternatives considered
+
+- **Keeping the native menus:** no zoom row, no motion, no popover of the star, and menus that the tests can only record.
+- **Native menus on macOS only:** two menus to keep alike, and no zoom row on macOS.
+- **A view per menu:** a renderer for each menu.
+- **Leaving without the handshake:** the browser process cannot see the setting for reduced motion of the page, so the view would stay for the longest exit every time.
+- **Alt+F or Alt+E, as in Chrome:** the browser sees keys before the page, so these keys would no longer reach the access keys of web pages.

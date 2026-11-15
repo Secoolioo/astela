@@ -399,6 +399,9 @@
   "settings.shortcuts": "Tastenkürzel",
   "settings.shortcutsNote": "Ändere das Kürzel eines Befehls mit Ändern und den Tasten. Esc bricht ohne Änderung ab.",
   "settings.shortcuts.keywords": "Tastatur Tastenkürzel Tasten Hotkey Tastenbelegung",
+  "settings.altOpensMenu": "Menü mit Alt öffnen",
+  "settings.altOpensMenuNote": "Alt allein drücken und loslassen öffnet das Menü, wie F10. Schalte es aus, wenn eine Website die Alt-Taste braucht.",
+  "settings.altOpensMenu.keywords": "Tastatur Menü F10 Alt-Taste Zugriffstasten",
   "settings.shortcutNone": "Kein Kürzel",
   "settings.shortcutSystem": "{shortcut} kommt vom System und lässt sich nicht ändern.",
   "settings.shortcutChange": "Kürzel für {command} ändern",
@@ -445,6 +448,7 @@
   "shortcut.page.reloadHard": "Ohne Cache neu laden",
   "shortcut.page.home": "Startseite öffnen",
   "shortcut.omnibox.focus": "Zur Adressleiste",
+  "shortcut.menu.open": "Menü öffnen",
   "shortcut.find.open": "Auf der Seite suchen",
   "shortcut.find.next": "Nächster Treffer",
   "shortcut.find.previous": "Vorheriger Treffer",
@@ -531,5 +535,10 @@
   "overlay.suggestions": "Vorschläge",
   "overlay.suggestion.search": "Suchen",
   "overlay.suggestion.tab": "Zu diesem Tab wechseln",
+  "overlay.zoomState": "Zoom {zoom}",
+  "overlay.bookmarkAdded": "Lesezeichen hinzugefügt",
+  "overlay.bookmarkEdit": "Lesezeichen bearbeiten",
+  "overlay.bookmarkRemove": "Entfernen",
+  "overlay.bookmarkDone": "Fertig",
   "settings.titleBar.keywords": "Fensterrahmen Fenstertasten minimieren maximieren schließen"
 }

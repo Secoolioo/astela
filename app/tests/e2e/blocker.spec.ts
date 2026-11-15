@@ -1,12 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
-  chooseMenuItem,
+  chooseFromMenu,
   FixtureServer,
+  focusPage,
   launch,
+  openBrowserMenu,
   overlayAttached,
   overlayPage,
   packageWithoutBlockerData,
-  recordMenus,
+  pressNative,
   shellState,
   waitForPage,
   type Browser,
@@ -378,6 +380,116 @@ test('closes the popover with Escape or a click next to it and gives the page th
   }
 });
 
+test('gives the focus back to the shield button after it opened with the keyboard', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    const shield = browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' });
+    await expect(shield).toHaveAttribute('aria-expanded', 'false');
+    await focusPage(browser, browser.shell);
+    await shield.focus();
+    await shield.press('Enter');
+    const overlay = await overlayPage(browser);
+    await expect(overlay.getByRole('switch')).toBeFocused();
+    await expect(shield).toHaveAttribute('aria-expanded', 'true');
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // The keyboard goes on from the shield, in the shell.
+    const shellFocused = (): Promise<boolean> =>
+      browser.main.evaluate(({ webContents }) =>
+        webContents
+          .getAllWebContents()
+          .some((contents) => contents.getURL().startsWith('app://shell') && contents.isFocused()),
+      );
+    await expect.poll(shellFocused).toBe(true);
+    await expect(shield).toBeFocused();
+    await expect(shield).toHaveAttribute('aria-expanded', 'false');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('animates popovers in and out, and nothing moves with reduced motion', async () => {
+  const browser = await launch();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    // The first popover makes the page of the overlay, whose motion the test then records.
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    await overlay.evaluate(() => {
+      const recorded: { duration: unknown; easing: unknown; properties: string[] }[] = [];
+      Reflect.set(window, 'motions', recorded);
+      const animate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+        ?.value as Element['animate'];
+      Element.prototype.animate = function (
+        this: Element,
+        ...args: Parameters<Element['animate']>
+      ): Animation {
+        const [keyframes, options] = args;
+        const frames = Array.isArray(keyframes) ? keyframes : [];
+        recorded.push({
+          duration: typeof options === 'object' ? options.duration : options,
+          easing: typeof options === 'object' ? options.easing : undefined,
+          properties: [...new Set(frames.flatMap((frame) => Object.keys(frame)))].toSorted(),
+        });
+        return Reflect.apply(animate, this, args);
+      };
+    });
+    const motions = (): Promise<unknown> => overlay.evaluate(() => Reflect.get(window, 'motions'));
+    const token = (name: string): Promise<string> =>
+      overlay.evaluate(
+        (property) => getComputedStyle(document.documentElement).getPropertyValue(property).trim(),
+        name,
+      );
+    const entering = {
+      duration: 140,
+      easing: await token('--ease-out'),
+      properties: ['opacity', 'transform'],
+    };
+    const leaving = {
+      duration: 100,
+      easing: await token('--ease-in'),
+      properties: ['opacity', 'transform'],
+    };
+    await openShield(browser, 'Content blocker: 2 blocked');
+    await expect.poll(motions).toEqual([entering]);
+    await overlay.keyboard.press('Escape');
+    await expect.poll(motions).toEqual([entering, leaving]);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // The list of downloads and the browser menu enter and leave in the same way.
+    const mac = process.platform === 'darwin';
+    await pressNative(browser, mac ? 'L' : 'J', mac ? ['primary', 'alt'] : ['primary']);
+    await expect(overlay.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+    await expect.poll(motions).toEqual([entering, leaving, entering]);
+    await overlay.keyboard.press('Escape');
+    await expect.poll(motions).toEqual([entering, leaving, entering, leaving]);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    await openBrowserMenu(browser);
+    await expect.poll(motions).toEqual([entering, leaving, entering, leaving, entering]);
+    await overlay.keyboard.press('Escape');
+    await expect.poll(motions).toEqual([entering, leaving, entering, leaving, entering, leaving]);
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // With reduced motion, no animation starts, and the overlay leaves the window at once.
+    await overlay.emulateMedia({ reducedMotion: 'reduce' });
+    await openShield(browser, 'Content blocker: 2 blocked');
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    await openBrowserMenu(browser);
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    expect(await motions()).toHaveLength(6);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('opens the settings of the content blocker at its row from the shield, also a second time', async () => {
   const browser = await launch();
   try {
@@ -423,9 +535,9 @@ test('takes the settings that the browser menu opened to the row of the content 
     await address.press('Enter');
     await waitForPage(browser, (url) => url === fixture);
     // The menu opens the settings at their top, in a tab after that of the page.
-    await recordMenus(browser);
-    await browser.shell.getByRole('button', { name: 'Menu', exact: true }).click();
-    await chooseMenuItem(browser, [process.platform === 'darwin' ? 'Settings…' : 'Settings']);
+    await chooseFromMenu(await openBrowserMenu(browser), [
+      process.platform === 'darwin' ? 'Settings…' : 'Settings',
+    ]);
     const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
     await expect(settings).toHaveURL('app://settings/');
     const blocker = settings.getByRole('switch', { name: 'Block ads and trackers' });

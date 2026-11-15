@@ -13,14 +13,22 @@ import type {
 } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
-import type { OverlayAnchor } from '../shared/ipc/overlay-anchor.ts';
+import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
   OpenBlockerSettings,
   ToggleSiteBlocking,
   type OverlayContent,
 } from '../shared/ipc/overlay-contracts.ts';
 import { BlockerAllowedSitesSetting, ContentBlockerSetting } from './core-settings.ts';
-import { existingOverlay, overlayBySender, overlayOf, track, windowOfOverlay } from './overlays.ts';
+import {
+  existingOverlay,
+  focusBackOf,
+  overlayBySender,
+  overlayOf,
+  rectOf,
+  track,
+  windowOfOverlay,
+} from './overlays.ts';
 
 /** What the content blocker's popover needs from the browser process. */
 export interface ShieldPopoverDependencies {
@@ -38,20 +46,25 @@ let dependencies: ShieldPopoverDependencies | undefined;
 /**
  * Opens the content blocker's popover of a window's active tab at the shield button. The
  * first call connects the overlay's channels.
+ * A question of a site may take its place.
  * @param window - The window whose shield was clicked.
- * @param anchor - Where the button is, in the window.
+ * @param anchor - Where the button is, in the window, and whether the keyboard opened it.
  * @param deps - What the popover needs.
  */
 export function openShieldPopover(
   window: BrowserWindowController,
-  anchor: OverlayAnchor,
+  anchor: PopoverAnchor,
   deps: ShieldPopoverDependencies,
 ): void {
   const overlay = overlayOf(window, deps.overlay, deps.router);
   if (dependencies === undefined) connect(deps);
-  const content = shieldOf(deps, window, anchor);
+  const content = shieldOf(deps, window, rectOf(anchor));
   if (content === undefined) return;
-  overlay.open(content);
+  overlay.open(content, {
+    popover: { kind: 'shield', folder: null },
+    focusBack: focusBackOf(window, anchor),
+    yieldsToQuestions: true,
+  });
   track(window, overlay);
 }
 

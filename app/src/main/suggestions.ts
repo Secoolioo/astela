@@ -108,7 +108,7 @@ export async function suggest(
   };
   const content = { kind: 'suggestions' as const, items: items.map(view), selected: -1 };
   if (overlay.content?.kind === 'suggestions') overlay.update(content, bounds);
-  else overlay.open(content, () => shown.delete(window), bounds);
+  else overlay.open(content, { onClose: () => shown.delete(window), bounds });
   track(window, overlay);
   watchFocus(overlay, window);
 }

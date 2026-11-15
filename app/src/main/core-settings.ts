@@ -433,6 +433,21 @@ export const ShortcutsSetting = defineSetting<ShortcutOverrides>({
   ui: { section: 'shortcuts', control: 'list', order: 1 },
 });
 
+/**
+ * Whether Alt pressed and released alone opens the browser menu, as F10 does, on Windows and
+ * Linux. macOS opens its menus from the menu bar, so the setting has no place on its settings
+ * page. A keyboard preference without a policy, like the shortcuts.
+ */
+export const AltOpensMenuSetting = defineSetting<boolean>({
+  key: 'keys.altOpensMenu',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  ...(process.platform === 'darwin'
+    ? {}
+    : { ui: { section: 'shortcuts', control: 'toggle', order: 2 } as const }),
+});
+
 /** Whether pages keep the cookies of other sites away, in requests, responses and frames. */
 export const BlockThirdPartyCookiesSetting = defineSetting<boolean>({
   key: 'privacy.blockThirdPartyCookies',
@@ -618,6 +633,7 @@ export const coreSettings = [
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
+  AltOpensMenuSetting,
   BlockThirdPartyCookiesSetting,
   SetupShownSetting,
   BookmarksBarSetting,

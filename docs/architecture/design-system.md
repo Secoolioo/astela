@@ -15,7 +15,7 @@ Astela should look like carefully made desktop software, not like a template. Th
 - **Depth:** 1 px lines and differences in surface color separate areas. Menus and popovers that float above the page have one soft shadow; nothing else casts a shadow. There are no glow or neon effects and no glass or blur effects.
 - **Hierarchy:** comes from typography (size, weight and spacing), not from effects. Sizes and spacing follow a dense 4 px grid, with 8 px steps for larger gaps.
 - **Icons:** one icon set with one stroke width. There are no emojis, no sparkle symbols, and no decorative blobs or generic illustrations.
-- **Platform:** the native window controls, menus, context menus and shortcuts of each operating system are respected.
+- **Platform:** the native window controls, context menus, the menu of a tab, the menu bar of macOS and the shortcuts of each operating system are respected. The browser menu and the folders of the bookmarks bar are the browser's own popovers on every system and keep the keyboard conventions of the systems: F10 and Alt alone on Windows and Linux, access keys, letters that move to an item, and Escape ([ADR 0050](../adr/0050-browser-menus-and-popovers-in-the-overlay.md)).
 - **Motion:** only where it helps to follow a change, from 60 to 220 ms long, and off when the system asks for reduced motion. Only loading indicators repeat their motion, with one turn of 1 s ([ADR 0046](../adr/0046-motion-rounder-shapes-and-one-shadow.md)).
 - **Website:** no standard landing page layout (a centered hero with gradient text above a grid of icon cards). It shows real screenshots of the browser, never mockups.
 - **Writing:** factual and brief. No marketing phrases, no emoji lists, and dashes only where a sentence needs them.
@@ -107,7 +107,7 @@ Medium is the default. The line heights belong to the UI, Large, Larger, Title a
 | `--radius-field` | 10 px | The address bar and search fields                      |
 | `--radius-pill`  | round | Switches, badges and progress bars only                |
 
-Menus and popovers that float above the page have the one shadow, `--shadow-popover`, which is darker in dark mode. Focus rings of 1 or 2 px are no shadows of depth.
+Menus and popovers that float above the page have the one shadow, `--shadow-popover`, which is darker in dark mode. Focus rings of 1 or 2 px are no shadows of depth. Every popover of the overlay takes its radius, shadow, surface and line from `app/src/ui/ui-kit/popover-styles.ts`, and one module places it at its button (`app/src/ui/overlay/placement.ts`): below the button, lined up with the end of a button in the right half of the window and with its start otherwise, while the menus of the folders of the bookmarks bar line up with the start of their button; above it without room below, and scrolling inside when it fits on neither side.
 
 ## Motion
 
@@ -117,11 +117,14 @@ Menus and popovers that float above the page have the one shadow, `--shadow-popo
 | `--motion-fast`    | 120 ms   | Small changes, such as a check mark           |
 | `--motion-base`    | 180 ms   | Things that open, close or move, such as tabs |
 | `--motion-slow`    | 220 ms   | Larger movements, such as a sliding indicator |
+| `--motion-enter`   | 140 ms   | Popovers and menus of the overlay that open   |
+| `--motion-exit`    | 100 ms   | Popovers and menus of the overlay that close  |
 | `--motion-loop`    | 1 s      | One turn of a loading indicator               |
 
 - Things that enter use `--ease-out`, things that leave `--ease-in`, and movements `--ease-standard`. A loading indicator repeats one turn of `--motion-loop`; one that turns at an even speed, such as the loading ring of a tab, uses `--ease-linear`.
 - Animations use only `transform`, `opacity` and colors, so they never trigger layout.
-- When the system requests reduced motion (`prefers-reduced-motion`), every duration is 0, so nothing moves.
+- Popovers of the overlay fade in and move the last 4 px away from their button over `--motion-enter` with `--ease-out`, and fade out and move 2 px towards it over `--motion-exit` with `--ease-in`; questions in the middle of the window only fade. The overlay leaves the window once the popover has left (`app/src/ui/overlay/popover-motion.ts`, [ADR 0050](../adr/0050-browser-menus-and-popovers-in-the-overlay.md)).
+- When the system requests reduced motion (`prefers-reduced-motion`), every duration is 0, so nothing moves. `tools/design/check-tokens.ts` checks that the block for reduced motion of `tokens.css` sets every motion token to 0.
 - Code that animates from JavaScript reads its duration and easing from the tokens with `motionOf` and `easingOf` (`app/src/ui/ui-kit/motion.ts`), so it stops with reduced motion as well.
 - No timers run while the browser is idle, which keeps idle CPU within its budget (see [Performance](performance.md)).
 
@@ -174,7 +177,7 @@ How these checks fit into the overall test strategy is described in [Testing](te
 
 ## Implementation status
 
-Switches are tracks whose knob slides when they change, segmented controls change their colors softly, buttons of the toolbar give way while they are pressed, and the bookmark star pops when a page becomes a bookmark (`app/src/ui/ui-kit/choice-styles.ts`). The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, the line and the raised surface mixed from them, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The logo and the application icon exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
+Switches are tracks whose knob slides when they change, segmented controls change their colors softly, buttons of the toolbar give way while they are pressed, and the bookmark star pops when a page becomes a bookmark (`app/src/ui/ui-kit/choice-styles.ts`). The popovers of the overlay, the browser menu among them, enter and leave with `--motion-enter` and `--motion-exit`, and a button of the toolbar looks pressed while its popover is open. The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, the line and the raised surface mixed from them, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The logo and the application icon exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
 
 The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are Astela, the violet of the logo with its blue for progress and the default, and blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 

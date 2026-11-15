@@ -23,6 +23,8 @@
   "menu.history": "History",
   "menu.bookmarks": "Bookmarks",
   "menu.emptyFolder": "(Empty)",
+  "menu.title": "Menu",
+  "menu.moreBookmarks": "More Bookmarks",
   "menu.view": "View",
   "menu.reload": "Reload This Page",
   "menu.reloadHard": "Reload Without Cache",
