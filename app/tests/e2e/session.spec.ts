@@ -45,6 +45,20 @@ function loadedPages(browser: Browser): Promise<string[]> {
   );
 }
 
+/**
+ * Whether the view of an address has loaded its page: a tab that wakes, or a view that
+ * restores its history, loads from the moment it has its entries.
+ */
+function hasLoaded(browser: Browser, url: string): Promise<boolean> {
+  return browser.main.evaluate(
+    ({ webContents }, address) =>
+      webContents
+        .getAllWebContents()
+        .some((contents) => contents.getURL() === address && !contents.isLoading()),
+    url,
+  );
+}
+
 /** Opens an address in the active tab from the address bar. */
 async function go(browser: Browser, url: string): Promise<void> {
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
@@ -303,8 +317,12 @@ test("restores each tab with its back and forward history after a restart, also 
     await forward.click();
     await expect.poll(async () => (await moves(again))[1]).toEqual([opened, true, false]);
     // Tab A loads once it shows, at the page it showed, and can go forward to the next one.
+    // Its back and forward buttons show the restored history before the page is back, so the
+    // test waits for the page itself, as a person does before going on.
     await again.shell.getByRole('tab', { name: 'Fixture home' }).click();
     await expect.poll(() => loadedPages(again)).toEqual([home, opened]);
+    await waitForPage(again, (url) => url === home);
+    await expect.poll(() => hasLoaded(again, home)).toBe(true);
     await expect.poll(async () => (await moves(again))[0]).toEqual([home, true, true]);
     await forward.click();
     await expect.poll(async () => (await moves(again))[0]).toEqual([second, true, false]);
@@ -370,6 +388,11 @@ test('brings back the scroll position and the form values of a restored page, an
     await dialog.getByRole('combobox', { name: 'Time range' }).selectOption('all');
     await dialog.getByRole('button', { name: 'Clear data' }).click();
     await expect(dialog).toBeHidden();
+    // The dialog closes as the page asks the browser; the page says once the browser cleared
+    // the data and wrote the session and its backup without the lists.
+    await expect(settings.getByRole('status').filter({ hasText: 'cleared' })).toHaveText(
+      'The browsing data is cleared.',
+    );
     await expect
       .poll(() => moves(again))
       .toEqual([
@@ -377,10 +400,13 @@ test('brings back the scroll position and the form values of a restored page, an
         [long, false, false],
         ['app://settings/', false, false],
       ]);
+    // A later write of the session moves the file to the backup before it writes the new one.
     await expect.poll(() => entryCounts(again.profile)).toEqual([[1], [1], [1]]);
     // The backup of the session forgets them as well, which the next start reads when the
     // session file is broken.
-    expect(entryCounts(again.profile, 'session.json.bak')).toEqual([[1], [1], [1]]);
+    await expect
+      .poll(() => entryCounts(again.profile, 'session.json.bak'))
+      .toEqual([[1], [1], [1]]);
     await again.shell.getByRole('tab', { name: 'Fixture second' }).click();
     await waitForPage(again, (url) => url === second);
     await expect.poll(async () => (await moves(again))[0]).toEqual([second, false, false]);
@@ -491,13 +517,17 @@ test('forgets the back and forward lists of a tab whose page still loads when th
     await dialog.getByRole('combobox', { name: 'Time range' }).selectOption('all');
     await dialog.getByRole('button', { name: 'Clear data' }).click();
     await expect(dialog).toBeHidden();
+    // The page says once the browser cleared the data and wrote the session.
+    await expect(settings.getByRole('status').filter({ hasText: 'cleared' })).toHaveText(
+      'The browsing data is cleared.',
+    );
     await expect
       .poll(() => moves(browser))
       .toEqual([
         [opened, false, false],
         ['app://settings/', false, false],
       ]);
-    expect(entryCounts(browser.profile)).toEqual([[1], [1]]);
+    await expect.poll(() => entryCounts(browser.profile)).toEqual([[1], [1]]);
     // Once the load ends, the entries are gone in Chromium too.
     held();
     await expect
