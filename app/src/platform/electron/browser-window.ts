@@ -262,6 +262,12 @@ export interface WindowPlace {
   readonly private?: boolean;
 }
 
+/** Where a window is outside full screen, and whether it is maximized there. */
+export interface NormalPlace {
+  readonly bounds: Rectangle;
+  readonly maximized: boolean;
+}
+
 /** The view that shows a tab, and what belongs to it. */
 interface TabEntry {
   view: WebContentsView;
@@ -354,6 +360,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private fullScreenTab: TabId | undefined;
   /** Whether the user put the window in full screen, rather than a page. */
   private userFullScreen = false;
+  /**
+   * Where the window was right before it went into full screen, until it leaves full screen.
+   * Electron does not give that place while the window is in full screen: no system counts a
+   * window in full screen as maximized; on Windows, the normal bounds come 1 px further left
+   * and 2 px wider and 1 px taller, as Electron measures the frame without the title bar style
+   * that full screen takes away; and on macOS, they are where Electron last placed the window
+   * itself, not where people moved it, nor where the green button found it.
+   */
+  private placeBeforeFullScreen: NormalPlace | undefined;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
   private readonly waiting = new WeakMap<WebContents, PageJob>();
   /** The default zoom that each web view was made with, which Chromium keeps for its pages. */
@@ -431,7 +446,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // On macOS, full screen moves the window into a space of its own, with an animation.
     if (place.fullScreen === true) {
       this.userFullScreen = true;
-      this.window.setFullScreen(true);
+      this.restoreFullScreen(place.maximized === true);
     }
     // A popup closes with its last tab, as the page that closes itself expects.
     this.tabs = new TabService(
@@ -459,7 +474,22 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
     this.window.on('leave-full-screen', () => {
       this.userFullScreen = false;
+      this.placeBeforeFullScreen = undefined;
     });
+    // Electron on macOS takes note of where the window is only when it places the window itself,
+    // and the green button puts the window in full screen without Electron: the browser notes
+    // where the window is after each change outside full screen.
+    if (process.platform === 'darwin') {
+      const note = (): void => {
+        this.notePlace();
+      };
+      note();
+      this.window.on('move', note);
+      this.window.on('resize', note);
+      this.window.on('maximize', note);
+      this.window.on('unmaximize', note);
+      this.window.on('leave-full-screen', note);
+    }
     // Alt held while the window loses the focus, as for Alt+Tab, opens nothing.
     this.window.on('blur', () => this.altTap.reset());
     this.window.on('closed', () => this.dispose());
@@ -497,6 +527,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** Whether people put the window in full screen, rather than a page of it. */
   get fullScreen(): boolean {
     return this.userFullScreen && !this.window.isDestroyed() && this.window.isFullScreen();
+  }
+
+  /**
+   * Where the window is outside full screen, and whether it is maximized there, as the session
+   * keeps it; while the window or a page in it is in full screen, where it was before.
+   */
+  get normalPlace(): NormalPlace {
+    const before = this.placeBeforeFullScreen;
+    if (before !== undefined && (this.window.isFullScreen() || this.window.isSimpleFullScreen())) {
+      return before;
+    }
+    return { bounds: this.window.getNormalBounds(), maximized: this.window.isMaximized() };
   }
 
   /** The overlay while it shows something; a change of the visible tab closes it. */
@@ -1148,7 +1190,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'window.fullscreen':
         this.userFullScreen = !this.window.isFullScreen();
-        this.window.setFullScreen(this.userFullScreen);
+        this.setFullScreen(this.userFullScreen);
         break;
       case 'page.reloadHard':
       case 'page.print':
@@ -1788,7 +1830,57 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   private setPageFullScreen(on: boolean): void {
     if (process.platform === 'darwin') this.window.setSimpleFullScreen(on);
-    else this.window.setFullScreen(on);
+    else this.setFullScreen(on);
+  }
+
+  /**
+   * Puts the window in full screen, or takes it out, and notes where it was before.
+   * @param maximized - Whether the window is maximized, when the system may not say so yet, as
+   *   right after a window that opens maximized asked for it on Linux.
+   */
+  private setFullScreen(on: boolean, maximized?: boolean): void {
+    if (on) this.notePlace(maximized);
+    this.window.setFullScreen(on);
+  }
+
+  /**
+   * Puts a window that opens again in full screen. On macOS, a window zooms to its maximized
+   * size with an animation, and full screen keeps the frame that the window has when it
+   * starts, the one that the window gets back when it leaves full screen: a maximized window
+   * goes into full screen once its zoom has ended.
+   */
+  private restoreFullScreen(maximized: boolean): void {
+    if (process.platform !== 'darwin' || !maximized || this.window.isMaximized()) {
+      this.setFullScreen(true, maximized);
+      return;
+    }
+    const zoomed = (): void => {
+      this.window.off('maximize', zoomed);
+      this.window.off('unmaximize', zoomed);
+      this.setFullScreen(true, maximized);
+    };
+    this.window.on('maximize', zoomed);
+    this.window.on('unmaximize', zoomed);
+  }
+
+  /**
+   * Notes where the window is, while it is neither in full screen nor minimized.
+   * @param maximized - Whether the window is maximized, when the system may not say so yet.
+   */
+  private notePlace(maximized?: boolean): void {
+    const window = this.window;
+    if (
+      window.isDestroyed() ||
+      window.isFullScreen() ||
+      window.isSimpleFullScreen() ||
+      window.isMinimized()
+    ) {
+      return;
+    }
+    this.placeBeforeFullScreen = {
+      bounds: window.getNormalBounds(),
+      maximized: maximized ?? window.isMaximized(),
+    };
   }
 
   /**
@@ -2230,8 +2322,7 @@ export class WindowManager implements Disposable {
             })),
             active === undefined ? -1 : tabs.indexOf(active),
             {
-              bounds: controller.window.getNormalBounds(),
-              maximized: controller.window.isMaximized(),
+              ...controller.normalPlace,
               fullScreen: controller.fullScreen,
             },
           );

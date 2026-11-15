@@ -410,9 +410,23 @@ function fullScreen(browser: Browser): Promise<boolean | undefined> {
   return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isFullScreen());
 }
 
+/** Whether the first window is maximized. */
+function maximized(browser: Browser): Promise<boolean | undefined> {
+  return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isMaximized());
+}
+
 /** Where the first window is. */
 function firstBounds(browser: Browser): Promise<Electron.Rectangle | undefined> {
   return browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds());
+}
+
+/** The window other than the given one, in a browser with two windows. */
+function otherWindow(browser: Browser, id: number): Promise<number> {
+  return browser.main.evaluate(
+    ({ BaseWindow }, first) =>
+      BaseWindow.getAllWindows().find((window) => window.id !== first)?.id ?? 0,
+    id,
+  );
 }
 
 /** Puts the window in full screen with its shortcut, or takes it out. */
@@ -429,6 +443,112 @@ async function shownByWindow(browser: Browser): Promise<string[]> {
   );
   const views = await Promise.all(ids.map((id) => tabViews(browser, id)));
   return views.map((list) => list[0]?.url ?? '');
+}
+
+/*
+ * On macOS, a window has the focus only while its app is in front, and the focus of a window
+ * does not bring the app in front of another app: Electron asks macOS to activate the app
+ * without taking it from the app in front. A click on a window, or on the icon of the app in
+ * the Dock, brings the app to the front. On the macOS runner of CI, another app stays in front of
+ * every browser that starts after permissions.spec.ts opened the picker of macOS for the screen,
+ * which no test can answer.
+ */
+
+/**
+ * Uses a window as a person does who clicks it, and waits until it has the focus.
+ * @param browser - The browser.
+ * @param id - The window.
+ * @returns The window that has the focus then.
+ */
+function useWindow(browser: Browser, id: number): Promise<number | null> {
+  return browser.main.evaluate(
+    ({ app, BaseWindow }, wanted) =>
+      new Promise<number | null>((done) => {
+        const focused = (): number | null => BaseWindow.getFocusedWindow()?.id ?? null;
+        const window = BaseWindow.fromId(wanted);
+        if (window === null || window.isFocused()) {
+          done(focused());
+          return;
+        }
+        const timer = setTimeout(() => {
+          window.off('focus', got);
+          done(focused());
+        }, 1000);
+        function got(): void {
+          clearTimeout(timer);
+          done(focused());
+        }
+        window.once('focus', got);
+        if (process.platform === 'darwin' && focused() === null) app.focus({ steal: true });
+        window.focus();
+      }),
+    id,
+  );
+}
+
+/**
+ * The window that has the focus while the browser is in front: on macOS, when another app is in
+ * front, the browser comes to the front as with a click on its icon in the Dock, which gives the
+ * focus to the window that had it last.
+ */
+function focusedInFront(browser: Browser): Promise<number | null> {
+  return browser.main.evaluate(
+    ({ app, BaseWindow }) =>
+      new Promise<number | null>((done) => {
+        const focused = (): number | null => BaseWindow.getFocusedWindow()?.id ?? null;
+        if (process.platform !== 'darwin' || focused() !== null) {
+          done(focused());
+          return;
+        }
+        const windows = BaseWindow.getAllWindows();
+        const timer = setTimeout(() => finish(), 1000);
+        function finish(): void {
+          clearTimeout(timer);
+          for (const window of windows) window.off('focus', finish);
+          done(focused());
+        }
+        for (const window of windows) window.once('focus', finish);
+        app.focus({ steal: true });
+      }),
+  );
+}
+
+/**
+ * Puts the first window in full screen as the green button of macOS does: macOS itself does
+ * it, without Electron's setFullScreen() and without the browser's command. Its action goes to
+ * the window in use, so the browser first comes to the front, as with a click on the window,
+ * when another app is in front.
+ * @returns Whether the window is in full screen, or on its way there, after at most 5 s.
+ */
+function fullScreenFromSystem(browser: Browser): Promise<boolean> {
+  return browser.main.evaluate(({ app, BaseWindow, Menu }) => {
+    const send = (): void => {
+      Menu.sendActionToFirstResponder('toggleFullScreen:');
+    };
+    return new Promise<boolean>((done) => {
+      const found = BaseWindow.getAllWindows()[0];
+      if (found === undefined || found.isFullScreen()) {
+        done(found !== undefined);
+        return;
+      }
+      const window: Electron.BaseWindow = found;
+      const timer = setTimeout(finish, 5000);
+      function finish(): void {
+        clearTimeout(timer);
+        window.off('focus', send);
+        window.off('enter-full-screen', finish);
+        done(window.isFullScreen());
+      }
+      window.once('enter-full-screen', finish);
+      if (window.isFocused()) {
+        send();
+        return;
+      }
+      window.once('focus', send);
+      if (BaseWindow.getFocusedWindow() === null) app.focus({ steal: true });
+      window.focus();
+    });
+  });
 }
 
 test('restores a window in full screen where it was', async () => {
@@ -462,6 +582,78 @@ test('restores a window in full screen where it was', async () => {
   }
 });
 
+test('restores a maximized window in full screen, and maximized once it leaves full screen', async () => {
+  test.skip(
+    process.platform === 'linux',
+    'Under Xvfb, as on CI, no window manager runs that would maximize a window',
+  );
+  const browser = await launch();
+  const { profile } = browser;
+  try {
+    try {
+      await browser.main.evaluate(({ BaseWindow }) => {
+        BaseWindow.getAllWindows()[0]?.maximize();
+      });
+      await expect.poll(() => maximized(browser)).toBe(true);
+      await toggleFullScreen(browser);
+      await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    const again = await launch([], { profile });
+    try {
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
+      // Out of full screen, the window is maximized again, as it was before.
+      await toggleFullScreen(again);
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
+      await expect.poll(() => maximized(again)).toBe(true);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('restores a window that the green button of macOS put in full screen where people moved it', async () => {
+  test.skip(!mac, 'Only macOS puts a window in full screen itself, from its green button');
+  const browser = await launch();
+  const { profile } = browser;
+  const place = { x: 40, y: 60, width: 800, height: 500 };
+  let moved: Electron.Rectangle | undefined;
+  try {
+    try {
+      await browser.main.evaluate(({ BaseWindow }, wanted) => {
+        BaseWindow.getAllWindows()[0]?.setBounds(wanted);
+      }, place);
+      await expect.poll(() => firstBounds(browser)).toEqual(place);
+      // Then people move the window. center() moves it as a drag does: Electron takes note of
+      // the place that setBounds() gives, but not of this one.
+      await browser.main.evaluate(({ BaseWindow }) => {
+        BaseWindow.getAllWindows()[0]?.center();
+      });
+      moved = await firstBounds(browser);
+      expect(moved).not.toEqual(place);
+      await expect.poll(() => fullScreenFromSystem(browser), { timeout: 30_000 }).toBe(true);
+      await expect.poll(() => fullScreen(browser), { timeout: 15_000 }).toBe(true);
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    const again = await launch([], { profile });
+    try {
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(true);
+      // Out of full screen, the window is where people moved it.
+      await toggleFullScreen(again);
+      await expect.poll(() => fullScreen(again), { timeout: 15_000 }).toBe(false);
+      await expect.poll(() => firstBounds(again)).toEqual(moved);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
 test('restores windows in the order they were used, the window used last at the end', async () => {
   const browser = await launch();
   const { profile } = browser;
@@ -481,12 +673,11 @@ test('restores windows in the order they were used, the window used last at the 
       await address.fill(second);
       await address.press('Enter');
       await waitForPage(browser, (url) => url === second);
-      // The first window is used again, after the second one.
-      await expect.poll(() => focusedWindow(browser)).not.toBe(firstId);
-      await browser.main.evaluate(({ BaseWindow }, id) => {
-        BaseWindow.fromId(id)?.focus();
-      }, firstId);
-      await expect.poll(() => focusedWindow(browser)).toBe(firstId);
+      // The second window, which opened last, is the one in use; then the first window is used
+      // again, after it.
+      const secondId = await otherWindow(browser, firstId);
+      await expect.poll(() => focusedInFront(browser)).toBe(secondId);
+      await expect.poll(() => useWindow(browser, firstId)).toBe(firstId);
       await expect
         .poll(() => {
           const file = join(profile, 'data', 'session.json');
@@ -518,9 +709,9 @@ test('restores windows in the order they were used, the window used last at the 
           ),
         )
         .toEqual([false, false]);
-      await expect.poll(() => focusedWindow(again)).toBe(last);
+      await expect.poll(() => focusedInFront(again)).toBe(last);
       await new Promise((done) => setTimeout(done, 1000));
-      expect(await focusedWindow(again)).toBe(last);
+      expect(await focusedInFront(again)).toBe(last);
     } finally {
       await again.close();
     }
@@ -549,19 +740,19 @@ test('writes the session again for the focus of a regular window only when it ch
   const { profile } = browser;
   try {
     await open(browser, `${server.origin}/index.html`);
-    const regular = await focusedWindow(browser);
+    const regular = await browser.main.evaluate(
+      ({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.id ?? 0,
+    );
     await pressNative(browser, 'N', ['primary', 'shift']);
     await expect.poll(() => windowCount(browser)).toBe(2);
-    await expect.poll(() => focusedWindow(browser)).not.toBe(regular);
-    const privateWindow = await focusedWindow(browser);
+    const privateWindow = await otherWindow(browser, regular);
+    // The private window has the focus once it opened.
+    await expect.poll(() => focusedInFront(browser)).toBe(privateWindow);
     const written = await settled(profile);
     // The session keeps no private window, so the focus that moves between the two changes
     // nothing that it keeps.
     for (const id of [regular, privateWindow, regular, privateWindow]) {
-      await browser.main.evaluate(({ BaseWindow }, window) => {
-        if (window !== null) BaseWindow.fromId(window)?.focus();
-      }, id);
-      await expect.poll(() => focusedWindow(browser)).toBe(id);
+      await expect.poll(() => useWindow(browser, id)).toBe(id);
     }
     await new Promise((done) => setTimeout(done, 1500));
     expect(writtenAt(profile)).toBe(written);
