@@ -29,6 +29,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   webPage: true,
   privateWindows: true,
   developerTools: true,
+  palette: true,
   ...change,
 });
 
@@ -74,6 +75,9 @@ describe('browserMenu', () => {
       'downloads',
       'bookmarks',
       '-',
+      'commandPalette',
+      'searchTabs',
+      '-',
       'find',
       'print',
       'savePage',
@@ -100,6 +104,28 @@ describe('browserMenu', () => {
     expect(texts(moreTools(closed, text, 13).items)).toEqual(['viewSource']);
     expect(moreTools(input(), text, 13)).toMatchObject({ parent: 13, label: 'moreTools' });
     expect(texts(moreTools(input(), text, 13).items)).toEqual(['viewSource', 'developerTools']);
+  });
+
+  it('opens the command palette and tab search with their shortcuts, and has no items while the palette is off', () => {
+    const items = browserMenu(input(), text).items;
+    expect(entryOf(items, 'commandPalette')).toMatchObject({
+      shortcut: 'Ctrl+K',
+      enabled: true,
+      action: { run: 'palette.open' },
+    });
+    expect(entryOf(items, 'searchTabs')).toMatchObject({
+      shortcut: 'Ctrl+Shift+A',
+      enabled: true,
+      action: { run: 'tabs.search' },
+    });
+    const mac = browserMenu(input({ platform: 'darwin', table: shortcutTable('darwin') }), text);
+    expect(entryOf(mac.items, 'commandPalette')).toMatchObject({ shortcut: 'Cmd+K' });
+    expect(entryOf(mac.items, 'searchTabs')).toMatchObject({ shortcut: 'Shift+Cmd+A' });
+    const off = texts(browserMenu(input({ context: context({ palette: false }) }), text).items);
+    expect(off).not.toContain('commandPalette');
+    expect(off).not.toContain('searchTabs');
+    // The group goes with its separator.
+    expect(off.filter((entry) => entry === '-')).toHaveLength(4);
   });
 
   it('offers the tools of the page only on web pages', () => {

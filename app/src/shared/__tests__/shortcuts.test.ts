@@ -3,6 +3,7 @@ import {
   acceleratorOf,
   defaultShortcuts,
   displayShortcut,
+  paletteCommands,
   shortcutProblem,
   shortcutTable,
   shortcutsOf,
@@ -25,6 +26,38 @@ describe('shortcutTable', () => {
     expect(shortcutsOf(table, 'bookmark.toggle')).toEqual([]);
     expect(shortcutsOf(table, 'devtools.toggle')).toEqual([]);
     expect(shortcutsOf(table, 'history.open')).toEqual(['Ctrl+H']);
+  });
+});
+
+describe('the shortcuts of the command palette', () => {
+  it('open the palette with Ctrl+K and tab search with Ctrl+Shift+A, Command on macOS', () => {
+    for (const platform of ['win32', 'linux']) {
+      const table = shortcutTable(platform);
+      expect(shortcutsOf(table, 'palette.open')).toEqual(['Ctrl+K']);
+      expect(shortcutsOf(table, 'tabs.search')).toEqual(['Ctrl+Shift+A']);
+    }
+    const mac = shortcutTable('darwin');
+    expect(shortcutsOf(mac, 'palette.open')).toEqual(['Cmd+K']);
+    expect(shortcutsOf(mac, 'tabs.search')).toEqual(['Shift+Cmd+A']);
+    expect(displayShortcut('Ctrl+Shift+A', false)).toBe('Ctrl+Shift+A');
+    expect(displayShortcut('Shift+Cmd+A', true)).toBe('⇧⌘A');
+    expect(acceleratorOf('Ctrl+K')).toBe('Ctrl+K');
+  });
+
+  it('leave out the commands that are off, also the shortcuts that people gave them', () => {
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(
+        platform,
+        { 'tabs.search': ['F9'], 'tab.duplicate': ['F8'] },
+        paletteCommands,
+      );
+      expect(shortcutsOf(table, 'palette.open')).toEqual([]);
+      expect(shortcutsOf(table, 'tabs.search')).toEqual([]);
+      expect(table.get('F9')).toBeUndefined();
+      expect(table.get('F8')).toBe('tab.duplicate');
+      expect(table.size).toBe(shortcutTable(platform).size - 2 + 1);
+    }
+    expect(paletteCommands).toEqual(['palette.open', 'tabs.search']);
   });
 });
 
@@ -72,8 +105,13 @@ describe('defaultShortcuts', () => {
 });
 
 describe('the shortcut of the browser menu', () => {
-  it('opens the menu with F10 on Windows and Linux, after the address bar in the list', () => {
-    expect(windowCommands.at(windowCommands.indexOf('omnibox.focus') + 1)).toBe('menu.open');
+  it('opens the menu with F10 on Windows and Linux, after the address bar and the palette in the list', () => {
+    const after = windowCommands.indexOf('omnibox.focus') + 1;
+    expect(windowCommands.slice(after, after + 3)).toEqual([
+      'palette.open',
+      'tabs.search',
+      'menu.open',
+    ]);
     for (const platform of ['win32', 'linux']) {
       expect(shortcutsOf(shortcutTable(platform), 'menu.open')).toEqual(['F10']);
     }

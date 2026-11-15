@@ -92,6 +92,8 @@ export class WindowOverlay implements OverlayHandle {
   private onClose: (() => void) | undefined;
   /** Whether what the overlay shows took the focus, which closing it gives back. */
   private tookFocus = false;
+  /** Whether the overlay's page got the focus as it opened, in a window that had it. */
+  private focused = false;
   /** Whether what the overlay shows covers the whole window. */
   private covering = false;
   /** Whether the view is one of the window's views. */
@@ -181,7 +183,8 @@ export class WindowOverlay implements OverlayHandle {
     this.altTap.reset();
     this.window.overlay = this;
     // Focusing the view would raise a window in the background, such as for a site's question.
-    if (base.isFocused() && options.bounds === undefined) view.webContents.focus();
+    this.focused = base.isFocused() && options.bounds === undefined;
+    if (this.focused) view.webContents.focus();
     this.options.router.publish(OverlayChanged, view.webContents, content);
   }
 
@@ -198,6 +201,18 @@ export class WindowOverlay implements OverlayHandle {
   }
 
   /**
+   * Offers a command of the window to what the overlay shows, as its shortcut does, such as for
+   * an item of the menu bar of macOS: the palette takes its own commands to close or to switch
+   * its scope.
+   * @param command - The command.
+   * @returns Whether the popover took it, so that the command does not run.
+   */
+  offer(command: WindowCommand): boolean {
+    if (this.shown === null) return false;
+    return this.shownOptions.keys?.onCommand?.(command) === true;
+  }
+
+  /**
    * Puts the overlay above every other view of the window again while it shows something,
    * after the window attached a view, such as the page of a tab.
    */
@@ -211,8 +226,10 @@ export class WindowOverlay implements OverlayHandle {
   /**
    * Closes the overlay and gives the focus back to the page or the shell, if the overlay had
    * it: a list below the address bar leaves the focus where the typing goes on. A popover that
-   * covers the window leaves the page with its motion first, and the view stays in the window
-   * until the page says that it is done, or for {@link exitFallbackMs} at most.
+   * closes while its window has no focus, as it lost it, gives the focus back when the window
+   * gets it again. A popover that covers the window leaves the page with its motion first, and
+   * the view stays in the window until the page says that it is done, or for
+   * {@link exitFallbackMs} at most.
    * @param how - `now` takes the view out of the window at once, as for a change of the
    *   window's size, which would leave the popover in the wrong place.
    */
@@ -236,9 +253,20 @@ export class WindowOverlay implements OverlayHandle {
     if (!this.ended(view.webContents)) {
       this.options.router.publish(OverlayChanged, view.webContents, null);
     }
-    if (hadFocus && this.window.window.isFocused()) {
-      if (focusBack === 'shell') this.window.shellContents.focus();
-      else this.window.focusContent();
+    if (hadFocus) {
+      const giveBack = (): void => {
+        if (focusBack === 'shell') this.window.shellContents.focus();
+        else this.window.focusContent();
+      };
+      // Focusing a view would raise a window in the background; a popover that had the focus
+      // and closed as its window lost it, such as the command palette, gives the focus back
+      // with the window.
+      if (this.window.window.isFocused()) giveBack();
+      else if (this.focused) {
+        this.window.window.once('focus', () => {
+          if (this.shown === null && !this.window.window.isDestroyed()) giveBack();
+        });
+      }
     }
     clearTimeout(this.exitTimer);
     this.exitTimer = undefined;
@@ -300,7 +328,9 @@ export class WindowOverlay implements OverlayHandle {
   /**
    * Handles a key press of the overlay's page before the page sees it: Escape closes the
    * overlay unless the page handles it, a shortcut of the window closes the overlay and runs,
-   * unless the popover takes it, and Alt alone closes a menu.
+   * unless the popover takes it, and Alt alone closes a menu. While the window holds the keys
+   * typed after the shortcut of the command palette, they go to the palette once it asks for
+   * them, and Escape among them closes it.
    */
   private onInput(event: { preventDefault(): void }, input: Input): void {
     if (this.shown === null) return;
@@ -311,6 +341,11 @@ export class WindowOverlay implements OverlayHandle {
       this.altTap.key(input) === 'open'
     ) {
       this.close();
+      return;
+    }
+    if (this.window.holdKey(input)) {
+      event.preventDefault();
+      if (this.window.typingCancelled) this.close(this.pageAnswers() ? 'animate' : 'now');
       return;
     }
     if (input.type !== 'keyDown') return;

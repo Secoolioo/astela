@@ -33,6 +33,8 @@ export const windowCommands = [
   'page.reloadHard',
   'page.home',
   'omnibox.focus',
+  'palette.open',
+  'tabs.search',
   'menu.open',
   'find.open',
   'find.next',
@@ -99,6 +101,8 @@ const macShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Cmd+[', 'page.back'],
   ['Cmd+]', 'page.forward'],
   ['Cmd+L', 'omnibox.focus'],
+  ['Cmd+K', 'palette.open'],
+  ['Shift+Cmd+A', 'tabs.search'],
   ['Cmd+,', 'settings.open'],
   ['Cmd+Y', 'history.open'],
   ['Alt+Cmd+L', 'downloads.open'],
@@ -152,6 +156,8 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+L', 'omnibox.focus'],
   ['Alt+D', 'omnibox.focus'],
   ['F6', 'omnibox.focus'],
+  ['Ctrl+K', 'palette.open'],
+  ['Ctrl+Shift+A', 'tabs.search'],
   // The menu of the window, as F10 opens it in other programs of Windows and Linux.
   ['F10', 'menu.open'],
   ['Ctrl+H', 'history.open'],
@@ -203,21 +209,30 @@ export type ShortcutOverrides = Readonly<Partial<Record<WindowCommand, readonly 
 /** A key press in the notation of the tables: modifiers in a fixed order, then the key. */
 export const shortcutPattern = /^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Cmd\+)?[^\s]{1,24}$/;
 
+/** The commands of the command palette, which have no shortcut while the palette is off. */
+export const paletteCommands: readonly WindowCommand[] = ['palette.open', 'tabs.search'];
+
 /**
  * The shortcuts of the window: the defaults of the system, where a command has no shortcut
- * of people's own, and people's own, which win over a default of another command.
+ * of people's own, and people's own, which win over a default of another command. Commands
+ * that are off have none, so their keys reach the page.
  * @param platform - `process.platform`.
  * @param overrides - The shortcuts that people chose.
+ * @param without - Commands that are off, such as those of the command palette while it is.
  */
 export function shortcutTable(
   platform: string,
   overrides: ShortcutOverrides = {},
+  without: readonly WindowCommand[] = [],
 ): Map<string, WindowCommand> {
   const table = new Map<string, WindowCommand>();
   for (const [shortcut, command] of defaultShortcuts(platform)) {
-    if (overrides[command] === undefined) table.set(shortcut, command);
+    if (overrides[command] === undefined && !without.includes(command)) {
+      table.set(shortcut, command);
+    }
   }
   for (const command of windowCommands) {
+    if (without.includes(command)) continue;
     for (const shortcut of overrides[command] ?? []) table.set(shortcut, command);
   }
   return table;

@@ -54,8 +54,9 @@ export function showBlockerSaveError(window: BrowserWindowController, managed: b
  * Runs a command of the menu bar of macOS in the window that was used last. A popover that
  * covers the window closes first, as a shortcut closes it, so that the command acts on the
  * page and the focus goes where the command puts it; the suggestions of the address bar stay.
- * With no window open, a command that opens a window opens only that window, and any other
- * command runs in a new window.
+ * A popover may take the command first, as it takes its shortcut, such as the command palette
+ * its own commands. With no window open, a command that opens a window opens only that window,
+ * and any other command runs in a new window.
  * @param windows - The browser's windows.
  * @param command - The command.
  * @param openPrivateWindow - Opens a private window, if people may.
@@ -67,7 +68,11 @@ export function runFromMenuBar(
 ): void {
   const front = windows.lastUsed;
   if (front !== undefined) {
-    if (front.overlay?.coversWindow === true) front.overlay.close();
+    const overlay = front.overlay;
+    if (overlay?.coversWindow === true) {
+      if (overlay.offer(command)) return;
+      overlay.close();
+    }
     front.execute(command);
   } else if (command === 'window.newPrivate') {
     openPrivateWindow();
@@ -78,15 +83,18 @@ export function runFromMenuBar(
 }
 
 /**
- * The menu bar of macOS, with the browser's settings in the application menu and the tools
- * of the page in the View menu. Its items run the commands of the window, as the keys do, so
- * they act on the page and not on the browser's own views, and the policies apply.
+ * The menu bar of macOS, with the browser's settings in the application menu and the command
+ * palette, tab search and the tools of the page in the View menu. Its items run the commands of
+ * the window, as the keys do, so they act on the page and not on the browser's own views, and
+ * the policies apply.
  * @param run - Runs a command in the frontmost window.
  * @param table - The keyboard shortcuts of the windows, which the items show.
+ * @param options - Whether the command palette is on; its items are missing while it is off.
  */
 export function macMenuBar(
   run: (command: WindowCommand) => void,
   table: ReadonlyMap<string, WindowCommand>,
+  options: { readonly palette: boolean } = { palette: true },
 ): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
   // The window handles the keys itself, also while a page has the focus.
@@ -145,6 +153,13 @@ export function macMenuBar(
     {
       label: i18n.t('menu.view'),
       submenu: [
+        ...(options.palette
+          ? [
+              command('menu.commandPalette', 'palette.open'),
+              command('menu.searchTabs', 'tabs.search'),
+              { type: 'separator' } as const,
+            ]
+          : []),
         command('menu.find', 'find.open'),
         command('menu.downloads', 'downloads.open'),
         { type: 'separator' },

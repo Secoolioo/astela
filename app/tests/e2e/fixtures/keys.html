@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture keys</title>
+  </head>
+  <body>
+    <label>Typed here <input id="field" autofocus /></label>
+    <script>
+      // The key presses with Ctrl or Command that reach the page, such as Ctrl+K.
+      window.seen = [];
+      addEventListener(
+        'keydown',
+        (event) => {
+          if (!event.ctrlKey && !event.metaKey) return;
+          if (['Control', 'Meta', 'Shift', 'Alt'].includes(event.key)) return;
+          const modifier = event.metaKey ? 'Cmd' : 'Ctrl';
+          window.seen.push(`${modifier}+${event.key.toUpperCase()}`);
+        },
+        true,
+      );
+    </script>
+  </body>
+</html>

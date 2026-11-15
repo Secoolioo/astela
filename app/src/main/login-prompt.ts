@@ -3,7 +3,7 @@ import type { BrowserWindowController } from '../platform/electron/browser-windo
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
 import { SignIn } from '../shared/ipc/overlay-contracts.ts';
-import { overlayBySender, overlayOf, track } from './overlays.ts';
+import { overlayBySender, overlayOf, questionKeys, track } from './overlays.ts';
 
 /** Answers a site's question for a user name and password; no arguments cancel it. */
 type Answer = (username?: string, password?: string) => void;
@@ -80,6 +80,7 @@ export function askForLogin(
       secure: !info.isProxy && /^https:/i.test(details.url),
     },
     {
+      keys: questionKeys,
       // Closing the prompt in any way cancels what it asked for.
       onClose: () => {
         if (waiting.get(target) === prompt) waiting.delete(target);

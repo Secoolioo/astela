@@ -32,10 +32,12 @@ export default defineConfig({
         'src/ui/bookmarks/**',
         'src/ui/ui-kit/browser-import.ts',
         'src/ui/ui-kit/default-browser.ts',
-        // The elements of the menus and of the star's popover in the overlay, and their motion,
-        // which the end-to-end tests drive; their keys and places are tested here.
+        // The elements of the menus, of the star's popover and of the command palette in the
+        // overlay, and their motion, which the end-to-end tests drive; their keys, places and
+        // results are tested here.
         'src/ui/overlay/overlay-menu.ts',
         'src/ui/overlay/overlay-bookmark.ts',
+        'src/ui/overlay/command-palette.ts',
         'src/ui/overlay/popover-motion.ts',
         'src/platform/electron/default-browser.ts',
         'src/main/data-service.ts',

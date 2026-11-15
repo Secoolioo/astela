@@ -912,6 +912,14 @@ export class SettingsPage extends LitElement {
     'network.secureDns': (page) => ({ render: () => page.renderSecureDns() }),
     'clear-data': (page) => ({ render: () => page.renderClearData() }),
     'permissions.sites': (page) => ({ render: () => page.renderSitePermissions() }),
+    'commandPalette.enabled': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'commandPalette.enabled',
+          'settings.commandPalette',
+          'settings.commandPaletteNote',
+        ),
+    }),
     ...Object.fromEntries(
       windowCommands.map((command) => [
         shortcutRowId(command),
@@ -2272,10 +2280,14 @@ export class SettingsPage extends LitElement {
 
   /**
    * Loads the shortcuts of every command, as the window uses them, for the value of the
-   * setting: once, and again after it changed.
+   * setting and of the switch of the command palette, whose commands have none while it is
+   * off: once, and again after one of them changed.
    */
   private loadShortcuts(): void {
-    const value = JSON.stringify(this.client?.get('keys.shortcuts')?.value ?? null);
+    const value = JSON.stringify([
+      this.client?.get('keys.shortcuts')?.value ?? null,
+      this.client?.get('commandPalette.enabled')?.value ?? null,
+    ]);
     if (value === this.shortcutsLoaded) return;
     this.shortcutsLoaded = value;
     void this.bridge?.invoke('settings.getShortcuts', {}).then(

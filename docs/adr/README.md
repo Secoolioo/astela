@@ -91,4 +91,5 @@ Each rejected option as a bullet point with a short reason.
 | [0049](0049-logo-and-colors-of-the-brand.md)                           | Logo and colors of the brand                            |
 | [0050](0050-browser-menus-and-popovers-in-the-overlay.md)              | Browser menus and popovers in the overlay               |
 | [0051](0051-calmer-dark-mode-mixed-from-the-palette.md)                | A calmer dark mode mixed from the palette               |
+| [0052](0052-command-palette-and-tab-search-in-the-overlay.md)          | Command palette and tab search in the overlay           |
 | [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment             |

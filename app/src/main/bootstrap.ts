@@ -5,7 +5,7 @@ import {
   thirdPartyCookieFeature,
 } from './cookie-blocking.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
-import { shortcutTable } from '../shared/shortcuts.ts';
+import { paletteCommands, shortcutTable, type WindowCommand } from '../shared/shortcuts.ts';
 import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
@@ -40,7 +40,7 @@ import {
   type Logger,
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
-import type { SearchShortcuts } from '../domain/navigation/omnibox.ts';
+import type { OmniboxTarget, SearchShortcuts } from '../domain/navigation/omnibox.ts';
 import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-engines.ts';
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
@@ -56,6 +56,7 @@ import {
   WindowManager,
   type BrowserWindowController,
   type ContextMenuRequest,
+  type PaletteOpening,
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
@@ -87,6 +88,7 @@ import {
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
   AltOpensMenuSetting,
+  CommandPaletteSetting,
   BlockThirdPartyCookiesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
@@ -328,8 +330,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     dispose: () => startedClient?.dispose(),
   };
-  // The keyboard shortcuts of the windows, made again when people change them.
-  let shortcuts = shortcutTable(process.platform, settings.get(ShortcutsSetting));
+  // The keyboard shortcuts of the windows, made again when people change them. While the
+  // command palette is off, its two shortcuts reach the pages.
+  const shortcutsNow = (): Map<string, WindowCommand> =>
+    shortcutTable(
+      process.platform,
+      settings.get(ShortcutsSetting),
+      settings.get(CommandPaletteSetting) ? [] : paletteCommands,
+    );
+  let shortcuts = shortcutsNow();
   const shortcutRecorder = new ShortcutRecorder();
   // Every request of web content passes the request pipeline. HTTPS-First sends pages to the
   // secure address first; the content blocker follows, and its engine loads with the first
@@ -595,6 +604,39 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     );
     return bookmarksLoaded;
   };
+  // The address bar and the command palette find pages in the same places.
+  const pageSources = {
+    target: async (text: string): Promise<OmniboxTarget | undefined> => {
+      const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
+      return resolveOmniboxInput(text, await searchTemplate(), await searchShortcuts());
+    },
+    history: async (text: string, limit: number): Promise<{ title: string; url: string }[]> =>
+      (await data.call('history', text, limit)).map(({ title, url }) => ({ title, url })),
+    bookmarks: async (): Promise<{ title: string; url: string }[]> =>
+      (await loadBookmarks()).loadedPages(),
+  };
+  // The command palette loads with its first shortcut; the keys typed meanwhile wait for it.
+  const openPalette = (window: BrowserWindowController, scope: PaletteOpening): void => {
+    if (!settings.get(CommandPaletteSetting)) return;
+    window.holdTyping();
+    import('./palette.ts')
+      .then(({ openPalette: open }) =>
+        open(window, scope, {
+          windows,
+          router,
+          overlay: overlayOptions,
+          newTabUrl,
+          ...pageSources,
+          absent: coreSettings.flatMap((definition) =>
+            definition.ui === undefined ? [definition.key] : [],
+          ),
+        }),
+      )
+      .catch((error: unknown) => {
+        window.releaseTyping();
+        logger.error('The command palette failed', error);
+      });
+  };
   const appearance = await AppearanceController.create(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
@@ -653,6 +695,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     openPrivateWindow,
     privateWindows: privateWindowsAllowed,
     developerTools,
+    openPalette,
+    commandPalette: () => settings.get(CommandPaletteSetting),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
@@ -816,13 +860,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         bookmarks: loadBookmarks,
         suggestions: {
           overlay: overlayOptions,
-          target: async (text) => {
-            const { resolveOmniboxInput } = await import('../domain/navigation/omnibox.ts');
-            return resolveOmniboxInput(text, await searchTemplate(), await searchShortcuts());
-          },
-          history: async (text) =>
-            (await data.call('history', text, 10)).map(({ title, url }) => ({ title, url })),
-          bookmarks: async () => (await loadBookmarks()).loadedPages(),
+          target: pageSources.target,
+          history: (text) => pageSources.history(text, 10),
+          bookmarks: pageSources.bookmarks,
         },
         openShieldPopover: async (window, anchor) => {
           const { openShieldPopover } = await import('./shield-popover.ts');
@@ -1019,15 +1059,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     void import('./browser-menu.ts')
       .then(({ macMenuBar, runFromMenuBar }) =>
         Menu.setApplicationMenu(
-          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts),
+          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts, {
+            palette: settings.get(CommandPaletteSetting),
+          }),
         ),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
   };
   showMenuBar();
+  // The command palette turns on and off at once: its shortcuts and the items of the menus.
   settings.onDidChange(({ keys }) => {
-    if (!keys.includes(ShortcutsSetting.key)) return;
-    shortcuts = shortcutTable(process.platform, settings.get(ShortcutsSetting));
+    if (!keys.includes(ShortcutsSetting.key) && !keys.includes(CommandPaletteSetting.key)) return;
+    shortcuts = shortcutsNow();
     showMenuBar();
   });
 

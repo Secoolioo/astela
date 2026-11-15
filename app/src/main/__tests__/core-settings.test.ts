@@ -1,6 +1,13 @@
 import * as v from 'valibot';
 import { describe, expect, it, vi } from 'vitest';
-import { AltOpensMenuSetting, DownloadFolderSetting, ShortcutsSetting } from '../core-settings.ts';
+import { settingPolicies } from '../../domain/settings/settings-service.ts';
+import {
+  AltOpensMenuSetting,
+  CommandPaletteSetting,
+  coreSettings,
+  DownloadFolderSetting,
+  ShortcutsSetting,
+} from '../core-settings.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -37,6 +44,11 @@ describe('ShortcutsSetting', () => {
     }
   });
 
+  it('takes shortcuts of their own for the command palette and tab search', () => {
+    expect(takes({ 'palette.open': [mac ? 'Shift+Cmd+P' : 'Ctrl+Shift+P'] })).toBe(true);
+    expect(takes({ 'tabs.search': [] })).toBe(true);
+  });
+
   it('refuses the keys of the system and unknown commands', () => {
     expect(takes({ 'app.quit': [mac ? 'Cmd+Q' : 'Alt+F4'] })).toBe(false);
     expect(takes({ 'app.restart': ['F9'] })).toBe(false);
@@ -67,4 +79,21 @@ describe('AltOpensMenuSetting', () => {
       }
     },
   );
+});
+
+describe('CommandPaletteSetting', () => {
+  it('turns the palette on by default, and a policy can set or recommend it', () => {
+    expect(CommandPaletteSetting).toMatchObject({
+      key: 'commandPalette.enabled',
+      default: true,
+      policy: { name: 'CommandPaletteEnabled', recommended: true },
+      ui: { section: 'shortcuts', control: 'toggle', order: 0 },
+    });
+    expect(coreSettings).toContain(CommandPaletteSetting);
+    expect(settingPolicies(coreSettings).map((policy) => policy.name)).toContain(
+      'CommandPaletteEnabled',
+    );
+    expect(v.safeParse(CommandPaletteSetting.schema, false).success).toBe(true);
+    expect(v.safeParse(CommandPaletteSetting.schema, 'off').success).toBe(false);
+  });
 });

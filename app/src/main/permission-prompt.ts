@@ -14,7 +14,7 @@ import type { BrowserWindowController } from '../platform/electron/browser-windo
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
 import { AnswerPermission, ShareScreen } from '../shared/ipc/overlay-contracts.ts';
-import { overlayBySender, overlayOf, track } from './overlays.ts';
+import { overlayBySender, overlayOf, questionKeys, track } from './overlays.ts';
 
 /** The questions of sites for permissions and screens, in the overlay of their window. */
 export interface PermissionPrompts {
@@ -142,6 +142,7 @@ export function permissionPrompts(
           permissions: [...question.permissions],
         },
         {
+          keys: questionKeys,
           onClose: () => {
             // Closed without an answer: nothing is decided, and the site may ask again.
             if (queue[0] === question) {
@@ -240,6 +241,7 @@ export function permissionPrompts(
               })),
             },
             {
+              keys: questionKeys,
               onClose: () => {
                 // Closed without a choice: the site sees nothing.
                 if (pickers.get(target) === picker) pickers.delete(target);

@@ -69,6 +69,8 @@ const menuTexts: Readonly<Record<BrowserMenuText, MessageKey>> = {
   history: 'menu.history',
   downloads: 'menu.downloads',
   bookmarks: 'menu.bookmarks',
+  commandPalette: 'menu.commandPalette',
+  searchTabs: 'menu.searchTabs',
   find: 'menu.find',
   print: 'menu.print',
   savePage: 'menu.savePage',

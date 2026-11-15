@@ -412,6 +412,20 @@ export const SecureDnsTemplatesSetting = defineSetting<string>({
   ui: { section: 'privacy', control: 'text', order: 8 },
 });
 
+/**
+ * Whether the command palette and tab search are on: `Ctrl+K` and `Ctrl+Shift+A`, or `Cmd+K`
+ * and `Shift+Cmd+A` on macOS, open them, and the menus have their items. While it is off, the
+ * two shortcuts reach web pages. A policy can set or recommend it.
+ */
+export const CommandPaletteSetting = defineSetting<boolean>({
+  key: 'commandPalette.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'CommandPaletteEnabled', recommended: true },
+  ui: { section: 'shortcuts', control: 'toggle', order: 0 },
+});
+
 /** The keyboard shortcuts that people chose, by command; other commands keep their defaults. */
 export const ShortcutsSetting = defineSetting<ShortcutOverrides>({
   key: 'keys.shortcuts',
@@ -632,6 +646,7 @@ export const coreSettings = [
   HttpAllowlistSetting,
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
+  CommandPaletteSetting,
   ShortcutsSetting,
   AltOpensMenuSetting,
   BlockThirdPartyCookiesSetting,

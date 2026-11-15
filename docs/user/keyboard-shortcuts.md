@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, and F10 and Alt for the browser menu, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, and the shortcuts of the command palette and tab search, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -34,6 +34,8 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Reload                         | `F5` or `Ctrl+R`                                |
 | Open the home page             | `Alt+Home`                                      |
 | Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
+| Open the command palette       | `Ctrl+K`                                        |
+| Search the open tabs           | `Ctrl+Shift+A`                                  |
 | Open the menu                  | `F10`, or `Alt` pressed and released alone      |
 | Open the history               | `Ctrl+H`                                        |
 | Open the downloads             | `Ctrl+J`                                        |
@@ -75,6 +77,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Reload                         | `Command+R`                                                           |
 | Open the home page             | `Command+Shift+H`                                                     |
 | Go to the address bar          | `Command+L`                                                           |
+| Open the command palette       | `Command+K`                                                           |
+| Search the open tabs           | `Command+Shift+A`                                                     |
 | Open the settings              | `Command+,`                                                           |
 | Open the history               | `Command+Y`                                                           |
 | Open the downloads             | `Command+Option+L`                                                    |
@@ -104,6 +108,10 @@ On Windows and Linux, `F10` opens the browser menu at its button, with its first
 
 In the menu, and in the menus of the folders of the [bookmarks bar](bookmarks.md#bookmarks-bar), the arrow keys move between the items, Home and End go to the first and the last one, and `Right Arrow`, Enter or Space open a submenu, which `Left Arrow` or Esc close again. Enter or Space choose an item, and Esc or Tab close the menu. On Windows and Linux, each item of the browser menu has an access key, the underlined letter, which chooses it; the letter shows when the keyboard opened the menu, or while you hold `Alt`. On macOS, and in folders, a letter moves to the next item that starts with it. When the keyboard opened the menu from the toolbar, closing it gives the focus back to the menu button.
 
+## The command palette
+
+`Ctrl+K` (`Command+K` on macOS) opens the [command palette](command-palette.md), which finds commands, open tabs, bookmarks, visited pages and settings; `Ctrl+Shift+A` (`Command+Shift+A`) opens it for the open tabs only. In the palette, its own shortcut closes it and the other one switches between everything and the tabs, and every other shortcut closes it and runs. The keys you type right after the shortcut go to the palette's field, also while it opens for the first time.
+
 ## Mouse
 
 The back and forward buttons of a mouse go back and forward in the current tab, over the page as well as over the toolbar. On Windows and Linux, Ctrl and the mouse wheel zoom the page in and out.
@@ -117,3 +125,5 @@ While an input method composes text, for example in Japanese or Chinese, its key
 ## Shortcuts in web pages
 
 The browser handles these shortcuts before the page sees the key, so a web page cannot use them for its own functions. All other keys go to the page.
+
+This holds for `Ctrl+K` and `Command+K` too, which some web editors and apps use to add a link or to search, such as Google Docs, Gmail or Slack. To give these keys back to pages, change the shortcuts of the palette, or turn off **Command palette and tab search** under **Keyboard shortcuts** in the [settings](settings.md): then `Ctrl+K` and `Ctrl+Shift+A` (`Command+K` and `Command+Shift+A`) reach web pages again.
