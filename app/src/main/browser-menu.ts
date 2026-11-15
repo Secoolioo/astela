@@ -4,81 +4,8 @@ import type {
   BrowserWindowController,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
-import {
-  acceleratorOf,
-  shortcutsOf,
-  systemShortcutsOf,
-  type WindowCommand,
-} from '../shared/shortcuts.ts';
+import { acceleratorOf, shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
-
-/**
- * Shows the browser menu of a window. Its shortcuts are shown for reference only: the
- * window handles them itself, also while a page has the focus.
- * @param window - The window whose menu button was clicked.
- * @param position - Where the menu opens, in the window's coordinates.
- * @param options - Whether people may open private windows.
- */
-export function popupBrowserMenu(
-  window: BrowserWindowController,
-  position: { readonly x: number; readonly y: number },
-  options: { readonly privateWindows: boolean },
-): void {
-  const i18n = translatorFor(uiLocale(), process.platform);
-  const table = window.shortcuts();
-  const item = (
-    label: Parameters<typeof i18n.t>[0],
-    command: WindowCommand,
-  ): Electron.MenuItemConstructorOptions => {
-    // Without a shortcut of the window, an item shows the one that the system gives the
-    // command, such as Command+Q, with which the application menu of macOS quits.
-    const accelerator =
-      acceleratorFor(table, command) ??
-      systemShortcutsOf(process.platform, command)
-        .map((shortcut) => acceleratorOf(shortcut))
-        .find((written) => written !== undefined);
-    return {
-      label: i18n.t(label),
-      ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
-      click: () => window.execute(command),
-    };
-  };
-  const menu = Menu.buildFromTemplate([
-    item('menu.newTab', 'tab.new'),
-    item('menu.newWindow', 'window.new'),
-    ...(options.privateWindows ? [item('menu.newPrivateWindow', 'window.newPrivate')] : []),
-    { type: 'separator' },
-    item('menu.history', 'history.open'),
-    item('menu.downloads', 'downloads.open'),
-    item('menu.bookmarks', 'bookmarks.open'),
-    { type: 'separator' },
-    {
-      label: i18n.t('menu.zoom'),
-      submenu: [
-        item('menu.zoomIn', 'zoom.in'),
-        item('menu.zoomOut', 'zoom.out'),
-        item('menu.actualSize', 'zoom.reset'),
-        { type: 'separator' },
-        item('menu.fullScreen', 'window.fullscreen'),
-      ],
-    },
-    item('menu.find', 'find.open'),
-    item('menu.print', 'page.print'),
-    item('menu.savePage', 'page.save'),
-    {
-      label: i18n.t('menu.moreTools'),
-      submenu: [
-        item('menu.viewSource', 'page.source'),
-        item('menu.developerTools', 'devtools.toggle'),
-      ],
-    },
-    { type: 'separator' },
-    item('menu.settings', 'settings.open'),
-    item('menu.about', 'app.about'),
-    item(process.platform === 'win32' ? 'menu.exit' : 'menu.quit', 'app.quit'),
-  ]);
-  menu.popup({ window: window.window, x: position.x, y: position.y });
-}
 
 /** The shortcut of a command that a menu shows: the first that Electron can write. */
 function acceleratorFor(
@@ -124,9 +51,11 @@ export function showBlockerSaveError(window: BrowserWindowController, managed: b
 }
 
 /**
- * Runs a command of the menu bar of macOS in the window that was used last. With no window
- * open, a command that opens a window opens only that window, and any other command runs in
- * a new window.
+ * Runs a command of the menu bar of macOS in the window that was used last. A popover that
+ * covers the window closes first, as a shortcut closes it, so that the command acts on the
+ * page and the focus goes where the command puts it; the suggestions of the address bar stay.
+ * With no window open, a command that opens a window opens only that window, and any other
+ * command runs in a new window.
  * @param windows - The browser's windows.
  * @param command - The command.
  * @param openPrivateWindow - Opens a private window, if people may.
@@ -138,6 +67,7 @@ export function runFromMenuBar(
 ): void {
   const front = windows.lastUsed;
   if (front !== undefined) {
+    if (front.overlay?.coversWindow === true) front.overlay.close();
     front.execute(command);
   } else if (command === 'window.newPrivate') {
     openPrivateWindow();
@@ -242,62 +172,4 @@ export function macMenuBar(
       ],
     },
   ]);
-}
-
-/** A bookmark or folder for the menu of a folder of the bookmarks bar. */
-export interface FolderEntry {
-  readonly id: number;
-  readonly title: string;
-  readonly url: string | null;
-}
-
-/** At most this many bookmarks and folders appear in one menu. */
-const folderMenuLimit = 500;
-
-/**
- * Shows the contents of a folder of the bookmarks bar as a menu, with a submenu for each
- * folder in it. Choosing a bookmark opens it in the active tab, or with Ctrl or Command in a
- * new tab.
- * @param window - The window whose bookmarks bar was clicked.
- * @param position - Where the menu opens, in the window's coordinates.
- * @param folder - The folder, and how many of its first entries the menu leaves out because
- *   the bookmarks bar shows them.
- * @param contents - Lists what a folder contains.
- * @param open - Opens a bookmark.
- */
-export function popupBookmarkFolder(
-  window: BrowserWindowController,
-  position: { readonly x: number; readonly y: number },
-  folder: { readonly id: number; readonly from: number },
-  contents: (folder: number) => readonly FolderEntry[],
-  open: (url: string, newTab: boolean) => void,
-): void {
-  const i18n = translatorFor(uiLocale(), process.platform);
-  const mac = process.platform === 'darwin';
-  // Elsewhere, & marks the access key of a menu item; a title shows it as it is.
-  const label = (title: string): string => (mac ? title : title.replaceAll('&', '&&'));
-  const items = (id: number, depth: number): Electron.MenuItemConstructorOptions[] => {
-    const skip = depth === 0 ? folder.from : 0;
-    const entries = contents(id).slice(skip, skip + folderMenuLimit);
-    if (entries.length === 0) return [{ label: i18n.t('menu.emptyFolder'), enabled: false }];
-    return entries.map((entry): Electron.MenuItemConstructorOptions => {
-      const url = entry.url;
-      if (url === null) {
-        return {
-          label: label(entry.title),
-          submenu: depth < 20 ? items(entry.id, depth + 1) : [],
-        };
-      }
-      return {
-        label: label(entry.title || url),
-        click: (_item, _window, event) =>
-          open(url, event.ctrlKey === true || event.metaKey === true),
-      };
-    });
-  };
-  Menu.buildFromTemplate(items(folder.id, 0)).popup({
-    window: window.window,
-    x: position.x,
-    y: position.y,
-  });
 }

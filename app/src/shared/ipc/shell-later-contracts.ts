@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { defineRequest, type RequestContract } from './contract.ts';
-import { OverlayAnchor } from './overlay-anchor.ts';
+import { PopoverAnchor } from './overlay-anchor.ts';
 import { Done, Empty, FaviconKey, TabId } from './shell-contracts.ts';
 
 // Requests of the shell that its first paint does not need. They load with the first of
@@ -14,13 +14,21 @@ export const ReopenClosedTab = defineRequest({
   capability: 'shell',
 });
 
-/** Opens the browser menu below the menu button, at a point of the shell in CSS pixels. */
+/** Opens the browser menu in the overlay at the menu button, in CSS pixels of the shell. */
 export const OpenMenu = defineRequest({
   channel: 'shell.openMenu',
-  request: v.strictObject({
-    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-  }),
+  request: PopoverAnchor,
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Makes the overlay of the window ready before its first popover, as when the pointer reaches
+ * the menu button, so that the popover opens without waiting for the overlay's page.
+ */
+export const PrepareOverlay = defineRequest({
+  channel: 'shell.prepareOverlay',
+  request: Empty,
   response: Done,
   capability: 'shell',
 });
@@ -73,7 +81,7 @@ export const ProceedInsecurely = defineRequest({
 /** Opens the list of downloads at its button. */
 export const OpenDownloads = defineRequest({
   channel: 'shell.openDownloads',
-  request: OverlayAnchor,
+  request: PopoverAnchor,
   response: Done,
   capability: 'shell',
 });
@@ -81,29 +89,31 @@ export const OpenDownloads = defineRequest({
 /** Opens the content blocker's popover for the active tab at its button. */
 export const OpenBlockerPopover = defineRequest({
   channel: 'shell.openBlockerPopover',
-  request: OverlayAnchor,
+  request: PopoverAnchor,
   response: Done,
   capability: 'shell',
 });
 
-/** Opens a menu with the contents of a folder of the bookmarks bar below its button. */
+/** Opens a menu in the overlay with the contents of a folder of the bookmarks bar at its button. */
 export const OpenBookmarkFolder = defineRequest({
   channel: 'shell.openBookmarkFolder',
   request: v.strictObject({
     id: v.pipe(v.number(), v.integer(), v.minValue(1)),
     // How many of the folder's first entries the menu leaves out, as the bar shows them.
     from: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
-    x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
-    y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    ...PopoverAnchor.entries,
   }),
   response: Done,
   capability: 'shell',
 });
 
-/** Adds a bookmark for the page of the active tab, or removes its bookmarks. */
-export const ToggleBookmark = defineRequest({
-  channel: 'shell.toggleBookmark',
-  request: Empty,
+/**
+ * Opens the popover of the bookmark star for the page of the active tab, which adds the page
+ * to the bookmarks bar first when it has no bookmark yet.
+ */
+export const OpenBookmarkPopover = defineRequest({
+  channel: 'shell.openBookmarkPopover',
+  request: PopoverAnchor,
   response: Done,
   capability: 'shell',
 });
@@ -206,7 +216,8 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   OpenDownloads,
   OpenBlockerPopover,
   OpenBookmarkFolder,
-  ToggleBookmark,
+  OpenBookmarkPopover,
+  PrepareOverlay,
   GetFavicon,
   SetTabMuted,
   MoveTab,

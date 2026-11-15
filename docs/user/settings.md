@@ -82,6 +82,11 @@ The language changes when the browser starts again. Until then, the settings pag
 - **Clear browsing data:** from 0.1.0-beta.5, **Clear…** asks for a time range and what to clear: the history of the pages you opened in that time, cookies and other site data, and cached images and files. Cookies, site data and the cache are always cleared completely, because the engine keeps no time for them; clearing cookies signs you out of most sites, also of those that asked for a user name and password in a dialog. Private windows keep nothing to clear.
 - **Site permissions:** what each site may use after you answered its question, such as the camera or notifications. Change an answer between **Allowed** and **Blocked**, or choose **Remove**, and the site asks again. See [Site permissions](site-permissions.md).
 
+## Keyboard shortcuts
+
+- **Shortcuts of the commands:** from 0.1.0-beta.5, every command with its shortcuts, which you can change or reset; see [keyboard shortcuts](keyboard-shortcuts.md#changing-shortcuts).
+- **Open the menu with Alt:** from 0.1.0-beta.7, on Windows and Linux. Pressing and releasing Alt alone opens the browser menu, as F10 does. Turn it off if a site needs the Alt key. It is on by default; on macOS, whose menu bar opens the menus, the setting does not show.
+
 ## Default browser
 
 - **Make default:** makes Astela the browser that opens links from other apps. See [Default browser](default-browser.md).

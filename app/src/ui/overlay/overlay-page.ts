@@ -1,7 +1,14 @@
 import { switchStyles } from '../ui-kit/choice-styles.ts';
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
+import type { BookmarkEditor, MenuPopover } from '../../shared/ipc/overlay-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
+import { popoverStyles } from '../ui-kit/popover-styles.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
+import type { OverlayBookmark } from './overlay-bookmark.ts';
+import type { OverlayMenu } from './overlay-menu.ts';
+import { placePopover } from './placement.ts';
+import { enter, leave } from './popover-motion.ts';
 
 /** The content blocker's popover, as the browser process sends it. */
 interface Shield {
@@ -79,7 +86,8 @@ interface Suggestions {
   readonly selected: number;
 }
 
-type Content = Shield | Login | Permission | Screen | DownloadsList | Suggestions;
+type Content =
+  Shield | Login | Permission | Screen | DownloadsList | Suggestions | MenuPopover | BookmarkEditor;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -98,14 +106,22 @@ const isContent = (value: unknown): value is Content =>
   typeof value === 'object' &&
   value !== null &&
   'kind' in value &&
-  ['shield', 'login', 'permission', 'screen', 'downloads', 'suggestions'].includes(
-    String(value.kind),
-  );
+  [
+    'shield',
+    'login',
+    'permission',
+    'screen',
+    'downloads',
+    'suggestions',
+    'menu',
+    'bookmark',
+  ].includes(String(value.kind));
 
-/** Width of a popover, and its distance to the window's edges and to its button. */
-const width = 288;
-/** Width of the list of downloads, whose names need room. */
-const listWidth = 360;
+/**
+ * The kinds of content with an element of their own, which gives the focus to its first item
+ * or field and handles Escape itself, such as a menu that closes its submenu first.
+ */
+const ownElement = new Set<Content['kind']>(['menu', 'bookmark']);
 
 /** What the buttons of a download do. */
 type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'folder' | 'retry' | 'remove';
@@ -130,16 +146,18 @@ function sizeText(bytes: number, language: string | undefined): string {
     maximumFractionDigits: unit === 0 ? 0 : 1,
   }).format(value);
 }
-const margin = 8;
-const gap = 4;
 
 /**
- * The page of the overlay: it shows one popover next to the button that opened it. A click
- * next to the popover or Escape closes it; the browser process runs shortcuts.
+ * The page of the overlay: it shows one popover next to the button that opened it, or a
+ * question in the middle of the window. A click next to the popover or Escape closes it; the
+ * browser process runs shortcuts. A popover enters and leaves with the motion of
+ * `--motion-enter` and `--motion-exit`, and the page tells the browser process when one that
+ * closed has left, so that the overlay leaves the window only then (ADR 0050).
  */
 export class OverlayPage extends LitElement {
   static override properties = {
     content: { state: true },
+    leaving: { state: true },
     chosen: { state: true },
     armed: { state: true },
   };
@@ -147,6 +165,7 @@ export class OverlayPage extends LitElement {
   /** Styles of the page, scoped to its shadow root. */
   static override styles = [
     switchStyles,
+    popoverStyles,
     css`
       :host {
         display: block;
@@ -243,14 +262,21 @@ export class OverlayPage extends LitElement {
       }
       section {
         position: fixed;
-        left: var(--left);
-        top: var(--top);
-        width: var(--width, ${width}px);
+        top: 0;
+        left: 0;
+        width: 288px;
+        max-width: calc(100vw - 2 * var(--space-2));
         box-sizing: border-box;
         padding: var(--space-3);
-        border: 1px solid var(--line-1);
-        border-radius: var(--radius-2);
-        background: var(--surface-raised);
+        overflow-y: auto;
+      }
+      /* The list of downloads is wider, as its names need room. */
+      section.wide {
+        width: 360px;
+      }
+      /* What leaves the page takes no clicks and is no part of what assistive technology reads. */
+      .leaving {
+        pointer-events: none;
       }
       .site {
         margin: 0;
@@ -312,9 +338,6 @@ export class OverlayPage extends LitElement {
         box-sizing: border-box;
         transform: translateX(-50%);
         padding: var(--space-3);
-        border: 1px solid var(--line-1);
-        border-radius: var(--radius-2);
-        background: var(--surface-raised);
       }
       .dialog h2 {
         margin: 0 0 var(--space-2);
@@ -454,6 +477,8 @@ export class OverlayPage extends LitElement {
   ];
 
   declare content: Content | null;
+  /** What closed and leaves the page now, shown without taking clicks or the focus. */
+  declare leaving: Content | null;
   /** The screen or window chosen in the picker. */
   declare chosen: string | undefined;
   /**
@@ -465,10 +490,26 @@ export class OverlayPage extends LitElement {
   bridge: PageBridge | undefined;
   i18n: Translator | undefined;
   private stopListening: (() => void) | undefined;
+  /** Whether what shows entered the page yet, which it does after it is placed. */
+  private entering = false;
+  /** Whether what left the page waits for its motion to begin. */
+  private leaveStarts = false;
+  /**
+   * Counts what opened anew, such as a menu in place of another, so that each gets elements of
+   * its own, which it keeps until it has left the page.
+   */
+  private opened = 0;
+  /** The number of what shows, from {@link opened}. */
+  private shownKey = 0;
+  /** The number of what leaves, from {@link opened}. */
+  private leavingKey = 0;
+  /** The title of the page while nothing shows. */
+  private readonly pageTitle = document.title;
 
   constructor() {
     super();
     this.content = null;
+    this.leaving = null;
     this.chosen = undefined;
     this.armed = false;
   }
@@ -487,31 +528,109 @@ export class OverlayPage extends LitElement {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape' && this.content !== null) {
+    // A menu closes its submenu first, and the bookmark's popover closes itself; what they
+    // leave, as when the focus is elsewhere in the page, closes the overlay. An input method
+    // that composes text takes Escape for itself.
+    if (
+      event.key === 'Escape' &&
+      !event.isComposing &&
+      this.content !== null &&
+      !event.defaultPrevented
+    ) {
       event.preventDefault();
       this.close();
     }
   };
 
   private show(content: unknown): void {
-    const before = this.content?.kind;
-    this.content = isContent(content) ? content : null;
-    if (this.content === null) return;
-    if (this.content.kind === 'shield') this.place(this.content.anchor);
-    if (this.content.kind === 'downloads') this.place(this.content.anchor, listWidth);
-    if (this.content.kind === 'screen') this.chosen = undefined;
-    if (this.content.kind === 'permission') this.arm(this.content.id);
+    const previous = this.content;
+    const next = isContent(content) ? content : null;
+    // What closed, or what another kind took the place of, leaves with its motion; the
+    // suggestions go at once, as typing goes on below them.
+    if (previous !== null && previous.kind !== 'suggestions' && previous.kind !== next?.kind) {
+      this.leaving = previous;
+      this.leavingKey = this.shownKey;
+      this.leaveStarts = true;
+    }
+    // What opens again in place of what leaves takes its place at once, and so do the
+    // suggestions, whose part of the window is not where the popover was.
+    if (next !== null && (this.leaving?.kind === next.kind || next.kind === 'suggestions')) {
+      this.leaving = null;
+      this.leaveStarts = false;
+    }
+    // What changes as it shows, such as the downloads or the submenus of a menu, keeps its
+    // elements; another kind, or another menu, opens anew.
+    if (
+      next !== null &&
+      (previous?.kind !== next.kind ||
+        (next.kind === 'menu' && previous.kind === 'menu' && !sameMenu(previous, next)))
+    ) {
+      this.opened += 1;
+      this.shownKey = this.opened;
+    }
+    this.content = next;
+    this.entering = next !== null && next.kind !== previous?.kind;
+    document.title = next === null ? this.pageTitle : (nameOf(next) ?? this.pageTitle);
+    if (next === null) return;
+    if (next.kind === 'screen') this.chosen = undefined;
+    if (next.kind === 'permission') this.arm(next.id);
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
-    // The suggestions leave the focus in the address bar, where the typing goes on.
-    if (before !== this.content.kind && this.content.kind !== 'suggestions') {
+    // The suggestions leave the focus in the address bar, where the typing goes on, and menus
+    // and the bookmark's popover give it to their first item or field themselves.
+    if (previous?.kind !== next.kind && next.kind !== 'suggestions' && !ownElement.has(next.kind)) {
       void this.updateComplete.then(() =>
         (
-          this.renderRoot.querySelector<HTMLElement>('input, .source') ??
-          this.renderRoot.querySelector<HTMLElement>('[role="dialog"]')
+          this.renderRoot.querySelector<HTMLElement>('.current input, .current .source') ??
+          this.renderRoot.querySelector<HTMLElement>('.current [role="dialog"]')
         )?.focus(),
       );
     }
+  }
+
+  protected override updated(): void {
+    // Popovers lie at their buttons, inside the window; menus and the star's popover place
+    // themselves.
+    for (const surface of this.renderRoot.querySelectorAll<HTMLElement>('[data-anchor]')) {
+      place(surface);
+    }
+    if (this.entering) {
+      this.entering = false;
+      const surface = this.renderRoot.querySelector<HTMLElement>('.current [data-surface]');
+      if (surface !== null)
+        enter(surface, surface.hasAttribute('data-above'), surface.hasAttribute('data-anchor'));
+    }
+    if (this.leaveStarts) {
+      this.leaveStarts = false;
+      void this.letLeave(this.leaving);
+    }
+  }
+
+  /**
+   * Lets what closed leave the page with its motion, and tells the browser process once it
+   * has left and nothing showed meanwhile, so that the overlay leaves the window.
+   */
+  private async letLeave(leaving: Content | null): Promise<void> {
+    if (leaving === null) return;
+    const container = this.renderRoot.querySelector('.leaving');
+    const nested = [
+      ...(container?.querySelectorAll<OverlayMenu | OverlayBookmark>(
+        'overlay-menu, overlay-bookmark',
+      ) ?? []),
+    ];
+    await Promise.all(nested.map((element) => element.updateComplete));
+    const surfaces = [
+      ...(container?.querySelectorAll<HTMLElement>('[data-surface]') ?? []),
+      ...nested.flatMap((element) => element.surfaces()),
+    ];
+    await Promise.all(
+      surfaces.map((surface) =>
+        leave(surface, surface.hasAttribute('data-above'), !surface.classList.contains('dialog')),
+      ),
+    );
+    if (this.leaving !== leaving) return;
+    this.leaving = null;
+    if (this.content === null) void this.bridge?.invoke('overlay.exited', {});
   }
 
   /** Lets the buttons of a question take clicks once it has shown for a moment. */
@@ -520,17 +639,6 @@ export class OverlayPage extends LitElement {
     setTimeout(() => {
       if (this.content?.kind === 'permission' && this.content.id === id) this.armed = true;
     }, armDelay);
-  }
-
-  /** Puts the popover below its button, its right edge at the button's, inside the window. */
-  private place(anchor: Shield['anchor'], popover = width): void {
-    const left = Math.min(
-      Math.max(margin, anchor.x + anchor.width - popover),
-      Math.max(margin, innerWidth - popover - margin),
-    );
-    this.style.setProperty('--left', `${left}px`);
-    this.style.setProperty('--width', `${popover}px`);
-    this.style.setProperty('--top', `${anchor.y + anchor.height + gap}px`);
   }
 
   /** The suggestions of the address bar, which fill the overlay below the field. */
@@ -563,16 +671,74 @@ export class OverlayPage extends LitElement {
     </ul>`;
   }
 
-  override render(): TemplateResult | typeof nothing {
-    const content = this.content;
-    if (content === null) return nothing;
+  override render(): TemplateResult {
+    const { content, leaving } = this;
+    // What leaves lies below what shows. Each keeps its elements from when it opened until it
+    // has left the page, so that what leaves is what showed, with its open submenus and what
+    // was typed into it.
+    const shown = [
+      ...(leaving === null ? [] : [{ item: leaving, key: this.leavingKey, leaves: true }]),
+      ...(content === null ? [] : [{ item: content, key: this.shownKey, leaves: false }]),
+    ];
+    return html`${repeat(
+      shown,
+      (entry) => entry.key,
+      (entry) => this.wrap(this.renderContent(entry.item, entry.leaves), entry.leaves),
+    )}`;
+  }
+
+  /**
+   * What shows, or what leaves the page, which takes no clicks and which assistive technology
+   * does not read.
+   */
+  private wrap(shown: TemplateResult, leaving: boolean): TemplateResult {
+    return html`<div
+      class=${leaving ? 'leaving' : 'current'}
+      ?inert=${leaving}
+      aria-hidden=${leaving ? 'true' : nothing}
+    >
+      ${shown}
+    </div>`;
+  }
+
+  /**
+   * What a kind of content shows; the menus and the popover of the star have elements of their
+   * own, which take no focus and run nothing while they leave.
+   */
+  private renderContent(content: Content, leaving: boolean): TemplateResult {
     if (content.kind === 'login') return this.renderLogin(content);
     if (content.kind === 'permission') return this.renderPermission(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
     if (content.kind === 'suggestions') return this.renderSuggestions(content);
+    if (content.kind === 'menu') {
+      return html`<div class="backdrop" @click=${this.close}></div>
+        <overlay-menu
+          .content=${content}
+          .bridge=${this.bridge}
+          .i18n=${this.i18n}
+          .leaving=${leaving}
+        ></overlay-menu>`;
+    }
+    if (content.kind === 'bookmark') {
+      // A click next to the popover saves the bookmark, as Done does.
+      return html`<div class="backdrop" @click=${this.saveBookmark}></div>
+        <overlay-bookmark
+          .content=${content}
+          .bridge=${this.bridge}
+          .i18n=${this.i18n}
+          .leaving=${leaving}
+        ></overlay-bookmark>`;
+    }
     return html`<div class="backdrop" @click=${this.close}></div>
-      <section role="dialog" aria-label=${this.t('shell.blocker')}>
+      <section
+        class="popover"
+        role="dialog"
+        aria-label=${this.t('shell.blocker')}
+        data-surface
+        data-anchor=${anchorText(content.anchor)}
+        data-align="end"
+      >
         <p class="site">${content.site}</p>
         <p class="count">
           <strong>${content.blocked}</strong><span>${this.t('overlay.blocked')}</span>
@@ -606,7 +772,13 @@ export class OverlayPage extends LitElement {
   private renderLogin(login: Login): TemplateResult {
     const site = { site: login.host };
     return html`<div class="backdrop"></div>
-      <form class="dialog" role="dialog" aria-labelledby="login-title" @submit=${this.signIn}>
+      <form
+        class="dialog popover"
+        role="dialog"
+        aria-labelledby="login-title"
+        data-surface
+        @submit=${this.signIn}
+      >
         <h2 id="login-title">${this.t('overlay.signInTitle')}</h2>
         <p>${this.t(login.proxy ? 'overlay.signInProxy' : 'overlay.signInSite', site)}</p>
         ${
@@ -636,7 +808,13 @@ export class OverlayPage extends LitElement {
    */
   private renderPermission(question: Permission): TemplateResult {
     return html`<div class="backdrop" @click=${this.close}></div>
-      <section class="dialog" role="dialog" tabindex="-1" aria-labelledby="permission-title">
+      <section
+        class="dialog popover"
+        role="dialog"
+        tabindex="-1"
+        aria-labelledby="permission-title"
+        data-surface
+      >
         <h2 id="permission-title">${this.t('overlay.permissionTitle', { site: question.site })}</h2>
         <ul>
           ${question.permissions.map((name) => html`<li>${this.t(wants[name])}</li>`)}
@@ -687,7 +865,7 @@ export class OverlayPage extends LitElement {
         )}`;
     };
     return html`<div class="backdrop"></div>
-      <section class="dialog wide" role="dialog" aria-labelledby="share-title">
+      <section class="dialog wide popover" role="dialog" aria-labelledby="share-title" data-surface>
         <h2 id="share-title">${this.t('overlay.shareTitle', { site: picker.site })}</h2>
         <div class="sources">${group(true)} ${group(false)}</div>
         <div class="buttons">
@@ -707,7 +885,14 @@ export class OverlayPage extends LitElement {
   /** The list of downloads, newest first, with what each one allows. */
   private renderDownloads(list: DownloadsList): TemplateResult {
     return html`<div class="backdrop" @click=${this.close}></div>
-      <section role="dialog" aria-labelledby="downloads-title">
+      <section
+        class="popover wide"
+        role="dialog"
+        aria-labelledby="downloads-title"
+        data-surface
+        data-anchor=${anchorText(list.anchor)}
+        data-align="end"
+      >
         <h2 id="downloads-title" class="site">${this.t('overlay.downloads')}</h2>
         ${
           list.items.length === 0
@@ -818,6 +1003,11 @@ export class OverlayPage extends LitElement {
     void this.bridge?.invoke('overlay.close', {});
   };
 
+  /** Saves the bookmark of the star's popover, for a click next to it. */
+  private readonly saveBookmark = (): void => {
+    this.renderRoot.querySelector<OverlayBookmark>('.current overlay-bookmark')?.save();
+  };
+
   private readonly toggle = (): void => {
     void this.bridge?.invoke('overlay.toggleSiteBlocking', {});
   };
@@ -832,6 +1022,54 @@ export class OverlayPage extends LitElement {
   ): string {
     return this.i18n?.t(key, params) ?? key;
   }
+}
+
+/** The rectangle of a button, as a surface keeps it to be placed at the button. */
+function anchorText(anchor: Shield['anchor']): string {
+  return `${anchor.x},${anchor.y},${anchor.width},${anchor.height}`;
+}
+
+/**
+ * Puts a popover at its button: below it, or above it without room below, lined up with the
+ * edge that the surface names, and inside the window.
+ * @param surface - The surface, which names its button and the edge.
+ */
+function place(surface: HTMLElement): void {
+  const [x = 0, y = 0, width = 0, height = 0] = (surface.dataset['anchor'] ?? '')
+    .split(',')
+    .map(Number);
+  const align = surface.dataset['align'] === 'end' ? 'end' : 'auto';
+  const placement = placePopover(
+    { x, y, width, height },
+    { width: surface.offsetWidth, height: surface.scrollHeight },
+    { width: innerWidth, height: innerHeight },
+    { align },
+  );
+  surface.style.left = `${placement.x}px`;
+  surface.style.top = `${placement.y}px`;
+  surface.style.maxHeight = `${placement.maxHeight}px`;
+  surface.toggleAttribute('data-above', placement.above);
+}
+
+/** Whether a menu that comes is the one that shows, with its submenus changed or updated. */
+function sameMenu(a: MenuPopover, b: MenuPopover): boolean {
+  return (
+    a.levels[0]?.label === b.levels[0]?.label &&
+    a.anchor.x === b.anchor.x &&
+    a.anchor.y === b.anchor.y &&
+    a.anchor.width === b.anchor.width &&
+    a.anchor.height === b.anchor.height
+  );
+}
+
+/**
+ * The name of a menu, which the page takes as its title, so that a screen reader names the
+ * view when the menu takes the focus; `undefined` for other content.
+ */
+function nameOf(content: Content): string | undefined {
+  if (content.kind !== 'menu') return undefined;
+  const label = content.levels[0]?.label ?? '';
+  return content.mac ? label : label.replace(/&(&?)/g, '$1');
 }
 
 /** Icons of the kinds of suggestions, drawn after Lucide (ISC license). */

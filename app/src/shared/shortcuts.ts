@@ -33,6 +33,7 @@ export const windowCommands = [
   'page.reloadHard',
   'page.home',
   'omnibox.focus',
+  'menu.open',
   'find.open',
   'find.next',
   'find.previous',
@@ -151,6 +152,8 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+L', 'omnibox.focus'],
   ['Alt+D', 'omnibox.focus'],
   ['F6', 'omnibox.focus'],
+  // The menu of the window, as F10 opens it in other programs of Windows and Linux.
+  ['F10', 'menu.open'],
   ['Ctrl+H', 'history.open'],
   ['Ctrl+J', 'downloads.open'],
   ['Ctrl+D', 'bookmark.toggle'],

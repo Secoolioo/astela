@@ -141,14 +141,16 @@ export function permissionPrompts(
           site: hostOf(question.origin),
           permissions: [...question.permissions],
         },
-        () => {
-          // Closed without an answer: nothing is decided, and the site may ask again.
-          if (queue[0] === question) {
-            queue.shift();
-            settle(question, undefined);
-          }
-          // The overlay finishes closing before it shows the next question.
-          setTimeout(() => showNext(window, target), 0);
+        {
+          onClose: () => {
+            // Closed without an answer: nothing is decided, and the site may ask again.
+            if (queue[0] === question) {
+              queue.shift();
+              settle(question, undefined);
+            }
+            // The overlay finishes closing before it shows the next question.
+            setTimeout(() => showNext(window, target), 0);
+          },
         },
       );
       track(window, target);
@@ -237,10 +239,12 @@ export function permissionPrompts(
                   : `data:image/jpeg;base64,${source.thumbnail.toJPEG(70).toString('base64')}`,
               })),
             },
-            () => {
-              // Closed without a choice: the site sees nothing.
-              if (pickers.get(target) === picker) pickers.delete(target);
-              reply(null);
+            {
+              onClose: () => {
+                // Closed without a choice: the site sees nothing.
+                if (pickers.get(target) === picker) pickers.delete(target);
+                reply(null);
+              },
             },
           );
           pickers.set(target, picker);
@@ -255,9 +259,13 @@ export function permissionPrompts(
   };
 }
 
-/** Whether an overlay shows another prompt, such as for a password, that stays. */
+/**
+ * Whether an overlay shows something that a question must not take the place of, such as the
+ * prompt for a password or an editor with what was typed into it. Popovers that only show
+ * something, such as the shield's and the menus, give way.
+ */
 function busy(target: WindowOverlay): boolean {
-  return target.content !== null && target.content.kind !== 'shield';
+  return !target.yieldsToQuestions;
 }
 
 /** Whether a page is still the visible tab of its window, at the same site. */

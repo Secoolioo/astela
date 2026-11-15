@@ -71,6 +71,21 @@ describe('defaultShortcuts', () => {
   });
 });
 
+describe('the shortcut of the browser menu', () => {
+  it('opens the menu with F10 on Windows and Linux, after the address bar in the list', () => {
+    expect(windowCommands.at(windowCommands.indexOf('omnibox.focus') + 1)).toBe('menu.open');
+    for (const platform of ['win32', 'linux']) {
+      expect(shortcutsOf(shortcutTable(platform), 'menu.open')).toEqual(['F10']);
+    }
+    // macOS has the menu bar, and F10 is a key of its media there.
+    expect(shortcutsOf(shortcutTable('darwin'), 'menu.open')).toEqual([]);
+    expect(shortcutProblem('F10', 'win32')).toBeUndefined();
+    expect(shortcutProblem('F10', 'darwin')).toBeUndefined();
+    expect(displayShortcut('F10', false)).toBe('F10');
+    expect(acceleratorOf('F10')).toBe('F10');
+  });
+});
+
 describe('systemShortcutsOf', () => {
   it('gives Quit Astela Command+Q on macOS only, which nobody can take for a shortcut', () => {
     expect(systemShortcutsOf('darwin', 'app.quit')).toEqual(['Cmd+Q']);

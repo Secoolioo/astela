@@ -11,13 +11,20 @@ import type {
 import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions } from '../platform/electron/overlay.ts';
-import type { OverlayAnchor } from '../shared/ipc/overlay-anchor.ts';
+import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
   DownloadAction,
   OpenDownloadsFolder,
   type OverlayContent,
 } from '../shared/ipc/overlay-contracts.ts';
-import { existingOverlay, overlayBySender, overlayOf, track } from './overlays.ts';
+import {
+  existingOverlay,
+  focusBackOf,
+  overlayBySender,
+  overlayOf,
+  rectOf,
+  track,
+} from './overlays.ts';
 import { quarantine } from '../platform/node/quarantine.ts';
 
 /** What the list of downloads needs from the composition root. */
@@ -226,13 +233,17 @@ export class Downloads {
   /**
    * Opens the panel of the list at the downloads button of a window.
    * @param window - The window.
-   * @param anchor - The button.
+   * @param anchor - The button, and whether the keyboard opened the panel.
    */
-  open(window: BrowserWindowController, anchor: OverlayAnchor): void {
+  open(window: BrowserWindowController, anchor: PopoverAnchor): void {
     this.shown.add(window.isPrivate);
-    this.anchors.set(window, anchor);
+    const rect = rectOf(anchor);
+    this.anchors.set(window, rect);
     const overlay = overlayOf(window, this.deps.overlay, this.deps.router);
-    overlay.open(this.panel(anchor, window.isPrivate));
+    overlay.open(this.panel(rect, window.isPrivate), {
+      popover: { kind: 'downloads', folder: null },
+      focusBack: focusBackOf(window, anchor),
+    });
     track(window, overlay);
     this.deps.windows.refreshShells();
     // The list from before fills the panel once it has loaded.

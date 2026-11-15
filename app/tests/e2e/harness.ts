@@ -3,6 +3,7 @@ import {
   expect,
   test,
   type Browser as CdpBrowser,
+  type Locator,
   type Page,
   type TestInfo,
 } from '@playwright/test';
@@ -992,6 +993,77 @@ export async function overlayPage(
     await new Promise((done) => setTimeout(done, 100));
   }
   throw new Error('No page of an overlay');
+}
+
+/**
+ * A menu of the overlay by its name, such as the browser menu, a folder of the bookmarks bar
+ * or a submenu, once it shows.
+ * @param browser - The connected browser.
+ * @param name - The name of the menu; `Menu` for the browser menu.
+ * @param except - Pages of overlays to leave out, such as that of another window.
+ */
+export async function overlayMenu(
+  browser: Pick<Browser, 'cdp'>,
+  name = 'Menu',
+  except: readonly Page[] = [],
+): Promise<Locator> {
+  const overlay = await overlayPage(browser, except);
+  const menu = overlay.getByRole('menu', { name, exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * Opens the browser menu with a click on its button, and returns it once it shows.
+ * @param browser - The running browser.
+ * @param shell - The shell of the window; the first window's by default.
+ */
+export async function openBrowserMenu(browser: Browser, shell = browser.shell): Promise<Locator> {
+  await shell.getByRole('button', { name: 'Menu', exact: true }).click();
+  return overlayMenu(browser);
+}
+
+/**
+ * Chooses an item of a menu of the overlay with clicks, as a person does: the items of the
+ * submenus on the way open their submenus first.
+ * @param menu - The menu, such as from {@link openBrowserMenu}.
+ * @param path - The names of the items, which are their texts without the marks of access keys.
+ */
+export async function chooseFromMenu(menu: Locator, path: readonly string[]): Promise<void> {
+  let level = menu;
+  for (const [index, name] of path.entries()) {
+    const item = level.getByRole('menuitem', { name, exact: true });
+    await expect(item).not.toHaveAttribute('aria-disabled', 'true');
+    await item.click();
+    if (index < path.length - 1) {
+      level = menu.page().getByRole('menu', { name, exact: true });
+      await expect(level).toBeVisible();
+    }
+  }
+}
+
+/**
+ * The entries of a menu of the overlay as they show: the text of each item, with its shortcut
+ * after a space when it shows one, `-` for a separator, and the zoom row as its name and the
+ * names of its parts.
+ * @param menu - The menu.
+ */
+export function menuEntries(menu: Locator): Promise<string[]> {
+  return menu.evaluate((element) =>
+    [...element.children].map((child) => {
+      const role = child.getAttribute('role');
+      if (role === 'separator') return '-';
+      if (role === 'group') {
+        const parts = [...child.querySelectorAll('[aria-label]')]
+          .filter((part) => part !== child)
+          .map((part) => part.getAttribute('aria-label') ?? '');
+        return `${child.getAttribute('aria-label') ?? ''}: ${parts.join(', ')}`;
+      }
+      const label = child.querySelector('.label')?.textContent ?? '';
+      const shortcut = child.querySelector('.shortcut')?.textContent ?? '';
+      return shortcut === '' ? label : `${label} ${shortcut}`;
+    }),
+  );
 }
 
 /** A view of a tab that is part of a window, as the main process sees it. */

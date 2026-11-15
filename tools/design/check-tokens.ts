@@ -6,7 +6,9 @@
  * rings of 1 or 2 px in a token color. The text between `;`, `{` and `}` counts as one
  * declaration, so a value on a later line than its property name, or after a template
  * interpolation, is found as well; comments are left out. Durations and easings that code
- * computes, or keeps in a constant or a custom property of its own, are not checked.
+ * computes, or keeps in a constant or a custom property of its own, are not checked. In
+ * `tokens.css`, every motion token must be 0 in the block for reduced motion, so that code
+ * which reads a duration from the tokens moves nothing either.
  *
  * Usage: `node tools/design/check-tokens.ts`
  */
@@ -18,7 +20,7 @@ export interface Problem {
   readonly file: string;
   /** The line of the value, counted from 1. */
   readonly line: number;
-  readonly rule: 'duration' | 'easing' | 'shadow';
+  readonly rule: 'duration' | 'easing' | 'shadow' | 'reduced-motion';
   readonly text: string;
 }
 
@@ -42,8 +44,26 @@ const ring = /^(?:inset\s+)?0 0 0 [12]px var\(--[\w-]+\)$/;
 /** Comments of styles, markup and code; `//` only where a space or the line starts before it. */
 const comment = /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<!\S)\/\/.*/g;
 
+/** A motion token and its value as `tokens.css` sets it, such as `--motion-base: 180ms`. */
+const motionToken = /(--motion-[\w-]+)\s*:\s*([^;{}]*)/g;
+/** The start of the block that applies when the system asks for reduced motion. */
+const reducedMotion = /@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{/g;
+
 /** The order of the rules for the problems of one line. */
-const order: Readonly<Record<Problem['rule'], number>> = { duration: 0, easing: 1, shadow: 2 };
+const order: Readonly<Record<Problem['rule'], number>> = {
+  duration: 0,
+  easing: 1,
+  shadow: 2,
+  'reduced-motion': 3,
+};
+
+/** What each rule reports. */
+const messages: Readonly<Record<Problem['rule'], string>> = {
+  duration: 'duration not from a token',
+  easing: 'easing not from a token',
+  shadow: 'shadow not from a token',
+  'reduced-motion': 'motion token that reduced motion does not set to 0',
+};
 
 /**
  * Blanks out the braces of template interpolations, `${…}`, so that a declaration with an
@@ -119,6 +139,46 @@ export function problemsIn(file: string, text: string): Problem[] {
   );
 }
 
+/**
+ * Finds the motion tokens of a style sheet of tokens that the block for reduced motion does
+ * not set to 0: each one once, at the line where it is first defined.
+ * @param file - The path that problems name.
+ * @param text - The content of the style sheet, such as `tokens.css`.
+ */
+export function reducedMotionProblems(file: string, text: string): Problem[] {
+  const lines = text.split('\n');
+  const code = text.replace(comment, (part) => part.replace(/[^\n]/g, ' '));
+  // Where the blocks for reduced motion start and end, by their braces.
+  const blocks: (readonly [number, number])[] = [];
+  for (const match of code.matchAll(reducedMotion)) {
+    let depth = 1;
+    let end = match.index + match[0].length;
+    for (; end < code.length && depth > 0; end += 1) {
+      if (code[end] === '{') depth += 1;
+      else if (code[end] === '}') depth -= 1;
+    }
+    blocks.push([match.index, end]);
+  }
+  const reduced = (at: number): boolean => blocks.some(([start, end]) => at >= start && at < end);
+  const zero = new Set<string>();
+  const defined = new Map<string, number>();
+  for (const match of code.matchAll(motionToken)) {
+    const [, name = '', value = ''] = match;
+    if (reduced(match.index)) {
+      if (/^0(?:m?s)?$/.test(value.trim())) zero.add(name);
+    } else if (!defined.has(name)) {
+      defined.set(name, match.index);
+    }
+  }
+  return [...defined].flatMap(([name, at]) => {
+    if (zero.has(name)) return [];
+    const line = code.slice(0, at).split('\n').length - 1;
+    return [
+      { file, line: line + 1, rule: 'reduced-motion' as const, text: (lines[line] ?? '').trim() },
+    ];
+  });
+}
+
 /** The style and component files of the interface, without the tokens and the tests. */
 function sources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true, recursive: true })
@@ -132,22 +192,28 @@ function sources(directory: string): string[] {
  * @param root - The root of the repository.
  */
 export function checkTokens(root: string): Problem[] {
-  return sources(join(root, 'app/src/ui')).flatMap((path) =>
-    problemsIn(relative(root, path), readFileSync(path, 'utf8')),
-  );
+  const tokens = join(root, 'app/src/ui/ui-kit/tokens.css');
+  return [
+    ...sources(join(root, 'app/src/ui')).flatMap((path) =>
+      problemsIn(relative(root, path), readFileSync(path, 'utf8')),
+    ),
+    ...reducedMotionProblems(relative(root, tokens), readFileSync(tokens, 'utf8')),
+  ];
 }
 
 if (import.meta.main) {
   const problems = checkTokens(resolve(import.meta.dirname, '../..'));
   for (const problem of problems) {
-    console.error(
-      `${problem.file}:${problem.line}: ${problem.rule} not from a token: ${problem.text}`,
-    );
+    console.error(`${problem.file}:${problem.line}: ${messages[problem.rule]}: ${problem.text}`);
   }
   if (problems.length > 0) {
-    console.error('Use the motion, easing and shadow tokens of app/src/ui/ui-kit/tokens.css.');
+    console.error(
+      'Use the motion, easing and shadow tokens of app/src/ui/ui-kit/tokens.css, and set every motion token to 0 there for reduced motion.',
+    );
     process.exitCode = 1;
   } else {
-    console.log('Durations, easings and shadows all come from the tokens.');
+    console.log(
+      'Durations, easings and shadows all come from the tokens, and reduced motion stops every motion token.',
+    );
   }
 }

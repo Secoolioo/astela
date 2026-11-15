@@ -17,6 +17,7 @@ import {
   type FindState,
   ShellCommand,
   ShellStateChanged,
+  type ShellPopover,
   type ShellState,
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
@@ -48,6 +49,7 @@ import {
 } from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
+import { AltTap } from '../../domain/windows/alt-tap.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
@@ -123,8 +125,6 @@ export interface BrowserWindowOptions {
   readonly onVisit?: (url: string, title: string, titleOnly: boolean) => void;
   /** Whether a page has a bookmark, for the star in the address bar. */
   readonly isBookmarked?: (url: string) => boolean;
-  /** Adds a bookmark for a page, or removes its bookmarks. */
-  readonly toggleBookmark?: (url: string, title: string) => void;
   /** The items of the bookmarks bar, or `null` while the bar is hidden. */
   readonly bookmarksBar?: () => BarItem[] | null;
   /** Shows or hides the bookmarks bar. */
@@ -163,6 +163,11 @@ export interface BrowserWindowOptions {
   readonly shortcuts?: () => ReadonlyMap<string, WindowCommand>;
   /** Takes the key presses of a page while the editor of shortcuts waits for one. */
   readonly shortcutRecorder?: ShortcutRecorder;
+  /**
+   * Whether Alt pressed and released alone opens the browser menu, as F10 does; never on
+   * macOS, which opens its menus from the menu bar.
+   */
+  readonly altOpensMenu?: () => boolean;
   /**
    * The insecure address to offer in place of a page that did not load securely, when
    * HTTPS-First sent the page to the secure address.
@@ -209,8 +214,13 @@ export type AppCommand = 'app.about' | 'app.quit';
 export interface OverlayHandle {
   /** Whether the overlay covers the whole window, rather than a list below the address bar. */
   readonly coversWindow: boolean;
-  /** Closes the overlay and gives the focus back to the page or the shell. */
-  close(): void;
+  /** The popover of a button of the shell that the overlay shows, or `null`. */
+  readonly popover: ShellPopover | null;
+  /**
+   * Closes the overlay and gives the focus back to the page or the shell.
+   * @param how - `now` takes the overlay out of the window without letting the popover leave.
+   */
+  close(how?: 'animate' | 'now'): void;
   /** Puts the overlay above the other views of the window again, after one of them was added. */
   raise(): void;
 }
@@ -265,6 +275,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * click on New tab on, also while the shell does not know the tab yet.
    */
   openedByShell: TabId | undefined;
+  /** The popover of a button of the shell that the overlay shows, as the shell last learned. */
+  private popover: ShellPopover | null = null;
+  /** Alt pressed and released alone in the window, which opens the browser menu. */
+  private readonly altTap = new AltTap();
+  /** The view whose key press of Alt armed {@link altTap}; its release elsewhere opens nothing. */
+  private altFrom: number | undefined;
   /** The find bar of the active tab, or `null` while it is closed. */
   private finding: FindState | null = null;
   /** What the find bar looked for last, to look for it again. */
@@ -366,6 +382,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.window.on('enter-full-screen', () => this.schedulePublish());
       this.window.on('leave-full-screen', () => this.schedulePublish());
     }
+    // Alt held while the window loses the focus, as for Alt+Tab, opens nothing.
+    this.window.on('blur', () => this.altTap.reset());
     this.window.on('closed', () => this.dispose());
     // Electron on Linux can crash when a window closes while it still sets itself up after it
     // opened. A window that closes within its first second hides at once and closes when that
@@ -405,13 +423,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Takes note of what the overlay shows. While it covers the window, the top row of the shell
-   * does not move the window: the window would take a click next to a popover for itself.
+   * does not move the window: the window would take a click next to a popover for itself. The
+   * button of the shell whose popover the overlay shows looks open.
    */
   set overlay(overlay: OverlayHandle | undefined) {
     this.shownOverlay = overlay;
     const covered = overlay?.coversWindow === true;
-    if (covered === this.covered) return;
+    const popover = overlay?.popover ?? null;
+    if (covered === this.covered && samePopover(popover, this.popover)) return;
     this.covered = covered;
+    this.popover = popover;
     if (!this.window.isDestroyed()) this.schedulePublish();
   }
 
@@ -455,6 +476,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       toolbar: [...(this.options.toolbar?.() ?? toolbarItems)],
       titleBar: this.titleBarShown,
       covered: this.covered,
+      popover: this.popover,
     };
   }
 
@@ -950,6 +972,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
         break;
+      case 'menu.open':
+        // The shortcut closes the menu that is open; the shell opens it at its button.
+        if (this.overlay?.popover?.kind === 'menu') this.overlay.close();
+        else this.options.router.publish(ShellCommand, this.shell.webContents, 'menu.open');
+        break;
       case 'settings.open':
         this.openPage('settings');
         break;
@@ -972,9 +999,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.options.openPrivateWindow?.();
         break;
       case 'bookmark.toggle':
-        // Only web pages get bookmarks; the browser's own pages have their own commands.
+        // Only web pages get bookmarks; the browser's own pages have their own commands. The
+        // shell opens the popover of the star at the star, or at the menu button without it.
         if (active !== undefined && /^https?:/i.test(active.url)) {
-          this.options.toggleBookmark?.(active.url, active.title);
+          this.options.router.publish(ShellCommand, this.shell.webContents, 'bookmark.edit');
         }
         break;
       case 'find.open':
@@ -1212,13 +1240,59 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private intercept(event: { preventDefault(): void }, input: Input, contentsId: number): void {
     if (this.options.shortcutRecorder?.take(contentsId, input, process.platform) === true) {
       event.preventDefault();
+      this.altTap.reset();
       return;
     }
     const command = commandForInput(input, process.platform, this.shortcuts());
     if (command !== undefined) {
       event.preventDefault();
+      // Alt+Left and the like are no Alt alone.
+      this.altTap.reset();
       this.execute(command);
+      return;
     }
+    this.tapAlt(input, contentsId);
+  }
+
+  /**
+   * Opens the browser menu when Alt is pressed and released alone in a view of the window, on
+   * Windows and Linux, unless the setting turned it off or a page shows something in full
+   * screen. The pointer while Alt is down, as for a drag that the desktop moves the window
+   * with or a drag in a page that started before Alt, and the release of Alt in another view
+   * open nothing. Nothing gets ready while Alt is down, as Alt starts many shortcuts.
+   */
+  private tapAlt(input: Input, contentsId: number): void {
+    if (process.platform === 'darwin') return;
+    const tap = this.altTap.key(input);
+    if (tap === 'arm') {
+      this.altFrom = contentsId;
+      this.watchPointer(contentsId);
+    } else if (
+      tap === 'open' &&
+      this.altFrom === contentsId &&
+      this.fullScreenTab === undefined &&
+      this.options.altOpensMenu?.() === true
+    ) {
+      this.execute('menu.open');
+    }
+  }
+
+  /**
+   * Disarms the tap of Alt when the pointer is pressed, released, turns its wheel or drags in
+   * the view while Alt is down.
+   */
+  private watchPointer(contentsId: number): void {
+    const contents =
+      this.shell.webContents.id === contentsId
+        ? this.shell.webContents
+        : [...this.entries.values()].find((entry) => entry.view.webContents.id === contentsId)?.view
+            .webContents;
+    if (contents === undefined || contents.isDestroyed()) return;
+    const onInput = (_event: unknown, input: Electron.InputEvent): void => {
+      this.altTap.pointer(input);
+      if (!this.altTap.waiting || this.altFrom !== contentsId) contents.off('input-event', onInput);
+    };
+    contents.on('input-event', onInput);
   }
 
   /** Gives a tab without a view, such as a restored one, its view, which loads its page. */
@@ -1951,6 +2025,11 @@ export class WindowManager implements Disposable {
   toDisposable(): Disposable {
     return toDisposable(() => this.dispose());
   }
+}
+
+/** Whether two popovers of the shell are the same, or both none. */
+function samePopover(a: ShellPopover | null, b: ShellPopover | null): boolean {
+  return a === b || (a !== null && b !== null && a.kind === b.kind && a.folder === b.folder);
 }
 
 /** An address without its fragment, which names a place on the page. */

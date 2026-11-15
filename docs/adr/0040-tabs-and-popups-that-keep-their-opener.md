@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) moves the browser menu into the overlay in 0.1.0-beta.7.
 
 ## Date
 
@@ -18,7 +18,7 @@ The browser denied every `window.open` of a page and loaded the address in a new
 - **Where it opens:** a popup with a size or a position, from `window.open` with features, gets a window of its own at the size and place that the page asked for, as long as that lies on a screen; it closes with its page and is not kept in the session. A link that asks for a new window, such as a click with Shift, opens a new browser window. Everything else opens as a tab next to the page: a link with `target="_blank"` in front, and a middle click or a click with Ctrl (Command on macOS) in the background.
 - **New windows:** `Ctrl+N` (`Command+N` on macOS) and New window in the browser menu open a window with a new tab.
 - **Windows keep their place:** the session keeps where each window was and whether it was maximized (`bounds` and `maximized` in `session.json`). The next start opens the windows there, unless no screen shows enough of a window's top edge to move it; then the system places that window.
-- **Browser menu:** the menu at the end of the toolbar has new tab and new window, the history, downloads and bookmarks, the zoom with full screen, find, print, save, more tools with the source and the developer tools, the settings, About and Quit; the menu bar of macOS gets a File menu. It stays a native menu until the menus move into the overlay in `0.1.0-beta.6`.
+- **Browser menu:** the menu at the end of the toolbar has new tab and new window, the history, downloads and bookmarks, the zoom with full screen, find, print, save, more tools with the source and the developer tools, the settings, About and Quit; the menu bar of macOS gets a File menu. It stays a native menu until the menus move into the overlay, which [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) does in `0.1.0-beta.7`.
 
 ## Consequences
 

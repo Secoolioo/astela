@@ -1,6 +1,6 @@
 import * as v from 'valibot';
-import { describe, expect, it } from 'vitest';
-import { DownloadFolderSetting, ShortcutsSetting } from '../core-settings.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { AltOpensMenuSetting, DownloadFolderSetting, ShortcutsSetting } from '../core-settings.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -41,4 +41,30 @@ describe('ShortcutsSetting', () => {
     expect(takes({ 'app.quit': [mac ? 'Cmd+Q' : 'Alt+F4'] })).toBe(false);
     expect(takes({ 'app.restart': ['F9'] })).toBe(false);
   });
+});
+
+describe('AltOpensMenuSetting', () => {
+  it('opens the menu with Alt by default, as a keyboard preference without a policy', () => {
+    expect(AltOpensMenuSetting).toMatchObject({ key: 'keys.altOpensMenu', default: true });
+    expect(AltOpensMenuSetting.policy).toBeUndefined();
+    expect(v.safeParse(AltOpensMenuSetting.schema, false).success).toBe(true);
+    expect(v.safeParse(AltOpensMenuSetting.schema, 'no').success).toBe(false);
+  });
+
+  it.each(['win32', 'linux', 'darwin'])(
+    'has a place on the settings page on %s only off macOS',
+    async (platform) => {
+      const real = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: platform });
+      try {
+        vi.resetModules();
+        const { AltOpensMenuSetting: setting } = await import('../core-settings.ts');
+        expect(setting.ui).toEqual(
+          platform === 'darwin' ? undefined : { section: 'shortcuts', control: 'toggle', order: 2 },
+        );
+      } finally {
+        if (real !== undefined) Object.defineProperty(process, 'platform', real);
+      }
+    },
+  );
 });

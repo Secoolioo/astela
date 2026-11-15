@@ -3,13 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  chooseMenuItem,
+  chooseFromMenu,
   FixtureServer,
   launch,
-  menuAccelerators,
+  menuCount,
+  menuEntries,
+  openBrowserMenu,
   overlayPage,
   pressNative,
-  recordedMenu,
   recordMenus,
   shellState,
   waitForPage,
@@ -137,54 +138,58 @@ test('chooses the search engine of the new tab page and the address bar', async 
 
 test('opens the settings from the browser menu in place of a new tab page', async () => {
   await recordMenus(browser);
-  await browser.shell.getByRole('button', { name: 'Menu' }).click();
-  await expect
-    .poll(async () => (await recordedMenu(browser)).items)
-    .toEqual(
-      process.platform === 'darwin'
-        ? [
-            'New Tab',
-            'New Window',
-            'New Private Window',
-            '-',
-            'History',
-            'Downloads',
-            'Bookmarks',
-            '-',
-            'Zoom',
-            'Find…',
-            'Print…',
-            'Save Page As…',
-            'More Tools',
-            '-',
-            'Settings…',
-            'About Astela',
-            'Quit Astela',
-          ]
-        : [
-            'New &tab',
-            'New &window',
-            'New pr&ivate window',
-            '-',
-            '&History',
-            '&Downloads',
-            '&Bookmarks',
-            '-',
-            '&Zoom',
-            '&Find…',
-            '&Print…',
-            'Sa&ve page as…',
-            'More t&ools',
-            '-',
-            '&Settings',
-            '&About Astela',
-            process.platform === 'win32' ? 'E&xit' : '&Quit',
-          ],
-    );
-  await chooseMenuItem(browser, [process.platform === 'darwin' ? 'Settings…' : '&Settings']);
+  const menu = await openBrowserMenu(browser);
+  // The menu of the overlay names its items without the marks of their access keys.
+  expect(
+    (await menuEntries(menu)).map((entry) => entry.replace(/ (?:[⌃⌥⇧⌘]+|Ctrl|F\d)\S*$/u, '')),
+  ).toEqual(
+    process.platform === 'darwin'
+      ? [
+          'New Tab',
+          'New Window',
+          'New Private Window',
+          '-',
+          'Zoom: Zoom Out, Reset Zoom, Zoom In, Toggle Full Screen',
+          '-',
+          'History',
+          'Downloads',
+          'Bookmarks',
+          '-',
+          'Find…',
+          'Print…',
+          'Save Page As…',
+          'More Tools',
+          '-',
+          'Settings…',
+          'About Astela',
+          'Quit Astela',
+        ]
+      : [
+          'New tab',
+          'New window',
+          'New private window',
+          '-',
+          'Zoom: Zoom out, Reset zoom, Zoom in, Full screen',
+          '-',
+          'History',
+          'Downloads',
+          'Bookmarks',
+          '-',
+          'Find…',
+          'Print…',
+          'Save page as…',
+          'More tools',
+          '-',
+          'Settings',
+          'About Astela',
+          process.platform === 'win32' ? 'Exit' : 'Quit',
+        ],
+  );
+  await chooseFromMenu(menu, [process.platform === 'darwin' ? 'Settings…' : 'Settings']);
   await waitForPage(browser, (url) => url.startsWith('app://settings'));
   await expect(browser.shell.getByRole('tab')).toHaveCount(1);
   await expect(browser.shell.getByRole('tab', { name: 'Settings' })).toBeVisible();
+  expect(await menuCount(browser)).toBe(0);
 });
 
 test('tells the version and quits from the browser menu, and from shortcuts of their own', async () => {
@@ -220,20 +225,16 @@ test('tells the version and quits from the browser menu, and from shortcuts of t
     const about = await browser.main.evaluate(({ app }) => `${app.getName()} ${app.getVersion()}`);
     const [aboutItem, quitItem] = mac
       ? ['About Astela', 'Quit Astela']
-      : ['&About Astela', process.platform === 'win32' ? 'E&xit' : '&Quit'];
-    await recordMenus(browser);
-    const menu = browser.shell.getByRole('button', { name: 'Menu', exact: true });
-    await menu.click();
-    // The menu shows the shortcuts of its items.
-    await recordedMenu(browser, 1);
-    expect(await menuAccelerators(browser)).toMatchObject({
-      [aboutItem]: aboutKeys,
-      [quitItem]: quitKeys,
-    });
-    await chooseMenuItem(browser, [aboutItem]);
+      : ['About Astela', process.platform === 'win32' ? 'Exit' : 'Quit'];
+    const menu = await openBrowserMenu(browser);
+    // The menu shows the shortcuts of its items, as the system writes them.
+    const [aboutShown, quitShown] = mac ? ['⇧⌘Y', '⇧⌘E'] : [aboutKeys, quitKeys];
+    expect(await menuEntries(menu)).toEqual(
+      expect.arrayContaining([`${aboutItem} ${aboutShown}`, `${quitItem} ${quitShown}`]),
+    );
+    await chooseFromMenu(menu, [aboutItem]);
     await expect.poll(calls).toEqual([about]);
-    await menu.click();
-    await chooseMenuItem(browser, [quitItem]);
+    await chooseFromMenu(await openBrowserMenu(browser), [quitItem]);
     await expect.poll(calls).toEqual([about, 'quit']);
     await pressNative(browser, 'Y', ['primary', 'shift']);
     await expect.poll(calls).toEqual([about, 'quit', about]);

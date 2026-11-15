@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { shortcutPattern } from '../shortcuts.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 import { OverlayAnchor } from './overlay-anchor.ts';
 
@@ -112,6 +113,131 @@ const SuggestionList = v.strictObject({
   selected: v.pipe(v.number(), v.integer(), v.minValue(-1), v.maxValue(7)),
 });
 
+/**
+ * The text of an item of a menu. On Windows and Linux, `&` marks the access key of the letter
+ * after it, and `&&` stands for an `&` of its own; macOS has no access keys.
+ */
+const MenuLabel = v.pipe(v.string(), v.maxLength(300));
+/** The shortcut that an item shows, in the notation of the tables of shortcuts, or none. */
+const MenuShortcut = v.nullable(v.pipe(v.string(), v.maxLength(40), v.regex(shortcutPattern)));
+/** The icon of an item: bookmarks and folders of the bookmarks bar have one. */
+const MenuIcon = v.nullable(v.picklist(['bookmark', 'folder']));
+
+/** An item of a menu that runs something, and whether it can run now. */
+const MenuItem = v.strictObject({
+  type: v.literal('item'),
+  label: MenuLabel,
+  shortcut: MenuShortcut,
+  enabled: v.boolean(),
+  icon: MenuIcon,
+});
+
+/** An item of a menu that opens a submenu next to it. */
+const MenuSubmenu = v.strictObject({
+  type: v.literal('submenu'),
+  label: MenuLabel,
+  enabled: v.boolean(),
+  icon: MenuIcon,
+});
+
+/** A line between the groups of a menu. */
+const MenuSeparator = v.strictObject({ type: v.literal('separator') });
+
+/** The parts of the zoom row of the browser menu. */
+const zoomParts = ['zoomOut', 'reset', 'zoomIn', 'fullScreen'] as const;
+
+/**
+ * The zoom row of the browser menu: the zoom of the active tab's page, `null` without a page
+ * that zooms, whether it can zoom in and out from there, whether the window is in full screen,
+ * and the names and shortcuts of its buttons.
+ */
+const MenuZoom = v.strictObject({
+  type: v.literal('zoom'),
+  label: MenuLabel,
+  zoom: v.nullable(v.pipe(v.number(), v.minValue(0.25), v.maxValue(5))),
+  canZoomIn: v.boolean(),
+  canZoomOut: v.boolean(),
+  fullScreen: v.boolean(),
+  labels: v.strictObject({
+    zoomOut: MenuLabel,
+    reset: MenuLabel,
+    zoomIn: MenuLabel,
+    fullScreen: MenuLabel,
+  }),
+  shortcuts: v.strictObject({
+    zoomOut: MenuShortcut,
+    reset: MenuShortcut,
+    zoomIn: MenuShortcut,
+    fullScreen: MenuShortcut,
+  }),
+});
+
+/** An entry of a menu. */
+const MenuEntry = v.variant('type', [MenuItem, MenuSubmenu, MenuSeparator, MenuZoom]);
+
+/**
+ * One level of a menu: the menu itself, or a submenu that is open, with the place of the item
+ * that opened it in the level before, its name and its entries.
+ */
+const MenuLevel = v.strictObject({
+  parent: v.pipe(v.number(), v.integer(), v.minValue(-1), v.maxValue(500)),
+  label: MenuLabel,
+  items: v.pipe(v.array(MenuEntry), v.maxLength(501)),
+});
+
+/**
+ * A menu at its button, such as the browser menu or a folder of the bookmarks bar, with its
+ * submenus that are open: the edge of the button that it lines up with, `auto` for the end of
+ * a button in the right half of the window and the start otherwise, whether the keyboard
+ * opened it, so that its first item takes the focus and the access keys show, and whether it
+ * is a menu of macOS, which has none.
+ */
+const MenuPopover = v.strictObject({
+  kind: v.literal('menu'),
+  anchor: OverlayAnchor,
+  align: v.picklist(['start', 'end', 'auto']),
+  keyboard: v.boolean(),
+  mac: v.boolean(),
+  levels: v.pipe(v.array(MenuLevel), v.minLength(1), v.maxLength(21)),
+});
+
+/** A menu at its button. */
+export type MenuPopover = v.InferOutput<typeof MenuPopover>;
+/** One level of a menu. */
+export type MenuLevel = v.InferOutput<typeof MenuLevel>;
+/** An entry of a menu. */
+export type MenuEntry = v.InferOutput<typeof MenuEntry>;
+/** A part of the zoom row of the browser menu. */
+export type ZoomPart = (typeof zoomParts)[number];
+
+/**
+ * The popover of the bookmark star for the page of the active tab: whether the star just added
+ * the bookmark, the bookmark's id, name and folder, and the folders to move it to, each with
+ * its depth below the bookmarks bar or the other bookmarks.
+ */
+const BookmarkEditor = v.strictObject({
+  kind: v.literal('bookmark'),
+  anchor: OverlayAnchor,
+  added: v.boolean(),
+  id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  title: v.pipe(v.string(), v.maxLength(1024)),
+  folder: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  folders: v.pipe(
+    v.array(
+      v.strictObject({
+        id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+        title: v.pipe(v.string(), v.maxLength(1024)),
+        depth: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20)),
+      }),
+    ),
+    v.minLength(1),
+    v.maxLength(500),
+  ),
+});
+
+/** The popover of the bookmark star. */
+export type BookmarkEditor = v.InferOutput<typeof BookmarkEditor>;
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
 export const OverlayContent = v.nullable(
@@ -122,6 +248,8 @@ export const OverlayContent = v.nullable(
     ScreenPicker,
     DownloadsPanel,
     SuggestionList,
+    MenuPopover,
+    BookmarkEditor,
   ]),
 );
 
@@ -146,6 +274,67 @@ export const OverlayChanged = defineEvent({
 /** Closes the overlay, for example after a click next to the popover. */
 export const CloseOverlay = defineRequest({
   channel: 'overlay.close',
+  request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Tells that what closed has left the page, after the motion of its exit, so the overlay may
+ * leave the window.
+ */
+export const OverlayExited = defineRequest({
+  channel: 'overlay.exited',
+  request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** A level of an open menu, and a place among its entries. */
+const MenuPlace = {
+  level: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20)),
+  index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(500)),
+};
+
+/**
+ * Chooses an item of the open menu by its place, or a part of its zoom row; `newTab` opens a
+ * bookmark in a new tab, as Ctrl or Command with a click or Enter does. The browser process
+ * finds what the place stands for in the menu that it sent.
+ */
+export const ChooseMenuItem = defineRequest({
+  channel: 'overlay.chooseMenuItem',
+  request: v.strictObject({
+    ...MenuPlace,
+    part: v.optional(v.picklist(zoomParts)),
+    newTab: v.boolean(),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Opens the submenu of an item of the open menu, and closes the submenus after its level. */
+export const OpenSubmenu = defineRequest({
+  channel: 'overlay.openSubmenu',
+  request: v.strictObject(MenuPlace),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Gives the bookmark of the star's popover a name and a folder, and closes the popover. */
+export const SaveBookmark = defineRequest({
+  channel: 'overlay.saveBookmark',
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    title: v.pipe(v.string(), v.maxLength(1024)),
+    folder: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Removes every bookmark of the page of the star's popover, and closes the popover. */
+export const RemoveBookmark = defineRequest({
+  channel: 'overlay.removeBookmark',
   request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',

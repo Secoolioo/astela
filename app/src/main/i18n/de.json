@@ -23,6 +23,8 @@
   "menu.history": "&Verlauf",
   "menu.bookmarks": "&Lesezeichen",
   "menu.emptyFolder": "(leer)",
+  "menu.title": "Menü",
+  "menu.moreBookmarks": "Weitere Lesezeichen",
   "menu.view": "&Darstellung",
   "menu.reload": "Seite &neu laden",
   "menu.reloadHard": "Ohne &Cache neu laden",

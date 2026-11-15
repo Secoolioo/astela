@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, and F10 and Alt for the browser menu, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -34,6 +34,7 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Reload                         | `F5` or `Ctrl+R`                                |
 | Open the home page             | `Alt+Home`                                      |
 | Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
+| Open the menu                  | `F10`, or `Alt` pressed and released alone      |
 | Open the history               | `Ctrl+H`                                        |
 | Open the downloads             | `Ctrl+J`                                        |
 | Bookmark the page              | `Ctrl+D`                                        |
@@ -53,6 +54,8 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Developer tools                | `F12` or `Ctrl+Shift+I`                         |
 
 None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as Ctrl+Alt, so AltGr keeps typing characters such as `@`, `€` or `{`.
+
+`Ctrl+D` adds the page to the bookmarks bar and opens the popover of the star, where the bookmark gets its name and folder; on a page with a bookmark, it opens the popover of that bookmark ([bookmarks](bookmarks.md)).
 
 ## macOS
 
@@ -91,9 +94,15 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | View the source                | `Command+Option+U`                                                    |
 | Developer tools                | `Command+Option+I`                                                    |
 
-`Command+Left Arrow` and `Command+Right Arrow` move the cursor to the start and the end of the line, as everywhere on macOS, so they do not go back and forward. `Command+Tab` switches between apps.
+`Command+Left Arrow` and `Command+Right Arrow` move the cursor to the start and the end of the line, as everywhere on macOS, so they do not go back and forward. `Command+Tab` switches between apps. **Open the menu** has no shortcut on macOS, whose menu bar opens the menus of Astela; you can give it one.
 
 On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, such as German or French, press Command together with the keys that type the bracket.
+
+## The browser menu
+
+On Windows and Linux, `F10` opens the browser menu at its button, with its first item chosen, and `F10` once more closes it. Pressing and releasing `Alt` alone does the same, as in other programs of these systems; `Alt` together with another key, such as `Alt+Left Arrow`, or `Alt` held while you click, scroll or drag with the mouse, does not. If a site needs the Alt key for itself, turn off **Open the menu with Alt** under **Keyboard shortcuts** in the [settings](settings.md). While a page fills the screen, such as a video in full screen, `Alt` does not open the menu.
+
+In the menu, and in the menus of the folders of the [bookmarks bar](bookmarks.md#bookmarks-bar), the arrow keys move between the items, Home and End go to the first and the last one, and `Right Arrow`, Enter or Space open a submenu, which `Left Arrow` or Esc close again. Enter or Space choose an item, and Esc or Tab close the menu. On Windows and Linux, each item of the browser menu has an access key, the underlined letter, which chooses it; the letter shows when the keyboard opened the menu, or while you hold `Alt`. On macOS, and in folders, a letter moves to the next item that starts with it. When the keyboard opened the menu from the toolbar, closing it gives the focus back to the menu button.
 
 ## Mouse
 

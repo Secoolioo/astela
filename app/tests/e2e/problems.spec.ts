@@ -220,6 +220,57 @@ test('asks for the user name and password that a site wants, and signs in', asyn
   }
 });
 
+test('lets the sign-in prompt leave the window as it showed, with what was typed into it', async () => {
+  const guarded = createServer((request, response) => {
+    const expected = `Basic ${Buffer.from('tester:secret').toString('base64')}`;
+    response.setHeader('Content-Type', 'text/html');
+    if (request.headers.authorization === expected) {
+      response.end('<!doctype html><title>Members</title><p>Signed in as tester</p>');
+      return;
+    }
+    response.statusCode = 401;
+    response.setHeader('WWW-Authenticate', 'Basic realm="Fixture members"');
+    response.end('<!doctype html><title>Members</title><p>Not signed in</p>');
+  });
+  await new Promise<void>((done) => guarded.listen(0, '127.0.0.1', done));
+  const { port } = guarded.address() as AddressInfo;
+  const browser = await launch();
+  try {
+    const url = `http://127.0.0.1:${port}/members.html`;
+    await open(browser, url);
+    const overlay = await waitForPage(browser, (current) => current.startsWith('app://overlay'));
+    const prompt = overlay.getByRole('dialog', { name: 'Sign in' });
+    await expect(prompt).toBeVisible();
+    // The prompt takes long to leave here, so that the test sees it while it leaves.
+    await overlay.evaluate(() => {
+      const animate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+        ?.value as Element['animate'];
+      Element.prototype.animate = function (
+        this: Element,
+        ...args: Parameters<Element['animate']>
+      ): Animation {
+        const [keyframes, options] = args;
+        const slow = typeof options === 'object' ? { ...options, duration: 20_000 } : options;
+        return animate.call(this, keyframes, slow);
+      };
+    });
+    await prompt.getByRole('textbox', { name: 'User name' }).fill('tester');
+    await prompt.getByLabel('Password').fill('secret');
+    await prompt.getByRole('button', { name: 'Sign in' }).click();
+    // What leaves is the prompt that showed, not one drawn anew with empty fields.
+    const leaving = overlay.locator('.leaving');
+    await expect(leaving).toHaveCount(1);
+    await expect(leaving.locator('input[name="username"]')).toHaveValue('tester');
+    await expect(leaving.locator('input[name="password"]')).toHaveValue('secret');
+    await expect(overlay.locator('.current')).toHaveCount(0);
+    const page = await waitForPage(browser, (current) => current === url);
+    await expect(page.getByText('Signed in as tester')).toBeVisible();
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => guarded.close(() => done()));
+  }
+});
+
 test('asks for the sign-in of a tab in the background once the tab shows', async () => {
   let asked = 0;
   const guarded = createServer((request, response) => {

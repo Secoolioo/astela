@@ -79,10 +79,12 @@ export function askForLogin(
       // unencrypted, also on the way to an https site.
       secure: !info.isProxy && /^https:/i.test(details.url),
     },
-    // Closing the prompt in any way cancels what it asked for.
-    () => {
-      if (waiting.get(target) === prompt) waiting.delete(target);
-      for (const cancel of prompt.answers) cancel();
+    {
+      // Closing the prompt in any way cancels what it asked for.
+      onClose: () => {
+        if (waiting.get(target) === prompt) waiting.delete(target);
+        for (const cancel of prompt.answers) cancel();
+      },
     },
   );
   waiting.set(target, prompt);

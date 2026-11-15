@@ -1,7 +1,7 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import { shortcutTable } from '../../shared/shortcuts.ts';
-import { macMenuBar } from '../browser-menu.ts';
+import { macMenuBar, runFromMenuBar } from '../browser-menu.ts';
 
 vi.mock('electron', () => ({
   app: { getLocale: () => 'de' },
@@ -57,5 +57,35 @@ describe('macMenuBar', () => {
     );
     expect(changed['Neuer Tab']).toBe('Shift+Cmd+K');
     expect(changed['Einstellungen']).toBeUndefined();
+  });
+});
+
+/** The window used last, whose overlay shows a popover or the suggestions, and what it did. */
+function front(coversWindow: boolean): {
+  windows: Parameters<typeof runFromMenuBar>[0];
+  done: string[];
+} {
+  const done: string[] = [];
+  const window = {
+    overlay: { coversWindow, close: () => void done.push('close') },
+    execute: (command: string) => void done.push(command),
+  };
+  const windows = { lastUsed: window, open: () => window } as unknown as Parameters<
+    typeof runFromMenuBar
+  >[0];
+  return { windows, done };
+}
+
+describe('runFromMenuBar', () => {
+  it('closes a popover that covers the window before the command runs', () => {
+    const { windows, done } = front(true);
+    runFromMenuBar(windows, 'find.open', () => undefined);
+    expect(done).toEqual(['close', 'find.open']);
+  });
+
+  it('leaves the suggestions of the address bar, which cover only a part of the window', () => {
+    const { windows, done } = front(false);
+    runFromMenuBar(windows, 'find.open', () => undefined);
+    expect(done).toEqual(['find.open']);
   });
 });

@@ -399,6 +399,9 @@
   "settings.shortcuts": "Keyboard shortcuts",
   "settings.shortcutsNote": "Change the shortcut of a command with Change and the keys. Esc stops without a change.",
   "settings.shortcuts.keywords": "keyboard shortcut keys hotkey key binding",
+  "settings.altOpensMenu": "Open the menu with Alt",
+  "settings.altOpensMenuNote": "Pressing and releasing Alt alone opens the menu, as F10 does. Turn it off if a site needs the Alt key.",
+  "settings.altOpensMenu.keywords": "keyboard menu F10 alt key access keys",
   "settings.shortcutNone": "No shortcut",
   "settings.shortcutSystem": "{shortcut} comes from the system and cannot be changed.",
   "settings.shortcutChange": "Change the shortcut of {command}",
@@ -445,6 +448,7 @@
   "shortcut.page.reloadHard": "Reload without the cache",
   "shortcut.page.home": "Open the home page",
   "shortcut.omnibox.focus": "Go to the address bar",
+  "shortcut.menu.open": "Open the menu",
   "shortcut.find.open": "Find in the page",
   "shortcut.find.next": "Next match",
   "shortcut.find.previous": "Previous match",
@@ -531,5 +535,10 @@
   "overlay.suggestions": "Suggestions",
   "overlay.suggestion.search": "Search",
   "overlay.suggestion.tab": "Switch to this tab",
+  "overlay.zoomState": "Zoom {zoom}",
+  "overlay.bookmarkAdded": "Bookmark added",
+  "overlay.bookmarkEdit": "Edit bookmark",
+  "overlay.bookmarkRemove": "Remove",
+  "overlay.bookmarkDone": "Done",
   "settings.titleBar.keywords": "window frame controls minimize maximize close caption"
 }

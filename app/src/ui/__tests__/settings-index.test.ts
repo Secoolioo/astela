@@ -39,12 +39,16 @@ describe('settingsIndex', () => {
     for (const candidate of rows) expect(candidate.keys.length).toBeGreaterThan(0);
   });
 
-  it('lists the shortcut of every command in the order of the commands, after them the reset', () => {
+  it('lists the shortcut of every command in the order of the commands, after them the reset and Alt', () => {
     const shortcuts = settingsIndex.find((section) => section.id === 'shortcuts')?.rows ?? [];
     expect(shortcuts.map((candidate) => candidate.id)).toEqual([
       ...windowCommands.map((command) => shortcutRowId(command)),
       'shortcuts-reset',
+      'keys.altOpensMenu',
     ]);
+    // macOS has no such setting, so the row shows only where the browser offers it.
+    expect(row('keys.altOpensMenu').onlyWhereOffered).toBe(true);
+    expect(rows.filter((candidate) => candidate.onlyWhereOffered === true)).toHaveLength(1);
   });
 
   it('names closing the tabs to the right after the tabs below with the tab strip at a side', () => {

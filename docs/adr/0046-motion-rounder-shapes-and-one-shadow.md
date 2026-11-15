@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Replaces the rules on shape, depth and motion of the [design system](../architecture/design-system.md#design-rules) and the motion line of [ADR 0013](0013-theme-system-and-design-tokens.md).
+Accepted. Replaces the rules on shape, depth and motion of the [design system](../architecture/design-system.md#design-rules) and the motion line of [ADR 0013](0013-theme-system-and-design-tokens.md). [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) adds `--motion-enter` and `--motion-exit` for popovers of the overlay, and checks that reduced motion sets every motion token to 0.
 
 ## Date
 

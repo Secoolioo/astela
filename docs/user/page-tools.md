@@ -2,7 +2,7 @@
 
 > **Status:** available from 0.1.0-beta.4.
 
-These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; on macOS, the File and View menus of the menu bar have them too.
+These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; the browser menu at the end of the toolbar has them too, Find, Print and Save page as with the others and View source and Developer tools under More tools, and on macOS the File and View menus of the menu bar. On the browser's own pages, such as the settings, these items cannot be chosen.
 
 ## Find in the page
 
@@ -10,7 +10,7 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 
 ## Zoom
 
-`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), and on Windows and Linux Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to the default zoom, which is 100 % unless you choose another in the [settings](settings.md#appearance). The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at the default zoom, the address bar shows its zoom; a click on it returns to the default zoom.
+`Ctrl+Plus` and `Ctrl+-` (`Command` on macOS), and on Windows and Linux Ctrl and the mouse wheel, zoom in and out in steps from 25 % to 500 %, and `Ctrl+0` returns to the default zoom, which is 100 % unless you choose another in the [settings](settings.md#appearance). The zoom applies to the whole site, also in other tabs, and Astela keeps it for the next visit. While a site is not at the default zoom, the address bar shows its zoom; a click on it returns to the default zoom. The zoom row of the browser menu has the same steps: − zooms out, + zooms in, and the zoom between them, such as 110 %, returns to the default zoom; the menu stays open while you zoom, and its buttons stop at 25 % and 500 %. Its last button shows the window in full screen.
 
 ## Full screen
 
@@ -26,7 +26,7 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 
 ## Developer tools
 
-`F12` or `Ctrl+Shift+I` (`Command+Option+I`) opens the developer tools of the page in a window of their own, and closes them again. Inspect at the end of the context menu opens them at the element you clicked. Organizations can turn the developer tools off with the policy `DeveloperToolsAvailability`; see the [policies](../architecture/enterprise.md).
+`F12` or `Ctrl+Shift+I` (`Command+Option+I`) opens the developer tools of the page in a window of their own, and closes them again. Inspect at the end of the context menu opens them at the element you clicked. Organizations can turn the developer tools off with the policy `DeveloperToolsAvailability`, which also takes them out of the browser menu; see the [policies](../architecture/enterprise.md).
 
 ## PDF documents
 

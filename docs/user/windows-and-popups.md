@@ -4,7 +4,7 @@
 
 ## New windows
 
-`Ctrl+N` (`Command+N` on macOS), or New window in the menu at the end of the toolbar, opens a new window with a new tab. Astela keeps where each window was and whether it was maximized, and opens the windows there at the next start. A window that would lie outside every screen, for example after a screen was disconnected, opens where the system puts it, and a window larger than its screen fits the screen, so that its title bar is on it.
+`Ctrl+N` (`Command+N` on macOS), or New window in the browser menu at the end of the toolbar, opens a new window with a new tab. The browser menu opens at its button, also with `F10` or `Alt` alone on Windows and Linux; see [keyboard shortcuts](keyboard-shortcuts.md#the-browser-menu). Astela keeps where each window was and whether it was maximized, and opens the windows there at the next start. A window that would lie outside every screen, for example after a screen was disconnected, opens where the system puts it, and a window larger than its screen fits the screen, so that its title bar is on it.
 
 ## Links and popups
 

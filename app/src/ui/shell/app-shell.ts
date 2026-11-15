@@ -5,6 +5,7 @@ import { percent } from '../ui-kit/percent.ts';
 import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
+import type { PopoverAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import { controlsRoom } from '../../shared/window-controls.ts';
 import type { Translator } from '../i18n/i18n.ts';
@@ -223,7 +224,8 @@ export class AppShell extends LitElement {
       color: inherit;
       font: inherit;
     }
-    .bookmarks button:hover {
+    .bookmarks button:hover,
+    .bookmarks button[aria-expanded='true'] {
       background: var(--surface-hover);
     }
     .bookmarks span {
@@ -460,6 +462,10 @@ export class AppShell extends LitElement {
       font: inherit;
     }
     .icon:hover:not(:disabled) {
+      background: var(--surface-hover);
+    }
+    /* A button whose popover is open looks pressed. */
+    .icon[aria-expanded='true'] {
       background: var(--surface-hover);
     }
     /* Buttons give way a little while they are pressed. */
@@ -777,6 +783,8 @@ export class AppShell extends LitElement {
   private windowControls: WindowControls | undefined;
   /** The room for the window controls that the top row has, to change it only when it moves. */
   private titleBarRoom = '';
+  /** Whether the browser made the overlay ready for the menu, which it does once. */
+  private overlayPrepared = false;
 
   constructor() {
     super();
@@ -793,6 +801,7 @@ export class AppShell extends LitElement {
       toolbar: ['bookmark', 'shield', 'downloads'],
       titleBar: null,
       covered: false,
+      popover: null,
     };
     this.drafts = new Map();
     this.addressFocused = false;
@@ -813,6 +822,8 @@ export class AppShell extends LitElement {
         if (command === 'find.focus') this.focusFind();
         else if (command === 'downloads.open') this.openDownloadsAtButton();
         else if (command === 'omnibox.done') this.leaveAddress();
+        else if (command === 'menu.open') this.openMenuAtButton();
+        else if (command === 'bookmark.edit') this.editBookmark();
         else this.focusAddress();
       }),
     );
@@ -1035,7 +1046,11 @@ export class AppShell extends LitElement {
           title=${t('shell.menu')}
           aria-label=${t('shell.menu')}
           aria-haspopup="menu"
+          aria-expanded=${this.state.popover?.kind === 'menu' ? 'true' : 'false'}
           @click=${this.openMenu}
+          @keydown=${this.onMenuKey}
+          @pointerenter=${this.prepareOverlay}
+          @focus=${this.prepareOverlay}
         >
           ${icons.menu}
         </button>
@@ -1638,6 +1653,7 @@ export class AppShell extends LitElement {
                 title=${t('shell.moreBookmarks')}
                 aria-label=${t('shell.moreBookmarks')}
                 aria-haspopup="menu"
+                aria-expanded=${this.folderOpen(bookmarkRoots.bar) ? 'true' : 'false'}
                 @click=${(event: MouseEvent) =>
                   this.openFolderMenu(event, bookmarkRoots.bar, this.barOverflow)}
               >
@@ -1652,6 +1668,7 @@ export class AppShell extends LitElement {
     if (url === null) {
       return html`<button
         aria-haspopup="menu"
+        aria-expanded=${this.folderOpen(item.id) ? 'true' : 'false'}
         @click=${(event: MouseEvent) => this.openFolderMenu(event, item.id, 0)}
       >
         ${icons.folder}<span>${item.title}</span>
@@ -1674,21 +1691,24 @@ export class AppShell extends LitElement {
       : this.bridge?.invoke('tabs.navigate', { tabId, input: url }));
   }
 
+  /** Whether the overlay shows the menu of a folder of the bookmarks bar. */
+  private folderOpen(id: number): boolean {
+    return this.state.popover?.kind === 'folder' && this.state.popover.folder === id;
+  }
+
   /**
-   * Opens the menu of a folder of the bookmarks bar below the clicked button.
-   * @param event - The click.
+   * Opens the menu of a folder of the bookmarks bar at the clicked button.
+   * @param event - The click; one of the keyboard, with Enter or Space, has no count of clicks.
    * @param id - The folder.
    * @param from - How many of the folder's first entries the menu leaves out.
    */
   private openFolderMenu(event: MouseEvent, id: number, from: number): void {
     const button = event.currentTarget;
     if (button instanceof HTMLElement) {
-      const rect = button.getBoundingClientRect();
       void this.bridge?.invoke('shell.openBookmarkFolder', {
         id,
         from,
-        x: Math.round(rect.left),
-        y: Math.round(rect.bottom),
+        ...anchorOf(button, event.detail === 0),
       });
     }
   }
@@ -1727,18 +1747,14 @@ export class AppShell extends LitElement {
   private readonly openBlockerPopover = (event: MouseEvent): void => {
     const button = event.currentTarget;
     if (button instanceof HTMLElement) {
-      const rect = button.getBoundingClientRect();
-      void this.bridge?.invoke('shell.openBlockerPopover', {
-        x: Math.max(0, Math.round(rect.left)),
-        y: Math.max(0, Math.round(rect.top)),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      });
+      void this.bridge?.invoke('shell.openBlockerPopover', anchorOf(button, event.detail === 0));
     }
   };
 
-  /** Opens the browser menu below the button. */
-  /** The star that bookmarks a web page; the browser's own pages have none. */
+  /**
+   * The star that bookmarks a web page and opens its popover, where the bookmark gets its name
+   * and folder; the browser's own pages have none.
+   */
   private renderBookmarkButton(active: TabView | undefined): TemplateResult | typeof nothing {
     const t = this.tp.bind(this);
     return active === undefined || !/^https?:/i.test(active.url)
@@ -1748,10 +1764,43 @@ export class AppShell extends LitElement {
           title=${t('shell.bookmark')}
           aria-label=${t('shell.bookmark')}
           aria-pressed=${active.bookmarked ? 'true' : 'false'}
-          @click=${() => void this.bridge?.invoke('shell.toggleBookmark', {})}
+          aria-haspopup="dialog"
+          aria-expanded=${this.state.popover?.kind === 'bookmark' ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => {
+            const button = event.currentTarget;
+            if (button instanceof HTMLElement) this.openBookmark(button, event.detail === 0);
+          }}
         >
           ${icons.star}
         </button>`;
+  }
+
+  /**
+   * Opens the popover of the star at an element: the star, or the menu button when the
+   * toolbar has no star, or a corner of the window when it has neither.
+   */
+  private openBookmark(element: Element | null, keyboard: boolean): void {
+    void this.bridge?.invoke('shell.openBookmarkPopover', this.anchorAt(element, keyboard));
+  }
+
+  /** Opens the popover of the star for the shortcut, at the star or else at the menu button. */
+  private editBookmark(): void {
+    const star = this.renderRoot.querySelector('.bookmark');
+    this.openBookmark(
+      star !== null && laidOut(star) ? star : this.renderRoot.querySelector('.menu-button'),
+      true,
+    );
+  }
+
+  /**
+   * Where a popover of an element of the shell opens: at the element, or at the top corner of
+   * the window at its end when the element is missing or has no place, as in a layout that
+   * hides the toolbar.
+   */
+  private anchorAt(element: Element | null, keyboard: boolean): PopoverAnchor {
+    return element !== null && laidOut(element)
+      ? anchorOf(element, keyboard)
+      : { x: Math.max(0, Math.round(innerWidth - 1)), y: 0, width: 0, height: 0, keyboard };
   }
 
   /** The shield of the content blocker, on pages that it works on. */
@@ -1764,6 +1813,7 @@ export class AppShell extends LitElement {
           title=${this.blockerLabel(active)}
           aria-label=${this.blockerLabel(active)}
           aria-haspopup="dialog"
+          aria-expanded=${this.state.popover?.kind === 'shield' ? 'true' : 'false'}
           @click=${this.openBlockerPopover}
         >
           ${
@@ -1798,7 +1848,8 @@ export class AppShell extends LitElement {
       title=${label}
       aria-label=${label}
       aria-haspopup="dialog"
-      @click=${(event: MouseEvent) => this.openDownloads(event.currentTarget)}
+      aria-expanded=${this.state.popover?.kind === 'downloads' ? 'true' : 'false'}
+      @click=${(event: MouseEvent) => this.openDownloads(event.currentTarget, event.detail === 0)}
     >
       ${icons.download}
       ${
@@ -1821,7 +1872,7 @@ export class AppShell extends LitElement {
   private openDownloadsAtButton(): void {
     // Without its button, the list opens at the menu button.
     if (!this.state.toolbar.includes('downloads')) {
-      this.openDownloads(this.renderRoot.querySelector('.menu-button'));
+      this.openDownloads(this.renderRoot.querySelector('.menu-button'), true);
       return;
     }
     this.downloadsPending = true;
@@ -1832,29 +1883,50 @@ export class AppShell extends LitElement {
     const button = this.renderRoot.querySelector('.downloads');
     if (!this.downloadsPending || button === null) return;
     this.downloadsPending = false;
-    this.openDownloads(button);
+    this.openDownloads(button, true);
   }
 
-  private openDownloads(button: EventTarget | null): void {
-    if (!(button instanceof HTMLElement)) return;
-    const rect = button.getBoundingClientRect();
-    void this.bridge?.invoke('shell.openDownloads', {
-      x: Math.max(0, Math.round(rect.left)),
-      y: Math.max(0, Math.round(rect.top)),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    });
+  private openDownloads(button: EventTarget | null, keyboard: boolean): void {
+    void this.bridge?.invoke(
+      'shell.openDownloads',
+      this.anchorAt(button instanceof Element ? button : null, keyboard),
+    );
   }
 
+  /** Opens the browser menu at its button; Enter or Space give a click without a count. */
   private readonly openMenu = (event: MouseEvent): void => {
     const button = event.currentTarget;
-    if (button instanceof HTMLElement) {
-      const rect = button.getBoundingClientRect();
-      void this.bridge?.invoke('shell.openMenu', {
-        x: Math.round(rect.left),
-        y: Math.round(rect.bottom),
-      });
+    if (button instanceof Element) {
+      void this.bridge?.invoke('shell.openMenu', this.anchorAt(button, event.detail === 0));
     }
+  };
+
+  /** Opens the browser menu with the keyboard, as F10 or Alt alone do, at its button. */
+  private openMenuAtButton(): void {
+    void this.bridge?.invoke(
+      'shell.openMenu',
+      this.anchorAt(this.renderRoot.querySelector('.menu-button'), true),
+    );
+  }
+
+  /** The arrow down opens the menu from its button, as it opens the menus of a menu bar. */
+  private readonly onMenuKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'ArrowDown' || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const button = event.currentTarget;
+    if (button instanceof Element) {
+      void this.bridge?.invoke('shell.openMenu', this.anchorAt(button, true));
+    }
+  };
+
+  /**
+   * Makes the overlay ready once the pointer reaches the menu button or the button takes the
+   * focus, so that the first popover opens without waiting for the overlay's page.
+   */
+  private readonly prepareOverlay = (): void => {
+    if (this.overlayPrepared) return;
+    this.overlayPrepared = true;
+    void this.bridge?.invoke('shell.prepareOverlay', {});
   };
 
   /**
@@ -2344,6 +2416,29 @@ function addressParts(address: string): { host: string; rest: string } | undefin
   } catch {
     return { host: address, rest: '' };
   }
+}
+
+/**
+ * Where a button of the shell is, for a popover that opens at it, and whether the keyboard
+ * opened the popover.
+ * @param element - The button.
+ * @param keyboard - Whether the keyboard opened the popover, as Enter or Space on the button do.
+ */
+function anchorOf(element: Element, keyboard: boolean): PopoverAnchor {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.round(rect.left)),
+    y: Math.max(0, Math.round(rect.top)),
+    width: Math.max(0, Math.round(rect.width)),
+    height: Math.max(0, Math.round(rect.height)),
+    keyboard,
+  };
+}
+
+/** Whether an element has a place in the layout, which a hidden one has not. */
+function laidOut(element: Element): boolean {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 function inputOf(event: Event): HTMLInputElement | undefined {
