@@ -104,6 +104,8 @@ export class WindowOverlay implements OverlayHandle {
   private readonly altTap = new AltTap();
   /** Whether the overlay's page stopped answering, until it answers again. */
   private hung = false;
+  /** Whether the process of the overlay's page ended, until the page loads again. */
+  private gone = false;
   private readonly window: BrowserWindowController;
   private readonly options: OverlayOptions;
 
@@ -229,8 +231,9 @@ export class WindowOverlay implements OverlayHandle {
     const view = this.view;
     if (view === undefined || this.window.window.isDestroyed()) return;
     const hadFocus = this.tookFocus || view.webContents.isFocused();
-    // A page that crashed has nothing to clear; it loads empty again with the next popover.
-    if (!view.webContents.isCrashed()) {
+    // A page whose process ended has nothing to clear; it loads empty again with the next
+    // popover.
+    if (!this.ended(view.webContents)) {
       this.options.router.publish(OverlayChanged, view.webContents, null);
     }
     if (hadFocus && this.window.window.isFocused()) {
@@ -259,14 +262,24 @@ export class WindowOverlay implements OverlayHandle {
     if (!this.window.window.isDestroyed()) this.window.window.contentView.removeChildView(view);
   }
 
-  /** The view of the overlay, made once, with its page loaded again after it crashed. */
+  /** The view of the overlay, made once, with its page loaded again after its process ended. */
   private ready(): WebContentsView {
     const view = (this.view ??= this.create());
-    if (view.webContents.isCrashed()) {
+    if (this.ended(view.webContents)) {
+      this.gone = false;
       this.hung = false;
       void view.webContents.loadURL(this.options.url);
     }
     return view;
+  }
+
+  /**
+   * Whether the process of the overlay's page ended, however Chromium tells it: with the
+   * sandbox of Linux, a renderer that crashed can count as one that exited cleanly, which
+   * Electron does not count as crashed.
+   */
+  private ended(contents: WebContents): boolean {
+    return this.gone || contents.isCrashed();
   }
 
   /**
@@ -275,7 +288,7 @@ export class WindowOverlay implements OverlayHandle {
    */
   private pageAnswers(): boolean {
     const contents = this.view?.webContents;
-    return contents !== undefined && !this.hung && !contents.isLoading() && !contents.isCrashed();
+    return contents !== undefined && !this.hung && !contents.isLoading() && !this.ended(contents);
   }
 
   private settle(): void {
@@ -348,8 +361,11 @@ export class WindowOverlay implements OverlayHandle {
     // The popover would no longer lie at its button; it goes at once.
     const close = (): void => this.close('now');
     // A page that crashed or hangs would leave a view in the window that takes every click and
-    // key; the view leaves, and a crashed page loads again with the next popover.
-    contents.on('render-process-gone', close);
+    // key; the view leaves, and a page whose process ended loads again with the next popover.
+    contents.on('render-process-gone', () => {
+      this.gone = true;
+      close();
+    });
     contents.on('unresponsive', () => {
       this.hung = true;
       close();
