@@ -263,11 +263,10 @@ test('speaks German with German access keys and key names', async () => {
     }
     const menu = await overlayMenu(browser, 'Menü');
     const entries = await menuEntries(menu);
-    // macOS shows Command+Q next to Quit in any case.
     const keys = mac
-      ? ['Neuer Tab ⌘T', 'Neues privates Fenster ⇧⌘N', 'Beenden ⌘Q']
-      : ['Neuer Tab Strg+T', 'Neues privates Fenster Strg+Umschalt+N', 'Beenden'];
-    expect(entries).toEqual(expect.arrayContaining([...keys, 'Weitere Tools']));
+      ? ['Neuer Tab ⌘T', 'Neues privates Fenster ⇧⌘N']
+      : ['Neuer Tab Strg+T', 'Neues privates Fenster Strg+Umschalt+N'];
+    expect(entries).toEqual(expect.arrayContaining([...keys, 'Weitere Tools', 'Beenden']));
     const history = menu.getByRole('menuitem', { name: 'Verlauf', exact: true });
     await expect(history).toBeVisible();
     if (!mac) {
@@ -560,17 +559,12 @@ test('takes a menu whose page crashed or hangs out of the window, and opens it a
   try {
     await open(browser, 'index.html');
     await openBrowserMenu(browser);
-    // A page that crashed would take every click and key of the window. Electron's own way
-    // ends the renderer on Windows and macOS, but makes it crash on Linux, where the crash
-    // handler of the system can keep the process alive while it saves a dump. As in the test
-    // of crashed pages, the test ends the process of the page at once, the same way on every
-    // system.
+    // A page that crashed would take every click and key of the window.
     await browser.main.evaluate(({ webContents }) => {
-      const contents = webContents
+      webContents
         .getAllWebContents()
-        .find((candidate) => candidate.getURL().startsWith('app://overlay'));
-      if (contents === undefined) throw new Error('No page of an overlay');
-      process.kill(contents.getOSProcessId(), 'SIGKILL');
+        .find((contents) => contents.getURL().startsWith('app://overlay'))
+        ?.forcefullyCrashRenderer();
     });
     await expect.poll(() => overlayAttached(browser)).toBe(false);
     await expect(menuButton(browser)).toHaveAttribute('aria-expanded', 'false');

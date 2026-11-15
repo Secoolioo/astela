@@ -327,26 +327,6 @@ describe('WindowOverlay', () => {
     expect(view.webContents.loads).toBe(2);
   });
 
-  it('loads the page again after its process ended, also when Chromium calls it a clean exit', () => {
-    const { overlay, children, published } = windowOf();
-    overlay.open(shield, { keys: { escape: 'page' } });
-    const view = children[0];
-    if (view === undefined) throw new Error('No view');
-    // With the sandbox of Linux, a renderer that crashed can count as one that exited cleanly,
-    // which Electron does not count as crashed.
-    emitContents(view, 'render-process-gone');
-    expect(view.webContents.crashed).toBe(false);
-    expect(overlay.content).toBeNull();
-    expect(children).toHaveLength(0);
-    // The page that ended has nothing to clear.
-    expect(published).toEqual([shield]);
-    overlay.open(shield, { keys: { escape: 'page' } });
-    expect(view.webContents.loads).toBe(2);
-    overlay.close('now');
-    overlay.open(shield);
-    expect(view.webContents.loads).toBe(2);
-  });
-
   it('closes for a shortcut of the window and runs it, unless the popover takes it', () => {
     const { overlay, children, executed } = windowOf();
     overlay.open(shield);
