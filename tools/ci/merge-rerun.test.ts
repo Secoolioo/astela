@@ -45,7 +45,7 @@ while (($#)); do
 done
 if [[ -n $post ]]; then echo "$post $path" >>"$CASE/calls"; exit 0; fi
 case $path in
-  */attempts/1/jobs*) file=jobs.json ;;
+  */attempts/*/jobs*) file=jobs.json ;;
   */annotations) id=\${path%/annotations}; file=annotations-\${id##*/}.json ;;
   *) file=run.json ;;
 esac
@@ -69,7 +69,7 @@ interface Job {
   readonly annotations: readonly string[];
 }
 
-function run(jobs: readonly Job[]): { output: string; reran: boolean } {
+function run(jobs: readonly Job[], attempt = 1): { output: string; reran: boolean } {
   const folder = mkdtempSync(join(tmpdir(), 'merge-rerun-'));
   folders.push(folder);
   const bin = join(folder, 'bin');
@@ -92,7 +92,7 @@ function run(jobs: readonly Job[]): { output: string; reran: boolean } {
   }
   writeFileSync(
     join(folder, 'run.json'),
-    JSON.stringify({ run_attempt: 2, status: 'completed', conclusion: 'success' }),
+    JSON.stringify({ run_attempt: attempt + 1, status: 'completed', conclusion: 'success' }),
   );
   const result = spawnSync('bash', ['-c', rerunScript()], {
     encoding: 'utf8',
@@ -102,6 +102,7 @@ function run(jobs: readonly Job[]): { output: string; reran: boolean } {
       CASE: folder,
       REPOSITORY: 'owner/repo',
       RUN_ID: '1',
+      ATTEMPT: String(attempt),
       GITHUB_OUTPUT: join(folder, 'output'),
     },
   });
@@ -165,5 +166,45 @@ describe('the rerun step of merge.yml', () => {
     ]);
     assert.match(output, /Never got a runner: e2e \(macos-15\)/);
     assert.ok(reran);
+  });
+
+  it('runs a job again that again got no runner, while GitHub has too few', () => {
+    // Run 43912342222: package (macos) got no runner in its first two attempts.
+    const { output, reran } = run(
+      [{ id: 10, name: 'package (macos)', conclusion: 'cancelled', steps: [], annotations: [] }],
+      2,
+    );
+    assert.match(output, /Never got a runner: package \(macos\)/);
+    assert.match(output, /Attempt 3 ended with success\./);
+    assert.ok(reran);
+  });
+
+  it('runs the jobs of a CI run again after its first and its second attempt only', () => {
+    const condition = entries(workflow).find((entry) => entry.path.join('.') === 'jobs.rerun.if');
+    assert.match(condition?.value ?? '', /github\.event\.workflow_run\.run_attempt < 3 &&/);
+  });
+
+  it('keeps the failure of a second attempt whose runner was lost', () => {
+    const { output, reran } = run(
+      [
+        {
+          id: 11,
+          name: 'smoke (windows-x64-msi)',
+          conclusion: 'cancelled',
+          steps: [
+            { name: 'Set up job', status: 'completed', conclusion: 'success' },
+            {
+              name: 'Install, start and remove each package',
+              status: 'in_progress',
+              conclusion: null,
+            },
+          ],
+          annotations: [limit],
+        },
+      ],
+      2,
+    );
+    assert.match(output, /the failure stands\./);
+    assert.ok(!reran);
   });
 });
