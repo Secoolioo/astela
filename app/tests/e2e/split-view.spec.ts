@@ -522,6 +522,62 @@ async function ignoreSystemMoves(browser: Browser): Promise<void> {
   });
 }
 
+/** Records what the shell sees during a drag of the divider, for a test that fails. */
+async function recordDrag(browser: Browser): Promise<void> {
+  await browser.shell.evaluate(() => {
+    const log: string[] = [];
+    Reflect.set(window, 'dragLog', log);
+    const start = performance.now();
+    const note = (text: string): void => {
+      if (log.length < 400) log.push(`${String(Math.round(performance.now() - start))} ${text}`);
+    };
+    for (const type of [
+      'pointerdown',
+      'pointermove',
+      'pointerup',
+      'pointercancel',
+      'gotpointercapture',
+      'lostpointercapture',
+      'pointerover',
+      'pointerout',
+    ]) {
+      window.addEventListener(
+        type,
+        (event) => {
+          const pointer = event as PointerEvent;
+          const target = event.composedPath()[0];
+          const name = target instanceof Element ? target.className || target.tagName : '';
+          note(
+            `${type} buttons=${String(pointer.buttons)} x=${String(Math.round(pointer.clientX))} ` +
+              `trusted=${String(pointer.isTrusted)} id=${String(pointer.pointerId)} on=${name}`,
+          );
+        },
+        { capture: true },
+      );
+    }
+    window.addEventListener('blur', () => note('blur'));
+    window.addEventListener('focus', () => note('focus'));
+    document.addEventListener('visibilitychange', () =>
+      note(`visibility ${document.visibilityState}`),
+    );
+    const frame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) =>
+      frame((time) => {
+        note('frame');
+        callback(time);
+      });
+    const shell = document.querySelector('app-shell');
+    const bridge = Reflect.get(shell ?? {}, 'bridge') as
+      { invoke(channel: string, request: unknown): Promise<unknown> } | undefined;
+    if (bridge === undefined) return;
+    const invoke = bridge.invoke.bind(bridge);
+    bridge.invoke = (channel, request) => {
+      if (channel === 'tabs.resizeSplit') note(`invoke ${JSON.stringify(request)}`);
+      return invoke(channel, request);
+    };
+  });
+}
+
 test('moves the divider with the pointer and the keyboard, and both pages follow', async () => {
   const browser = await launch();
   try {
@@ -543,15 +599,20 @@ test('moves the divider with the pointer and the keyboard, and both pages follow
     // The divider lies between the two pages, where the browser process leaves room for it.
     expect(box).toMatchObject({ x: leftBefore.x + leftBefore.width, width: 8 });
     expect(rightBefore.x).toBe(box.x + box.width);
-    await ignoreSystemMoves(browser);
+    await recordDrag(browser);
     const mouse = browser.shell.mouse;
     await mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await mouse.down();
     await mouse.move(box.x + box.width / 2 - 160, box.y + box.height / 2, { steps: 8 });
     // The pages follow while the divider moves.
-    await expect
-      .poll(async () => (await viewOf(browser, home))?.bounds.width ?? 0)
-      .toBeLessThan(leftBefore.width - 100);
+    try {
+      await expect
+        .poll(async () => (await viewOf(browser, home))?.bounds.width ?? 0)
+        .toBeLessThan(leftBefore.width - 100);
+    } catch (error) {
+      const log = await browser.shell.evaluate(() => Reflect.get(window, 'dragLog') as string[]);
+      throw new Error(`${String(error)}\nDrag log:\n${log.join('\n')}`, { cause: error });
+    }
     await mouse.up();
     await expect
       .poll(async () => (await shellState(browser.shell)).split?.ratio ?? 0)
