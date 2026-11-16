@@ -393,6 +393,26 @@ describe('JsonFileSessionStore', () => {
     }
   });
 
+  it('reads the backup at once when there is no file, so the session needs no read later', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    writeFileSync(`${file}.bak`, JSON.stringify(travelled('B')));
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const stored = await new JsonFileSessionStore(file, new ManualClock()).read();
+      // The start has the backup already: the first window does not wait for a read.
+      rmSync(`${file}.bak`);
+      expect(parse).not.toHaveBeenCalled();
+      expect(await stored.data()).toEqual(travelled('B'));
+      // Without a backup either, there is no session, and nothing is read for it later.
+      const none = await new JsonFileSessionStore(file, new ManualClock()).read();
+      writeFileSync(`${file}.bak`, JSON.stringify(travelled('C')));
+      expect(await none.data()).toBeUndefined();
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   it('writes a change of titles alone after the longer delay, with the session of then', async () => {
     const { JsonFileSessionStore } = await import('../node/session-store.ts');
     const clock = new ManualClock();

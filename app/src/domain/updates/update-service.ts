@@ -19,6 +19,16 @@ export function updatesItself(type: InstallType): boolean {
 /** The `UpdatePolicy` values: off, automatic, or only when the user asks. */
 export type UpdateMode = 'off' | 'automatic' | 'manual';
 
+/**
+ * Maps the `UpdatePolicy` value to a mode; without a policy, updates are automatic.
+ * @param value - The policy value.
+ */
+export function updateMode(value: 0 | 1 | 2 | undefined): UpdateMode {
+  if (value === 0) return 'off';
+  if (value === 2) return 'manual';
+  return 'automatic';
+}
+
 /** What the updater is doing. */
 export type UpdateState =
   | { readonly kind: 'disabled'; readonly reason: 'policy' | 'install-type' | 'no-keys' }

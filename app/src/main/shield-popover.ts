@@ -1,10 +1,5 @@
-import {
-  exceptionFor,
-  exceptionSite,
-  siteOf,
-  toggleSite,
-  type Blocking,
-} from '../domain/blocker/blocking.ts';
+import { exceptionFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
+import { exceptionSite, toggleSite } from '../domain/blocker/allowed-sites.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import type {

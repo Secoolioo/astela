@@ -11,10 +11,10 @@ import {
   UpdatePolicy,
   UpdateURL,
   defaultCheckPeriodMinutes,
-  updateMode,
 } from '../domain/updates/update-policies.ts';
 import {
   UpdateService,
+  updateMode,
   type UpdateEngine,
   type UpdateHooks,
 } from '../domain/updates/update-service.ts';

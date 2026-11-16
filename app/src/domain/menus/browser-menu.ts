@@ -1,5 +1,6 @@
 import type { MenuEntry, MenuLevel, ZoomPart } from '../../shared/ipc/overlay-contracts.ts';
-import { shortcutsOf, systemShortcutsOf, type WindowCommand } from '../../shared/shortcuts.ts';
+import { shortcutsOf, systemShortcutsOf } from '../../shared/menu-shortcuts.ts';
+import type { WindowCommand } from '../../shared/shortcuts.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { canRun, type CommandContext } from '../commands/availability.ts';
 

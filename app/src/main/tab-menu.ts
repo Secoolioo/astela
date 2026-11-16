@@ -2,7 +2,8 @@ import { Menu, type MenuItemConstructorOptions } from 'electron';
 import { uiLocale } from './ui-language.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { Translator } from '../shared/i18n/i18n.ts';
-import { acceleratorOf, shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
+import { acceleratorOf, shortcutsOf } from '../shared/menu-shortcuts.ts';
+import type { WindowCommand } from '../shared/shortcuts.ts';
 import { translatorFor, type MessageKey } from './i18n/i18n.ts';
 
 /** What the menu of a tab needs from the window of the tab. */

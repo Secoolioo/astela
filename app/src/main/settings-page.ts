@@ -25,10 +25,9 @@ import {
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
 import type { DataClient } from '../platform/electron/data-service-client.ts';
+import { shortcutsOf, systemShortcutsOf } from '../shared/menu-shortcuts.ts';
 import {
   shortcutProblem,
-  shortcutsOf,
-  systemShortcutsOf,
   windowCommands,
   type ShortcutOverrides,
   type WindowCommand,

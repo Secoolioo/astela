@@ -190,6 +190,9 @@ const options = {
   gate: lenient({ registerView: () => ({ dispose: () => undefined }) }),
   router: lenient({}),
   logger: lenient({}),
+  // The code for web pages and the window commands loads later; these tests need neither.
+  webPages: () => new Promise(() => undefined),
+  windowCommands: () => new Promise(() => undefined),
 } as unknown as BrowserWindowOptions;
 
 const original: Rect = { x: 100, y: 40, width: 800, height: 500 };
