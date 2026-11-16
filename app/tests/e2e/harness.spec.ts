@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Socket } from 'node:net';
-import { launch, pageReport } from './harness.ts';
+import { join } from 'node:path';
+import { FixtureServer, launch, pageReport } from './harness.ts';
 
 test('fails a test with a report of the browser process when the shell stops answering', async () => {
   const browser = await launch();
@@ -124,5 +125,68 @@ test('connects to a browser whose first page fails to load while the harness att
     } finally {
       server.close();
     }
+  }
+});
+
+/** A text as a regular expression that matches it literally. */
+function literal(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
+
+test('records how far the browser got with a view whose first page does not come', async () => {
+  test.setTimeout(90_000);
+  const server = new FixtureServer();
+  await server.start();
+  // The answer of the page waits, so the first navigation of the tab's new web view does not
+  // commit while the test runs, as in the tests on Windows that found no page.
+  const release = server.hold('index.html');
+  const url = `${server.origin}/index.html`;
+  try {
+    const browser = await launch();
+    try {
+      const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill(url);
+      await address.press('Enter');
+      await expect
+        .poll(() => server.requests.some(({ path }) => path === '/index.html'))
+        .toBe(true);
+      // The session takes the new address of the tab within about a second.
+      await expect
+        .poll(() => {
+          try {
+            return readFileSync(join(browser.profile, 'data', 'session.json'), 'utf8').includes(
+              url,
+            );
+          } catch {
+            return false;
+          }
+        })
+        .toBe(true);
+    } finally {
+      await browser.close();
+    }
+    const record = test.info().attachments.find((attachment) => attachment.name === 'browser');
+    const text = readFileSync(record?.path ?? '', 'utf8');
+    // The view without an address yet, with its process.
+    expect(text).toMatch(
+      /\{"id":\d+,"url":"","title":"","loading":true,"crashed":false,"focused":(true|false),"pid":\d+\}/,
+    );
+    expect(text).toMatch(
+      /^A view has not shown its first page; the browser reported its start at \d+, and it is \d+ now\.$/m,
+    );
+    // Its navigation started and did not commit; the server got its request and did not answer.
+    expect(text).toMatch(new RegExp(`^ {4}\\d+ start ${literal(url)} \\(process \\d+\\)$`, 'm'));
+    expect(text).not.toContain(`commit ${url}`);
+    expect(text).toMatch(new RegExp(`^ {2}\\d+ ${literal(url)} not answered$`, 'm'));
+    // The processes with their processor time, the network service among them.
+    expect(text).toMatch(/^ {2}\d+ Browser, started \d+, \d+\.\d % CPU, /m);
+    expect(text).toMatch(/^ {2}\d+ Utility network\.mojom\.NetworkService, started \d+, /m);
+    // The write of the session that followed the new address.
+    expect(text).toMatch(/^ {2}\d+ (rename|change) session\.json/m);
+    // The pages that DevTools lists.
+    expect(text).toMatch(/^Pages of the browser:$/m);
+  } finally {
+    release();
+    await server.stop();
   }
 });

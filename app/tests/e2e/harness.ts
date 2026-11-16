@@ -20,7 +20,9 @@ import {
   readlinkSync,
   rmSync,
   symlinkSync,
+  watch,
   writeFileSync,
+  type FSWatcher,
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -50,6 +52,16 @@ function contentType(file: string): string {
   return 'text/html; charset=utf-8';
 }
 
+/** A request that a fixture server got: when it came, and when the server answered it. */
+interface ServedRequest {
+  readonly path: string;
+  readonly at: number;
+  answered?: number;
+}
+
+/** The fixture servers that run in this worker, whose requests the record of a test lists. */
+const runningServers = new Set<FixtureServer>();
+
 /** A local web server for test pages; tests never load third-party sites. */
 export class FixtureServer {
   private server: Server | undefined;
@@ -60,15 +72,21 @@ export class FixtureServer {
   private readonly held = new Map<string, (() => void)[]>();
   /** The fixtures that no cache may keep, as their answers once waited. */
   private readonly uncached = new Set<string>();
+  /** The latest requests with their times, for the record of a page that does not come. */
+  private readonly served: ServedRequest[] = [];
 
   /** Starts the server on a random port of 127.0.0.1. */
   async start(): Promise<void> {
     this.server = createServer((request, response) => {
       this.requests.push({ path: request.url ?? '/', headers: request.headers });
+      const served: ServedRequest = { path: request.url ?? '/', at: Date.now() };
+      this.served.push(served);
+      if (this.served.length > 100) this.served.splice(0, this.served.length - 100);
       const name =
         new URL(request.url ?? '/', 'http://x').pathname.replace(/^\//, '') || 'index.html';
       const file = name.replace(/[^a-z0-9.-]/gi, '');
       const answer = (): void => {
+        served.answered = Date.now();
         try {
           const body = readFileSync(join(fixtures, file));
           response.writeHead(200, {
@@ -85,6 +103,7 @@ export class FixtureServer {
       else waiting.push(answer);
     });
     await new Promise<void>((done) => this.server?.listen(0, '127.0.0.1', done));
+    runningServers.add(this);
     const address = this.server.address();
     this.origin =
       typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : '';
@@ -111,7 +130,23 @@ export class FixtureServer {
   async stop(): Promise<void> {
     for (const waiting of this.held.values()) for (const answer of waiting.splice(0)) answer();
     this.held.clear();
+    runningServers.delete(this);
     await new Promise((done) => this.server?.close(done));
+  }
+
+  /**
+   * The requests since a time, each with when it came and when the server answered it.
+   * @param since - The time, in milliseconds since the epoch.
+   */
+  requestsSince(since: number): string[] {
+    return this.served
+      .filter((request) => request.at >= since)
+      .map(
+        ({ path, at, answered }) =>
+          `${String(at)} ${this.origin}${path} ${
+            answered === undefined ? 'not answered' : `answered ${String(answered)}`
+          }`,
+      );
   }
 }
 
@@ -323,6 +358,8 @@ export async function launch(
     await new Promise((done) => setTimeout(done, 100));
   }
   options.onReady?.(child);
+  const started = Date.now();
+  const sessionFiles = watchSessionFiles(join(profile, 'data'));
   let main: MainProcess | undefined;
   let cdp: CdpBrowser;
   let shell: Page;
@@ -332,15 +369,18 @@ export async function launch(
       answerTime,
       'The browser process',
     );
+    await within(recordNavigations(main), answerTime, 'The browser process');
     await options.onMain?.(main);
     await pagesLoaded(main);
     cdp = await chromium.connectOverCDP(devtoolsMatch[1] ?? '');
     shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
     await shell.waitForSelector('app-shell');
   } catch (error) {
+    sessionFiles.close();
     await reportFailedStart(child, main, profile, devtoolsMatch[1] ?? '', String(error));
     throw error;
   }
+  const record = { devtools: devtoolsMatch[1] ?? '', started, sessionFiles };
   return {
     main,
     cdp,
@@ -356,7 +396,7 @@ export async function launch(
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
-      const answered = await reportState(main, shell, profile);
+      const answered = await reportState(main, shell, profile, record);
       const quit =
         closeOptions.byWindows === true
           ? main.evaluate(({ app, BaseWindow }) => {
@@ -385,7 +425,11 @@ export async function launch(
             fail(new Error('The browser did not exit within 15 seconds'));
           }, 15_000);
         }),
-      ]).finally(() => clearTimeout(timer));
+      ]).finally(() => {
+        clearTimeout(timer);
+        // The watcher holds the folder open, which on Windows keeps it from being removed.
+        sessionFiles.close();
+      });
       if (closeOptions.keepProfile !== true) removeAfterExit(profile);
       if (!answered) throw new Error('The shell did not answer at the end of the test');
     },
@@ -394,10 +438,11 @@ export async function launch(
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
-      const answered = await reportState(main, shell, profile);
+      const answered = await reportState(main, shell, profile, record);
       // SIGKILL, or TerminateProcess on Windows: nothing of the browser runs on.
       child.kill('SIGKILL');
       await exited;
+      sessionFiles.close();
       main.close();
       await cdp.close().catch(() => undefined);
       if (!answered) throw new Error('The shell did not answer at the end of the test');
@@ -405,14 +450,31 @@ export async function launch(
   };
 }
 
+/** What the harness noted about a browser since its start, for the record of a test. */
+interface StartRecord {
+  /** The address of the browser's DevTools. */
+  readonly devtools: string;
+  /** When the browser reported its start, in milliseconds since the epoch. */
+  readonly started: number;
+  /** The changes of the session files since then. */
+  readonly sessionFiles: SessionFiles;
+}
+
 /**
  * Records what the browser showed at the end of a test: the shell's state and address bar,
- * every web contents, and the end of the browser's log. The record goes with the files of the
- * test, which CI keeps when a test fails: a failed expectation fails the test only after the
- * test closed its browser. A test that has failed by now, such as by its time limit, also
- * prints the record to the job log.
+ * every web contents with its process, and the end of the browser's log; a view that has not
+ * shown its first page by then adds what the browser did since its start (see
+ * {@link waitingReport}). The record goes with the files of the test, which CI keeps when a
+ * test fails: a failed expectation fails the test only after the test closed its browser. A
+ * test that has failed by now, such as by its time limit, also prints the record to the job
+ * log.
  */
-async function reportState(main: MainProcess, shell: Page, profile: string): Promise<boolean> {
+async function reportState(
+  main: MainProcess,
+  shell: Page,
+  profile: string,
+  record: StartRecord,
+): Promise<boolean> {
   let info: TestInfo;
   try {
     info = test.info();
@@ -444,12 +506,17 @@ async function reportState(main: MainProcess, shell: Page, profile: string): Pro
           loading: contents.isLoading(),
           crashed: contents.isCrashed(),
           focused: contents.isFocused(),
+          pid: contents.getOSProcessId(),
         })),
       ),
       answerTime,
       'The browser process',
     );
     report = `Browser at the end of the test: ${JSON.stringify({ state, address, views })}\n`;
+    // A view whose first navigation has not committed has no address yet, but loads.
+    if (views.some((view) => view.url === '' && view.loading)) {
+      report += await waitingReport(main, record);
+    }
   } catch (error) {
     // A shell that was closed throws at once; one that does not answer hangs.
     answered = !(error instanceof NoAnswer);
@@ -780,6 +847,149 @@ function processReport(main: MainProcess): Promise<ProcessReport> {
       cpu: metric.cpu.percentCPUUsage,
     })),
   }));
+}
+
+/** The changes of the session files of a profile, noted as they happen. */
+interface SessionFiles {
+  /** The changes, the oldest first: when, what and which file. */
+  readonly changes: readonly string[];
+  /** Stops noting them. */
+  close(): void;
+}
+
+/**
+ * Notes when the files of the session change in a profile's folder: `session.json`, its
+ * backup, the temporary file that each write fills and syncs before it renames it, and the
+ * marker of a running browser. The browser logs none of these writes, and the record of a
+ * page that does not come shows whether one ran just then, and how long it took.
+ * @param folder - The folder of the profile's data, which the browser has made by then.
+ */
+function watchSessionFiles(folder: string): SessionFiles {
+  const changes: string[] = [];
+  let watcher: FSWatcher | undefined;
+  try {
+    watcher = watch(folder, (event, name) => {
+      if (name?.startsWith('session.json') !== true) return;
+      changes.push(`${String(Date.now())} ${event} ${name}`);
+      if (changes.length > 100) changes.splice(0, changes.length - 100);
+    });
+    watcher.on('error', () => undefined);
+  } catch {
+    // A folder that cannot be watched leaves the list empty.
+  }
+  return { changes, close: () => watcher?.close() };
+}
+
+/**
+ * Keeps, in the browser process, the latest events of the main frame of every view with
+ * their times: navigations that start, redirect, commit or fail, loads that start and stop,
+ * and renderers that go away or stop answering, each with the process of the view.
+ * @param main - The browser process.
+ */
+function recordNavigations(main: MainProcess): Promise<void> {
+  return main.evaluate(({ app, webContents }) => {
+    const store = globalThis as typeof globalThis & { e2eNavigations?: Map<number, string[]> };
+    if (store.e2eNavigations !== undefined) return;
+    const events = new Map<number, string[]>();
+    store.e2eNavigations = events;
+    const watchView = (contents: Electron.WebContents): void => {
+      const list: string[] = [];
+      events.set(contents.id, list);
+      const note = (what: string): void => {
+        const pid = contents.isDestroyed() ? 0 : contents.getOSProcessId();
+        list.push(`${String(Date.now())} ${what} (process ${String(pid)})`);
+        if (list.length > 40) list.splice(0, list.length - 40);
+      };
+      note('created');
+      contents.on('did-start-navigation', (details) => {
+        if (details.isMainFrame) {
+          note(`start ${details.url}${details.isSameDocument ? ' in the same document' : ''}`);
+        }
+      });
+      contents.on('did-redirect-navigation', (details) => {
+        if (details.isMainFrame) note(`redirect ${details.url}`);
+      });
+      contents.on('did-frame-navigate', (_event, url, code, _status, isMainFrame) => {
+        if (isMainFrame) note(`commit ${url} ${String(code)}`);
+      });
+      contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+        if (isMainFrame) note(`fail ${url} ${String(code)} ${description}`);
+      });
+      contents.on('did-start-loading', () => note('loading'));
+      contents.on('did-stop-loading', () => note('loaded'));
+      contents.on('render-process-gone', (_event, details) => note(`renderer ${details.reason}`));
+      contents.on('unresponsive', () => note('unresponsive'));
+      contents.on('responsive', () => note('responsive'));
+      contents.once('destroyed', () => note('destroyed'));
+    };
+    for (const contents of webContents.getAllWebContents()) watchView(contents);
+    app.on('web-contents-created', (_event, contents) => watchView(contents));
+  });
+}
+
+/**
+ * What the browser did since its start, for a view that has not shown its first page by the
+ * end of a test: the events of the main frame of every view, the processes of the browser
+ * with the processor time that each one used over one second, the requests of the fixture
+ * servers since the start, the changes of the session files, and the pages that DevTools
+ * lists, with whether each one answers. Times are milliseconds since the epoch, as in the
+ * browser's log.
+ * @param main - The browser process.
+ * @param record - What the harness noted since the start.
+ */
+async function waitingReport(main: MainProcess, record: StartRecord): Promise<string> {
+  let report = `A view has not shown its first page; the browser reported its start at ${String(
+    record.started,
+  )}, and it is ${String(Date.now())} now.\n`;
+  report += await within(
+    main.evaluate(async ({ app }) => {
+      const store = globalThis as typeof globalThis & { e2eNavigations?: Map<number, string[]> };
+      // The first call starts the measurement of the processor time.
+      app.getAppMetrics();
+      await new Promise((done) => setTimeout(done, 1000));
+      return {
+        views: [...(store.e2eNavigations ?? new Map<number, string[]>())],
+        processes: app.getAppMetrics().map((metric) => ({
+          pid: metric.pid,
+          type: metric.type,
+          name: metric.serviceName ?? metric.name ?? '',
+          created: Math.round(metric.creationTime),
+          cpu: metric.cpu.percentCPUUsage,
+          cpuSeconds: metric.cpu.cumulativeCPUUsage,
+          wakeups: metric.cpu.idleWakeupsPerSecond,
+        })),
+      };
+    }),
+    answerTime + 1000,
+    'The browser process',
+  ).then(
+    ({ views, processes }) =>
+      'Events of the main frame of each view:\n' +
+      views
+        .map(([id, events]) => `  view ${String(id)}:\n${events.map((e) => `    ${e}\n`).join('')}`)
+        .join('') +
+      'Processes of the browser, with the processor time of the last second:\n' +
+      processes
+        .map(
+          (p) =>
+            `  ${String(p.pid)} ${p.type}${p.name === '' || p.name === p.type ? '' : ` ${p.name}`}, started ${String(
+              p.created,
+            )}, ${p.cpu.toFixed(1)} % CPU, ${p.cpuSeconds?.toFixed(2) ?? '?'} s in all, ${String(
+              p.wakeups,
+            )} wakeups/s\n`,
+        )
+        .join(''),
+    (failure: unknown) => `Events and processes not available: ${String(failure)}\n`,
+  );
+  const requests = [...runningServers].flatMap((server) => server.requestsSince(record.started));
+  report += `Requests of the fixture servers since the start:\n${requests
+    .map((line) => `  ${line}\n`)
+    .join('')}`;
+  report += `Changes of the session files since the start:\n${record.sessionFiles.changes
+    .map((line) => `  ${line}\n`)
+    .join('')}`;
+  report += await pageReport(record.devtools);
+  return report;
 }
 
 /** The end of the browser's log, or nothing when it has none. */
