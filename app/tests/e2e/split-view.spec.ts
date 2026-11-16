@@ -57,11 +57,18 @@ function addressBar(browser: Browser): Locator {
   return browser.shell.getByRole('textbox', { name: 'Address and search bar' });
 }
 
-/** Loads an address in the active tab and gives its page. */
+/** Loads an address in the active tab and gives its page once it has painted. */
 async function open(browser: Browser, url: string): Promise<Page> {
   await addressBar(browser).fill(url);
   await addressBar(browser).press('Enter');
-  return waitForPage(browser, (current) => current === url);
+  const page = await waitForPage(browser, (current) => current === url);
+  await page.waitForLoadState('load');
+  // Chromium drops the key presses for a new page until it has painted its first content,
+  // which on a slow machine can come after the load event.
+  await page.waitForFunction(
+    () => performance.getEntriesByName('first-contentful-paint').length > 0,
+  );
+  return page;
 }
 
 /**
@@ -497,29 +504,22 @@ test('opens a tab in split view from its menu, swaps the sides and ends the spli
 });
 
 /**
- * Moves the window off the pointer of the system, which the mouse of Playwright leaves where it
- * is. On Windows, that pointer rests in the middle of the screen, on the divider of a window
- * that fills the screen, and as the pages move under it in a drag, the shell gets a move of the
- * mouse there without the button that Playwright holds, which ends the drag after its first
- * width. A real drag holds the button of that pointer.
+ * Keeps the moves of the system's mouse from the shell while Playwright's mouse drags the
+ * divider. The drag captures the system's mouse for the shell too, and on Windows that mouse,
+ * which holds no button, reports a move whenever the pages under it change their size; the
+ * shell takes a move without a button for the end of the drag. In a real drag, the system's
+ * mouse holds the button.
  */
-async function keepPointerOff(browser: Browser): Promise<void> {
-  const off = await browser.main.evaluate(({ BaseWindow, screen }) => {
-    const point = screen.getCursorScreenPoint();
-    const area = screen.getDisplayNearestPoint(point).workArea;
-    const holds = (window: Electron.BaseWindow): boolean => {
-      const { x, y, width, height } = window.getBounds();
-      return point.x >= x && point.x < x + width && point.y >= y && point.y < y + height;
-    };
-    for (const window of BaseWindow.getAllWindows().filter(holds)) {
-      const { x, height } = window.getBounds();
-      // The side of the pointer with more room keeps more of the window on the screen.
-      const above = point.y - area.y > area.y + area.height - point.y;
-      window.setPosition(x, above ? point.y - height : point.y + 1);
-    }
-    return !BaseWindow.getAllWindows().some(holds);
+async function ignoreSystemMoves(browser: Browser): Promise<void> {
+  await browser.shell.evaluate(() => {
+    window.addEventListener(
+      'pointermove',
+      (event) => {
+        if (event.buttons === 0) event.stopImmediatePropagation();
+      },
+      { capture: true },
+    );
   });
-  expect(off).toBe(true);
 }
 
 test('moves the divider with the pointer and the keyboard, and both pages follow', async () => {
@@ -543,7 +543,7 @@ test('moves the divider with the pointer and the keyboard, and both pages follow
     // The divider lies between the two pages, where the browser process leaves room for it.
     expect(box).toMatchObject({ x: leftBefore.x + leftBefore.width, width: 8 });
     expect(rightBefore.x).toBe(box.x + box.width);
-    await keepPointerOff(browser);
+    await ignoreSystemMoves(browser);
     const mouse = browser.shell.mouse;
     await mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await mouse.down();
@@ -607,7 +607,7 @@ test('keeps the width where a long drag on a display of 1000 Hz lets the divider
         window.setTimeout(() => callback(performance.now()), 1);
       window.cancelAnimationFrame = (frame) => window.clearTimeout(frame);
     });
-    await keepPointerOff(browser);
+    await ignoreSystemMoves(browser);
     const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     await browser.shell.mouse.move(middle.x, middle.y);
     await browser.shell.mouse.down();
