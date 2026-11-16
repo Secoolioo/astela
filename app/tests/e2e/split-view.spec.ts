@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { release } from 'node:os';
@@ -25,8 +26,25 @@ const mac = process.platform === 'darwin';
 const systemPicker = mac && Number.parseInt(release(), 10) >= 24;
 const server = new FixtureServer();
 
+/**
+ * On Windows, the pointer of the system rests in the middle of the screen, over the window. When
+ * the edge of a page passes under it, as in a drag of the divider, Chromium tells the shell that
+ * the mouse left it, and the shell loses the capture of a drag that Playwright's mouse holds;
+ * in a real drag, that pointer moves with the drag. So it moves out of the window first.
+ */
+const windows = process.platform === 'win32';
+
 test.beforeAll(async () => {
   await server.start();
+  if (windows) {
+    execFileSync('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'Add-Type -AssemblyName System.Windows.Forms; ' +
+        '[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(0, 100000)',
+    ]);
+  }
 });
 test.afterAll(async () => {
   await server.stop();
@@ -503,79 +521,17 @@ test('opens a tab in split view from its menu, swaps the sides and ends the spli
   }
 });
 
-/**
- * Keeps the moves of the system's mouse from the shell while Playwright's mouse drags the
- * divider. The drag captures the system's mouse for the shell too, and on Windows that mouse,
- * which holds no button, reports a move whenever the pages under it change their size; the
- * shell takes a move without a button for the end of the drag. In a real drag, the system's
- * mouse holds the button.
- */
-async function ignoreSystemMoves(browser: Browser): Promise<void> {
-  await browser.shell.evaluate(() => {
-    window.addEventListener(
-      'pointermove',
-      (event) => {
-        if (event.buttons === 0) event.stopImmediatePropagation();
-      },
-      { capture: true },
-    );
+/** Checks on Windows that the pointer of the system is outside the window, see above. */
+async function expectSystemPointerOutside(browser: Browser): Promise<void> {
+  if (!windows) return;
+  const inside = await browser.main.evaluate(({ BaseWindow, screen }) => {
+    const point = screen.getCursorScreenPoint();
+    return BaseWindow.getAllWindows().some((window) => {
+      const { x, y, width, height } = window.getBounds();
+      return point.x >= x && point.x < x + width && point.y >= y && point.y < y + height;
+    });
   });
-}
-
-/** Records what the shell sees during a drag of the divider, for a test that fails. */
-async function recordDrag(browser: Browser): Promise<void> {
-  await browser.shell.evaluate(() => {
-    const log: string[] = [];
-    Reflect.set(window, 'dragLog', log);
-    const start = performance.now();
-    const note = (text: string): void => {
-      if (log.length < 400) log.push(`${String(Math.round(performance.now() - start))} ${text}`);
-    };
-    for (const type of [
-      'pointerdown',
-      'pointermove',
-      'pointerup',
-      'pointercancel',
-      'gotpointercapture',
-      'lostpointercapture',
-      'pointerover',
-      'pointerout',
-    ]) {
-      window.addEventListener(
-        type,
-        (event) => {
-          const pointer = event as PointerEvent;
-          const target = event.composedPath()[0];
-          const name = target instanceof Element ? target.className || target.tagName : '';
-          note(
-            `${type} buttons=${String(pointer.buttons)} x=${String(Math.round(pointer.clientX))} ` +
-              `trusted=${String(pointer.isTrusted)} id=${String(pointer.pointerId)} on=${name}`,
-          );
-        },
-        { capture: true },
-      );
-    }
-    window.addEventListener('blur', () => note('blur'));
-    window.addEventListener('focus', () => note('focus'));
-    document.addEventListener('visibilitychange', () =>
-      note(`visibility ${document.visibilityState}`),
-    );
-    const frame = window.requestAnimationFrame.bind(window);
-    window.requestAnimationFrame = (callback) =>
-      frame((time) => {
-        note('frame');
-        callback(time);
-      });
-    const shell = document.querySelector('app-shell');
-    const bridge = Reflect.get(shell ?? {}, 'bridge') as
-      { invoke(channel: string, request: unknown): Promise<unknown> } | undefined;
-    if (bridge === undefined) return;
-    const invoke = bridge.invoke.bind(bridge);
-    bridge.invoke = (channel, request) => {
-      if (channel === 'tabs.resizeSplit') note(`invoke ${JSON.stringify(request)}`);
-      return invoke(channel, request);
-    };
-  });
+  expect(inside).toBe(false);
 }
 
 test('moves the divider with the pointer and the keyboard, and both pages follow', async () => {
@@ -599,20 +555,15 @@ test('moves the divider with the pointer and the keyboard, and both pages follow
     // The divider lies between the two pages, where the browser process leaves room for it.
     expect(box).toMatchObject({ x: leftBefore.x + leftBefore.width, width: 8 });
     expect(rightBefore.x).toBe(box.x + box.width);
-    await recordDrag(browser);
+    await expectSystemPointerOutside(browser);
     const mouse = browser.shell.mouse;
     await mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await mouse.down();
     await mouse.move(box.x + box.width / 2 - 160, box.y + box.height / 2, { steps: 8 });
     // The pages follow while the divider moves.
-    try {
-      await expect
-        .poll(async () => (await viewOf(browser, home))?.bounds.width ?? 0)
-        .toBeLessThan(leftBefore.width - 100);
-    } catch (error) {
-      const log = await browser.shell.evaluate(() => Reflect.get(window, 'dragLog') as string[]);
-      throw new Error(`${String(error)}\nDrag log:\n${log.join('\n')}`, { cause: error });
-    }
+    await expect
+      .poll(async () => (await viewOf(browser, home))?.bounds.width ?? 0)
+      .toBeLessThan(leftBefore.width - 100);
     await mouse.up();
     await expect
       .poll(async () => (await shellState(browser.shell)).split?.ratio ?? 0)
@@ -668,7 +619,7 @@ test('keeps the width where a long drag on a display of 1000 Hz lets the divider
         window.setTimeout(() => callback(performance.now()), 1);
       window.cancelAnimationFrame = (frame) => window.clearTimeout(frame);
     });
-    await ignoreSystemMoves(browser);
+    await expectSystemPointerOutside(browser);
     const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     await browser.shell.mouse.move(middle.x, middle.y);
     await browser.shell.mouse.down();
