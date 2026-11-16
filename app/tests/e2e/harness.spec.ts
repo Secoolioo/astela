@@ -174,9 +174,14 @@ test('records how far the browser got with a view whose first page does not come
     expect(text).toMatch(
       /^A view has not shown its first page; the browser reported its start at \d+, and it is \d+ now\.$/m,
     );
-    // Its navigation started and did not commit; the server got its request and did not answer.
+    // Its navigation started and did not commit; its request went out and got no response, and
+    // the server got it and did not answer.
     expect(text).toMatch(new RegExp(`^ {4}\\d+ start ${literal(url)} \\(process \\d+\\)$`, 'm'));
+    expect(text).toMatch(
+      new RegExp(`^ {4}\\d+ request sent ${literal(url)} \\(process \\d+\\)$`, 'm'),
+    );
     expect(text).not.toContain(`commit ${url}`);
+    expect(text).not.toMatch(new RegExp(`response \\d+ ${literal(url)}`));
     expect(text).toMatch(new RegExp(`^ {2}\\d+ ${literal(url)} not answered$`, 'm'));
     // The processes with their processor time, the network service among them.
     expect(text).toMatch(/^ {2}\d+ Browser, started \d+, \d+\.\d % CPU, /m);

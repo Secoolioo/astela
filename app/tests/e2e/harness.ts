@@ -888,8 +888,9 @@ function watchSessionFiles(folder: string): SessionFiles {
 
 /**
  * Keeps, in the browser process, the latest events of the main frame of every view with
- * their times: navigations that start, redirect, commit or fail, loads that start and stop,
- * and renderers that go away or stop answering, each with the process of the view.
+ * their times: navigations that start, redirect, commit or fail, the request of the page that
+ * goes out, gets its response or fails, loads that start and stop, and renderers that go away
+ * or stop answering, each with the process of the view.
  * @param main - The browser process.
  */
 function recordNavigations(main: MainProcess): Promise<void> {
@@ -898,6 +899,34 @@ function recordNavigations(main: MainProcess): Promise<void> {
     if (store.e2eNavigations !== undefined) return;
     const events = new Map<number, string[]>();
     store.e2eNavigations = events;
+    const notes = new Map<number, (what: string) => void>();
+    const sessions = new WeakSet<Electron.Session>();
+    const noteRequest = (
+      details: {
+        readonly resourceType: string;
+        readonly url: string;
+        readonly webContentsId?: number;
+      },
+      what: string,
+    ): void => {
+      if (details.resourceType !== 'mainFrame' || details.webContentsId === undefined) return;
+      notes.get(details.webContentsId)?.(`${what} ${details.url}`);
+    };
+    // The browser owns only the listeners of a session that can change a request, so these
+    // three, which only watch, are free for the harness.
+    const watchRequests = (session: Electron.Session): void => {
+      if (sessions.has(session)) return;
+      sessions.add(session);
+      session.webRequest.onSendHeaders((details) => {
+        noteRequest(details, 'request sent');
+      });
+      session.webRequest.onResponseStarted((details) => {
+        noteRequest(details, `response ${String(details.statusCode)}`);
+      });
+      session.webRequest.onErrorOccurred((details) => {
+        noteRequest(details, `request failed ${details.error}`);
+      });
+    };
     const watchView = (contents: Electron.WebContents): void => {
       const list: string[] = [];
       events.set(contents.id, list);
@@ -906,6 +935,8 @@ function recordNavigations(main: MainProcess): Promise<void> {
         list.push(`${String(Date.now())} ${what} (process ${String(pid)})`);
         if (list.length > 40) list.splice(0, list.length - 40);
       };
+      notes.set(contents.id, note);
+      watchRequests(contents.session);
       note('created');
       contents.on('did-start-navigation', (details) => {
         if (details.isMainFrame) {
