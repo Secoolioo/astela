@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -15,6 +7,7 @@ import {
   FixtureServer,
   launch,
   pressNative,
+  removeAfterExit,
   shellState,
   waitForPage,
   type Browser,
@@ -581,6 +574,6 @@ test('writes the session for a page whose title changes all the time only now an
   try {
     expect(sessionFile(profile)?.windows[0]?.tabs[0]?.title).toMatch(/^Tick \d+$/);
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });

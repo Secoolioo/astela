@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { launch } from './harness.ts';
+import { launch, removeAfterExit } from './harness.ts';
 
 const appDir = resolve(import.meta.dirname, '../..');
 
@@ -61,7 +61,7 @@ async function startInSelfTest(): Promise<{ pid: number; ok: boolean; output: st
   } finally {
     clearTimeout(timer);
     child.stderr.destroy();
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeAfterExit(profile);
   }
 }
 

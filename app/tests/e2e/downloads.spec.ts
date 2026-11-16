@@ -1,10 +1,17 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  launch,
+  pressNative,
+  removeAfterExit,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 
 const mac = process.platform === 'darwin';
 /** The large download comes in parts with a pause between them, so a test can catch it. */
@@ -146,7 +153,7 @@ test('saves downloads in the downloads folder under a free name and lists them',
     expect(existsSync(join(folder, 'report.txt'))).toBe(true);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
@@ -171,7 +178,7 @@ test('keeps the icon of a page whose link starts a download', async () => {
     expect((await shellState(browser.shell)).tabs[0]?.favicon).toMatch(/^[0-9a-f]{16}$/);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
@@ -197,7 +204,7 @@ test('gives downloads whose names differ only in case names of their own', async
     for (const name of names) expect(statSync(join(folder, name)).size).toBe(part.length * parts);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
@@ -229,7 +236,7 @@ test('pauses, resumes and cancels a download, and downloads it again', async () 
     expect(statSync(join(folder, 'large.bin')).size).toBe(part.length * parts);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
@@ -262,8 +269,8 @@ test('opens the list with its shortcut and keeps it for the next start', async (
       await again.close();
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(profile);
+    removeAfterExit(folder);
   }
 });
 
@@ -276,7 +283,7 @@ test('saves downloads in the folder of the settings', async () => {
     await expect.poll(() => existsSync(join(folder, 'report.txt'))).toBe(true);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
@@ -318,7 +325,7 @@ test('asks where to save each download when the setting says so', async () => {
     await expect(downloads.getByRole('listitem')).toHaveCount(1);
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
-    rmSync(elsewhere, { recursive: true, force: true });
+    removeAfterExit(folder);
+    removeAfterExit(elsewhere);
   }
 });

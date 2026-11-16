@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -9,6 +9,7 @@ import {
   launch,
   openBrowserMenu,
   pressNative,
+  removeAfterExit,
   shellState,
   startAgain,
   tabViews,
@@ -401,7 +402,7 @@ test('opens new windows from the shortcut and the menu, and keeps where they wer
       await again.close();
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -705,7 +706,7 @@ test('restores a window in full screen where it was', async () => {
       await closeNoting(again, 'window places, second start', second);
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -754,7 +755,7 @@ test('restores a maximized window in full screen, and maximized once it leaves f
       await closeNoting(again, 'window places, second start', second);
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -809,7 +810,7 @@ test('restores a window that the green button of macOS put in full screen where 
       await closeNoting(again, 'window places, second start', second);
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -880,7 +881,7 @@ test('restores windows in the order they were used, the window used last at the 
       await again.close();
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
