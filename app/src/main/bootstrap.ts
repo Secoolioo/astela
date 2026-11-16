@@ -318,6 +318,25 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
   hardenSession(internal);
+  // The navigations of the browser's own pages wait for the network service, those to `app://`
+  // too, and one whose answer the service never gives, or took with it when it went away, never
+  // ends. A main-frame navigation of the internal session that still waits after 10 s hands
+  // over to the code that starts it again, which loads only then.
+  app.on('web-contents-created', (_event, contents) => {
+    if (contents.session !== internal) return;
+    let latest: unknown;
+    contents.on('did-start-navigation', (details) => {
+      if (!details.isMainFrame || details.isSameDocument) return;
+      latest = details;
+      setTimeout(() => {
+        if (latest === details && !contents.isDestroyed() && contents.isWaitingForResponse()) {
+          void import('../platform/electron/network-service.ts').then((module) =>
+            module.watch(contents, details.url, () => latest === details, logger),
+          );
+        }
+      }, 10_000);
+    });
+  });
   // The data service, and the code that talks to it, start with the first call.
   let dataClient: Promise<DataServiceClient> | undefined;
   let startedClient: DataServiceClient | undefined;

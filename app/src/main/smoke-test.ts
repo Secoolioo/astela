@@ -104,8 +104,10 @@ export function runSmokeTest(
     errors.push('The shell did not load within 60 seconds');
     finish(-1, Date.now());
   }, 60_000);
-  window.shellContents.once('did-fail-load', (_event, code, description) => {
-    errors.push(`Shell failed to load: ${code} ${description}`);
+  window.shellContents.on('did-fail-load', (_event, code, description) => {
+    // A load that a new navigation stopped is no error: the browser loads its own pages again
+    // when the network service does not answer them (`platform/electron/network-service.ts`).
+    if (code !== -3) errors.push(`Shell failed to load: ${code} ${description}`);
   });
   window.shellContents.once('did-finish-load', () => {
     shellLoaded = Math.round(performance.now());

@@ -1,10 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import {
   FixtureServer,
   launch,
+  pressNative,
   shellState,
   tabViews,
   waitForPage,
@@ -110,6 +113,191 @@ test('shows a page whose renderer crashed and loads it again', async () => {
     // The tab shows its page again.
     expect((await shellState(browser.shell)).tabs[0]?.problem).toBe(null);
   } finally {
+    await browser.close();
+  }
+});
+
+/** The process of the network service, which Chromium starts as a utility process. */
+function networkService(browser: Browser): Promise<number | undefined> {
+  return browser.main.evaluate(
+    ({ app }) =>
+      app.getAppMetrics().find((metric) => metric.serviceName === 'network.mojom.NetworkService')
+        ?.pid,
+  );
+}
+
+/** A view of the browser, by its id and the address that it shows. */
+interface ShownView {
+  readonly id: number;
+  readonly url: string;
+}
+
+/** A record of the log of the browser process. */
+interface LogRecord {
+  readonly message: string;
+  readonly fields?: Readonly<Record<string, unknown>>;
+}
+
+function logRecords(browser: Browser): LogRecord[] {
+  return readFileSync(join(browser.profile, 'data', 'logs', 'main.log'), 'utf8')
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as LogRecord);
+}
+
+/** The views, among those of the ids, that have shown a page and loaded, by their address. */
+function loadedViews(browser: Browser, ids: readonly number[]): Promise<ShownView[]> {
+  return browser.main.evaluate(
+    ({ webContents }, known) =>
+      webContents
+        .getAllWebContents()
+        .filter((contents) => known.includes(contents.id) && !contents.isLoading())
+        .map((contents) => ({ id: contents.id, url: contents.getURL() }))
+        .toSorted((a, b) => a.url.localeCompare(b.url)),
+    ids,
+  );
+}
+
+/**
+ * Opens a new window while the network service, stopped by the caller, does not answer, and
+ * returns its two views, the shell and the new tab page, once they wait for their first response.
+ */
+async function newWindowThatWaits(browser: Browser): Promise<number[]> {
+  const before = await browser.main.evaluate(({ webContents }) =>
+    webContents.getAllWebContents().map((contents) => contents.id),
+  );
+  const waiting = (): Promise<number[]> =>
+    browser.main.evaluate(
+      ({ webContents }, known) =>
+        webContents
+          .getAllWebContents()
+          .filter(
+            (contents) =>
+              !known.includes(contents.id) &&
+              contents.getURL() === '' &&
+              contents.isWaitingForResponse(),
+          )
+          .map((contents) => contents.id),
+      before,
+    );
+  await pressNative(browser, 'N', ['primary']);
+  await expect.poll(async () => (await waiting()).length).toBe(2);
+  const views = await waiting();
+  // A page of the browser loads within some milliseconds; these wait for the network service.
+  await new Promise((done) => setTimeout(done, 2000));
+  expect(await waiting()).toEqual(views);
+  return views;
+}
+
+/** Waits until the shell of the second window renders. */
+async function secondShellRenders(browser: Browser): Promise<void> {
+  const shells = (): Page[] =>
+    browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => page.url().startsWith('app://shell') && page !== browser.shell);
+  await expect.poll(() => shells().length).toBe(1);
+  await shells()[0]?.waitForSelector('app-shell');
+}
+
+/** Lets a stopped process run on, if it still exists. */
+function resume(pid: number | undefined): void {
+  if (pid === undefined) return;
+  try {
+    process.kill(pid, 'SIGCONT');
+  } catch {
+    // The browser ended it.
+  }
+}
+
+const loadsAgain = 'A page of the browser waited for the network service; it loads again';
+
+test("loads the browser's own pages of a new window again when the network service went away while they loaded", async () => {
+  // The test holds the network service while the pages wait for it; Windows cannot stop a
+  // process from Node.js.
+  test.skip(process.platform === 'win32', 'Windows cannot stop a process from Node.js');
+  const browser = await launch();
+  let stopped: number | undefined;
+  try {
+    const service = await networkService(browser);
+    if (service === undefined) throw new Error('The network service has no process');
+    // As on the macOS runners: the network service does not answer while a window loads, and
+    // then goes away. Chromium asks it to read the headers of the browser's own pages too.
+    process.kill(service, 'SIGSTOP');
+    stopped = service;
+    const views = await newWindowThatWaits(browser);
+    process.kill(service, 'SIGKILL');
+    stopped = undefined;
+    // Chromium starts a new service, but the answers that the old one owed never come. The
+    // pages load again once they waited 10 s; without that, they would wait for good.
+    await expect
+      .poll(async () => (await loadedViews(browser, views)).map(({ url }) => url), {
+        timeout: 20_000,
+      })
+      .toEqual(['app://newtab/', 'app://shell/']);
+    await secondShellRenders(browser);
+    // The log tells why the pages loaded again, and the loads that this ended fail quietly.
+    const again = logRecords(browser)
+      .filter((record) => record.message === loadsAgain)
+      .map(({ fields }) => ({ id: fields?.['id'], url: fields?.['url'] }))
+      .toSorted((a, b) => String(a.url).localeCompare(String(b.url)));
+    expect(again).toEqual(await loadedViews(browser, views));
+    const unhandled = logRecords(browser).filter((record) =>
+      record.message.includes('no code handled it'),
+    );
+    expect(unhandled).toEqual([]);
+  } finally {
+    resume(stopped);
+    await browser.close();
+  }
+});
+
+test("ends a network service that does not answer the browser's own pages, and loads them again", async () => {
+  test.skip(process.platform === 'win32', 'Windows cannot stop a process from Node.js');
+  // The browser waits 30 s before it ends a service that may only be slow.
+  test.setTimeout(120_000);
+  const browser = await launch();
+  let stopped: number | undefined;
+  try {
+    const service = await networkService(browser);
+    if (service === undefined) throw new Error('The network service has no process');
+    // As in one start on the macOS runners: the network service never answers, and Chromium
+    // does not replace it.
+    process.kill(service, 'SIGSTOP');
+    stopped = service;
+    const opened = Date.now();
+    const views = await newWindowThatWaits(browser);
+    // A service that may only be slow goes on: 15 s after the window opened, the pages still
+    // wait for the same service.
+    await new Promise((done) => setTimeout(done, Math.max(0, opened + 15_000 - Date.now())));
+    expect(await networkService(browser)).toBe(service);
+    expect(await loadedViews(browser, views)).toEqual([]);
+    // Once they waited 30 s, the browser ends the service, and Chromium starts a new one.
+    await expect.poll(() => networkService(browser), { timeout: 40_000 }).not.toBe(service);
+    stopped = undefined;
+    expect(Date.now() - opened).toBeGreaterThan(25_000);
+    await expect
+      .poll(async () => (await loadedViews(browser, views)).map(({ url }) => url), {
+        timeout: 10_000,
+      })
+      .toEqual(['app://newtab/', 'app://shell/']);
+    await secondShellRenders(browser);
+    // After 10 s the pages loaded again, which costs nothing when the service is only slow.
+    const again = logRecords(browser).filter((record) => record.message === loadsAgain);
+    expect(again).toHaveLength(2);
+    const ended = logRecords(browser).filter(
+      (record) =>
+        record.message === 'The network service did not answer a page of the browser and is ended',
+    );
+    expect(ended).toMatchObject([{ fields: { service, looks: 3 } }]);
+    // The pages load again as soon as Chromium tells that the service went away.
+    const gone = logRecords(browser)
+      .filter((record) => record.message.startsWith('The network service went away'))
+      .map(({ fields }) => ({ id: fields?.['id'], reason: fields?.['reason'] }))
+      .toSorted((a, b) => Number(a.id) - Number(b.id));
+    expect(gone).toEqual(views.toSorted((a, b) => a - b).map((id) => ({ id, reason: 'killed' })));
+  } finally {
+    resume(stopped);
     await browser.close();
   }
 });
