@@ -907,6 +907,9 @@ test('writes the session again for the focus of a regular window only when it ch
     const regular = await browser.main.evaluate(
       ({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.id ?? 0,
     );
+    // People press the shortcut in the window that they use, so the private window has the
+    // focus as it opens, also when the browser started behind another app (see :821).
+    await expect.poll(() => useWindow(browser, regular)).toBe(regular);
     await pressNative(browser, 'N', ['primary', 'shift']);
     await expect.poll(() => windowCount(browser)).toBe(2);
     const privateWindow = await otherWindow(browser, regular);
