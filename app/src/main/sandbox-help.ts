@@ -98,3 +98,24 @@ export function showSandboxHelp(options: {
   void view.webContents.loadURL(options.url);
   return view;
 }
+
+/**
+ * Starts the browser in the mode of the sandbox help: its page alone, which quits the browser
+ * when its window closes, and the self-test of the package when one was asked for. A regular
+ * start loads none of this.
+ * @param options - Where the page's preload is, and the IPC plumbing.
+ */
+export async function startSandboxHelp(
+  options: Omit<Parameters<typeof showSandboxHelp>[0], 'url' | 'origin'>,
+): Promise<void> {
+  const report = app.commandLine.getSwitchValue('smoke-test');
+  // The self-test is there before the page loads, so it sees the page finish loading.
+  const smokeTest = report === '' ? undefined : await import('./smoke-test.ts');
+  const help = showSandboxHelp({
+    url: 'app://sandbox-help/',
+    origin: 'app://sandbox-help',
+    ...options,
+  });
+  app.on('window-all-closed', () => app.quit());
+  smokeTest?.runSandboxHelpSmokeTest(help.webContents, report);
+}

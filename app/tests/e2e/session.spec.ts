@@ -282,9 +282,10 @@ test("restores each tab with its back and forward history after a restart, also 
   } finally {
     await first.close({ keepProfile: true });
   }
-  // Tab A opened the page, and came back to it.
+  // Tab A opened the page, and came back to it; tab B opened its page once.
   const visited = visitsOf(first.profile, home);
   expect(visited).toBe(2);
+  expect(visitsOf(first.profile, opened)).toBe(1);
 
   const again = await launch([], { profile: first.profile });
   try {
@@ -324,6 +325,9 @@ test("restores each tab with its back and forward history after a restart, also 
     // history records the visits in their order.
     await expect.poll(() => visitsOf(again.profile, second)).toBe(2);
     expect(visitsOf(again.profile, home)).toBe(visited);
+    // Nor is the page of tab B that the window showed at the start, before the code for web
+    // pages had loaded; Forward to it from the history page is one.
+    expect(visitsOf(again.profile, opened)).toBe(2);
   } finally {
     await again.close();
   }

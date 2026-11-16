@@ -4,7 +4,8 @@ import type {
   BrowserWindowController,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
-import { acceleratorOf, shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
+import { acceleratorOf, shortcutsOf } from '../shared/menu-shortcuts.ts';
+import type { WindowCommand } from '../shared/shortcuts.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
 /** The shortcut of a command that a menu shows: the first that Electron can write. */

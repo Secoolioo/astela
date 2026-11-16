@@ -19,8 +19,8 @@ export interface StoredSession {
   readonly unclean: boolean;
   /**
    * Reads the stored session, or the backup when the file is broken; `undefined` when there is
-   * none. The file is read at once, but parsed only here, as only a start that restores the
-   * session needs it.
+   * none. The file is read at once, and so is the backup when there is no file, but they are
+   * parsed only here, as only a start that restores the session needs it.
    */
   data(): Promise<unknown>;
 }
@@ -66,8 +66,8 @@ export class JsonFileSessionStore implements Disposable {
   }
 
   /**
-   * Reads the stored session, or the backup when the file is broken, and whether the browser
-   * that wrote it quit normally.
+   * Reads the stored session, or the backup when the file is missing or broken, and whether the
+   * browser that wrote it quit normally.
    */
   async read(): Promise<StoredSession> {
     const [unclean, text] = await Promise.all([
@@ -78,10 +78,16 @@ export class JsonFileSessionStore implements Disposable {
       readFile(this.path, 'utf8').catch(() => undefined),
     ]);
     const backup = `${this.path}.bak`;
+    // Without the file, the backup is read at once, so that the first window does not wait for
+    // it; a broken file leaves the backup until the session is asked for.
+    const spare =
+      text === undefined ? await readFile(backup, 'utf8').catch(() => undefined) : undefined;
     return {
       unclean,
       data: async () => {
-        for (const read of [() => text, () => readFile(backup, 'utf8')]) {
+        const reads =
+          text === undefined ? [() => spare] : [() => text, () => readFile(backup, 'utf8')];
+        for (const read of reads) {
           try {
             const content = await read();
             if (content !== undefined) return JSON.parse(content) as unknown;

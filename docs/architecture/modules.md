@@ -146,6 +146,9 @@ Two tests are designed to pin this down: "module disabled, access still denied" 
 
 - Each module's `main/` and `ui/` folders are built as separate chunks and loaded with `import()` only when the module is activated. The manifest and the `*.contrib.ts` files it imports are the only module code in the start-up bundle.
 - The start-up path loads the boot guard, policies, settings and the window immediately; everything else is loaded with `import()` after the first paint (see [performance.md](performance.md)).
+- Code that only web pages use loads with the first web page, also in a window restored at the start: the steps of the request pipeline, the content blocker's decisions about requests, the exceptions for certificates and the answers to the frames of web pages (`main/web-requests.ts`), and the code of the windows that follows the views of web pages (`platform/electron/web-pages.ts`). Its listeners are there from the start: a request or a frame that comes while the code loads waits for it, and a web page loads only once its view is followed.
+- The window commands that do not move the focus load with the first of them, or once the shell of the first window has loaded (`platform/electron/window-commands.ts`); the commands that move the focus run at once, after those that wait for that code.
+- Code that loads later keeps the calls that come before it: `LaterCode` (`kernel/modules/later-code.ts`) loads its code with the first call, and the calls that come while it loads run in their order once it is there, before any later call; a call that needs no code runs in its turn behind them. The requests of the shell that load later use `IpcRouter.handleLater` the same way.
 - An automated test will verify that the chunks of disabled modules are never requested.
 
 ## Boundaries between modules
@@ -224,12 +227,12 @@ The composition root in `app/src/main/` is designed to register the kernel servi
 
 The kernel is implemented in `app/src/kernel/` and covered by unit tests:
 
-| Part                 | Code                             | What exists                                                                                                                                |
-| -------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Dependency injection | `di/token.ts`, `di/container.ts` | Typed tokens, static `inject` lists, `singleton`, `scoped` and `transient` lifetimes, child containers, cycle detection and disposal.      |
-| Module system        | `modules/`                       | `defineModule`, the module registry, activation from policies, settings and dependencies, and a module host with one child container each. |
-| Events               | `events/`                        | Typed emitters and the event bus.                                                                                                          |
-| Lifecycle            | `lifecycle/`                     | Start-up phases and a shutdown that waits for joined work, with a timeout.                                                                 |
-| Logging and time     | `logging/`, `time/`              | Structured logger with ring-buffer and fan-out sinks; a clock port with a manual clock for tests.                                          |
+| Part                 | Code                             | What exists                                                                                                                                                                                    |
+| -------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dependency injection | `di/token.ts`, `di/container.ts` | Typed tokens, static `inject` lists, `singleton`, `scoped` and `transient` lifetimes, child containers, cycle detection and disposal.                                                          |
+| Module system        | `modules/`                       | `defineModule`, the module registry, activation from policies, settings and dependencies, a module host with one child container each, and `LaterCode` for code that loads with its first use. |
+| Events               | `events/`                        | Typed emitters and the event bus.                                                                                                                                                              |
+| Lifecycle            | `lifecycle/`                     | Start-up phases and a shutdown that waits for joined work, with a timeout.                                                                                                                     |
+| Logging and time     | `logging/`, `time/`              | Structured logger with ring-buffer and fan-out sinks; a clock port with a manual clock for tests.                                                                                              |
 
 Not implemented yet: feature modules, lazy UI chunks per module, and the generators that read manifests.

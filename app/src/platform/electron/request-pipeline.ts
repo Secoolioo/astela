@@ -1,4 +1,7 @@
 import type {
+  BeforeSendResponse,
+  CallbackResponse,
+  HeadersReceivedResponse,
   OnBeforeRequestListenerDetails,
   OnBeforeSendHeadersListenerDetails,
   OnHeadersReceivedListenerDetails,
@@ -106,41 +109,77 @@ export class RequestPipeline {
    * @param session - A session of web content.
    */
   attach(session: Session): void {
-    session.webRequest.onBeforeRequest((details, callback) => {
-      void this.decide(details).then(
-        (decision) => callback(decision ?? {}),
-        () => callback({}),
-      );
-    });
-    session.webRequest.onBeforeSendHeaders((details, callback) => {
-      void this.removals((interceptor) => interceptor.removedRequestHeaders?.(details)).then(
-        (names) =>
-          callback(
-            names.length === 0
-              ? {}
-              : { requestHeaders: withoutHeaders(details.requestHeaders, names) },
-          ),
-        () => callback({}),
-      );
-    });
-    session.webRequest.onHeadersReceived((details, callback) => {
-      let headers: Record<string, string[]> | undefined;
-      for (const interceptor of this.interceptors) {
-        const additions = interceptor.headersReceived?.(details);
-        if (additions !== undefined) {
-          headers = addHeaders(headers ?? details.responseHeaders ?? {}, additions);
-        }
+    session.webRequest.onBeforeRequest((details, callback) =>
+      this.beforeRequest(details, callback),
+    );
+    session.webRequest.onBeforeSendHeaders((details, callback) =>
+      this.beforeSendHeaders(details, callback),
+    );
+    session.webRequest.onHeadersReceived((details, callback) =>
+      this.headersReceived(details, callback),
+    );
+  }
+
+  /**
+   * Decides about a request before it starts: the first decision of an interceptor wins.
+   * @param details - The request.
+   * @param callback - Electron's answer.
+   */
+  beforeRequest(
+    details: OnBeforeRequestListenerDetails,
+    callback: (response: CallbackResponse) => void,
+  ): void {
+    void this.decide(details).then(
+      (decision) => callback(decision ?? {}),
+      () => callback({}),
+    );
+  }
+
+  /**
+   * Removes the request headers that the interceptors name before the request is sent.
+   * @param details - The request.
+   * @param callback - Electron's answer.
+   */
+  beforeSendHeaders(
+    details: OnBeforeSendHeadersListenerDetails,
+    callback: (response: BeforeSendResponse) => void,
+  ): void {
+    void this.removals((interceptor) => interceptor.removedRequestHeaders?.(details)).then(
+      (names) =>
+        callback(
+          names.length === 0
+            ? {}
+            : { requestHeaders: withoutHeaders(details.requestHeaders, names) },
+        ),
+      () => callback({}),
+    );
+  }
+
+  /**
+   * Adds the response headers of the interceptors and removes those that they name.
+   * @param details - The response.
+   * @param callback - Electron's answer.
+   */
+  headersReceived(
+    details: OnHeadersReceivedListenerDetails,
+    callback: (response: HeadersReceivedResponse) => void,
+  ): void {
+    let headers: Record<string, string[]> | undefined;
+    for (const interceptor of this.interceptors) {
+      const additions = interceptor.headersReceived?.(details);
+      if (additions !== undefined) {
+        headers = addHeaders(headers ?? details.responseHeaders ?? {}, additions);
       }
-      void this.removals((interceptor) => interceptor.removedResponseHeaders?.(details)).then(
-        (names) => {
-          if (names.length > 0) {
-            headers = withoutHeaders(headers ?? details.responseHeaders ?? {}, names);
-          }
-          callback(headers === undefined ? {} : { responseHeaders: headers });
-        },
-        () => callback(headers === undefined ? {} : { responseHeaders: headers }),
-      );
-    });
+    }
+    void this.removals((interceptor) => interceptor.removedResponseHeaders?.(details)).then(
+      (names) => {
+        if (names.length > 0) {
+          headers = withoutHeaders(headers ?? details.responseHeaders ?? {}, names);
+        }
+        callback(headers === undefined ? {} : { responseHeaders: headers });
+      },
+      () => callback(headers === undefined ? {} : { responseHeaders: headers }),
+    );
   }
 
   /**

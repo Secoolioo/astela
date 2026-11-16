@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { acceleratorOf, shortcutsOf, systemShortcutsOf } from '../menu-shortcuts.ts';
 import {
-  acceleratorOf,
   defaultShortcuts,
   displayShortcut,
   paletteCommands,
   shortcutProblem,
   shortcutTable,
-  shortcutsOf,
-  systemShortcutsOf,
   windowCommands,
 } from '../shortcuts.ts';
 

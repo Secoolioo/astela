@@ -1,4 +1,3 @@
-import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import {
   cookiesBlockedAtStart,
   enableFeature,
@@ -6,7 +5,7 @@ import {
 } from './cookie-blocking.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import { paletteCommands, shortcutTable, type WindowCommand } from '../shared/shortcuts.ts';
-import { ShortcutRecorder } from '../platform/electron/shortcuts.ts';
+import type { ShortcutRecorder } from '../platform/electron/shortcut-recorder.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -65,9 +64,7 @@ import {
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
-import { HttpsFirst } from '../platform/electron/https-first.ts';
-import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
-import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
+import { attachLater } from '../platform/electron/pipeline-later.ts';
 import { serveResources } from '../platform/blocker/resource-protocol.ts';
 import {
   cleanUserAgent,
@@ -87,8 +84,6 @@ import {
   DownloadFolderSetting,
   HomeButtonSetting,
   HomePageSetting,
-  HttpAllowlistSetting,
-  HttpsFirstSetting,
   SecureDnsSetting,
   SecureDnsTemplatesSetting,
   ShortcutsSetting,
@@ -134,9 +129,9 @@ import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts'
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { PrivateModeAvailability } from '../domain/windows/private-windows.ts';
 import type { SitePermissions } from '../domain/permissions/site-permissions.ts';
-import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
-import { connectBlockerFrames } from './blocker-frames.ts';
+import { listenToFrames } from './web-frames.ts';
+import type { WebRequests } from './web-requests.ts';
 import { freeName, pathKey } from '../domain/downloads/downloads.ts';
 import type { Downloads } from './downloads.ts';
 import type { PermissionPrompts } from './permission-prompt.ts';
@@ -363,25 +358,42 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       settings.get(CommandPaletteSetting) ? [] : paletteCommands,
     );
   let shortcuts = shortcutsNow();
-  const shortcutRecorder = new ShortcutRecorder();
-  // Every request of web content passes the request pipeline. HTTPS-First sends pages to the
-  // secure address first; the content blocker follows, and its engine loads with the first
-  // web page.
-  const pipeline = new RequestPipeline();
-  const httpsFirst = new HttpsFirst({
-    enabled: () => settings.get(HttpsFirstSetting),
-    allowlist: () => settings.get(HttpAllowlistSetting),
-  });
-  pipeline.add(httpsFirst);
-  // Private windows always keep third-party cookies away; regular ones as the settings say.
-  // When Chromium blocks them since the start, it does so for every session more precisely,
-  // and leaves the partitioned cookies that cannot track across sites.
-  const thirdPartyCookies = new ThirdPartyCookies({
-    blocked: (s) =>
-      !nativeCookieBlocking &&
-      (privateSessions.has(s) || settings.get(BlockThirdPartyCookiesSetting)),
-  });
-  pipeline.add(thirdPartyCookies);
+  // The editor of shortcuts on the settings page waits for key presses with a recorder that
+  // loads with the handlers of the browser's own pages, before the settings page.
+  let shortcutRecorder: ShortcutRecorder | undefined;
+  // Every request of web content passes the request pipeline: HTTPS-First, the third-party
+  // cookies and the content blocker, whose engine loads with the first web page. Their code,
+  // with the exceptions for certificates and the answers to the frames of web pages, loads
+  // with the first request or frame of a web page; requests and frames that come meanwhile
+  // wait for it. A start that shows only the browser's own pages loads none of it.
+  let web: WebRequests | undefined;
+  let webLoaded: Promise<WebRequests> | undefined;
+  let webFailed = false;
+  const loadWeb = (): Promise<WebRequests> => {
+    webLoaded ??= import('./web-requests.ts').then(
+      ({ webRequests }) =>
+        (web = webRequests({
+          app,
+          settings,
+          blockerDir: layout.blockerDir,
+          nativeCookieBlocking,
+          isPrivate: (s) => privateSessions.has(s),
+          isWebSession: (s) => webSessions.has(s),
+          blocking,
+          onBlocked: (contentsId) => windows.countBlocked(contentsId),
+          onStatus: () => windows.refreshShells(),
+          certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+          logger,
+        })),
+      (error: unknown) => {
+        webFailed = true;
+        logger.error('The code for the requests of web pages did not load', error);
+        windows.refreshShells();
+        throw error;
+      },
+    );
+    return webLoaded;
+  };
   // A blocker without filter data shows that it fails where it should block.
   const blocking = (url: string): Blocking => {
     const value = blockingFor(
@@ -389,21 +401,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       settings.get(ContentBlockerSetting),
       settings.get(BlockerAllowedSitesSetting),
     );
-    return value === 'on' && blocker.status === 'failed' ? 'failed' : value;
+    return value === 'on' && (webFailed || web?.blocker.status === 'failed') ? 'failed' : value;
   };
-  const blocker: ContentBlocker = new ContentBlocker({
-    dataDir: layout.blockerDir,
-    // Off everywhere wins; a page whose address is not known yet is blocked as usual.
-    enabled: (page) => settings.get(ContentBlockerSetting) && blocking(page) !== 'off',
-    onBlocked: (contentsId) => windows.countBlocked(contentsId),
-    onStatus: () => windows.refreshShells(),
-    extras: () => [
-      ...(settings.get(BlockerCookieNoticesSetting) ? (['cookies'] as const) : []),
-      ...(settings.get(BlockerAnnoyancesSetting) ? (['annoyances'] as const) : []),
-    ],
-    logger: logger.child('blocker'),
-  });
-  pipeline.add(blocker);
   // Web pages ask before they use the camera, the microphone, the location and the like; the
   // question loads with the first one.
   let prompts: Promise<PermissionPrompts> | undefined;
@@ -500,21 +499,19 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       shareScreen: (request, callback) => handler().shareScreen(request, callback),
     };
   };
-  const addFramePreload = connectBlockerFrames(
-    blocker,
-    (s) => webSessions.has(s),
+  const addFramePreload = listenToFrames(
+    () => loadWeb().then((loaded) => loaded.frames),
     layout.framePreload,
-    (origin, topOrigin, frameSession) =>
-      thirdPartyCookies.blocksFrame(origin, topOrigin, frameSession),
+    logger,
   );
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
       protocolHandler.refuse(s);
-      serveResources(s, (name) => blocker.resource(name));
+      serveResources(s, (name) => web?.blocker.resource(name));
       hardenSession(s, permissionsOf(s));
       s.on('will-download', (_event, item) => saveDownload(item, privateSessions.has(s)));
-      pipeline.attach(s);
+      attachLater(s, () => loadWeb().then((loaded) => loaded.pipeline));
       addFramePreload(s);
     }
   };
@@ -561,13 +558,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const router = new IpcRouter(gate, logger);
   if (app.commandLine.hasSwitch('sandbox-help')) {
     // Started by the AppImage launcher because the sandbox cannot work: no web content.
-    const [{ showSandboxHelp }, { runSandboxHelpSmokeTest }] = await Promise.all([
-      import('./sandbox-help.ts'),
-      import('./smoke-test.ts'),
-    ]);
-    const help = showSandboxHelp({
-      url: 'app://sandbox-help/',
-      origin: 'app://sandbox-help',
+    const { startSandboxHelp } = await import('./sandbox-help.ts');
+    await startSandboxHelp({
       preload: layout.pagePreload,
       partition: internalPartition,
       gate,
@@ -575,11 +567,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       logger,
       languageArguments: viewArguments,
     });
-    app.on('window-all-closed', () => app.quit());
-    const helpReport = app.commandLine.getSwitchValue('smoke-test');
-    if (helpReport !== '') {
-      runSandboxHelpSmokeTest(help.webContents, helpReport);
-    }
     return;
   }
   const searchTemplate = async (): Promise<string> => {
@@ -746,6 +733,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     // The handlers of the other internal pages load with the first of them, before it loads.
     prepareInternalPage: (page) => (page === 'newtab' ? undefined : connectPages()),
+    // So does the code that follows the views of web pages, with the first web page, and the
+    // commands of the windows that do not move the focus, with the first of them.
+    webPages: () => import('../platform/electron/web-pages.ts').then(({ webPages }) => webPages),
+    windowCommands: () =>
+      import('../platform/electron/window-commands.ts').then(
+        ({ windowCommands }) => windowCommands,
+      ),
     gate,
     router,
     logger,
@@ -753,11 +747,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
     // The pages of a site whose certificate the user accepted after the warning do not count
     // as secure.
-    certificateException: (contents, url) => certificates.covers(contents, url),
+    certificateException: (contents, url) => web?.certificates.covers(contents, url) === true,
     insecureAddressFor: (contents, failed, stopped) =>
-      httpsFirst.insecureAddressFor(contents, failed, stopped),
+      web?.httpsFirst.insecureAddressFor(contents, failed, stopped),
     shortcuts: () => shortcuts,
-    shortcutRecorder,
+    shortcutRecorder: () => shortcutRecorder,
     altOpensMenu: () => process.platform !== 'darwin' && settings.get(AltOpensMenuSetting),
     onPageCommand: (window, command, contents) =>
       void import('./page-tools.ts').then(({ runPageCommand }) =>
@@ -788,8 +782,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   let pages: Promise<void> | true | undefined;
   const connectPages = (): Promise<void> | undefined => {
     if (pages === true) return undefined;
-    pages ??= Promise.all([import('./page-handlers.ts'), loadBookmarks()])
-      .then(([{ connectPages: connect }, list]) => {
+    pages ??= Promise.all([
+      import('./page-handlers.ts'),
+      loadBookmarks(),
+      import('../platform/electron/shortcut-recorder.ts'),
+    ])
+      .then(([{ connectPages: connect }, list, { ShortcutRecorder: Recorder }]) => {
+        const recorder = new Recorder();
+        shortcutRecorder = recorder;
         connect({
           router,
           settings,
@@ -813,7 +813,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           shortcuts: {
             table: () => shortcuts,
             overrides: () => settings.get(ShortcutsSetting),
-            record: (contents) => shortcutRecorder.record(contents),
+            record: (contents) => recorder.record(contents),
           },
         });
         pages = true;
@@ -843,7 +843,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     // Popups that the filter lists name do not open, and count as blocked on their page.
     blocksPopup: (url, opener) => {
-      const blocked = blocker.blocksPopup(url, opener.getURL());
+      const blocked = web?.blocker.blocksPopup(url, opener.getURL()) === true;
       if (blocked) windows.countBlocked(opener.id);
       return blocked;
     },
@@ -868,11 +868,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       askForLogin(window, contents, details, info, callback, overlayOptions, router),
     );
   });
-  // Certificates that the user accepted after the warning hold for this session.
-  const certificates = new CertificateExceptions(
-    () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
-  );
-  certificates.attach(app);
   // Requests of the shell that its first paint does not need load with the first of them.
   router.handleLater(shellLaterChannels, () =>
     import('./shell-later.ts').then(({ registerLaterShellHandlers }) =>
@@ -883,8 +878,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         overlay: overlayOptions,
         openDownloads: (window, anchor) =>
           void loadDownloads().then((list) => list.open(window, anchor)),
-        allowCertificate: (contents) => certificates.allow(contents),
-        allowInsecure: (contents, address) => httpsFirst.allow(contents, address),
+        allowCertificate: (contents) => web?.certificates.allow(contents) === true,
+        allowInsecure: (contents, address) => web?.httpsFirst.allow(contents, address),
         folderContents: (folder) => bookmarks?.contents(folder) ?? [],
         bookmarks: loadBookmarks,
         suggestions: {
@@ -900,7 +895,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             router,
             overlay: overlayOptions,
             settings,
-            blocker,
+            blocker: (await loadWeb()).blocker,
             blocking,
           });
         },
@@ -1002,18 +997,21 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
     // Optional lists that were turned on load at once, so the next page has them.
     if (
-      blocker.status === 'ready' &&
+      web?.blocker.status === 'ready' &&
       keys.some(
         (key) => key === BlockerCookieNoticesSetting.key || key === BlockerAnnoyancesSetting.key,
       )
     ) {
-      void blocker.loadExtras();
+      void web.blocker.loadExtras();
     }
   });
 
   router.handle(GetBlockerStatus, async () => {
-    if (settings.get(ContentBlockerSetting)) await blocker.load();
-    return { status: blocker.status };
+    if (!settings.get(ContentBlockerSetting)) return { status: web?.blocker.status ?? 'idle' };
+    // Asking loads the filter data, and the code that works with it first.
+    const loaded = await loadWeb().catch(() => undefined);
+    await loaded?.blocker.load();
+    return { status: loaded?.blocker.status ?? 'failed' };
   });
 
   // The first start of a profile opens the setup guide instead of a new tab page.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { popupBounds, visibleBounds } from '../windows/window-bounds.ts';
+import { visibleBounds } from '../windows/window-bounds.ts';
+import { popupBounds } from '../windows/popup-bounds.ts';
 
 const screen = { x: 0, y: 0, width: 1920, height: 1040 };
 const right = { x: 1920, y: 0, width: 1280, height: 1000 };

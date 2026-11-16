@@ -106,7 +106,8 @@ describe('search engines', () => {
 
 describe('content blocker sites', () => {
   it('names http and https sites by host and tells where blocking works', async () => {
-    const { blockingFor, siteOf, toggleSite } = await import('../blocker/blocking.ts');
+    const { blockingFor, siteOf } = await import('../blocker/blocking.ts');
+    const { toggleSite } = await import('../blocker/allowed-sites.ts');
     expect(siteOf('https://News.Example:8443/a?b')).toBe('news.example');
     expect(siteOf('app://settings/')).toBeUndefined();
     expect(siteOf('not a url')).toBeUndefined();

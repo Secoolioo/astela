@@ -12,9 +12,10 @@ import {
   type ReleaseQuery,
   type SignatureVerifier,
 } from '../updates/feed.ts';
-import { updateMode, updatePolicies } from '../updates/update-policies.ts';
+import { updatePolicies } from '../updates/update-policies.ts';
 import {
   UpdateService,
+  updateMode,
   updatesItself,
   type UpdateEngine,
   type UpdateServiceOptions,

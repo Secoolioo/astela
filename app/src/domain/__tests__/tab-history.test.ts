@@ -6,10 +6,10 @@ import {
   memoryLimits,
   parseTabHistory,
   sessionLimits,
-  stepHistory,
   trimHistory,
   viewKindOf,
 } from '../tabs/tab-history.ts';
+import { stepHistory } from '../tabs/history-steps.ts';
 import type { HistoryEntry, TabHistory, ViewSnapshot } from '../tabs/view-history.ts';
 
 const entry = (url: string, pageState?: string): HistoryEntry =>

@@ -27,7 +27,8 @@ import {
   type CommandPalette,
   type PaletteItem,
 } from '../shared/ipc/overlay-contracts.ts';
-import { shortcutsOf, type WindowCommand } from '../shared/shortcuts.ts';
+import { shortcutsOf } from '../shared/menu-shortcuts.ts';
+import type { WindowCommand } from '../shared/shortcuts.ts';
 import { overlayBySender, overlayOf, track, windowOfOverlay } from './overlays.ts';
 
 /** What the command palette needs from the browser process. */

@@ -8,7 +8,6 @@ import {
   type WebContents,
 } from 'electron';
 import { is } from 'valibot';
-import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
 import { type TabStripPosition, type ToolbarItem, toolbarItems } from '../../shared/layout.ts';
@@ -35,9 +34,9 @@ import {
   currentEntry,
   currentOnly,
   memoryLimits,
-  stepHistory,
   trimHistory,
 } from '../../domain/tabs/tab-history.ts';
+import { stepHistory } from '../../domain/tabs/history-steps.ts';
 import {
   sessionWindow,
   type RestoredWindow,
@@ -51,21 +50,19 @@ import {
   type Density,
   type TitleBarArea,
 } from '../../domain/windows/title-bar.ts';
-import {
-  popupBounds,
-  visibleBounds,
-  type WindowBounds,
-} from '../../domain/windows/window-bounds.ts';
+import { visibleBounds, type WindowBounds } from '../../domain/windows/window-bounds.ts';
+import { popupBounds } from '../../domain/windows/popup-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
 import { AltTap } from '../../domain/windows/alt-tap.ts';
 import { HeldTyping, type TypedText } from '../../domain/palette/held-typing.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
+import { LaterCode } from '../../kernel/modules/later-code.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
-import { noAppRegionCss } from '../../shared/app-region.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
-import { commandForInput, type ShortcutRecorder, type WindowCommand } from './shortcuts.ts';
+import { commandForInput, type WindowCommand } from './shortcuts.ts';
+import type { ShortcutRecorder } from './shortcut-recorder.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
 
 /** Space the shell occupies at the window edges. */
@@ -178,8 +175,11 @@ export interface BrowserWindowOptions {
   readonly certificateException?: (contents: WebContents, url: string) => boolean;
   /** The keyboard shortcuts of the windows; the defaults of the system when left out. */
   readonly shortcuts?: () => ReadonlyMap<string, WindowCommand>;
-  /** Takes the key presses of a page while the editor of shortcuts waits for one. */
-  readonly shortcutRecorder?: ShortcutRecorder;
+  /**
+   * Takes the key presses of a page while the editor of shortcuts waits for one; there is none
+   * until the settings page could ask for one.
+   */
+  readonly shortcutRecorder?: () => ShortcutRecorder | undefined;
   /**
    * Whether Alt pressed and released alone opens the browser menu, as F10 does; never on
    * macOS, which opens its menus from the menu bar.
@@ -219,6 +219,115 @@ export interface BrowserWindowOptions {
    * loading the handlers of its channels; `undefined` when it is ready already.
    */
   readonly prepareInternalPage?: (page: TabPage) => Promise<void> | undefined;
+  /**
+   * Loads the code of the windows for their web pages (`web-pages.ts`), which follows their
+   * views as they navigate and fail, and zooms them. A web page loads once it is there.
+   */
+  readonly webPages: () => Promise<WebPages>;
+  /**
+   * Loads the commands of the windows that do not move the focus (`window-commands.ts`), with
+   * the first of them or once the shell of a window has loaded.
+   */
+  readonly windowCommands: () => Promise<WindowCommands>;
+}
+
+/**
+ * What the code of the windows that loads later (`web-pages.ts`, `window-commands.ts`) uses of
+ * a window.
+ */
+export interface WindowHost {
+  readonly window: BrowserWindowController;
+  readonly options: BrowserWindowOptions;
+  /** The views of the window's tabs. */
+  readonly entries: ReadonlyMap<TabId, TabEntry>;
+  /** The zoom that each view of a web page was made with. */
+  readonly madeZoom: WeakMap<WebContents, number>;
+  /** Records why a tab shows no page, or that it shows one again. */
+  setProblem(id: TabId, problem: TabProblem | null): void;
+  /** The web contents of a tab that shows a web page, and no internal page or problem. */
+  webContentsOf(id: TabId): WebContents | undefined;
+  /** Forgets the icon of a tab's page, and stops loading it. */
+  dropFavicon(id: TabId): void;
+}
+
+/** The code of the windows for their web pages, which loads with the first of them. */
+export interface WebPages {
+  /**
+   * Follows the events of a new view of a web page.
+   * @param host - The window.
+   * @param id - The tab of the view.
+   * @param view - The view.
+   * @param adopted - Whether a script made the view's page, which loads already.
+   */
+  watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: boolean): void;
+  /** Zooms a tab's page in or out by one step, or back to the default zoom. */
+  zoom(host: WindowHost, id: TabId, direction: 1 | -1 | 0): void;
+  /** Gives the pages of sites without a zoom of their own a new default zoom. */
+  applyDefaultZoom(host: WindowHost, factor: number): void;
+}
+
+/** The commands that move the focus, or the state of the window itself: they run at once. */
+const commandsNow = [
+  'tab.new',
+  'omnibox.focus',
+  'palette.open',
+  'tabs.search',
+  'menu.open',
+  'find.open',
+  'find.next',
+  'find.previous',
+  'window.fullscreen',
+] as const satisfies readonly WindowCommand[];
+
+/** A command that runs at once. */
+type CommandNow = (typeof commandsNow)[number];
+
+/** A window command whose code loads later, with the first of them (`window-commands.ts`). */
+export type LaterWindowCommand = Exclude<WindowCommand, CommandNow>;
+
+/** Whether a command runs at once. */
+function runsNow(command: WindowCommand): command is CommandNow {
+  return (commandsNow as readonly WindowCommand[]).includes(command);
+}
+
+/** The commands of the windows that load later. */
+export interface WindowCommands {
+  /**
+   * Runs a window command that does not move the focus at once.
+   * @param host - The window.
+   * @param command - The command.
+   */
+  run(host: WindowHost, command: LaterWindowCommand): void;
+}
+
+/** The code that loads later for the windows of each window manager, by their options. */
+const laterCode = new WeakMap<
+  BrowserWindowOptions,
+  { readonly pages: LaterCode<WebPages>; readonly commands: LaterCode<WindowCommands> }
+>();
+
+/**
+ * The code that loads later for the windows with these options, which every window of them
+ * shares: that for web pages, with the first web page of any of them, and the commands.
+ * @param options - The options of the windows.
+ */
+function laterCodeOf(options: BrowserWindowOptions): {
+  readonly pages: LaterCode<WebPages>;
+  readonly commands: LaterCode<WindowCommands>;
+} {
+  let code = laterCode.get(options);
+  if (code === undefined) {
+    code = {
+      pages: new LaterCode(options.webPages, (error) =>
+        options.logger.error('The code for web pages failed', error),
+      ),
+      commands: new LaterCode(options.windowCommands, (error) =>
+        options.logger.error('The commands of the windows failed', error),
+      ),
+    };
+    laterCode.set(options, code);
+  }
+  return code;
 }
 
 /** The commands that tools outside the window carry out on a web page. */
@@ -269,7 +378,7 @@ export interface NormalPlace {
 }
 
 /** The view that shows a tab, and what belongs to it. */
-interface TabEntry {
+export interface TabEntry {
   view: WebContentsView;
   /** The internal page that the view shows, or `undefined` for web content. */
   page: TabPage | undefined;
@@ -378,6 +487,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly waiting = new WeakMap<WebContents, PageJob>();
   /** The default zoom that each web view was made with, which Chromium keeps for its pages. */
   private readonly madeZoom = new WeakMap<WebContents, number>();
+  /** What the code of the window that loads later uses of it, made with its first use. */
+  private host: WindowHost | undefined;
   /** Tabs without a view, with what they show once they wake. */
   private readonly dormant = new Map<TabId, DormantTab>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
@@ -467,6 +578,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     );
     this.forwardContextMenu(this.shell, undefined);
     this.shell.webContents.once('did-finish-load', () => this.layout());
+    // The commands that load later are there before people can use the shell.
+    this.shell.webContents.once('did-finish-load', () =>
+      laterCodeOf(this.options).commands.prepare(),
+    );
     this.window.on('resize', () => this.layout());
     if (this.integrated) {
       // The system hides the window controls in full screen, where the top row needs no room.
@@ -1073,14 +1188,21 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
-   * Runs a window command, such as opening a tab.
+   * Runs a window command, such as opening a tab. The commands that move the focus run at once,
+   * so that the keys typed right after them follow the focus; the others load with the first of
+   * them, or once the shell has loaded. A command that comes while others wait for their code
+   * waits behind them, so the commands keep their order.
    * @param command - The command.
    */
   execute(command: WindowCommand): void {
+    const later = laterCodeOf(this.options).commands;
+    if (runsNow(command)) later.runInTurn(() => this.executeNow(command));
+    else later.run((commands) => commands.run(this.windowHost(), command));
+  }
+
+  /** Runs a command that moves the focus, or changes the state of the window itself. */
+  private executeNow(command: CommandNow): void {
     const active = this.tabs.active;
-    // The shortcuts that go to the next tab, or to a tab by its place, count the listed tabs.
-    const listed = this.tabs.listed;
-    const index = active === undefined ? -1 : listed.indexOf(active);
     switch (command) {
       case 'tab.new':
         this.tabs.open();
@@ -1089,64 +1211,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.publishNow();
         this.shell.webContents.focus();
         this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
-        break;
-      case 'tab.close':
-        if (active !== undefined) this.tabs.close(active.id);
-        break;
-      case 'tab.reopen':
-        this.tabs.reopenClosed();
-        break;
-      case 'tab.duplicate':
-        if (active !== undefined) this.tabAction(active.id, 'duplicate');
-        break;
-      case 'tab.closeOthers':
-        if (active !== undefined) this.tabAction(active.id, 'closeOthers');
-        break;
-      case 'tab.closeRight':
-        if (active !== undefined) this.tabAction(active.id, 'closeRight');
-        break;
-      case 'tab.next':
-      case 'tab.previous': {
-        const step = command === 'tab.next' ? 1 : -1;
-        const next = listed[(index + step + listed.length) % listed.length];
-        if (next !== undefined) this.tabs.activate(next.id);
-        break;
-      }
-      case 'tab.select1':
-      case 'tab.select2':
-      case 'tab.select3':
-      case 'tab.select4':
-      case 'tab.select5':
-      case 'tab.select6':
-      case 'tab.select7':
-      case 'tab.select8':
-      case 'tab.selectLast': {
-        const target =
-          command === 'tab.selectLast' ? listed.at(-1) : listed[Number(command.slice(-1)) - 1];
-        if (target !== undefined) this.tabs.activate(target.id);
-        break;
-      }
-      case 'tab.moveLeft':
-      case 'tab.moveRight':
-        if (active !== undefined) this.tabs.step(active.id, command === 'tab.moveRight' ? 1 : -1);
-        break;
-      case 'tab.pin':
-        if (active !== undefined) this.tabs.pin(active.id, !active.pinned);
-        break;
-      case 'tab.mute':
-        if (active !== undefined) this.setMuted(active.id, !active.muted);
-        break;
-      case 'page.reload':
-      case 'page.back':
-      case 'page.forward':
-        if (active !== undefined) {
-          const action =
-            command === 'page.reload' ? 'reload' : command === 'page.back' ? 'back' : 'forward';
-          this.tabs.run(active.id, action);
-        }
-        break;
-      case 'page.home':
-        if (active !== undefined) this.goHome(active.id);
         break;
       case 'omnibox.focus':
         this.shell.webContents.focus();
@@ -1160,34 +1224,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         // The shortcut closes the menu that is open; the shell opens it at its button.
         if (this.overlay?.popover?.kind === 'menu') this.overlay.close();
         else this.options.router.publish(ShellCommand, this.shell.webContents, 'menu.open');
-        break;
-      case 'settings.open':
-        this.openPage('settings');
-        break;
-      case 'history.open':
-        this.openPage('history');
-        break;
-      case 'bookmarks.open':
-        this.openPage('bookmarks');
-        break;
-      case 'bookmarks.toggleBar':
-        this.options.toggleBookmarksBar?.();
-        break;
-      case 'downloads.open':
-        this.options.showDownloads?.(this);
-        break;
-      case 'window.new':
-        this.options.openWindow?.();
-        break;
-      case 'window.newPrivate':
-        this.options.openPrivateWindow?.();
-        break;
-      case 'bookmark.toggle':
-        // Only web pages get bookmarks; the browser's own pages have their own commands. The
-        // shell opens the popover of the star at the star, or at the menu button without it.
-        if (active !== undefined && /^https?:/i.test(active.url)) {
-          this.options.router.publish(ShellCommand, this.shell.webContents, 'bookmark.edit');
-        }
         break;
       case 'find.open':
       case 'find.next':
@@ -1206,32 +1242,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           this.find(active.id, this.finding.query, command === 'find.next', true);
         }
         break;
-      case 'zoom.in':
-      case 'zoom.out':
-      case 'zoom.reset':
-        if (active !== undefined) {
-          this.zoom(active.id, command === 'zoom.in' ? 1 : command === 'zoom.out' ? -1 : 0);
-        }
-        break;
       case 'window.fullscreen':
         this.userFullScreen = !this.window.isFullScreen();
         this.setFullScreen(this.userFullScreen);
-        break;
-      case 'page.reloadHard':
-      case 'page.print':
-      case 'page.save':
-      case 'page.source':
-      case 'devtools.toggle': {
-        // These work on web pages; the browser's own pages keep them to themselves.
-        const contents = active === undefined ? undefined : this.webContentsOf(active.id);
-        if (contents === undefined) break;
-        if (command === 'page.reloadHard') contents.reloadIgnoringCache();
-        else this.options.onPageCommand?.(this, command, contents);
-        break;
-      }
-      case 'app.about':
-      case 'app.quit':
-        this.options.onAppCommand?.(this, command);
         break;
     }
   }
@@ -1362,26 +1375,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param direction - 1 to zoom in, -1 to zoom out, 0 for the default zoom.
    */
   zoom(id: TabId, direction: 1 | -1 | 0): void {
-    const contents = this.webContentsOf(id);
-    if (contents === undefined) return;
-    const current = contents.getZoomFactor();
-    const factor =
-      direction === 0
-        ? (this.options.defaultZoom?.() ?? 1)
-        : direction > 0
-          ? (zoomFactors.find((step) => step > current + 0.001) ?? current)
-          : (zoomFactors.toReversed().find((step) => step < current - 0.001) ?? current);
-    contents.setZoomFactor(factor);
-    this.tabs.update(id, { zoom: factor });
-    // Chromium zooms the site in every tab that shows it.
-    for (const [other, entry] of this.entries) {
-      const shown = entry.view.webContents;
-      if (other !== id && entry.page === undefined && !shown.isDestroyed()) {
-        this.tabs.update(other, { zoom: shown.getZoomFactor() });
-      }
-    }
-    // A private window keeps no zoom for later visits.
-    if (!this.isPrivate) this.options.onZoom?.(contents.getURL(), factor);
+    // The browser's own pages keep their zoom; the code for web pages zooms theirs.
+    if (this.webContentsOf(id) === undefined) return;
+    this.webPages().run((pages) => pages.zoom(this.windowHost(), id, direction));
   }
 
   /**
@@ -1389,13 +1385,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param factor - The new default zoom.
    */
   applyDefaultZoom(factor: number): void {
-    for (const [id, entry] of this.entries) {
-      const contents = entry.view.webContents;
-      if (entry.page !== undefined || contents.isDestroyed()) continue;
-      if (this.options.zoomFor?.(contents.getURL()) !== undefined) continue;
-      contents.setZoomFactor(factor);
-      this.tabs.update(id, { zoom: factor });
-    }
+    // Before the code for web pages has loaded, no web page has loaded either: the first ones
+    // get the default zoom of the moment as they load.
+    this.webPages().loaded?.applyDefaultZoom(this.windowHost(), factor);
   }
 
   /** The web contents of a tab that shows a web page, and no internal page or problem. */
@@ -1470,7 +1462,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * two pages.
    */
   private intercept(event: { preventDefault(): void }, input: Input, contentsId: number): void {
-    if (this.options.shortcutRecorder?.take(contentsId, input, process.platform) === true) {
+    if (this.options.shortcutRecorder?.()?.take(contentsId, input, process.platform) === true) {
       event.preventDefault();
       this.altTap.reset();
       return;
@@ -1695,106 +1687,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     const sync = (): void => this.sync(id, contents);
     if (page === undefined) {
-      // The frame preload keeps every document that a web page loads from moving the window. A
-      // page that a script opened shows what the script wrote into its first, empty document,
-      // in which no preload runs, and every document gets the style sheet again once it is
-      // parsed, in case no preload ran in it either.
-      if (adopted !== undefined) keepAppRegionsOut(contents);
-      contents.on('dom-ready', () => keepAppRegionsOut(contents));
-      // Pages that change their address with the History API, as many web apps do, count as
-      // visits too; a jump to an anchor on the same page does not. A private window keeps no
-      // history.
-      const onVisit = this.isPrivate ? undefined : this.options.onVisit;
-      let visited = '';
-      const visit = (address: string): void => {
-        if (!/^https?:/i.test(address) || withoutHash(address) === withoutHash(visited)) return;
-        visited = address;
-        onVisit?.(address, contents.getTitle(), false);
-      };
-      contents.on('did-navigate', (_event, address) => {
-        // The page of a tab that wakes with its history is no new visit.
-        const entry = this.entries.get(id);
-        if (entry?.view === view && entry.restored === address) {
-          visited = address;
-          return;
-        }
-        visited = '';
-        visit(address);
-      });
-      contents.on('did-navigate-in-page', (_event, address, isMainFrame) => {
-        if (isMainFrame) visit(address);
-      });
-      contents.on('page-title-updated', (_event, title) => {
-        const address = contents.getURL();
-        if (/^https?:/i.test(address)) onVisit?.(address, title, true);
-      });
-    }
-    if (page === undefined) {
-      // A page that could not be loaded, or whose renderer is gone, shows the shell's page
-      // for it instead of an empty one.
-      contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
-        if (!isMainFrame) return;
-        // A load that a new navigation stopped is no error, unless HTTPS-First stopped it
-        // because its secure address gave no answer in time.
-        if (code === -3) {
-          const slow = this.options.insecureAddressFor?.(contents, failed, true);
-          if (slow !== undefined) {
-            this.setProblem(id, {
-              kind: 'insecure',
-              code: 'ERR_TIMED_OUT',
-              url: slow,
-              proceed: true,
-            });
-          }
-          return;
-        }
-        const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
-        // A site that HTTPS-First could not load securely offers its insecure address after a
-        // warning. Without a name or a network, the insecure address would not load either.
-        const insecure =
-          code === -105 || code === -106
-            ? undefined
-            : this.options.insecureAddressFor?.(contents, failed, false);
-        if (insecure !== undefined) {
-          this.setProblem(id, { kind: 'insecure', code: name, url: insecure, proceed: true });
-          return;
-        }
-        const certificate = code <= -200 && code > -300;
-        this.setProblem(id, {
-          kind: certificate ? 'certificate' : 'error',
-          code: name,
-          url: failed,
-          proceed: certificate && (this.options.certificateOverride?.() ?? false),
-        });
-      });
-      // A page that a script opened may close itself; its tab goes with it.
-      contents.once('destroyed', () => {
-        if (!this.window.isDestroyed() && this.entries.get(id)?.view === view) {
-          this.tabs.close(id);
-        }
-      });
-      // Electron reports only the process of the page itself, and the tab has nothing to show
-      // once it ended, however it ended: with the sandbox of Linux, a renderer that crashed can
-      // count as one that exited cleanly.
-      contents.on('render-process-gone', (_event, details) => {
-        if (this.window.isDestroyed() || contents.isDestroyed()) return;
-        const code = details.reason.toUpperCase().replaceAll('-', '_');
-        this.setProblem(id, { kind: 'crashed', code, url: contents.getURL(), proceed: false });
-      });
-      contents.on('did-navigate', (_event, address) => {
-        this.setProblem(id, null);
-        // A site keeps the zoom it was left at, also after the browser restarts, and other
-        // sites get the default zoom. Chromium gives a page the zoom that its site had in this
-        // session, or else the default zoom that the tab was made with, which may be old.
-        const saved = this.options.zoomFor?.(address);
-        const base = this.options.defaultZoom?.() ?? 1;
-        const factor = contents.getZoomFactor();
-        if (sameZoom(factor, this.madeZoom.get(contents) ?? base) || sameZoom(factor, base)) {
-          const wanted = saved ?? base;
-          if (!sameZoom(factor, wanted)) contents.setZoomFactor(wanted);
-        }
-      });
-      contents.on('unresponsive', () => this.options.onUnresponsive?.(this, id, contents));
+      // What a web page does as it navigates, fails or stops answering is followed by the code
+      // for web pages, which loads with the first of them; the page loads once it is there.
+      this.watchWebPage(id, view, adopted !== undefined);
       contents.on('found-in-page', (_event, result) => {
         if (this.finding === null || id !== this.tabs.active?.id) return;
         this.finding = {
@@ -1804,10 +1699,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         };
         this.schedulePublish();
       });
-      // Ctrl and the mouse wheel, or a pinch, zoom in steps like the keys.
-      contents.on('zoom-changed', (_event, direction) =>
-        this.zoom(id, direction === 'in' ? 1 : -1),
-      );
       // A video or another element in full screen covers the whole window, which takes the
       // whole screen until the page leaves full screen, unless the user put it in full screen.
       contents.on('enter-html-full-screen', () => {
@@ -1827,17 +1718,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.tabs.update(id, { blocked: 0 });
       }
     });
-    // So does the icon, which goes once another page has taken its place: a link that starts
-    // a download, or a response without content, leaves the page as it was.
-    contents.on('did-navigate', (_event, address) => {
-      const entry = this.entries.get(id);
-      if (entry?.view !== view) return;
-      // The page of a tab that wakes with its history is the page whose icon the tab shows.
-      const restored = entry.restored;
-      entry.restored = undefined;
-      if (restored !== address) this.dropFavicon(id);
-    });
-    contents.on('page-favicon-updated', (_event, urls) => void this.loadFavicon(id, view, urls));
     contents.on('audio-state-changed', ({ audible }) => {
       if (this.entries.get(id)?.view === view) this.tabs.update(id, { audible });
     });
@@ -1968,32 +1848,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const contents = this.entries.get(id)?.view.webContents;
     if (contents !== undefined && !contents.isDestroyed()) contents.setAudioMuted(muted);
     this.tabs.update(id, { muted });
-  }
-
-  /**
-   * Loads the icon of a tab's page, which the tab shows unless its page changed meanwhile.
-   * A tab loads one icon at a time: a newer icon of its page stops the load of the one
-   * before, and so does another page.
-   */
-  private async loadFavicon(id: TabId, view: WebContentsView, urls: string[]): Promise<void> {
-    const url = urls.find((candidate) => /^(?:https?:|data:image\/)/i.test(candidate));
-    const entry = this.entries.get(id);
-    if (url === undefined || entry?.view !== view) return;
-    const before = entry.iconLoad;
-    const loading = new AbortController();
-    entry.iconLoad = loading;
-    const { session } = view.webContents;
-    const page = view.webContents.getURL();
-    const { favicons } = await import('./favicons.ts');
-    const loaded = favicons.load(session, url, page, loading.signal);
-    // The load before gives way only now, so that a page that names the same icon again
-    // does not start its load anew.
-    before?.abort();
-    const key = await loaded;
-    if (entry.iconLoad === loading) entry.iconLoad = undefined;
-    if (key !== undefined && !loading.signal.aborted && this.entries.get(id)?.view === view) {
-      this.tabs.update(id, { favicon: key });
-    }
   }
 
   /** Forgets the icon of a tab's page, and stops loading it, once the tab no longer shows it. */
@@ -2162,23 +2016,57 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
-   * Runs what a view is to do once the browser process is ready for its internal page: at
-   * once for a web page or a page that is ready, or else after the page's handlers loaded. A
-   * later job of the same view wins over this one while it waits.
+   * Runs what a view is to do once the browser process is ready for its page: at once for a
+   * page that is ready, or else after the handlers of an internal page loaded, or the code
+   * for web pages that follows the view of a web page. A later job of the same view wins over
+   * this one while it waits.
    */
   private runJob(contents: WebContents, page: TabPage | undefined, job: PageJob): void {
-    const preparing = page === undefined ? undefined : this.options.prepareInternalPage?.(page);
-    if (preparing === undefined) {
-      this.waiting.delete(contents);
-      this.startJob(contents, job);
-      return;
-    }
     this.waiting.set(contents, job);
-    void preparing.then(() => {
+    const start = (): void => {
       if (this.waiting.get(contents) !== job || contents.isDestroyed()) return;
       this.waiting.delete(contents);
       this.startJob(contents, job);
+    };
+    // A web page loads once the code for web pages follows its view, which a view made while
+    // that code loads waits for; it loads without it when the code cannot load.
+    if (page === undefined) {
+      this.webPages().run(start, start);
+      return;
+    }
+    const preparing = this.options.prepareInternalPage?.(page);
+    if (preparing === undefined) start();
+    else void preparing.then(start);
+  }
+
+  /**
+   * Has the code for web pages follow a new view of a web page: at once when it has loaded,
+   * or else once it is there, before the view's first load.
+   */
+  private watchWebPage(id: TabId, view: WebContentsView, adopted: boolean): void {
+    const contents = view.webContents;
+    this.webPages().run((pages) => {
+      if (!contents.isDestroyed()) pages.watch(this.windowHost(), id, view, adopted);
     });
+  }
+
+  /** The code for web pages, which loads with the first web page of any window. */
+  private webPages(): LaterCode<WebPages> {
+    return laterCodeOf(this.options).pages;
+  }
+
+  /** What the code of the window that loads later uses of it. */
+  private windowHost(): WindowHost {
+    this.host ??= {
+      window: this,
+      options: this.options,
+      entries: this.entries,
+      madeZoom: this.madeZoom,
+      setProblem: (id, problem) => this.setProblem(id, problem),
+      webContentsOf: (id) => this.webContentsOf(id),
+      dropFavicon: (id) => this.dropFavicon(id),
+    };
+    return this.host;
   }
 
   private startJob(contents: WebContents, job: PageJob): void {
@@ -2561,12 +2449,6 @@ function samePopover(a: ShellPopover | null, b: ShellPopover | null): boolean {
   return a === b || (a !== null && b !== null && a.kind === b.kind && a.folder === b.folder);
 }
 
-/** An address without its fragment, which names a place on the page. */
-function withoutHash(address: string): string {
-  const hash = address.indexOf('#');
-  return hash === -1 ? address : address.slice(0, hash);
-}
-
 /** The work areas of the screens, where windows may go. */
 function workAreas(): WindowBounds[] {
   return screen.getAllDisplays().map((display) => display.workArea);
@@ -2575,17 +2457,6 @@ function workAreas(): WindowBounds[] {
 /** The argument that gives the browser's own views in a private window their look. */
 function privateArgument(privateWindow: boolean): string[] {
   return privateWindow ? [privateWindowArgument] : [];
-}
-
-/**
- * Gives the current document of a web page the user style sheet that keeps it from marking
- * regions that move the window.
- * @param contents - The web page.
- */
-function keepAppRegionsOut(contents: WebContents): void {
-  if (contents.isDestroyed()) return;
-  // A page that went away meanwhile needs the style sheet no more.
-  contents.insertCSS(noAppRegionCss, { cssOrigin: 'user' }).catch(() => undefined);
 }
 
 /**

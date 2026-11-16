@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Input, WebContents } from 'electron';
 import { describe, expect, it } from 'vitest';
-import { ShortcutRecorder } from '../electron/shortcuts.ts';
+import { ShortcutRecorder } from '../electron/shortcut-recorder.ts';
 
 const key = (input: Partial<Input>): Input =>
   ({
