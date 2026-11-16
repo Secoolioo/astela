@@ -25,13 +25,19 @@ import {
   type FSWatcher,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
+import { release, tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type * as Electron from 'electron';
 import type { ShellState } from '../../src/shared/ipc/shell-contracts.ts';
 
 const fixtures = resolve(import.meta.dirname, 'fixtures');
 const appDir = resolve(import.meta.dirname, '../..');
+
+/**
+ * macOS 15 and later (Darwin 24) let people choose what to share in a picker of their own,
+ * which needs no access to the whole screen, and the browser leaves the choice to it.
+ */
+export const systemPicker = process.platform === 'darwin' && Number.parseInt(release(), 10) >= 24;
 
 declare global {
   interface Window {
@@ -1450,7 +1456,7 @@ export async function startAgain(
  * or EBUSY; the removal is then tried again for up to about ten seconds.
  * @param path - The folder.
  */
-function removeAfterExit(path: string): void {
+export function removeAfterExit(path: string): void {
   rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 

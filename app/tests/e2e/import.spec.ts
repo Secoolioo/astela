@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { FixtureServer, launch, pressNative, waitForPage } from './harness.ts';
+import { FixtureServer, launch, pressNative, removeAfterExit, waitForPage } from './harness.ts';
 
 const server = new FixtureServer();
 const home = mkdtempSync(join(tmpdir(), 'e2e-home-'));
@@ -13,7 +13,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await server.stop();
-  rmSync(home, { recursive: true, force: true });
+  removeAfterExit(home);
 });
 
 /** Where Chrome and Firefox keep their profiles on this system, below a home folder. */

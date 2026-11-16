@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Frame, type Page } from '@playwright/test';
@@ -11,6 +11,7 @@ import {
   overlayPage,
   pressNative,
   recordMenus,
+  removeAfterExit,
   shellState,
   tabViews,
   waitForPage,
@@ -934,7 +935,7 @@ test('leaves room for the window controls where the window draws them', async ()
     );
   } finally {
     await browser.close();
-    rmSync(config, { recursive: true, force: true });
+    removeAfterExit(config);
   }
 });
 
