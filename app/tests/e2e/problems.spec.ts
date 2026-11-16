@@ -56,7 +56,9 @@ test('tells why a page could not be loaded and loads it once it is there', async
     const url = `http://127.0.0.1:${port}/late.html`;
     await open(browser, url);
     const problem = browser.shell.getByRole('region', { name: "This page can't be reached" });
-    await expect(problem).toBeVisible();
+    // Windows tries a refused connection to a local port again for about two seconds before it
+    // gives up, and the first web page also waits for the code of web pages.
+    await expect(problem).toBeVisible({ timeout: 15_000 });
     await expect(problem).toContainText(`127.0.0.1:${port} refused to connect.`);
     await expect(problem).toContainText('Error: ERR_CONNECTION_REFUSED');
     expect(await pageShown(browser, url)).toBe(false);
