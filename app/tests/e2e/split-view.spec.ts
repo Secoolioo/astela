@@ -496,6 +496,32 @@ test('opens a tab in split view from its menu, swaps the sides and ends the spli
   }
 });
 
+/**
+ * Moves the window off the pointer of the system, which the mouse of Playwright leaves where it
+ * is. On Windows, that pointer rests in the middle of the screen, on the divider of a window
+ * that fills the screen, and as the pages move under it in a drag, the shell gets a move of the
+ * mouse there without the button that Playwright holds, which ends the drag after its first
+ * width. A real drag holds the button of that pointer.
+ */
+async function keepPointerOff(browser: Browser): Promise<void> {
+  const off = await browser.main.evaluate(({ BaseWindow, screen }) => {
+    const point = screen.getCursorScreenPoint();
+    const area = screen.getDisplayNearestPoint(point).workArea;
+    const holds = (window: Electron.BaseWindow): boolean => {
+      const { x, y, width, height } = window.getBounds();
+      return point.x >= x && point.x < x + width && point.y >= y && point.y < y + height;
+    };
+    for (const window of BaseWindow.getAllWindows().filter(holds)) {
+      const { x, height } = window.getBounds();
+      // The side of the pointer with more room keeps more of the window on the screen.
+      const above = point.y - area.y > area.y + area.height - point.y;
+      window.setPosition(x, above ? point.y - height : point.y + 1);
+    }
+    return !BaseWindow.getAllWindows().some(holds);
+  });
+  expect(off).toBe(true);
+}
+
 test('moves the divider with the pointer and the keyboard, and both pages follow', async () => {
   const browser = await launch();
   try {
@@ -517,6 +543,7 @@ test('moves the divider with the pointer and the keyboard, and both pages follow
     // The divider lies between the two pages, where the browser process leaves room for it.
     expect(box).toMatchObject({ x: leftBefore.x + leftBefore.width, width: 8 });
     expect(rightBefore.x).toBe(box.x + box.width);
+    await keepPointerOff(browser);
     const mouse = browser.shell.mouse;
     await mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await mouse.down();
@@ -580,6 +607,7 @@ test('keeps the width where a long drag on a display of 1000 Hz lets the divider
         window.setTimeout(() => callback(performance.now()), 1);
       window.cancelAnimationFrame = (frame) => window.clearTimeout(frame);
     });
+    await keepPointerOff(browser);
     const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     await browser.shell.mouse.move(middle.x, middle.y);
     await browser.shell.mouse.down();
