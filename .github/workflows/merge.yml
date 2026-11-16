@@ -66,11 +66,13 @@ jobs:
               echo "Never got a runner: $name"
               continue
             fi
-            # Cancelled at the time limit with a step still running, and no other
-            # error than that limit: the watchdogs and step limits never reported.
+            # Cancelled at the time limit with a step still running, no step that
+            # failed before, and no other error than that limit: the watchdogs and
+            # step limits never reported. A step that failed first is a result: the
+            # MSI test of job 131478536154 failed, then its runner stopped answering.
             notes=$(gh api "repos/$REPOSITORY/check-runs/$id/annotations" \
               --jq '[.[] | select(.annotation_level == "failure") | .message] | join(" | ")')
-            if [[ "$conclusion" == cancelled && "$unfinished" -gt 0 && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
+            if [[ "$conclusion" == cancelled && "$unfinished" -gt 0 && -z "$failing" && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
               echo "Lost its runner: $name"
               continue
             fi
