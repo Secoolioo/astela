@@ -47,10 +47,22 @@ export interface Tab {
   readonly muted: boolean;
   /** Whether the tab is pinned: pinned tabs come first and are small. */
   readonly pinned: boolean;
+  /**
+   * Whether the tab has no view and keeps only its history, as a tab that was put to sleep or
+   * a restored tab that was not shown yet; it loads again once it is shown.
+   */
+  readonly sleeping: boolean;
 }
 
 /** Fields of a tab that the web view reports. */
 export type TabUpdate = Partial<Omit<Tab, 'id'>>;
+
+/**
+ * Who puts a tab to sleep: people from the menu of the tab (`manual`), or the browser after
+ * the tab was not used for a while (`auto`), which leaves pinned tabs and pages that ask to
+ * stay awake.
+ */
+export type SleepMode = 'manual' | 'auto';
 
 /**
  * Port to the web views of a window. The platform layer implements it with one
@@ -71,6 +83,13 @@ export interface TabViewPort {
   load(id: TabId, url: string): void;
   /** Runs a history or loading action. */
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void;
+  /**
+   * Puts a tab that the window does not show to sleep: its view closes and the tab keeps its
+   * history, with which it loads again once it is shown.
+   * @returns Whether the tab goes to sleep; a tab that is busy, such as one that plays sound,
+   *   stays awake.
+   */
+  sleep(id: TabId, mode: SleepMode): boolean;
 }
 
 /** Options for {@link TabService.open}. */
@@ -113,10 +132,14 @@ const tabFields = [
   'audible',
   'muted',
   'pinned',
+  'sleeping',
 ] as const;
 
-/** Fields of a tab that a session keeps. */
-const keptFields = ['url', 'title', 'pinned'] as const;
+/**
+ * Fields of a tab that a session keeps, or that change what it keeps: the history of a tab that
+ * sleeps comes from another place than that of a tab that is awake.
+ */
+const keptFields = ['url', 'title', 'pinned', 'sleeping'] as const;
 
 /** A change that a session keeps. */
 export interface KeptChange {
@@ -151,8 +174,8 @@ export class TabService implements Disposable {
   readonly onDidChange: Event<void> = this.changeEmitter.event;
   private readonly keptEmitter = new Emitter<KeptChange>();
   /**
-   * Fires after a change that a session keeps: tabs that open, close, move or are pinned, the
-   * active tab, and the address and the title of a page.
+   * Fires after a change that a session keeps: tabs that open, close, move, are pinned, sleep
+   * or wake, the active tab, and the address and the title of a page.
    */
   readonly onDidChangeKept: Event<KeptChange> = this.keptEmitter.event;
 
@@ -225,6 +248,7 @@ export class TabService implements Disposable {
       audible: false,
       muted: false,
       pinned: options.pinned === true,
+      sleeping: lazy,
     };
     const activate = options.activate ?? true;
     if (options.after !== undefined) this.require(options.after);
@@ -343,6 +367,19 @@ export class TabService implements Disposable {
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
     this.require(id);
     this.views.run(id, action);
+  }
+
+  /**
+   * Puts a tab to sleep: its view closes, and the tab loads again with its history once it is
+   * shown. A tab that the window shows stays awake.
+   * @param id - The tab.
+   * @param mode - Whether people asked for it, or the tab was not used for a while.
+   * @returns Whether the tab goes to sleep; not for a tab that shows, that the window does not
+   *   have, or whose page is busy.
+   */
+  sleep(id: TabId, mode: SleepMode = 'manual'): boolean {
+    if (this.stripOf(id) === undefined || this.shown.includes(id)) return false;
+    return this.views.sleep(id, mode);
   }
 
   /**

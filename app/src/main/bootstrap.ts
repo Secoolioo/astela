@@ -7,9 +7,9 @@ import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.
 import { paletteCommands, shortcutTable, type WindowCommand } from '../shared/shortcuts.ts';
 import type { ShortcutRecorder } from '../platform/electron/shortcut-recorder.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
-import { app, Menu, session, webContents, type DownloadItem, type Session } from 'electron';
-import { existsSync, mkdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { app, Menu, session, webContents, type Session } from 'electron';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { brand } from '../shared/brand.ts';
 import { languageArguments, localeArguments } from '../shared/ui-language.ts';
 import { sameZoom } from '../shared/zoom.ts';
@@ -63,6 +63,7 @@ import {
   type PaletteOpening,
 } from '../platform/electron/browser-window.ts';
 import { IpcGate } from '../platform/electron/ipc-gate.ts';
+import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
 import { attachLater } from '../platform/electron/pipeline-later.ts';
 import { serveResources } from '../platform/blocker/resource-protocol.ts';
@@ -79,7 +80,6 @@ import { SystemClock } from '../platform/node/system-clock.ts';
 import { JsonFilePolicyCache } from '../platform/policy/policy-cache.ts';
 import { createPolicyProviders } from '../platform/policy/platform-providers.ts';
 import {
-  AskDownloadSetting,
   BookmarksBarSetting,
   DownloadFolderSetting,
   HomeButtonSetting,
@@ -110,7 +110,6 @@ import {
   SearchUrlTemplate,
   SetupShownSetting,
   SiteZoomSetting,
-  SitePermissionsSetting,
   TabStripPositionSetting,
   TitleBarSetting,
   DensitySetting,
@@ -128,14 +127,9 @@ import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { PrivateModeAvailability } from '../domain/windows/private-windows.ts';
-import type { SitePermissions } from '../domain/permissions/site-permissions.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
-import { listenToFrames } from './web-frames.ts';
 import type { WebRequests } from './web-requests.ts';
-import { freeName, pathKey } from '../domain/downloads/downloads.ts';
 import type { Downloads } from './downloads.ts';
-import type { PermissionPrompts } from './permission-prompt.ts';
-import { sitePermissions } from './site-permissions.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
 import { checkBoot } from './boot.ts';
 import { toolbarBackground, windowBackground } from './window-background.ts';
@@ -195,6 +189,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const smokeReport = app.commandLine.getSwitchValue('smoke-test');
   const smokeTest = smokeReport === '' ? undefined : import('./smoke-test.ts');
   const clock = new SystemClock();
+  // What the pages of tabs do that keeps them awake loads with the code for web pages, before
+  // the first web page loads, and with the timer of sleeping tabs: no page can be busy before.
+  let activity: TabActivity | undefined;
+  const loadActivity = (): Promise<TabActivity> =>
+    import('../platform/electron/tab-activity.ts').then(
+      ({ TabActivity: Activity }) => (activity ??= new Activity(() => clock.wallTime())),
+    );
   const userData = app.getPath('userData');
   const recentLogs = new RingBufferLogSink(500);
   const logger: Logger = new SinkLogger(
@@ -383,6 +384,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           onBlocked: (contentsId) => windows.countBlocked(contentsId),
           onStatus: () => windows.refreshShells(),
           certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
+          windows,
+          router,
+          overlay: overlayOptions,
+          downloadFolder,
+          downloads: loadDownloads,
+          activity: () => activity,
+          webSessions,
+          framePreload: layout.framePreload,
           logger,
         })),
       (error: unknown) => {
@@ -403,36 +412,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     );
     return value === 'on' && (webFailed || web?.blocker.status === 'failed') ? 'failed' : value;
   };
-  // Web pages ask before they use the camera, the microphone, the location and the like; the
-  // question loads with the first one.
-  let prompts: Promise<PermissionPrompts> | undefined;
-  const loadPrompts = (): Promise<PermissionPrompts> => {
-    prompts ??= import('./permission-prompt.ts').then(({ permissionPrompts }) =>
-      permissionPrompts(overlayOptions, router, logger),
-    );
-    return prompts;
-  };
-  const webPermissions = sitePermissions({
-    sites: () => settings.get(SitePermissionsSetting),
-    save: (sites) => {
-      const result = settings.set(SitePermissionsSetting, sites);
-      if (!result.ok) logger.warn('A permission was not saved', { error: result.error.kind });
-    },
-    windowOf: (contents) => windows.forTab(contents),
-    prompts: loadPrompts,
-    logger,
-  });
-  // Private windows ask again, and keep the answers only until the last of them closes.
-  let privateSites: SitePermissions = {};
-  const privatePermissions = sitePermissions({
-    sites: () => privateSites,
-    save: (sites) => {
-      privateSites = sites;
-    },
-    windowOf: (contents) => windows.forTab(contents),
-    prompts: loadPrompts,
-    logger,
-  });
   // Downloads go to the downloads folder without a question, under a name that is free there,
   // also from downloads that still run; the list and its panel load with the first download.
   let downloads: Downloads | undefined;
@@ -455,64 +434,41 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     });
     return downloadsLoaded;
   };
-  const reservedPaths = new Set<string>();
-  const saveDownload = (item: DownloadItem, privateWindow: boolean): void => {
-    const folder = downloadFolder();
-    const ask = settings.get(AskDownloadSetting);
-    // While the browser asks where to save a download, it goes on under a name of its own.
-    const working = (path: string): string => (ask ? `${path}.part` : path);
-    const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
-      const path = join(folder, candidate);
-      return [path, working(path)].some(
-        (taken) => reservedPaths.has(pathKey(taken, process.platform)) || existsSync(taken),
-      );
-    });
-    const suggested = join(folder, name);
-    const path = working(suggested);
-    const reserved = pathKey(path, process.platform);
-    try {
-      mkdirSync(folder, { recursive: true });
-    } catch (error: unknown) {
-      logger.warn('The downloads folder could not be made', { error: String(error) });
-    }
-    reservedPaths.add(reserved);
-    item.once('done', () => reservedPaths.delete(reserved));
-    item.setSavePath(path);
-    loadDownloads().then(
-      (list) => (ask ? list.ask(item, privateWindow, suggested) : list.track(item, privateWindow)),
-      (error: unknown) => logger.error('The list of downloads failed', error),
-    );
-  };
   const webSessions = new Set<Session>();
   // The sessions of private windows: a new one after the last private window closed.
   const privateSessions = new WeakSet<Session>();
-  // A session's pages get the answers of their kind of window. A private session is known
-  // only once it was made, so each question looks again.
-  const permissionsOf = (s: Session): PermissionHandler => {
-    const handler = (): PermissionHandler =>
-      privateSessions.has(s) ? privatePermissions : webPermissions;
-    return {
-      request: (contents, permission, mediaTypes, requestingUrl) =>
-        handler().request(contents, permission, mediaTypes, requestingUrl),
-      check: (contents, permission, origin, details) =>
-        handler().check(contents, permission, origin, details),
-      shareScreen: (request, callback) => handler().shareScreen(request, callback),
-    };
-  };
-  const addFramePreload = listenToFrames(
-    () => loadWeb().then((loaded) => loaded.frames),
-    layout.framePreload,
-    logger,
-  );
+  // A session's pages get the answers of their kind of window, which the code for the requests
+  // of web pages gives: it loads before the first web page, which could ask or check.
+  const permissionsOf = (s: Session): PermissionHandler => ({
+    request: (contents, permission, mediaTypes, requestingUrl) =>
+      loadWeb().then(
+        (loaded) => loaded.permissions(s).request(contents, permission, mediaTypes, requestingUrl),
+        () => false,
+      ),
+    check: (contents, permission, origin, details) =>
+      web?.permissions(s).check(contents, permission, origin, details) === true,
+    shareScreen: (request, callback) =>
+      void loadWeb().then(
+        (loaded) => loaded.permissions(s).shareScreen(request, callback),
+        () => callback(null),
+      ),
+  });
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
       protocolHandler.refuse(s);
       serveResources(s, (name) => web?.blocker.resource(name));
       hardenSession(s, permissionsOf(s));
-      s.on('will-download', (_event, item) => saveDownload(item, privateSessions.has(s)));
+      // A page that downloads stays awake; a download that the list started again has none.
+      // Downloads come from requests of web pages, after their code loaded.
+      s.on('will-download', (_event, item, contents: Electron.WebContents | null) => {
+        web?.saveDownload(item, privateSessions.has(s));
+        activity?.downloading(contents, item);
+      });
       attachLater(s, () => loadWeb().then((loaded) => loaded.pipeline));
-      addFramePreload(s);
+      // The code for the requests of web pages gives the frame preload to the sessions made
+      // before it as it loads, and to the others here.
+      web?.protect(s);
     }
   };
   app.on('session-created', protectWebSession);
@@ -535,7 +491,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const forgetPrivate = (): void => {
     const ended = privateSession;
     privateSession = undefined;
-    privateSites = {};
     downloads?.forgetPrivate();
     if (ended === undefined) return;
     // The icons of the private pages go with their session.
@@ -630,8 +585,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const openPalette = (window: BrowserWindowController, scope: PaletteOpening): void => {
     if (!settings.get(CommandPaletteSetting)) return;
     window.holdTyping();
-    import('./palette.ts')
-      .then(({ openPalette: open }) =>
+    // The palette asks the window with its commands which of them can run.
+    Promise.all([import('./palette.ts'), windows.laterCode()])
+      .then(([{ openPalette: open }]) =>
         open(window, scope, {
           windows,
           router,
@@ -733,9 +689,19 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }),
     // The handlers of the other internal pages load with the first of them, before it loads.
     prepareInternalPage: (page) => (page === 'newtab' ? undefined : connectPages()),
-    // So does the code that follows the views of web pages, with the first web page, and the
-    // commands of the windows that do not move the focus, with the first of them.
-    webPages: () => import('../platform/electron/web-pages.ts').then(({ webPages }) => webPages),
+    // So does the code that follows the views of web pages, with the first web page, with what
+    // keeps their tabs awake and the code for their requests, and the commands of the windows
+    // that do not move the focus, with the first of them.
+    webPages: () =>
+      Promise.all([
+        import('../platform/electron/web-pages.ts'),
+        loadActivity().catch((error: unknown) =>
+          logger.error('What keeps tabs awake did not load', error),
+        ),
+        // The requests of web pages, their downloads and the pages that they open find their
+        // code there; it logs itself when it fails.
+        loadWeb().catch(() => undefined),
+      ]).then(([{ webPages }]) => webPages),
     windowCommands: () =>
       import('../platform/electron/window-commands.ts').then(
         ({ windowCommands }) => windowCommands,
@@ -777,6 +743,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       void import('./hang-prompt.ts').then(({ askAboutHangingPage }) =>
         askAboutHangingPage(window, tabId, contents),
       ),
+    activity: () => activity,
+    now: () => clock.wallTime(),
   });
   // Not asked for yet, loading, or `true` once the handlers are there.
   let pages: Promise<void> | true | undefined;
@@ -826,27 +794,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   guardWebContents(app, {
     // Every view of the internal session is the browser's own: the shell and internal pages.
     isInternal: (contents) => contents.session === internal,
-    // What a script opens keeps its opener: a popup with a size or position gets a window of
-    // its own, anything else a tab, in the background when the user asked for that.
-    // What a page of a private window opens stays private.
-    openWindow: (contents, opener, { url, disposition, features }) => {
-      const window = windows.forTab(opener);
-      const privateWindow = privateSessions.has(opener.session);
-      if (disposition === 'new-window' && features !== '') {
-        windows.openPopup(contents, url, features, window, privateWindow);
-        return;
-      }
-      const target =
-        disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(privateWindow));
-      if (target === undefined) windows.openWith(contents, url, { private: privateWindow });
-      else target.adopt(contents, url, disposition !== 'background-tab');
+    // What a script of a web page opens keeps its opener, and popups that the filter lists
+    // name do not open; the code for web pages has loaded before any of them.
+    openWindow: (contents, opener, request) => {
+      if (web === undefined) contents.close();
+      else web.openWindow(contents, opener, request);
     },
-    // Popups that the filter lists name do not open, and count as blocked on their page.
-    blocksPopup: (url, opener) => {
-      const blocked = web?.blocker.blocksPopup(url, opener.getURL()) === true;
-      if (blocked) windows.countBlocked(opener.id);
-      return blocked;
-    },
+    blocksPopup: (url, opener) => web?.blocksPopup(url, opener) === true,
     logger,
   });
   registerShellHandlers(router, windows, searchTemplate, searchShortcuts);
@@ -859,47 +813,40 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     gate,
     router,
   };
-  // Sites and proxies that ask for a user name and password ask in the tab's window.
-  app.on('login', (event, contents, details, info, callback) => {
-    const window = contents === null ? undefined : windows.forTab(contents);
-    if (window === undefined || contents === null) return;
-    event.preventDefault();
-    void import('./login-prompt.ts').then(({ askForLogin }) =>
-      askForLogin(window, contents, details, info, callback, overlayOptions, router),
-    );
-  });
-  // Requests of the shell that its first paint does not need load with the first of them.
+  // Requests of the shell that its first paint does not need load with the first of them,
+  // with the commands of the windows, which their menus ask about the tabs.
   router.handleLater(shellLaterChannels, () =>
-    import('./shell-later.ts').then(({ registerLaterShellHandlers }) =>
-      registerLaterShellHandlers({
-        router,
-        windows,
-        logger,
-        overlay: overlayOptions,
-        openDownloads: (window, anchor) =>
-          void loadDownloads().then((list) => list.open(window, anchor)),
-        allowCertificate: (contents) => web?.certificates.allow(contents) === true,
-        allowInsecure: (contents, address) => web?.httpsFirst.allow(contents, address),
-        folderContents: (folder) => bookmarks?.contents(folder) ?? [],
-        bookmarks: loadBookmarks,
-        suggestions: {
+    Promise.all([import('./shell-later.ts'), windows.laterCode()]).then(
+      ([{ registerLaterShellHandlers }]) =>
+        registerLaterShellHandlers({
+          router,
+          windows,
+          logger,
           overlay: overlayOptions,
-          target: pageSources.target,
-          history: (text) => pageSources.history(text, 10),
-          bookmarks: pageSources.bookmarks,
-        },
-        openShieldPopover: async (window, anchor) => {
-          const { openShieldPopover } = await import('./shield-popover.ts');
-          openShieldPopover(window, anchor, {
-            windows,
-            router,
+          openDownloads: (window, anchor) =>
+            void loadDownloads().then((list) => list.open(window, anchor)),
+          allowCertificate: (contents) => web?.certificates.allow(contents) === true,
+          allowInsecure: (contents, address) => web?.httpsFirst.allow(contents, address),
+          folderContents: (folder) => bookmarks?.contents(folder) ?? [],
+          bookmarks: loadBookmarks,
+          suggestions: {
             overlay: overlayOptions,
-            settings,
-            blocker: (await loadWeb()).blocker,
-            blocking,
-          });
-        },
-      }),
+            target: pageSources.target,
+            history: (text) => pageSources.history(text, 10),
+            bookmarks: pageSources.bookmarks,
+          },
+          openShieldPopover: async (window, anchor) => {
+            const { openShieldPopover } = await import('./shield-popover.ts');
+            openShieldPopover(window, anchor, {
+              windows,
+              router,
+              overlay: overlayOptions,
+              settings,
+              blocker: (await loadWeb()).blocker,
+              blocking,
+            });
+          },
+        }),
     ),
   );
   // What the new tab page shows besides the search engine, as the settings say. A private
@@ -1128,7 +1075,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     showMenuBar();
   });
 
-  // Everything that is not needed for the first window loads after its shell.
+  // Everything that is not needed for the first window loads after its shell, such as the
+  // updates and what puts tabs to sleep that were not used for a while.
   let updates: UpdateService | undefined;
   first.shellContents.once('did-finish-load', () => {
     void import('./updates.ts')
@@ -1137,6 +1085,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         updates.start();
       })
       .catch((error: unknown) => logger.error('The update service failed to start', error));
+    // The timer asks the windows about their tabs with their commands, which load meanwhile.
+    void Promise.all([import('./tab-sleep.ts'), loadActivity(), windows.laterCode()])
+      .then(([{ startTabSleeper }, loaded]) =>
+        startTabSleeper({
+          windows,
+          settings,
+          activity: loaded,
+          clock,
+          logger: logger.child('sleep'),
+        }),
+      )
+      .catch((error: unknown) => logger.error('Tabs do not go to sleep by themselves', error));
   });
 
   const timer = setInterval(() => void policies.refresh(), 15 * 60 * 1000);

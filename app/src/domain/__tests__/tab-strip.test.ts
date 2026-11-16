@@ -164,6 +164,9 @@ class Views implements TabViewPort {
   destroy(): void {}
   load(): void {}
   run(): void {}
+  sleep(): boolean {
+    return false;
+  }
 }
 
 describe('TabService and its strip', () => {

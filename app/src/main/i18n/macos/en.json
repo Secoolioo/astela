@@ -80,6 +80,7 @@
   "tabMenu.unpin": "Unpin",
   "tabMenu.mute": "Mute Tab",
   "tabMenu.unmute": "Unmute Tab",
+  "tabMenu.sleep": "Put Tab to Sleep",
   "tabMenu.close": "Close",
   "tabMenu.closeOthers": "Close Other Tabs",
   "tabMenu.closeRight": "Close Tabs to the Right",

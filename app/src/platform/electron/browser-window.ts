@@ -1,13 +1,13 @@
 import {
   BaseWindow,
   screen,
+  session as sessions,
   WebContentsView,
   type ContextMenuParams,
   type Input,
   type Rectangle,
   type WebContents,
 } from 'electron';
-import { is } from 'valibot';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
 import { type TabStripPosition, type ToolbarItem, toolbarItems } from '../../shared/layout.ts';
@@ -20,23 +20,24 @@ import {
   type ShellState,
 } from '../../shared/ipc/shell-contracts.ts';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
+import { sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import {
   keptChange,
   TabService,
   type KeptChange,
+  type SleepMode,
   type TabId,
   type TabProblem,
   type TabViewPort,
 } from '../../domain/tabs/tab-service.ts';
+import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { ViewHistory, type TabHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import {
   currentEntry,
-  currentOnly,
+  historyMoves,
   memoryLimits,
   trimHistory,
 } from '../../domain/tabs/tab-history.ts';
-import { stepHistory } from '../../domain/tabs/history-steps.ts';
 import {
   sessionWindow,
   type RestoredWindow,
@@ -51,7 +52,6 @@ import {
   type TitleBarArea,
 } from '../../domain/windows/title-bar.ts';
 import { visibleBounds, type WindowBounds } from '../../domain/windows/window-bounds.ts';
-import { popupBounds } from '../../domain/windows/popup-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
 import { AltTap } from '../../domain/windows/alt-tap.ts';
@@ -61,6 +61,7 @@ import { LaterCode } from '../../kernel/modules/later-code.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
+import type { TabActivity } from './tab-activity.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
 import type { ShortcutRecorder } from './shortcut-recorder.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
@@ -229,6 +230,14 @@ export interface BrowserWindowOptions {
    * the first of them or once the shell of a window has loaded.
    */
   readonly windowCommands: () => Promise<WindowCommands>;
+  /**
+   * What the pages of tabs do that keeps them awake, such as a camera that they use or a
+   * download, once its code has loaded with the code for web pages, before the first web page
+   * loads; without it, only sound keeps a tab awake.
+   */
+  readonly activity?: () => TabActivity | undefined;
+  /** The time of the wall clock in milliseconds, which counts how long tabs were not used. */
+  readonly now?: () => number;
 }
 
 /**
@@ -242,12 +251,38 @@ export interface WindowHost {
   readonly entries: ReadonlyMap<TabId, TabEntry>;
   /** The zoom that each view of a web page was made with. */
   readonly madeZoom: WeakMap<WebContents, number>;
-  /** Records why a tab shows no page, or that it shows one again. */
-  setProblem(id: TabId, problem: TabProblem | null): void;
   /** The web contents of a tab that shows a web page, and no internal page or problem. */
   webContentsOf(id: TabId): WebContents | undefined;
+  /** When each tab was last used: opened, shown, left or quiet again, by the wall clock. */
+  readonly usedAt: Map<TabId, number>;
   /** Forgets the icon of a tab's page, and stops loading it. */
   dropFavicon(id: TabId): void;
+  /** The view that shows the page of a tab in the content area. */
+  shownViewOf(entry: TabEntry): WebContentsView;
+  /** When the browser last tried to put each tab to sleep by itself. */
+  readonly triedAt: Map<TabId, number>;
+  /** Closes the view of a tab, which keeps its history until it wakes. */
+  putToSleep(id: TabId, entry: TabEntry, dormant: DormantTab): void;
+  /** The time of the wall clock, in milliseconds. */
+  now(): number;
+  /** What the find bar shows, or `null` while it is closed. */
+  findState(): FindState | null;
+  /** Shows the find bar with a state, and tells the shell. */
+  setFindState(state: FindState): void;
+  /** Keeps the text of the last search, which the find bar shows when it opens again. */
+  keepQuery(query: string): void;
+  /** Tabs without a view, with what they show once they wake. */
+  readonly dormant: Map<TabId, DormantTab>;
+  /** What each view is to do once the browser process is ready for its page. */
+  readonly waiting: WeakMap<WebContents, PageJob>;
+  /** Gives a tab without a view its view. */
+  wake(id: TabId): void;
+  /** Tells the tab what its view shows now. */
+  sync(id: TabId, contents: WebContents): void;
+  /** The history of a tab's view, with the page states of now. */
+  snapshot(entry: TabEntry): ViewSnapshot;
+  /** Shows a view that the tab had before, with its history. */
+  restore(id: TabId, entry: TabEntry, snapshot: ViewSnapshot | undefined): void;
 }
 
 /** The code of the windows for their web pages, which loads with the first of them. */
@@ -264,6 +299,18 @@ export interface WebPages {
   zoom(host: WindowHost, id: TabId, direction: 1 | -1 | 0): void;
   /** Gives the pages of sites without a zoom of their own a new default zoom. */
   applyDefaultZoom(host: WindowHost, factor: number): void;
+  /** Takes note of a key that reaches a web page, which may type text into it. */
+  typed(host: WindowHost, contents: WebContents, input: Input): void;
+  /** Looks for text in a tab's page, or for its next or previous match. */
+  find(host: WindowHost, id: TabId, query: string, forward: boolean, next: boolean): void;
+  /** Continues to a page whose certificate was refused, once the certificate is accepted. */
+  proceedUnsafely(host: WindowHost, id: TabId, accept: (contents: WebContents) => boolean): void;
+  /** Loads the insecure address of a site without a secure connection, once it is allowed. */
+  proceedInsecurely(
+    host: WindowHost,
+    id: TabId,
+    allow: (contents: WebContents, address: string) => void,
+  ): void;
 }
 
 /** The commands that move the focus, or the state of the window itself: they run at once. */
@@ -298,7 +345,26 @@ export interface WindowCommands {
    * @param command - The command.
    */
   run(host: WindowHost, command: LaterWindowCommand): void;
+  /** Whether a tab may go to sleep now, as {@link BrowserWindowController.canSleep} tells. */
+  canSleep(host: WindowHost, id: TabId, mode: SleepMode): boolean;
+  /** Puts a tab to sleep, as {@link BrowserWindowController.sleep} does. */
+  sleep(host: WindowHost, id: TabId, mode: SleepMode): boolean;
+  /** The tabs of the window as candidates to sleep, with since when each was not used. */
+  sleepCandidates(host: WindowHost): SleepCandidate[];
+  /** Runs a history or loading action of a tab, as {@link BrowserWindowController.run} does. */
+  pageAction(host: WindowHost, id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void;
+  /** What decides which commands can run in the window now. */
+  context(host: WindowHost): CommandContext;
+  /** Shows an internal page, as {@link BrowserWindowController.openPage} does. */
+  openPage(host: WindowHost, page: TabPage, fragment: string): void;
+  /** Forgets the back and forward history of every tab of the window. */
+  forgetHistories(host: WindowHost): void;
+  /** Runs an item of the menu of a tab. */
+  tabAction(host: WindowHost, id: TabId, action: TabAction): void;
 }
+
+/** An item of the menu of a tab that the window runs. */
+export type TabAction = 'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight';
 
 /** The code that loads later for the windows of each window manager, by their options. */
 const laterCode = new WeakMap<
@@ -409,7 +475,7 @@ export interface TabEntry {
  * A tab without a view, such as a restored tab that was not shown yet: the address it shows
  * and its back and forward history, which come back once it wakes.
  */
-interface DormantTab {
+export interface DormantTab {
   readonly url: string;
   /** The history, within the limits of memory; `undefined` loads the address as a new page. */
   readonly history: TabHistory | undefined;
@@ -419,7 +485,7 @@ interface DormantTab {
  * What a view does once the browser process is ready for its internal page: restore a history,
  * then load an address. A later job of the view takes the place of an earlier one.
  */
-interface PageJob {
+export interface PageJob {
   restore?: ViewSnapshot | undefined;
   load?: string | undefined;
 }
@@ -491,6 +557,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private host: WindowHost | undefined;
   /** Tabs without a view, with what they show once they wake. */
   private readonly dormant = new Map<TabId, DormantTab>();
+  /** When each tab was last used: opened, shown, left or quiet again, by the wall clock. */
+  private readonly usedAt = new Map<TabId, number>();
+  /**
+   * When the browser last tried to put each tab to sleep by itself: a tab that stayed awake for
+   * a reason that its plan does not see, such as a link to another page, is tried again only
+   * after another while.
+   */
+  private readonly triedAt = new Map<TabId, number>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
   private adopting: WebContents | undefined;
   /** Whether the window is a popup that a page opened. */
@@ -728,6 +802,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           audible: tab.audible,
           muted: tab.muted,
           pinned: tab.pinned,
+          sleeping: tab.sleeping,
         }),
       ),
       activeTabId: this.tabs.active?.id ?? null,
@@ -866,6 +941,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   create(id: TabId, url: string, lazy = false, history?: TabHistory): void {
     const adopted = this.adopting;
     this.adopting = undefined;
+    // A tab that opens in the background counts as used when it opens.
+    this.usedAt.set(id, this.now());
     // A history comes back within the limits of memory, and only when it shows the address.
     const kept = history === undefined ? undefined : trimHistory(history, memoryLimits);
     const dormant = {
@@ -913,7 +990,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       return;
     }
     this.overlay?.close();
-    for (const previous of this.shownTabs()) this.stopFind(previous);
+    for (const previous of this.shownTabs()) {
+      this.stopFind(previous);
+      // A tab that the window no longer shows was used until now.
+      this.usedAt.set(previous, this.now());
+    }
     // The pages that the content area showed make room for this one.
     for (const previous of this.shown.filter((other) => other !== view)) this.detachPage(previous);
     this.attachPage(view);
@@ -1010,10 +1091,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param accept - Accepts the certificate that the page's web contents were refused.
    */
   proceedUnsafely(id: TabId, accept: (contents: WebContents) => boolean): void {
-    const contents = this.entries.get(id)?.view.webContents;
-    if (this.problemOf(id)?.kind === 'certificate' && contents !== undefined && accept(contents)) {
-      contents.reload();
-    }
+    // Only a web page has a certificate; before the code for web pages, none loaded.
+    this.webPages().loaded?.proceedUnsafely(this.windowHost(), id, accept);
   }
 
   /**
@@ -1022,11 +1101,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param allow - Allows the site's insecure address for the session of the tab's page.
    */
   proceedInsecurely(id: TabId, allow: (contents: WebContents, address: string) => void): void {
-    const problem = this.problemOf(id);
-    const contents = this.entries.get(id)?.view.webContents;
-    if (problem?.kind !== 'insecure' || contents === undefined) return;
-    allow(contents, problem.url);
-    contents.loadURL(problem.url).catch(() => undefined);
+    this.webPages().loaded?.proceedInsecurely(this.windowHost(), id, allow);
   }
 
   /** The keyboard shortcuts of the window. */
@@ -1042,23 +1117,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** Why a tab shows no page, or `null` when it shows one. */
   private problemOf(id: TabId): TabProblem | null {
     return this.tabs.all.find((tab) => tab.id === id)?.problem ?? null;
-  }
-
-  /**
-   * Records why a tab shows no page, or that it shows one again. While a tab has a problem,
-   * its view is hidden and the shell shows the problem in its place.
-   */
-  private setProblem(id: TabId, problem: TabProblem | null): void {
-    if (problem === null && this.problemOf(id) === null) return;
-    // In place of its page, the tab shows no icon of a page.
-    if (problem !== null) this.dropFavicon(id);
-    this.tabs.update(id, { problem });
-    const entry = this.entries.get(id);
-    if (entry !== undefined && this.isShown(id) && !this.window.isDestroyed()) {
-      this.shownViewOf(entry).setVisible(problem === null);
-      // Focusing a view raises its window: a window in the background stays there.
-      if (this.window.isFocused()) this.focusContent();
-    }
   }
 
   /**
@@ -1079,6 +1137,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   destroy(id: TabId): void {
     this.dormant.delete(id);
+    this.usedAt.delete(id);
+    this.triedAt.delete(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -1089,12 +1149,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.entries.delete(id);
     entry.iconLoad?.abort();
     this.close(entry.view, entry.registration);
-    // A page that closes in full screen ends it, unless the user chose full screen.
-    if (this.fullScreenTab === id) {
-      this.fullScreenTab = undefined;
-      if (!this.userFullScreen && !this.window.isDestroyed()) this.setPageFullScreen(false);
-      this.layout();
-    }
+    this.endPageFullScreen(id);
+  }
+
+  /**
+   * Ends the full screen of a tab's page whose view closed, unless the user chose full screen:
+   * a page that closes leaves full screen without telling.
+   */
+  private endPageFullScreen(id: TabId): void {
+    if (this.fullScreenTab !== id) return;
+    this.fullScreenTab = undefined;
+    if (!this.userFullScreen && !this.window.isDestroyed()) this.setPageFullScreen(false);
+    this.layout();
   }
 
   load(id: TabId, url: string): void {
@@ -1114,47 +1180,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
-    const dormant = this.dormant.get(id);
-    if (dormant !== undefined) {
-      // A tab without a view has nothing to stop. It loads only once: at the entry that Back or
-      // Forward lead to, and once for a reload, also in the background.
-      if (action === 'stop') return;
-      if (action === 'back' || action === 'forward') {
-        const stepped =
-          dormant.history === undefined
-            ? undefined
-            : stepHistory(dormant.history, action === 'back' ? -1 : 1);
-        const target = stepped === undefined ? undefined : currentEntry(stepped);
-        if (stepped === undefined || target === undefined) return;
-        this.dormant.set(id, { url: target.url, history: stepped });
-      }
-      this.wake(id);
-      return;
-    }
-    const entry = this.entries.get(id);
-    if (entry === undefined) {
-      return;
-    }
-    const contents = entry.view.webContents;
-    const history = contents.navigationHistory;
-    // Entries that go once a load ends lead nowhere.
-    const steps = entry.clearing !== true;
-    switch (action) {
-      case 'back':
-        if (steps && history.canGoBack()) history.goBack();
-        else this.restore(id, entry, entry.history.goBack(this.snapshot(entry)));
-        break;
-      case 'forward':
-        if (steps && history.canGoForward()) history.goForward();
-        else this.restore(id, entry, entry.history.goForward(this.snapshot(entry)));
-        break;
-      case 'reload':
-        contents.reload();
-        break;
-      case 'stop':
-        contents.stop();
-        break;
-    }
+    // The buttons and keys of the toolbar run with the commands of the windows, in their turn.
+    this.withCommands((code, host) => code.pageAction(host, id, action));
   }
 
   /**
@@ -1268,23 +1295,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * `canRun` of `domain/commands/availability.ts`.
    */
   commandContext(): CommandContext {
-    const active = this.tabs.active;
-    return {
-      tabs: this.tabs.all.map(({ url, pinned, canGoBack, canGoForward, muted }) => ({
-        url,
-        pinned,
-        canGoBack,
-        canGoForward,
-        muted,
-      })),
-      activeIndex: active === undefined ? -1 : this.tabs.all.indexOf(active),
-      canReopen: this.tabs.canReopen,
-      finding: this.findOpen,
-      webPage: this.activeShowsWebPage,
-      privateWindows: this.options.privateWindows?.() ?? true,
-      developerTools: this.options.developerTools?.() ?? true,
-      palette: this.options.openPalette !== undefined && (this.options.commandPalette?.() ?? true),
-    };
+    return this.loadedCommands().context(this.windowHost());
   }
 
   /**
@@ -1342,17 +1353,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param next - Whether to go on from the current match.
    */
   find(id: TabId, query: string, forward: boolean, next: boolean): void {
-    const contents = this.webContentsOf(id);
-    // Only an open find bar looks; a late request after Escape does not open it again.
-    if (contents === undefined || id !== this.tabs.active?.id || this.finding === null) return;
-    this.lastQuery = query;
-    // The numbers stay until the page reports those of the new search, so they do not flicker.
-    this.finding = { ...this.finding, query };
-    // Electron's findNext begins a new search: new text starts one, and the next or previous
-    // match goes on with it, so Chromium handles a step only after the search it belongs to.
-    if (query === '') contents.stopFindInPage('clearSelection');
-    else contents.findInPage(query, { forward, findNext: !next });
-    this.schedulePublish();
+    // Only web pages are searched, with the code for web pages.
+    this.webPages().run((pages) => pages.find(this.windowHost(), id, query, forward, next));
   }
 
   /**
@@ -1407,51 +1409,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    *   a tab that shows the page stays where it is.
    */
   openPage(page: TabPage, fragment = ''): void {
-    const url = pageUrl(page) + fragment;
-    const open = this.tabs.all.find((tab) => tabPageOf(tab.url) === page);
-    const active = this.tabs.active;
-    if (open !== undefined) {
-      this.tabs.activate(open.id);
-      if (fragment === '') return;
-      // A page sees no change of its address when it shows that address already.
-      if (open.url === url) this.revealPlace(open.id, page, fragment);
-      else this.tabs.navigate(open.id, url);
-    } else if (active !== undefined && active.url === this.options.newTabUrl) {
-      this.tabs.navigate(active.id, url);
-    } else {
-      this.tabs.open(url);
-    }
-  }
-
-  /**
-   * Tells the settings page of a tab to show the row or the section that its address names
-   * once more, and gives the page the focus.
-   * @param id - The tab.
-   * @param page - The page that the tab shows.
-   * @param fragment - `#` and the name of the place.
-   */
-  private revealPlace(id: TabId, page: TabPage, fragment: string): void {
-    const contents = this.entries.get(id)?.view.webContents;
-    if (page !== 'settings' || contents === undefined || contents.isDestroyed()) return;
-    let place: string;
-    try {
-      place = decodeURIComponent(fragment.slice(1));
-    } catch {
-      return;
-    }
-    contents.focus();
-    // The contracts of the settings page load with it, not with the window.
-    void import('../../shared/ipc/settings-contracts.ts')
-      .then(({ SettingsReveal }) => {
-        // Only the name of a row or a section goes to the page.
-        const payload = { id: place };
-        if (is(SettingsReveal.payload, payload)) {
-          this.options.router.publish(SettingsReveal, contents, payload);
-        }
-      })
-      .catch((error: unknown) =>
-        this.options.logger.debug('The settings did not show their row', { error: String(error) }),
-      );
+    this.withCommands((code, host) => code.openPage(host, page, fragment));
   }
 
   /**
@@ -1460,12 +1418,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * under the pointer itself, and the shell passes them on to the active tab. The window's
    * `app-command` event reports them as well and stays unused, or one click would go back
    * two pages.
+   * @returns Whether the window took the key, so that the view does not see it.
    */
-  private intercept(event: { preventDefault(): void }, input: Input, contentsId: number): void {
+  private intercept(event: { preventDefault(): void }, input: Input, contentsId: number): boolean {
     if (this.options.shortcutRecorder?.()?.take(contentsId, input, process.platform) === true) {
       event.preventDefault();
       this.altTap.reset();
-      return;
+      return true;
     }
     const command = commandForInput(input, process.platform, this.shortcuts());
     if (command !== undefined) {
@@ -1473,15 +1432,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // Alt+Left and the like are no Alt alone.
       this.altTap.reset();
       this.execute(command);
-      return;
+      return true;
     }
     // The keys typed right after the shortcut of the command palette go to the palette.
     if (this.holdKey(input)) {
       event.preventDefault();
       this.altTap.reset();
-      return;
+      return true;
     }
     this.tapAlt(input, contentsId);
+    return false;
   }
 
   /**
@@ -1536,18 +1496,75 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.dormant.delete(id);
     if (dormant.history === undefined) {
       this.create(id, dormant.url);
-      return;
+    } else {
+      const { views, current } = ViewHistory.fromTabHistory(dormant.history);
+      const url = current.entries[current.index]?.url ?? dormant.url;
+      const entry: TabEntry = {
+        ...this.createView(id, url),
+        requested: url,
+        history: views,
+        restored: url,
+      };
+      this.entries.set(id, entry);
+      this.restoreInto(entry.view.webContents, current);
+      this.usedAt.set(id, this.now());
     }
-    const { views, current } = ViewHistory.fromTabHistory(dormant.history);
-    const url = current.entries[current.index]?.url ?? dormant.url;
-    const entry: TabEntry = {
-      ...this.createView(id, url),
-      requested: url,
-      history: views,
-      restored: url,
-    };
-    this.entries.set(id, entry);
-    this.restoreInto(entry.view.webContents, current);
+    this.tabs.update(id, { sleeping: false, loading: true, problem: null });
+  }
+
+  /**
+   * Whether a tab may go to sleep now: it has a view whose page is not shown, plays no sound
+   * and is not busy otherwise, such as with a camera, a download or a page that it opened. The
+   * browser leaves pinned tabs awake, and pages that people typed into since they loaded;
+   * people may put them to sleep.
+   * @param id - The tab.
+   * @param mode - Whether people ask for it, or the browser does after the tab was not used.
+   */
+  canSleep(id: TabId, mode: SleepMode): boolean {
+    return this.laterCommands()?.canSleep(this.windowHost(), id, mode) ?? false;
+  }
+
+  sleep(id: TabId, mode: SleepMode): boolean {
+    return this.laterCommands()?.sleep(this.windowHost(), id, mode) ?? false;
+  }
+
+  /**
+   * The tabs of the window as candidates to sleep, with since when each was not used: since it
+   * was last shown, opened, quiet again or busy otherwise.
+   */
+  sleepCandidates(): SleepCandidate[] {
+    return this.laterCommands()?.sleepCandidates(this.windowHost()) ?? [];
+  }
+
+  /**
+   * Closes the view of a tab, which keeps its history until it wakes, and shows the tab as a
+   * tab that sleeps, with its title and icon.
+   */
+  private putToSleep(id: TabId, entry: TabEntry, dormant: DormantTab): void {
+    this.entries.delete(id);
+    entry.iconLoad?.abort();
+    entry.iconLoad = undefined;
+    this.close(entry.view, entry.registration);
+    // A page in the background may still show an element in full screen; it ends with the page.
+    this.endPageFullScreen(id);
+    this.dormant.set(id, dormant);
+    const moves =
+      dormant.history === undefined
+        ? { back: false, forward: false }
+        : historyMoves(dormant.history);
+    this.tabs.update(id, {
+      sleeping: true,
+      loading: false,
+      audible: false,
+      problem: null,
+      canGoBack: moves.back,
+      canGoForward: moves.forward,
+    });
+  }
+
+  /** The time of the wall clock, in milliseconds. */
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
   }
 
   /**
@@ -1588,23 +1605,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * each tab keeps only the entry that it shows.
    */
   forgetHistories(): void {
-    for (const [id, entry] of this.entries) {
-      entry.history.clear();
-      entry.cache = undefined;
-      const contents: WebContents | undefined = entry.view.webContents;
-      if (contents === undefined || contents.isDestroyed()) continue;
-      // A view that waits to restore its history restores only what it shows.
-      const job = this.waiting.get(contents);
-      if (job?.restore !== undefined) job.restore = onlyShown(job.restore);
-      entry.clearing = true;
-      this.sync(id, contents);
-    }
-    for (const [id, dormant] of this.dormant) {
-      if (dormant.history !== undefined) {
-        this.dormant.set(id, { url: dormant.url, history: currentOnly(dormant.history) });
-      }
-      this.tabs.update(id, { canGoBack: false, canGoForward: false });
-    }
+    this.withCommands((code, host) => code.forgetHistories(host));
   }
 
   /** How the view of a tab is made: for a web page, or for one of the browser's own pages. */
@@ -1690,15 +1691,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // What a web page does as it navigates, fails or stops answering is followed by the code
       // for web pages, which loads with the first of them; the page loads once it is there.
       this.watchWebPage(id, view, adopted !== undefined);
-      contents.on('found-in-page', (_event, result) => {
-        if (this.finding === null || id !== this.tabs.active?.id) return;
-        this.finding = {
-          query: this.finding.query,
-          active: result.activeMatchOrdinal,
-          matches: result.matches,
-        };
-        this.schedulePublish();
-      });
       // A video or another element in full screen covers the whole window, which takes the
       // whole screen until the page leaves full screen, unless the user put it in full screen.
       contents.on('enter-html-full-screen', () => {
@@ -1718,9 +1710,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.tabs.update(id, { blocked: 0 });
       }
     });
-    contents.on('audio-state-changed', ({ audible }) => {
-      if (this.entries.get(id)?.view === view) this.tabs.update(id, { audible });
-    });
     // A tab keeps its sound muted when it changes between web pages and the browser's own.
     contents.setAudioMuted(this.tabs.all.find((tab) => tab.id === id)?.muted ?? false);
     contents.on('did-start-loading', sync);
@@ -1728,7 +1717,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     contents.on('did-navigate', sync);
     contents.on('did-navigate-in-page', sync);
     contents.on('page-title-updated', sync);
-    contents.on('before-input-event', (event, input) => this.intercept(event, input, contents.id));
+    contents.on('before-input-event', (event, input) => {
+      const taken = this.intercept(event, input, contents.id);
+      // A web page that people type into may hold changes that it has not saved yet; the code
+      // for web pages takes note of it, which is there before the page loads.
+      if (!taken && page === undefined) {
+        this.webPages().loaded?.typed(this.windowHost(), contents, input);
+      }
+    });
     this.forwardContextMenu(view, id);
     return { view, page, registration };
   }
@@ -1814,29 +1810,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param id - The tab.
    * @param action - What to do with it.
    */
-  tabAction(id: TabId, action: 'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight'): void {
-    const tab = this.tabs.all.find((candidate) => candidate.id === id);
-    if (tab === undefined) return;
-    switch (action) {
-      case 'newTabRight':
-        this.tabs.open(this.options.newTabUrl, { after: id });
-        break;
-      case 'duplicate':
-        this.tabs.open(tab.url, { after: id, title: tab.title });
-        break;
-      case 'closeOthers':
-      case 'closeRight': {
-        const index = this.tabs.all.indexOf(tab);
-        // Pinned tabs stay; they are closed one by one.
-        const closing = this.tabs.all.filter(
-          (other, place) =>
-            other.id !== id && !other.pinned && (action === 'closeOthers' || place > index),
-        );
-        if (closing.length > 0) this.tabs.activate(id);
-        for (const other of closing) this.tabs.close(other.id);
-        break;
-      }
-    }
+  tabAction(id: TabId, action: TabAction): void {
+    this.withCommands((code, host) => code.tabAction(host, id, action));
   }
 
   /**
@@ -1867,13 +1842,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   async favicon(key: string): Promise<string | undefined> {
     const { favicons } = await import('./favicons.ts');
+    const iconSessions = new Set<Electron.Session>();
     for (const { view } of this.entries.values()) {
       // A page that closed itself left its view without contents.
       const contents: WebContents | undefined = view.webContents;
-      const icon =
-        contents === undefined || contents.isDestroyed()
-          ? undefined
-          : favicons.get(contents.session, key);
+      if (contents !== undefined && !contents.isDestroyed()) iconSessions.add(contents.session);
+    }
+    // A tab that sleeps has no view; the icon of its page stays with the window's web pages.
+    iconSessions.add(
+      this.isPrivate
+        ? this.options.privateSession()
+        : sessions.fromPartition(this.options.webPartition),
+    );
+    for (const iconSession of iconSessions) {
+      const icon = favicons.get(iconSession, key);
       if (icon !== undefined) return icon;
     }
     return undefined;
@@ -2055,6 +2037,29 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return laterCodeOf(this.options).pages;
   }
 
+  /**
+   * The commands of the windows that load later, once they are there: the menus, the command
+   * palette and the timer of sleeping tabs ask with them only after they loaded.
+   */
+  private laterCommands(): WindowCommands | undefined {
+    return laterCodeOf(this.options).commands.loaded;
+  }
+
+  /** The commands of the windows that load later, which those who ask with them wait for. */
+  private loadedCommands(): WindowCommands {
+    const code = this.laterCommands();
+    if (code === undefined) throw new Error('The commands of the windows did not load');
+    return code;
+  }
+
+  /**
+   * Runs a call with the commands of the windows that load later: at once when they are there,
+   * or else once they loaded, after the calls and commands that came before.
+   */
+  private withCommands(call: (code: WindowCommands, host: WindowHost) => void): void {
+    laterCodeOf(this.options).commands.run((code) => call(code, this.windowHost()));
+  }
+
   /** What the code of the window that loads later uses of it. */
   private windowHost(): WindowHost {
     this.host ??= {
@@ -2062,9 +2067,27 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       options: this.options,
       entries: this.entries,
       madeZoom: this.madeZoom,
-      setProblem: (id, problem) => this.setProblem(id, problem),
       webContentsOf: (id) => this.webContentsOf(id),
+      usedAt: this.usedAt,
       dropFavicon: (id) => this.dropFavicon(id),
+      shownViewOf: (entry) => this.shownViewOf(entry),
+      triedAt: this.triedAt,
+      putToSleep: (id, entry, dormant) => this.putToSleep(id, entry, dormant),
+      now: () => this.now(),
+      findState: () => this.finding,
+      setFindState: (state) => {
+        this.finding = state;
+        this.schedulePublish();
+      },
+      keepQuery: (query) => {
+        this.lastQuery = query;
+      },
+      dormant: this.dormant,
+      waiting: this.waiting,
+      wake: (id) => this.wake(id),
+      sync: (id, contents) => this.sync(id, contents),
+      snapshot: (entry) => this.snapshot(entry),
+      restore: (id, entry, snapshot) => this.restore(id, entry, snapshot),
     };
     return this.host;
   }
@@ -2145,6 +2168,18 @@ export class WindowManager implements Disposable {
   }
 
   /**
+   * Waits for the commands of the windows that load later (`window-commands.ts`), which load
+   * with it if they have not: the menus, the command palette and the timer of sleeping tabs
+   * ask the windows about their tabs with them.
+   * @returns Resolves once they are there, or could not load.
+   */
+  laterCode(): Promise<void> {
+    return new Promise((resolve) =>
+      laterCodeOf(this.options).commands.run(() => resolve(), resolve),
+    );
+  }
+
+  /**
    * Opens a window with one tab.
    * @param url - What the tab shows; a new tab page without it.
    * @param place - Where the window opens, and whether it is private.
@@ -2167,35 +2202,6 @@ export class WindowManager implements Disposable {
     const controller = this.add(place);
     controller.adopt(contents, url, true);
     return controller;
-  }
-
-  /**
-   * Opens a popup that a script of a page opened, where and as large as the page asked,
-   * with the new page, which keeps its opener.
-   * @param contents - The new page.
-   * @param url - The address it opens.
-   * @param features - The features that the script asked for, such as its size.
-   * @param opener - The window of the page that opened it.
-   * @param privateWindow - Whether the page that opened it is in a private window.
-   * @returns The popup.
-   */
-  openPopup(
-    contents: WebContents,
-    url: string,
-    features: string,
-    opener: BrowserWindowController | undefined,
-    privateWindow: boolean,
-  ): BrowserWindowController {
-    const bounds = popupBounds(
-      features,
-      opener?.window.getBounds() ?? { x: 100, y: 100, width: 1280, height: 820 },
-      workAreas(),
-    );
-    return this.openWith(contents, url, {
-      bounds,
-      popup: true,
-      private: privateWindow,
-    });
   }
 
   /**
@@ -2439,7 +2445,7 @@ function inSession(window: BrowserWindowController): boolean {
 }
 
 /** The history of a view with only the entry that it shows. */
-function onlyShown(view: ViewSnapshot): ViewSnapshot {
+export function onlyShown(view: ViewSnapshot): ViewSnapshot {
   const entry = view.entries[view.index];
   return entry === undefined ? view : { entries: [entry], index: 0 };
 }

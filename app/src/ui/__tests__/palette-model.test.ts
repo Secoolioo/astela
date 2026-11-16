@@ -207,6 +207,7 @@ const tab = (title: string, place: 'current' | 'window' | 'other'): PaletteItem 
   url: `https://${title}.example/`,
   favicon: null,
   place,
+  sleeping: false,
 });
 
 describe('mergeGroups', () => {

@@ -21,6 +21,7 @@ const tab = (
   url: `https://${tabId}.example/`,
   favicon: null,
   place,
+  sleeping: false,
 });
 
 /** A page of the bookmarks or the history. */

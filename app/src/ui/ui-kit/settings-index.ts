@@ -261,6 +261,24 @@ export const settingsIndex: readonly SettingsSection[] = [
     ],
   },
   {
+    id: 'performance',
+    title: 'settings.performance',
+    rows: [
+      {
+        id: 'tabs.sleep',
+        keys: ['settings.tabSleep', 'settings.tabSleepNote', 'settings.tabSleep.keywords'],
+      },
+      {
+        id: 'tabs.sleepAfter',
+        keys: [
+          'settings.tabSleepAfter',
+          'settings.tabSleepAfterNote',
+          'settings.tabSleep.keywords',
+        ],
+      },
+    ],
+  },
+  {
     id: 'languages',
     title: 'settings.languages',
     rows: [

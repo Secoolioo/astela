@@ -1,14 +1,45 @@
-import type { LaterWindowCommand, WindowCommands, WindowHost } from './browser-window.ts';
+import type { WebContents } from 'electron';
+import { is } from 'valibot';
+import {
+  onlyShown,
+  type LaterWindowCommand,
+  type TabAction,
+  type WindowCommands,
+  type WindowHost,
+} from './browser-window.ts';
+import type { CommandContext } from '../../domain/commands/availability.ts';
+import {
+  currentEntry,
+  currentOnly,
+  memoryLimits,
+  trimHistory,
+} from '../../domain/tabs/tab-history.ts';
+import { stepHistory } from '../../domain/tabs/history-steps.ts';
+import type { SleepMode, TabId } from '../../domain/tabs/tab-service.ts';
+import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
+import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { ShellCommand } from '../../shared/ipc/shell-contracts.ts';
 
 /**
  * The commands of the windows that load later: those of the tabs, the pages and the browser
- * itself. The window runs the commands that move the focus at once, so that the keys typed
- * right after them follow the focus; this code loads with the first other command, or once the
- * shell of the first window has loaded. A command that comes while it loads waits for it, in
- * its order.
+ * itself, the buttons of the toolbar, the items of the menu of a tab, what decides which
+ * commands can run, and what puts tabs to sleep. The window runs the commands that move the
+ * focus at once, so that the keys typed right after them follow the focus; this code loads
+ * with the first other command, or once the shell of the first window has loaded. A command
+ * that comes while it loads waits for it, in its order. The menus, the command palette and the
+ * timer of sleeping tabs load only once this code is there (`WindowManager.laterCode`).
  */
-export const windowCommands: WindowCommands = { run };
+export const windowCommands: WindowCommands = {
+  run,
+  canSleep,
+  sleep,
+  sleepCandidates,
+  pageAction,
+  context,
+  openPage,
+  forgetHistories,
+  tabAction,
+};
 
 /**
  * Runs a window command that does not move the focus at once.
@@ -29,13 +60,13 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       window.tabs.reopenClosed();
       break;
     case 'tab.duplicate':
-      if (active !== undefined) window.tabAction(active.id, 'duplicate');
+      if (active !== undefined) tabAction(host, active.id, 'duplicate');
       break;
     case 'tab.closeOthers':
-      if (active !== undefined) window.tabAction(active.id, 'closeOthers');
+      if (active !== undefined) tabAction(host, active.id, 'closeOthers');
       break;
     case 'tab.closeRight':
-      if (active !== undefined) window.tabAction(active.id, 'closeRight');
+      if (active !== undefined) tabAction(host, active.id, 'closeRight');
       break;
     case 'tab.next':
     case 'tab.previous': {
@@ -81,13 +112,13 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       if (active !== undefined) window.goHome(active.id);
       break;
     case 'settings.open':
-      window.openPage('settings');
+      openPage(host, 'settings', '');
       break;
     case 'history.open':
-      window.openPage('history');
+      openPage(host, 'history', '');
       break;
     case 'bookmarks.open':
-      window.openPage('bookmarks');
+      openPage(host, 'bookmarks', '');
       break;
     case 'bookmarks.toggleBar':
       options.toggleBookmarksBar?.();
@@ -131,5 +162,276 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'app.quit':
       options.onAppCommand?.(window, command);
       break;
+  }
+}
+
+/**
+ * Whether a tab may go to sleep now: it has a view whose page is not shown, plays no sound
+ * and is not busy otherwise, such as with a camera, a download or a page that it opened. The
+ * browser leaves pinned tabs awake, and pages that people typed into since they loaded;
+ * people may put them to sleep.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param mode - Whether people ask for it, or the browser does after the tab was not used.
+ */
+function canSleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
+  const { window } = host;
+  const entry = host.entries.get(id);
+  const tab = window.tabs.all.find((candidate) => candidate.id === id);
+  // A page that closed itself left its view without contents.
+  const contents: WebContents | undefined = entry?.view.webContents;
+  if (entry === undefined || tab === undefined) return false;
+  if (contents === undefined || contents.isDestroyed()) return false;
+  if (window.isShown(id) || window.tabs.shown.includes(id) || tab.audible) return false;
+  if (mode === 'auto' && tab.pinned) return false;
+  return host.options.activity?.()?.awakeReason(contents, mode) === undefined;
+}
+
+/**
+ * Puts a tab that the window does not show to sleep: its view closes, and it keeps its history
+ * with the page states of now, such as the scroll position.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param mode - Whether people ask for it, or the browser does after the tab was not used.
+ * @returns Whether the tab goes to sleep; a tab that is busy stays awake.
+ */
+function sleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
+  const { window } = host;
+  const entry = host.entries.get(id);
+  const tab = window.tabs.all.find((candidate) => candidate.id === id);
+  // The browser tries a tab that stays awake again only after another while.
+  if (mode === 'auto') host.triedAt.set(id, host.now());
+  if (entry === undefined || tab === undefined || !canSleep(host, id, mode)) return false;
+  const history = window.historyOf(id, true);
+  const kept = history === undefined ? undefined : trimHistory(history, memoryLimits);
+  // The page is not asked whether it may close: Electron would give it a user gesture to ask
+  // (ADR 0053). A page with changes that people typed stays awake by itself instead.
+  host.putToSleep(id, entry, {
+    url: (kept === undefined ? undefined : currentEntry(kept)?.url) ?? tab.url,
+    history: kept,
+  });
+  return true;
+}
+
+/**
+ * The tabs of the window as candidates to sleep, with since when each was not used: since it
+ * was last shown, opened, quiet again or busy otherwise.
+ * @param host - The window.
+ */
+function sleepCandidates(host: WindowHost): SleepCandidate[] {
+  const { window } = host;
+  const activity = host.options.activity?.();
+  return window.tabs.all.map((tab) => {
+    // A page that closed itself left its view without contents.
+    const contents: WebContents | undefined = host.entries.get(tab.id)?.view.webContents;
+    const live = contents !== undefined && !contents.isDestroyed();
+    const busyAt = live ? activity?.lastBusyAt(contents) : undefined;
+    return {
+      id: tab.id,
+      live,
+      shown: window.isShown(tab.id) || window.tabs.shown.includes(tab.id),
+      pinned: tab.pinned,
+      busy: tab.audible || (live && activity?.busy(contents) === true),
+      idleSince: Math.max(host.usedAt.get(tab.id) ?? 0, busyAt ?? 0),
+      triedAt: host.triedAt.get(tab.id),
+    };
+  });
+}
+
+/**
+ * Runs a history or loading action of a tab. A tab without a view has nothing to stop, and
+ * loads only once: at the entry that Back or Forward lead to, and once for a reload.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param action - What to do.
+ */
+function pageAction(
+  host: WindowHost,
+  id: TabId,
+  action: 'back' | 'forward' | 'reload' | 'stop',
+): void {
+  const dormant = host.dormant.get(id);
+  if (dormant !== undefined) {
+    // A tab without a view has nothing to stop. It loads only once: at the entry that Back or
+    // Forward lead to, and once for a reload, also in the background.
+    if (action === 'stop') return;
+    if (action === 'back' || action === 'forward') {
+      const stepped =
+        dormant.history === undefined
+          ? undefined
+          : stepHistory(dormant.history, action === 'back' ? -1 : 1);
+      const target = stepped === undefined ? undefined : currentEntry(stepped);
+      if (stepped === undefined || target === undefined) return;
+      host.dormant.set(id, { url: target.url, history: stepped });
+    }
+    host.wake(id);
+    return;
+  }
+  const entry = host.entries.get(id);
+  if (entry === undefined) {
+    return;
+  }
+  const contents = entry.view.webContents;
+  const history = contents.navigationHistory;
+  // Entries that go once a load ends lead nowhere.
+  const steps = entry.clearing !== true;
+  switch (action) {
+    case 'back':
+      if (steps && history.canGoBack()) history.goBack();
+      else host.restore(id, entry, entry.history.goBack(host.snapshot(entry)));
+      break;
+    case 'forward':
+      if (steps && history.canGoForward()) history.goForward();
+      else host.restore(id, entry, entry.history.goForward(host.snapshot(entry)));
+      break;
+    case 'reload':
+      contents.reload();
+      break;
+    case 'stop':
+      contents.stop();
+      break;
+  }
+}
+
+/**
+ * What decides which commands can run in the window now, for `availableCommands` and
+ * `canRun` of `domain/commands/availability.ts`.
+ * @param host - The window.
+ */
+function context(host: WindowHost): CommandContext {
+  const { window, options } = host;
+  const active = window.tabs.active;
+  return {
+    tabs: window.tabs.all.map(({ url, pinned, canGoBack, canGoForward, muted }) => ({
+      url,
+      pinned,
+      canGoBack,
+      canGoForward,
+      muted,
+    })),
+    activeIndex: active === undefined ? -1 : window.tabs.all.indexOf(active),
+    canReopen: window.tabs.canReopen,
+    finding: window.findOpen,
+    webPage: window.activeShowsWebPage,
+    privateWindows: options.privateWindows?.() ?? true,
+    developerTools: options.developerTools?.() ?? true,
+    palette: options.openPalette !== undefined && (options.commandPalette?.() ?? true),
+  };
+}
+
+/**
+ * Shows an internal page: the tab that already shows it, or else the active tab if it
+ * shows the new tab page, or else a new tab. A fragment names a place of the page, such as
+ * a row of the settings, which the page shows also when its tab is open already.
+ * @param host - The window.
+ * @param page - The page.
+ * @param fragment - `#` and the name of the place, such as `#tabs.position`; without it,
+ *   a tab that shows the page stays where it is.
+ */
+function openPage(host: WindowHost, page: TabPage, fragment: string): void {
+  const { tabs } = host.window;
+  const url = pageUrl(page) + fragment;
+  const open = tabs.all.find((tab) => tabPageOf(tab.url) === page);
+  const active = tabs.active;
+  if (open !== undefined) {
+    tabs.activate(open.id);
+    if (fragment === '') return;
+    // A page sees no change of its address when it shows that address already.
+    if (open.url === url) revealPlace(host, open.id, page, fragment);
+    else tabs.navigate(open.id, url);
+  } else if (active !== undefined && active.url === host.options.newTabUrl) {
+    tabs.navigate(active.id, url);
+  } else {
+    tabs.open(url);
+  }
+}
+
+/**
+ * Tells the settings page of a tab to show the row or the section that its address names
+ * once more, and gives the page the focus.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param page - The page that the tab shows.
+ * @param fragment - `#` and the name of the place.
+ */
+function revealPlace(host: WindowHost, id: TabId, page: TabPage, fragment: string): void {
+  const { options } = host;
+  const contents = host.entries.get(id)?.view.webContents;
+  if (page !== 'settings' || contents === undefined || contents.isDestroyed()) return;
+  let place: string;
+  try {
+    place = decodeURIComponent(fragment.slice(1));
+  } catch {
+    return;
+  }
+  contents.focus();
+  // The contracts of the settings page load with it, not with the window.
+  void import('../../shared/ipc/settings-contracts.ts')
+    .then(({ SettingsReveal }) => {
+      // Only the name of a row or a section goes to the page.
+      const payload = { id: place };
+      if (is(SettingsReveal.payload, payload)) {
+        options.router.publish(SettingsReveal, contents, payload);
+      }
+    })
+    .catch((error: unknown) =>
+      options.logger.debug('The settings did not show their row', { error: String(error) }),
+    );
+}
+
+/**
+ * Forgets the back and forward history of every tab, as when the whole history is cleared:
+ * each tab keeps only the entry that it shows.
+ * @param host - The window.
+ */
+function forgetHistories(host: WindowHost): void {
+  for (const [id, entry] of host.entries) {
+    entry.history.clear();
+    entry.cache = undefined;
+    const contents: WebContents | undefined = entry.view.webContents;
+    if (contents === undefined || contents.isDestroyed()) continue;
+    // A view that waits to restore its history restores only what it shows.
+    const job = host.waiting.get(contents);
+    if (job?.restore !== undefined) job.restore = onlyShown(job.restore);
+    entry.clearing = true;
+    host.sync(id, contents);
+  }
+  for (const [id, dormant] of host.dormant) {
+    if (dormant.history !== undefined) {
+      host.dormant.set(id, { url: dormant.url, history: currentOnly(dormant.history) });
+    }
+    host.window.tabs.update(id, { canGoBack: false, canGoForward: false });
+  }
+}
+
+/**
+ * Runs an item of the menu of a tab.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param action - What to do with it.
+ */
+function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
+  const { tabs } = host.window;
+  const tab = tabs.all.find((candidate) => candidate.id === id);
+  if (tab === undefined) return;
+  switch (action) {
+    case 'newTabRight':
+      tabs.open(host.options.newTabUrl, { after: id });
+      break;
+    case 'duplicate':
+      tabs.open(tab.url, { after: id, title: tab.title });
+      break;
+    case 'closeOthers':
+    case 'closeRight': {
+      const index = tabs.all.indexOf(tab);
+      // Pinned tabs stay; they are closed one by one.
+      const closing = tabs.all.filter(
+        (other, place) =>
+          other.id !== id && !other.pinned && (action === 'closeOthers' || place > index),
+      );
+      if (closing.length > 0) tabs.activate(id);
+      for (const other of closing) tabs.close(other.id);
+      break;
+    }
   }
 }

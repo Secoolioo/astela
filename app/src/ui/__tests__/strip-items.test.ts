@@ -19,6 +19,7 @@ const tab = (id: string): TabView => ({
   audible: false,
   muted: false,
   pinned: false,
+  sleeping: false,
 });
 
 /** Tabs of 100 pixels with 8 pixels between them, from 10 on. */

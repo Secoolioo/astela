@@ -80,6 +80,7 @@
   "tabMenu.unpin": "&Lösen",
   "tabMenu.mute": "Tab &stummschalten",
   "tabMenu.unmute": "&Ton des Tabs einschalten",
+  "tabMenu.sleep": "Tab schla&fen legen",
   "tabMenu.close": "S&chließen",
   "tabMenu.closeOthers": "&Andere Tabs schließen",
   "tabMenu.closeRight": "Tabs rechts schl&ießen",

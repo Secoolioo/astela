@@ -44,6 +44,9 @@ export default defineConfig({
         'src/platform/electron/data-service-client.ts',
         'src/platform/electron/app-protocol.ts',
         'src/platform/electron/browser-window.ts',
+        // What browser-window.ts loads later: its code for web pages and the window commands.
+        'src/platform/electron/web-pages.ts',
+        'src/platform/electron/window-commands.ts',
         'src/platform/electron/ipc-router.ts',
         'src/platform/electron/session-security.ts',
         'src/platform/updates/electron-updater-engine.ts',

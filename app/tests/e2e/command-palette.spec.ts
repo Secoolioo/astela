@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   chooseFromMenu,
+  chooseMenuItem,
   FixtureServer,
   focusPage,
   launch,
@@ -9,6 +10,7 @@ import {
   overlayAttached,
   overlayPage,
   pressNative,
+  recordMenus,
   shellState,
   waitForPage,
   type Browser,
@@ -837,6 +839,46 @@ test('switches to an open tab of another window from tab search', async () => {
     await expect(search.dialog).toBeHidden();
     await expect.poll(() => focusedWindow(browser)).toBe(first);
     await expect.poll(() => tabsOf(browser)).toEqual([[fixture('index.html'), 'app://newtab/'], 0]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('shows a tab that sleeps in tab search with the icon of its page, says that it sleeps and wakes it when chosen', async () => {
+  const browser = await launch();
+  try {
+    await open(browser, 'icon.html');
+    await pressNative(browser, 'T', ['primary']);
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await recordMenus(browser);
+    const tab = browser.shell.getByRole('tab', { name: 'Page with an icon' });
+    await tab.click({ button: 'right' });
+    await chooseMenuItem(browser, [mac ? 'Put Tab to Sleep' : 'Put tab to sleep']);
+    await expect(tab).toHaveAttribute('data-sleeping', '');
+    const search = await openPalette(browser, 'app://shell', true);
+    const option = search.dialog.getByRole('option', { name: /^Page with an icon/ });
+    await expect(option).toHaveAttribute(
+      'aria-description',
+      'Sleeping, loads again when you open it',
+    );
+    await expect(option.locator('.tag', { hasText: 'Sleeping' })).toBeVisible();
+    // The page is gone, and the icon comes from the store of the window's web pages.
+    await expect(option.locator('.icon img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await expect
+      .poll(() => option.locator('.icon').evaluate((icon) => getComputedStyle(icon).opacity))
+      .toBe('0.7');
+    const awake = search.dialog.getByRole('option', { name: /^New tab/ });
+    await expect(awake).not.toHaveAttribute('aria-description');
+    await expect(awake.locator('.tag', { hasText: 'Sleeping' })).toHaveCount(0);
+    await option.click();
+    await expect(search.dialog).toBeHidden();
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs[0])
+      .toMatchObject({ sleeping: false, loading: false, title: 'Page with an icon' });
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'Page with an icon',
+    );
   } finally {
     await browser.close();
   }

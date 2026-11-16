@@ -102,6 +102,12 @@ class FakeViews implements TabViewPort {
   run(id: string, action: string): void {
     this.log.push(`${action} ${id}`);
   }
+  /** Whether the tabs that are asked to sleep go to sleep, as pages that are not busy do. */
+  sleeps = true;
+  sleep(id: string, mode: string): boolean {
+    this.log.push(`sleep ${id} ${mode}`);
+    return this.sleeps;
+  }
 }
 
 describe('TabService', () => {
@@ -348,6 +354,45 @@ describe('TabService', () => {
       [true, true, false],
       [false, false, false],
     ]);
+    // A tab that loads only when it shows counts as a tab that sleeps until then.
+    const awake = tabs.open('https://d.example/', { activate: false, history });
+    expect(
+      Object.fromEntries(tabs.all.map((tab) => [tab.id, [tab.sleeping, tab.loading]])),
+    ).toEqual({ [restored]: [true, false], [plain]: [true, false], [awake]: [false, true] });
+  });
+
+  it('puts a tab to sleep that the window does not show, by the views, and no other', () => {
+    const views = new FakeViews();
+    const tabs = new TabService(views, 'about:blank');
+    const background = tabs.open('https://a.example/', { activate: false });
+    const active = tabs.open('https://b.example/');
+    views.log.length = 0;
+    expect(tabs.sleep(active)).toBe(false);
+    expect(tabs.sleep('t999', 'auto')).toBe(false);
+    expect(views.log).toEqual([]);
+    expect(tabs.sleep(background)).toBe(true);
+    expect(tabs.sleep(background, 'auto')).toBe(true);
+    // A page that is busy stays awake, as the views tell.
+    views.sleeps = false;
+    expect(tabs.sleep(background)).toBe(false);
+    expect(views.log).toEqual([
+      `sleep ${background} manual`,
+      `sleep ${background} auto`,
+      `sleep ${background} manual`,
+    ]);
+  });
+
+  it('tells a session when a tab goes to sleep or wakes, which changes the history it keeps', () => {
+    const tabs = new TabService(new FakeViews(), 'about:blank');
+    const id = tabs.open('https://a.example/', { activate: false });
+    tabs.open('https://b.example/');
+    const changes: boolean[] = [];
+    tabs.onDidChangeKept(({ titleOnly }) => changes.push(titleOnly));
+    tabs.update(id, { sleeping: true, loading: false });
+    tabs.update(id, { sleeping: true });
+    tabs.update(id, { sleeping: false, loading: true });
+    expect(changes).toEqual([false, false]);
+    expect(tabs.all.find((tab) => tab.id === id)?.sleeping).toBe(false);
   });
 
   it('destroys every view on dispose', () => {

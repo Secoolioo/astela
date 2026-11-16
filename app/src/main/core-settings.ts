@@ -37,6 +37,7 @@ import {
   type ToolbarItem,
 } from '../shared/layout.ts';
 import type { CustomSearchEngine } from '../shared/search-engines.ts';
+import { sleepAfterSeconds, type SleepAfter } from '../shared/tab-sleep.ts';
 import { zoomFactors } from '../shared/zoom.ts';
 
 /** The search address of an engine: https, with `%s` for the query. */
@@ -519,6 +520,34 @@ export const AskDownloadSetting = defineSetting<boolean>({
   ui: { section: 'downloads', control: 'toggle', order: 2 },
 });
 
+/**
+ * Whether tabs that were not used for a while go to sleep by themselves: their page closes and
+ * loads again with its history when the tab is shown. Tabs that people put to sleep from their
+ * menu sleep also while it is off. A policy can set or recommend it.
+ */
+export const TabSleepSetting = defineSetting<boolean>({
+  key: 'tabs.sleep',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'SleepingTabsEnabled', recommended: true },
+  ui: { section: 'performance', control: 'toggle', order: 1 },
+});
+
+/**
+ * How long a tab stays unused in the background before it goes to sleep, in seconds. The
+ * values are those of Microsoft Edge's `SleepingTabsTimeout`; 30 seconds is only for policies
+ * and the settings file.
+ */
+export const TabSleepAfterSetting = defineSetting<SleepAfter>({
+  key: 'tabs.sleepAfter',
+  schema: v.picklist(sleepAfterSeconds),
+  default: 3600,
+  scope: 'global',
+  policy: { name: 'SleepingTabsTimeout', recommended: true },
+  ui: { section: 'performance', control: 'select', order: 2 },
+});
+
 /** Whether the new tab page shows the search field. */
 export const NewTabSearchSetting = defineSetting<boolean>({
   key: 'newtab.search',
@@ -635,6 +664,8 @@ export const coreSettings = [
   StartupPagesSetting,
   DownloadFolderSetting,
   AskDownloadSetting,
+  TabSleepSetting,
+  TabSleepAfterSetting,
   NewTabSearchSetting,
   NewTabClockSetting,
   NewTabTilesSetting,

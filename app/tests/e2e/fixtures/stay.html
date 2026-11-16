@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Unsaved note</title>
+  </head>
+  <body>
+    <label>Note <input id="note" /></label>
+    <script>
+      // Once something is typed, the page asks to stay when it is to close, as an editor with
+      // unsaved changes does. The browser keeps it awake because something was typed.
+      document.getElementById('note').addEventListener('input', () => {
+        window.onbeforeunload = (event) => {
+          event.preventDefault();
+          event.returnValue = '';
+        };
+      });
+    </script>
+  </body>
+</html>

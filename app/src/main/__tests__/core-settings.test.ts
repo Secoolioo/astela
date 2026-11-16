@@ -13,7 +13,10 @@ import {
   DownloadFolderSetting,
   ShortcutsSetting,
   StartupSetting,
+  TabSleepAfterSetting,
+  TabSleepSetting,
 } from '../core-settings.ts';
+import { sleepAfterSeconds } from '../../shared/tab-sleep.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -176,5 +179,89 @@ describe('the start after a crash', () => {
     // A recommended value is a default that people may change: the session comes back.
     expect(await restores({ policy: [5, 'recommended'] }, { unclean: false })).toBeUndefined();
     expect(await restores({ policy: [5, 'recommended'] }, { unclean: true })).toBe('crash');
+  });
+});
+
+/** The settings of the browser with policies of the system, read as at a start. */
+async function settingsWith(
+  values: readonly {
+    readonly name: string;
+    readonly value: unknown;
+    readonly level: PolicyLevel;
+  }[],
+  user: Readonly<Record<string, unknown>> = {},
+): Promise<SettingsService> {
+  const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' });
+  const result: PolicyReadResult = {
+    values: values.map((value) => ({ ...value, scope: 'machine', source: 'test' })),
+    errors: [],
+  };
+  const provider: PolicyProvider = { name: 'test', load: () => Promise.resolve(result) };
+  const policies = new PolicyService(settingPolicies(coreSettings), [provider], logger);
+  await policies.refresh();
+  const store = {
+    load: () => Promise.resolve({ user: { ...user }, workspaces: {} }),
+    save: () => Promise.resolve(),
+  };
+  const settings = new SettingsService(coreSettings, policies, store, logger);
+  await settings.load();
+  return settings;
+}
+
+describe('TabSleepSetting and TabSleepAfterSetting', () => {
+  it('put tabs to sleep after an hour by default, in the section of performance', () => {
+    expect(TabSleepSetting).toMatchObject({
+      key: 'tabs.sleep',
+      default: true,
+      policy: { name: 'SleepingTabsEnabled', recommended: true },
+      ui: { section: 'performance', control: 'toggle', order: 1 },
+    });
+    expect(TabSleepAfterSetting).toMatchObject({
+      key: 'tabs.sleepAfter',
+      default: 3600,
+      policy: { name: 'SleepingTabsTimeout', recommended: true },
+      ui: { section: 'performance', control: 'select', order: 2 },
+    });
+    expect(coreSettings).toEqual(expect.arrayContaining([TabSleepSetting, TabSleepAfterSetting]));
+    expect(settingPolicies(coreSettings).map((policy) => policy.name)).toEqual(
+      expect.arrayContaining(['SleepingTabsEnabled', 'SleepingTabsTimeout']),
+    );
+  });
+
+  it("take the times of Edge's policy in seconds, and no other", () => {
+    for (const seconds of [30, 300, 900, 1800, 3600, 7200, 10800, 21600, 43200]) {
+      expect(v.safeParse(TabSleepAfterSetting.schema, seconds).success).toBe(true);
+    }
+    expect(sleepAfterSeconds).toHaveLength(9);
+    for (const other of [0, 60, 3601, '3600', -300]) {
+      expect(v.safeParse(TabSleepAfterSetting.schema, other).success).toBe(false);
+    }
+    expect(v.safeParse(TabSleepSetting.schema, 'on').success).toBe(false);
+  });
+
+  it('follow a mandatory policy, and a recommended one only until people chose', async () => {
+    const managed = await settingsWith([
+      { name: 'SleepingTabsEnabled', value: false, level: 'mandatory' },
+      { name: 'SleepingTabsTimeout', value: 300, level: 'mandatory' },
+    ]);
+    expect([managed.get(TabSleepSetting), managed.get(TabSleepAfterSetting)]).toEqual([false, 300]);
+    expect(managed.inspect(TabSleepSetting).locked).toBe(true);
+    expect(managed.inspect(TabSleepAfterSetting).locked).toBe(true);
+    const suggested = await settingsWith(
+      [{ name: 'SleepingTabsTimeout', value: 30, level: 'recommended' }],
+      { 'tabs.sleepAfter': 7200 },
+    );
+    expect(suggested.get(TabSleepAfterSetting)).toBe(7200);
+    expect(suggested.inspect(TabSleepAfterSetting).locked).toBe(false);
+    expect(
+      (await settingsWith([{ name: 'SleepingTabsTimeout', value: 30, level: 'recommended' }])).get(
+        TabSleepAfterSetting,
+      ),
+    ).toBe(30);
+    // A time that the policy does not know leaves the default.
+    const unknown = await settingsWith([
+      { name: 'SleepingTabsTimeout', value: 60, level: 'mandatory' },
+    ]);
+    expect(unknown.get(TabSleepAfterSetting)).toBe(3600);
   });
 });
