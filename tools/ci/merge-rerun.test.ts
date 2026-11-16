@@ -179,6 +179,11 @@ describe('the rerun step of merge.yml', () => {
     assert.ok(reran);
   });
 
+  it('runs the jobs of a CI run again after its first and its second attempt only', () => {
+    const condition = entries(workflow).find((entry) => entry.path.join('.') === 'jobs.rerun.if');
+    assert.match(condition?.value ?? '', /github\.event\.workflow_run\.run_attempt < 3 &&/);
+  });
+
   it('keeps the failure of a second attempt whose runner was lost', () => {
     const { output, reran } = run(
       [
