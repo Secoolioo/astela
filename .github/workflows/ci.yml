@@ -229,7 +229,9 @@ jobs:
   e2e:
     name: e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The suite runs for about 20 minutes on macOS and Windows and grows with each feature; a
+    # slow runner can take half as long again.
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
