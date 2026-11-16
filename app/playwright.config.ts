@@ -8,4 +8,9 @@ export default defineConfig({
   workers: 1,
   reporter: process.env['CI'] === undefined ? 'list' : [['list'], ['github']],
   use: { trace: 'retain-on-failure' },
+  projects: [
+    { name: 'e2e', testIgnore: 'system-picker.spec.ts' },
+    // Tests that leave system UI open run last: every browser started after them runs behind it.
+    { name: 'system-ui', testMatch: 'system-picker.spec.ts', dependencies: ['e2e'] },
+  ],
 });

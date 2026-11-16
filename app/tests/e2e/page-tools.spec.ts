@@ -1,11 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   FixtureServer,
   launch,
   pressNative,
+  removeAfterExit,
   shellState,
   tabViews,
   waitForPage,
@@ -263,7 +264,7 @@ test('zooms a site in and out, shows its zoom and keeps it for the next start', 
       await again.close();
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -379,7 +380,7 @@ test('shows an element of a page that another page opened in full screen as for 
     };
     expect(session.windows[0]?.fullScreen ?? false).toBe(false);
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -478,7 +479,7 @@ test('reloads without the cache, prints, saves and shows the source of a page', 
       .toContain('<title>Fixture find</title>');
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 

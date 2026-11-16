@@ -1,10 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { launch, pressNative, shellState, waitForPage, type Browser } from './harness.ts';
+import {
+  launch,
+  pressNative,
+  removeAfterExit,
+  shellState,
+  waitForPage,
+  type Browser,
+} from './harness.ts';
 
 let server: Server;
 let origin = '';
@@ -223,7 +230,7 @@ test('keeps no history, session, cookies or answers of a private window', async 
       await next.close();
     }
   } finally {
-    rmSync(profile, { recursive: true, force: true });
+    removeAfterExit(profile);
   }
 });
 
@@ -265,7 +272,7 @@ test('lists the downloads of a private window only there and keeps their files',
     expect((await shellState(again)).downloads).toBeNull();
   } finally {
     await browser.close();
-    rmSync(folder, { recursive: true, force: true });
+    removeAfterExit(folder);
   }
 });
 
