@@ -1,7 +1,9 @@
 import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
+import { historyMoves } from './tab-history.ts';
 import { TabStrip } from './tab-strip.ts';
+import type { TabHistory } from './view-history.ts';
 
 /** Identifier of a tab, such as `t1a`. */
 export type TabId = string;
@@ -57,9 +59,10 @@ export type TabUpdate = Partial<Omit<Tab, 'id'>>;
 export interface TabViewPort {
   /**
    * Creates the view of a tab and loads the URL. A lazy tab gets its view only when it is
-   * shown, so restored tabs cost nothing until they are used.
+   * shown, so restored tabs cost nothing until they are used. A tab with a history comes back
+   * with its back and forward lists; the entry that the history shows has the URL.
    */
-  create(id: TabId, url: string, lazy?: boolean): void;
+  create(id: TabId, url: string, lazy?: boolean, history?: TabHistory): void;
   /** Shows the view of a tab and hides the previously shown one. */
   show(id: TabId): void;
   /** Destroys the view of a tab. */
@@ -86,6 +89,11 @@ export interface OpenTabOptions {
   readonly pinned?: boolean;
   /** Opens the tab right after this tab instead of after the active one. */
   readonly after?: TabId;
+  /**
+   * The back and forward history that the tab comes back with, such as that of a restored
+   * tab; the entry that it shows has the tab's URL.
+   */
+  readonly history?: TabHistory | undefined;
 }
 
 /** Token for the {@link TabService} of a window. */
@@ -110,6 +118,20 @@ const tabFields = [
 /** Fields of a tab that a session keeps. */
 const keptFields = ['url', 'title', 'pinned'] as const;
 
+/** A change that a session keeps. */
+export interface KeptChange {
+  /**
+   * Whether only titles of pages changed, which a session may write later: some pages change
+   * their title all the time, such as a timer.
+   */
+  readonly titleOnly: boolean;
+}
+
+/** A change of tabs, windows or pages that the session cannot wait long for. */
+export const keptChange: KeptChange = { titleOnly: false };
+/** A change of titles of pages alone. */
+const titleChange: KeptChange = { titleOnly: true };
+
 /**
  * Owns the tabs of one window and tells its views what changed. A {@link TabStrip} keeps the
  * order of the tabs, the active tab and the tabs that closed lately. A window always keeps at
@@ -127,12 +149,12 @@ export class TabService implements Disposable {
 
   /** Fires after any tab or the active tab changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
-  private readonly keptEmitter = new Emitter<void>();
+  private readonly keptEmitter = new Emitter<KeptChange>();
   /**
    * Fires after a change that a session keeps: tabs that open, close, move or are pinned, the
    * active tab, and the address and the title of a page.
    */
-  readonly onDidChangeKept: Event<void> = this.keptEmitter.event;
+  readonly onDidChangeKept: Event<KeptChange> = this.keptEmitter.event;
 
   /**
    * @param views - Creates and controls the web views.
@@ -187,13 +209,15 @@ export class TabService implements Disposable {
   open(url: string = this.blankUrl, options: OpenTabOptions = {}): TabId {
     const id = `t${(this.nextId++).toString(36)}`;
     const lazy = options.lazy === true;
+    // A tab without a view knows its moves from its history alone.
+    const moves = options.history === undefined ? undefined : historyMoves(options.history);
     const tab: Tab = {
       id,
       url,
       title: options.title ?? '',
       loading: !lazy,
-      canGoBack: false,
-      canGoForward: false,
+      canGoBack: moves?.back ?? false,
+      canGoForward: moves?.forward ?? false,
       blocked: 0,
       problem: null,
       zoom: 1,
@@ -205,11 +229,11 @@ export class TabService implements Disposable {
     const activate = options.activate ?? true;
     if (options.after !== undefined) this.require(options.after);
     this.strip.insert(tab, { activate, after: options.after });
-    this.views.create(id, url, lazy);
+    this.views.create(id, url, lazy, options.history);
     if (activate) {
       this.activate(id);
     } else {
-      this.changed(true);
+      this.changed(keptChange);
     }
     return id;
   }
@@ -222,7 +246,7 @@ export class TabService implements Disposable {
     if (this.require(id).activate(id)) {
       this.views.show(id);
     }
-    this.changed(true);
+    this.changed(keptChange);
   }
 
   /**
@@ -240,7 +264,7 @@ export class TabService implements Disposable {
       if (closed.next === undefined) {
         if (this.onLastClosed === undefined) this.open();
         else {
-          this.changed(true);
+          this.changed(keptChange);
           this.onLastClosed();
         }
         return;
@@ -248,7 +272,7 @@ export class TabService implements Disposable {
       this.activate(closed.next.id);
       return;
     }
-    this.changed(true);
+    this.changed(keptChange);
   }
 
   /**
@@ -259,7 +283,7 @@ export class TabService implements Disposable {
    */
   move(id: TabId, index: number): void {
     this.require(id).move(id, index);
-    this.changed(true);
+    this.changed(keptChange);
   }
 
   /**
@@ -272,7 +296,7 @@ export class TabService implements Disposable {
    */
   step(id: TabId, direction: -1 | 1): boolean {
     if (!this.require(id).step(id, direction)) return false;
-    this.changed(true);
+    this.changed(keptChange);
     return true;
   }
 
@@ -284,7 +308,7 @@ export class TabService implements Disposable {
    */
   pin(id: TabId, pinned: boolean): void {
     this.require(id).pin(id, pinned);
-    this.changed(true);
+    this.changed(keptChange);
   }
 
   /** Whether a closed tab can be opened again. */
@@ -338,13 +362,20 @@ export class TabService implements Disposable {
     if (tabFields.some(differs)) {
       strip.replace(next);
       // A count of blocked requests or a page that loads changes nothing that a session keeps.
-      this.changed(keptFields.some(differs));
+      const kept = keptFields.filter(differs);
+      this.changed(
+        kept.length === 0
+          ? undefined
+          : kept.every((field) => field === 'title')
+            ? titleChange
+            : keptChange,
+      );
     }
   }
 
-  private changed(kept: boolean): void {
+  private changed(kept: KeptChange | undefined): void {
     this.changeEmitter.fire();
-    if (kept) this.keptEmitter.fire();
+    if (kept !== undefined) this.keptEmitter.fire(kept);
   }
 
   /** Destroys every view and removes listeners. */

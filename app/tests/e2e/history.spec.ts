@@ -34,9 +34,16 @@ test('records pages and finds, opens and removes them on the history page', asyn
     await history.getByRole('searchbox', { name: 'Search history' }).fill('');
     await history.getByRole('button', { name: 'Remove Fixture home from the history' }).click();
     await expect(entry('Fixture home')).toHaveCount(0);
+    // The tab of the pages can go back, until the whole history is cleared.
+    const moves = async (): Promise<[boolean, boolean] | undefined> => {
+      const tab = (await shellState(browser.shell)).tabs[0];
+      return tab === undefined ? undefined : [tab.canGoBack, tab.canGoForward];
+    };
+    expect(await moves()).toEqual([true, false]);
     await history.getByRole('button', { name: 'Clear history' }).click();
     await history.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect(history.getByText('No pages found.')).toBeVisible();
+    await expect.poll(moves).toEqual([false, false]);
   } finally {
     await browser.close();
   }

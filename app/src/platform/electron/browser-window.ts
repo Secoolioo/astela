@@ -23,12 +23,21 @@ import {
 import type { Logger } from '../../kernel/logging/logger.ts';
 import { pageUrl, sharedChannels, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import {
+  keptChange,
   TabService,
+  type KeptChange,
   type TabId,
   type TabProblem,
   type TabViewPort,
 } from '../../domain/tabs/tab-service.ts';
-import { ViewHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
+import { ViewHistory, type TabHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
+import {
+  currentEntry,
+  currentOnly,
+  memoryLimits,
+  stepHistory,
+  trimHistory,
+} from '../../domain/tabs/tab-history.ts';
 import {
   sessionWindow,
   type RestoredWindow,
@@ -245,10 +254,18 @@ export interface OverlayHandle {
 export interface WindowPlace {
   readonly bounds?: WindowBounds | undefined;
   readonly maximized?: boolean | undefined;
+  /** Whether the window opens in full screen, as people left it. */
+  readonly fullScreen?: boolean | undefined;
   /** A popup closes with its last tab and is not kept in the session. */
   readonly popup?: boolean;
   /** A private window keeps no history and no session, and its pages' data only in memory. */
   readonly private?: boolean;
+}
+
+/** Where a window is outside full screen, and whether it is maximized there. */
+export interface NormalPlace {
+  readonly bounds: Rectangle;
+  readonly maximized: boolean;
 }
 
 /** The view that shows a tab, and what belongs to it. */
@@ -264,6 +281,38 @@ interface TabEntry {
   readonly history: ViewHistory;
   /** Stops the load of the icon of the tab's page while one runs. */
   iconLoad?: AbortController | undefined;
+  /** The tab's history as {@link BrowserWindowController.historyOf} gave it, until the page changes. */
+  cache?: TabHistory | undefined;
+  /**
+   * The address of the entry that the view restores when a tab without a view wakes: its
+   * commit is no new visit, and the tab keeps its icon.
+   */
+  restored?: string | undefined;
+  /**
+   * Whether the back and forward entries of the view still go, after the whole history was
+   * cleared: Chromium keeps them while a load of one of them runs, as after a restore, Back or
+   * a reload, and the view drops them once that load ends.
+   */
+  clearing?: boolean | undefined;
+}
+
+/**
+ * A tab without a view, such as a restored tab that was not shown yet: the address it shows
+ * and its back and forward history, which come back once it wakes.
+ */
+interface DormantTab {
+  readonly url: string;
+  /** The history, within the limits of memory; `undefined` loads the address as a new page. */
+  readonly history: TabHistory | undefined;
+}
+
+/**
+ * What a view does once the browser process is ready for its internal page: restore a history,
+ * then load an address. A later job of the view takes the place of an earlier one.
+ */
+interface PageJob {
+  restore?: ViewSnapshot | undefined;
+  load?: string | undefined;
 }
 
 /** How long a window that just opened takes to set itself up on Linux, in milliseconds. */
@@ -311,12 +360,26 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private fullScreenTab: TabId | undefined;
   /** Whether the user put the window in full screen, rather than a page. */
   private userFullScreen = false;
+  /**
+   * Where the window was right before it went into full screen, until it leaves full screen.
+   * Electron does not give that place while the window is in full screen: no system counts a
+   * window in full screen as maximized; on Windows, the normal bounds come 1 px further left
+   * and 2 px wider and 1 px taller, as Electron measures the frame without the title bar style
+   * that full screen takes away; and on macOS, they are where Electron last placed the window
+   * itself, not where people moved it, nor where the green button found it.
+   */
+  private placeBeforeFullScreen: NormalPlace | undefined;
+  /**
+   * On macOS, whether the window entered full screen and has not left it yet. While it leaves,
+   * macOS has taken it out of full screen already, and the place from before still counts.
+   */
+  private fullScreenEntered = false;
   /** Views whose internal page waits for {@link BrowserWindowOptions.prepareInternalPage}. */
-  private readonly waiting = new WeakMap<WebContents, string>();
+  private readonly waiting = new WeakMap<WebContents, PageJob>();
   /** The default zoom that each web view was made with, which Chromium keeps for its pages. */
   private readonly madeZoom = new WeakMap<WebContents, number>();
-  /** Tabs without a view yet, with the URL they load once they wake. */
-  private readonly lazyTabs = new Map<TabId, string>();
+  /** Tabs without a view, with what they show once they wake. */
+  private readonly dormant = new Map<TabId, DormantTab>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
   private adopting: WebContents | undefined;
   /** Whether the window is a popup that a page opened. */
@@ -384,7 +447,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         capabilities: new Set(['shell', 'appearance']),
       }),
     );
+    // On macOS, maximize() zooms the window before it returns, and full screen moves the window
+    // into a space of its own, with an animation.
     if (place.maximized === true) this.window.maximize();
+    if (place.fullScreen === true) {
+      this.userFullScreen = true;
+      this.setFullScreen(true, place.maximized === true);
+    }
     // A popup closes with its last tab, as the page that closes itself expects.
     this.tabs = new TabService(
       this,
@@ -403,6 +472,35 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // The system hides the window controls in full screen, where the top row needs no room.
       this.window.on('enter-full-screen', () => this.schedulePublish());
       this.window.on('leave-full-screen', () => this.schedulePublish());
+    }
+    // Full screen that the system's controls start or end counts as the user's, as the shortcut
+    // does; a page in full screen does not.
+    this.window.on('enter-full-screen', () => {
+      if (this.fullScreenTab === undefined) this.userFullScreen = true;
+    });
+    this.window.on('leave-full-screen', () => {
+      const before = this.placeBeforeFullScreen;
+      this.userFullScreen = false;
+      this.placeBeforeFullScreen = undefined;
+      this.fullScreenEntered = false;
+      if (process.platform === 'darwin' && before?.maximized === true) this.placeAgain(before);
+    });
+    // Electron on macOS takes note of where the window is only when it places the window itself,
+    // and the green button puts the window in full screen without Electron: the browser notes
+    // where the window is after each change outside full screen.
+    if (process.platform === 'darwin') {
+      const note = (): void => {
+        this.notePlace();
+      };
+      note();
+      this.window.on('enter-full-screen', () => {
+        this.fullScreenEntered = true;
+      });
+      this.window.on('move', note);
+      this.window.on('resize', note);
+      this.window.on('maximize', note);
+      this.window.on('unmaximize', note);
+      this.window.on('leave-full-screen', note);
     }
     // Alt held while the window loses the focus, as for Alt+Tab, opens nothing.
     this.window.on('blur', () => this.altTap.reset());
@@ -436,6 +534,36 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** The shell's `WebContents`. */
   get shellContents(): WebContents {
     return this.shell.webContents;
+  }
+
+  /**
+   * Whether people put the window in full screen, rather than a page of it. On macOS, a page
+   * takes a full screen of its own, so the full screen of the window while no page is in full
+   * screen is people's, from the moment that macOS starts to move the window there: Electron
+   * reports it from the green button only once that animation has ended, and a browser that
+   * quits before keeps it.
+   */
+  get fullScreen(): boolean {
+    if (this.window.isDestroyed() || !this.window.isFullScreen()) return false;
+    return (
+      this.userFullScreen || (process.platform === 'darwin' && this.fullScreenTab === undefined)
+    );
+  }
+
+  /**
+   * Where the window is outside full screen, and whether it is maximized there, as the session
+   * keeps it; while the window or a page in it is in full screen, or on macOS on its way out of
+   * full screen, where it was before.
+   */
+  get normalPlace(): NormalPlace {
+    const before = this.placeBeforeFullScreen;
+    if (
+      before !== undefined &&
+      (this.fullScreenEntered || this.window.isFullScreen() || this.window.isSimpleFullScreen())
+    ) {
+      return before;
+    }
+    return { bounds: this.window.getNormalBounds(), maximized: this.window.isMaximized() };
   }
 
   /** The overlay while it shows something; a change of the visible tab closes it. */
@@ -620,11 +748,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return [...this.entries].find(([, entry]) => entry.view.webContents === contents)?.[0];
   }
 
-  create(id: TabId, url: string, lazy = false): void {
+  create(id: TabId, url: string, lazy = false, history?: TabHistory): void {
     const adopted = this.adopting;
     this.adopting = undefined;
-    if (lazy && adopted === undefined) {
-      this.lazyTabs.set(id, url);
+    // A history comes back within the limits of memory, and only when it shows the address.
+    const kept = history === undefined ? undefined : trimHistory(history, memoryLimits);
+    const dormant = {
+      url,
+      history: kept !== undefined && currentEntry(kept)?.url === url ? kept : undefined,
+    };
+    if (adopted === undefined && (lazy || dormant.history !== undefined)) {
+      this.dormant.set(id, dormant);
+      if (!lazy) this.wake(id);
       return;
     }
     const entry: TabEntry = {
@@ -828,7 +963,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   destroy(id: TabId): void {
-    this.lazyTabs.delete(id);
+    this.dormant.delete(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
@@ -864,20 +999,38 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
-    this.wake(id);
+    const dormant = this.dormant.get(id);
+    if (dormant !== undefined) {
+      // A tab without a view has nothing to stop. It loads only once: at the entry that Back or
+      // Forward lead to, and once for a reload, also in the background.
+      if (action === 'stop') return;
+      if (action === 'back' || action === 'forward') {
+        const stepped =
+          dormant.history === undefined
+            ? undefined
+            : stepHistory(dormant.history, action === 'back' ? -1 : 1);
+        const target = stepped === undefined ? undefined : currentEntry(stepped);
+        if (stepped === undefined || target === undefined) return;
+        this.dormant.set(id, { url: target.url, history: stepped });
+      }
+      this.wake(id);
+      return;
+    }
     const entry = this.entries.get(id);
     if (entry === undefined) {
       return;
     }
     const contents = entry.view.webContents;
     const history = contents.navigationHistory;
+    // Entries that go once a load ends lead nowhere.
+    const steps = entry.clearing !== true;
     switch (action) {
       case 'back':
-        if (history.canGoBack()) history.goBack();
+        if (steps && history.canGoBack()) history.goBack();
         else this.restore(id, entry, entry.history.goBack(this.snapshot(entry)));
         break;
       case 'forward':
-        if (history.canGoForward()) history.goForward();
+        if (steps && history.canGoForward()) history.goForward();
         else this.restore(id, entry, entry.history.goForward(this.snapshot(entry)));
         break;
       case 'reload':
@@ -1062,7 +1215,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         break;
       case 'window.fullscreen':
         this.userFullScreen = !this.window.isFullScreen();
-        this.window.setFullScreen(this.userFullScreen);
+        this.setFullScreen(this.userFullScreen);
         break;
       case 'page.reloadHard':
       case 'page.print':
@@ -1380,12 +1533,85 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     contents.on('input-event', onInput);
   }
 
-  /** Gives a tab without a view, such as a restored one, its view, which loads its page. */
+  /**
+   * Gives a tab without a view, such as a restored one, its view: of the kind of the entry that
+   * the tab shows, with the tab's back and forward history, or a view that loads the tab's
+   * address when the tab has no history.
+   */
   private wake(id: TabId): void {
-    const url = this.lazyTabs.get(id);
-    if (url !== undefined) {
-      this.lazyTabs.delete(id);
-      this.create(id, url);
+    const dormant = this.dormant.get(id);
+    if (dormant === undefined) return;
+    this.dormant.delete(id);
+    if (dormant.history === undefined) {
+      this.create(id, dormant.url);
+      return;
+    }
+    const { views, current } = ViewHistory.fromTabHistory(dormant.history);
+    const url = current.entries[current.index]?.url ?? dormant.url;
+    const entry: TabEntry = {
+      ...this.createView(id, url),
+      requested: url,
+      history: views,
+      restored: url,
+    };
+    this.entries.set(id, entry);
+    this.restoreInto(entry.view.webContents, current);
+  }
+
+  /**
+   * The back and forward history of a tab across its views, as the session keeps it. For an
+   * open tab, it is made when it is needed and kept until the page changes, so that a session
+   * costs little while tabs change; the page states in it, such as the scroll position, may be
+   * older than the page.
+   * @param id - The tab.
+   * @param fresh - Reads the history of an open tab anew, with its page states of now.
+   * @returns The history, or `undefined` for a tab without one.
+   */
+  historyOf(id: TabId, fresh = false): TabHistory | undefined {
+    const dormant = this.dormant.get(id);
+    if (dormant !== undefined) return dormant.history;
+    const entry = this.entries.get(id);
+    // A page that closed itself left its view without contents.
+    const contents: WebContents | undefined = entry?.view.webContents;
+    if (entry === undefined || contents === undefined || contents.isDestroyed()) {
+      return entry?.cache;
+    }
+    if (fresh || entry.cache === undefined) {
+      entry.cache = entry.history.toTabHistory(this.snapshot(entry));
+    }
+    return entry.cache;
+  }
+
+  /**
+   * Reads the history of every open tab anew, with the page states of now, such as the scroll
+   * positions, for the next session: before the last window closes, after which no tab is left
+   * to read.
+   */
+  readHistories(): void {
+    for (const id of this.entries.keys()) this.historyOf(id, true);
+  }
+
+  /**
+   * Forgets the back and forward history of every tab, as when the whole history is cleared:
+   * each tab keeps only the entry that it shows.
+   */
+  forgetHistories(): void {
+    for (const [id, entry] of this.entries) {
+      entry.history.clear();
+      entry.cache = undefined;
+      const contents: WebContents | undefined = entry.view.webContents;
+      if (contents === undefined || contents.isDestroyed()) continue;
+      // A view that waits to restore its history restores only what it shows.
+      const job = this.waiting.get(contents);
+      if (job?.restore !== undefined) job.restore = onlyShown(job.restore);
+      entry.clearing = true;
+      this.sync(id, contents);
+    }
+    for (const [id, dormant] of this.dormant) {
+      if (dormant.history !== undefined) {
+        this.dormant.set(id, { url: dormant.url, history: currentOnly(dormant.history) });
+      }
+      this.tabs.update(id, { canGoBack: false, canGoForward: false });
     }
   }
 
@@ -1445,8 +1671,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     adopted?: WebContents,
   ): Pick<TabEntry, 'view' | 'page' | 'registration'> {
     const page = adopted === undefined ? tabPageOf(url) : undefined;
+    // Electron gives a page that a view takes over the preferences of the view, so that the
+    // page, as the browser's other web pages, leaves the window to the browser in full screen:
+    // Electron would put the window in full screen before it reports the page's.
     const view = new WebContentsView(
-      adopted === undefined ? this.viewOptions(page) : { webContents: adopted },
+      adopted === undefined
+        ? this.viewOptions(page)
+        : { webContents: adopted, webPreferences: { disableHtmlFullscreenWindowResize: true } },
     );
     const contents = view.webContents;
     if (page === undefined) this.madeZoom.set(contents, this.options.defaultZoom?.() ?? 1);
@@ -1481,6 +1712,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         onVisit?.(address, contents.getTitle(), false);
       };
       contents.on('did-navigate', (_event, address) => {
+        // The page of a tab that wakes with its history is no new visit.
+        const entry = this.entries.get(id);
+        if (entry?.view === view && entry.restored === address) {
+          visited = address;
+          return;
+        }
         visited = '';
         visit(address);
       });
@@ -1592,8 +1829,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
     // So does the icon, which goes once another page has taken its place: a link that starts
     // a download, or a response without content, leaves the page as it was.
-    contents.on('did-navigate', () => {
-      if (this.entries.get(id)?.view === view) this.dropFavicon(id);
+    contents.on('did-navigate', (_event, address) => {
+      const entry = this.entries.get(id);
+      if (entry?.view !== view) return;
+      // The page of a tab that wakes with its history is the page whose icon the tab shows.
+      const restored = entry.restored;
+      entry.restored = undefined;
+      if (restored !== address) this.dropFavicon(id);
     });
     contents.on('page-favicon-updated', (_event, urls) => void this.loadFavicon(id, view, urls));
     contents.on('audio-state-changed', ({ audible }) => {
@@ -1614,11 +1856,77 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /**
    * Puts the window in full screen for a page, or takes it out again. On macOS, the window
    * covers the screen without the animation into a space of its own: while that animation
-   * runs, Electron keeps the page in full screen, also after it left.
+   * runs, Electron keeps the page in full screen, also after it left. Out of it, the window
+   * goes back where it was before.
    */
   private setPageFullScreen(on: boolean): void {
-    if (process.platform === 'darwin') this.window.setSimpleFullScreen(on);
-    else this.window.setFullScreen(on);
+    if (process.platform !== 'darwin') {
+      this.setFullScreen(on);
+      return;
+    }
+    const before = this.placeBeforeFullScreen;
+    this.window.setSimpleFullScreen(on);
+    if (!on && before !== undefined) this.placeAgain(before);
+  }
+
+  /**
+   * Puts the window in full screen, or takes it out, and notes where it was before.
+   * @param maximized - Whether the window is maximized, when the system may not say so yet, as
+   *   right after a window that opens maximized asked for it on Linux.
+   */
+  private setFullScreen(on: boolean, maximized?: boolean): void {
+    if (on) this.notePlace(maximized);
+    this.window.setFullScreen(on);
+  }
+
+  /**
+   * Puts a window back where it was before full screen on macOS once it left full screen, and
+   * maximizes it again when it was, unless it is so. Electron ends a page's full screen at the
+   * place where it last put the window itself, not where people moved it, nor maximized; and a
+   * window that opened again maximized and in full screen has come back from full screen not
+   * maximized. Electron takes the place that a maximized window goes back to from where the
+   * window is when it maximizes, so the window goes to its place from before first.
+   * @param before - Where the window was before full screen, and whether it was maximized.
+   */
+  private placeAgain(before: NormalPlace): void {
+    // Out of the report of the end of full screen: AppKit counts a change made there as part
+    // of the transition, as Electron notes for a full screen that follows.
+    setTimeout(() => {
+      const window = this.window;
+      if (
+        window.isDestroyed() ||
+        window.isFullScreen() ||
+        window.isSimpleFullScreen() ||
+        window.isMinimized() ||
+        (before.maximized && window.isMaximized())
+      ) {
+        return;
+      }
+      window.setBounds(before.bounds);
+      if (before.maximized && !window.isMaximized()) window.maximize();
+    }, 0);
+  }
+
+  /**
+   * Notes where the window is, while it is neither in full screen, nor on its way out of it,
+   * nor minimized.
+   * @param maximized - Whether the window is maximized, when the system may not say so yet.
+   */
+  private notePlace(maximized?: boolean): void {
+    const window = this.window;
+    if (
+      window.isDestroyed() ||
+      window.isFullScreen() ||
+      window.isSimpleFullScreen() ||
+      window.isMinimized() ||
+      this.fullScreenEntered
+    ) {
+      return;
+    }
+    this.placeBeforeFullScreen = {
+      bounds: window.getNormalBounds(),
+      maximized: maximized ?? window.isMaximized(),
+    };
   }
 
   /**
@@ -1723,28 +2031,47 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (entry?.view.webContents !== contents || contents.isDestroyed()) {
       return;
     }
+    // The page changed, so its history is read again when the session needs it.
+    entry.cache = undefined;
     const history = contents.navigationHistory;
+    if (entry.clearing === true) {
+      // Chromium keeps every entry while a load of one of them runs; it is tried again with
+      // each change of the page until no other entry is left.
+      history.clear();
+      entry.clearing = history.length() > 1;
+    }
+    const steps = entry.clearing !== true;
     this.tabs.update(id, {
       url: contents.getURL() || entry.requested,
       title: contents.getTitle(),
       loading: contents.isLoading(),
-      canGoBack: history.canGoBack() || entry.history.canGoBack,
-      canGoForward: history.canGoForward() || entry.history.canGoForward,
+      canGoBack: (steps && history.canGoBack()) || entry.history.canGoBack,
+      canGoForward: (steps && history.canGoForward()) || entry.history.canGoForward,
       zoom: contents.getZoomFactor(),
     });
   }
 
   /** The history of a tab's current view, for {@link ViewHistory}. */
   private snapshot(entry: TabEntry): ViewSnapshot {
-    const history = entry.view.webContents.navigationHistory;
+    const contents = entry.view.webContents;
+    const history = contents.navigationHistory;
     const entries = history
       .getAllEntries()
       .map(({ url, title, pageState }) =>
         pageState === undefined ? { url, title } : { url, title, pageState },
       );
-    return entries.length === 0
-      ? { entries: [{ url: entry.requested, title: '' }], index: 0 }
-      : { entries, index: history.getActiveIndex() };
+    if (entries.length > 0) {
+      const view = { entries, index: history.getActiveIndex() };
+      // Entries that go once a load ends are not kept.
+      return entry.clearing === true ? onlyShown(view) : view;
+    }
+    // A view that still waits for its internal page has the history that it is to restore.
+    return (
+      this.waiting.get(contents)?.restore ?? {
+        entries: [{ url: entry.requested, title: '' }],
+        index: 0,
+      }
+    );
   }
 
   /** Shows a view that the tab had before, with its history. */
@@ -1753,13 +2080,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (snapshot === undefined || current === undefined) {
       return;
     }
-    this.replaceView(id, entry, current.url, (contents) => {
-      contents.navigationHistory
-        .restore({ entries: [...snapshot.entries], index: snapshot.index })
-        .catch((error: unknown) =>
-          this.options.logger.debug('History restore failed', { error: String(error) }),
-        );
-    });
+    this.replaceView(id, entry, current.url, (contents) => this.restoreInto(contents, snapshot));
   }
 
   /** Replaces a tab's view with a new one for a URL, in place of the old one. */
@@ -1777,7 +2098,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
     this.dropFavicon(id);
     this.tabs.update(id, { audible: false });
-    Object.assign(entry, this.createView(id, url), { requested: url });
+    // The new view's first page is a page of its own, not the one that a waking tab restores.
+    Object.assign(entry, this.createView(id, url), {
+      requested: url,
+      restored: undefined,
+      clearing: undefined,
+    });
     // The new view takes the place of the old one in the content area.
     const place = this.shown.indexOf(old);
     if (place !== -1 && !this.window.isDestroyed()) {
@@ -1817,20 +2143,57 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   private loadInto(contents: WebContents, url: string): void {
-    const page = tabPageOf(url);
+    // A load after a restore that still waits keeps the restored entries before it.
+    this.runJob(contents, tabPageOf(url), {
+      restore: this.waiting.get(contents)?.restore,
+      load: url,
+    });
+  }
+
+  /**
+   * Restores the history of a view, with the page states of its entries, such as their
+   * scroll positions and form values, once the browser process is ready for its internal page.
+   * @param contents - The view's contents, which have no entries yet.
+   * @param snapshot - The history of the view.
+   */
+  private restoreInto(contents: WebContents, snapshot: ViewSnapshot): void {
+    const url = snapshot.entries[snapshot.index]?.url ?? '';
+    this.runJob(contents, tabPageOf(url), { restore: snapshot });
+  }
+
+  /**
+   * Runs what a view is to do once the browser process is ready for its internal page: at
+   * once for a web page or a page that is ready, or else after the page's handlers loaded. A
+   * later job of the same view wins over this one while it waits.
+   */
+  private runJob(contents: WebContents, page: TabPage | undefined, job: PageJob): void {
     const preparing = page === undefined ? undefined : this.options.prepareInternalPage?.(page);
     if (preparing === undefined) {
       this.waiting.delete(contents);
-      this.startLoad(contents, url);
+      this.startJob(contents, job);
       return;
     }
-    // A later load of the same view wins over this one while it waits.
-    this.waiting.set(contents, url);
+    this.waiting.set(contents, job);
     void preparing.then(() => {
-      if (this.waiting.get(contents) !== url || contents.isDestroyed()) return;
+      if (this.waiting.get(contents) !== job || contents.isDestroyed()) return;
       this.waiting.delete(contents);
-      this.startLoad(contents, url);
+      this.startJob(contents, job);
     });
+  }
+
+  private startJob(contents: WebContents, job: PageJob): void {
+    const { restore, load } = job;
+    if (restore !== undefined) {
+      // Chromium takes the entries at once; a load right after it keeps them before its own.
+      contents.navigationHistory
+        .restore({ entries: [...restore.entries], index: restore.index })
+        .catch((error: unknown) => {
+          if (!String(error).includes('ERR_ABORTED')) {
+            this.options.logger.debug('History restore failed', { error: String(error) });
+          }
+        });
+    }
+    if (load !== undefined) this.startLoad(contents, load);
   }
 
   private startLoad(contents: WebContents, url: string): void {
@@ -1876,9 +2239,13 @@ export class WindowManager implements Disposable {
 
   /** Fires after windows opened or closed, or their tabs changed. */
   readonly onDidChange: Event<void> = this.changeEmitter.event;
-  private readonly keptEmitter = new Emitter<void>();
-  /** Fires after windows opened or closed, or their tabs changed in a way that a session keeps. */
-  readonly onDidChangeKept: Event<void> = this.keptEmitter.event;
+  private readonly keptEmitter = new Emitter<KeptChange>();
+  /**
+   * Fires after windows opened or closed, another regular window became the one used last, or
+   * their tabs changed in a way that a session keeps, and before the last regular window closes,
+   * once its tabs read their histories anew.
+   */
+  readonly onDidChangeKept: Event<KeptChange> = this.keptEmitter.event;
   private readonly boundsEmitter = new Emitter<void>();
   /** Fires while a window moves or changes its size. */
   readonly onDidMove: Event<void> = this.boundsEmitter.event;
@@ -1951,10 +2318,12 @@ export class WindowManager implements Disposable {
    */
   restore(windows: readonly RestoredWindow[]): BrowserWindowController {
     const areas = workAreas();
+    // The window used last opens last, so that it ends up in front.
     const controllers = windows.map(({ tabs, active, place }) => {
       const controller = this.add({
         bounds: place.bounds === undefined ? undefined : visibleBounds(place.bounds, areas),
         maximized: place.maximized,
+        fullScreen: place.fullScreen,
       });
       const ids = tabs.map((tab, index) =>
         controller.tabs.open(tab.url, {
@@ -1962,6 +2331,7 @@ export class WindowManager implements Disposable {
           lazy: index !== active,
           title: tab.title,
           pinned: tab.pinned === true,
+          history: tab.history,
         }),
       );
       const activeId = ids[active] ?? ids[0];
@@ -1971,35 +2341,67 @@ export class WindowManager implements Disposable {
     return controllers[0] ?? this.open();
   }
 
-  /** The tabs of every open window, as a session keeps them. */
-  snapshot(): SessionSnapshot {
+  /**
+   * The tabs of every open window, as a session keeps them, with their back and forward
+   * history, and the windows in the order in which they were used, the window used last at the
+   * end.
+   * @param options - `fresh` reads the history of every open tab anew, with the page states
+   *   of now, such as when the browser quits; without it, a tab gives the history that it gave
+   *   since its page last changed.
+   */
+  snapshot(options: { readonly fresh?: boolean } = {}): SessionSnapshot {
+    const fresh = options.fresh === true;
     return {
       version: 1,
       // Popups and private windows are not kept; the window that opened a popup is.
-      windows: [...this.windows].flatMap((controller) => {
-        if (controller.popup || controller.isPrivate) return [];
-        const tabs = controller.tabs.all;
-        const active = controller.tabs.active;
-        const window = sessionWindow(tabs, active === undefined ? -1 : tabs.indexOf(active), {
-          bounds: controller.window.getNormalBounds(),
-          maximized: controller.window.isMaximized(),
-        });
-        return window === undefined ? [] : [window];
-      }),
+      windows: this.keptByFocus()
+        .toReversed()
+        .flatMap((controller) => {
+          const tabs = controller.tabs.all;
+          const active = controller.tabs.active;
+          const window = sessionWindow(
+            tabs.map(({ id, url, title, pinned }) => ({
+              url,
+              title,
+              pinned,
+              history: controller.historyOf(id, fresh),
+            })),
+            active === undefined ? -1 : tabs.indexOf(active),
+            {
+              ...controller.normalPlace,
+              fullScreen: controller.fullScreen,
+            },
+          );
+          return window === undefined ? [] : [window];
+        }),
     };
+  }
+
+  /**
+   * Forgets the back and forward history of the tabs of every regular window, and the
+   * session's with them, as when the whole history is cleared; each tab keeps only the entry
+   * that it shows. Private windows keep theirs, as they keep no history to clear.
+   */
+  forgetTabHistories(): void {
+    for (const window of this.windows) {
+      if (!window.isPrivate) window.forgetHistories();
+    }
+    this.keptEmitter.fire(keptChange);
   }
 
   private add(place?: WindowPlace): BrowserWindowController {
     const controller = new BrowserWindowController(this.options, place);
     this.windows.add(controller);
     const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
-    const kept = controller.tabs.onDidChangeKept(() => this.keptEmitter.fire());
+    const kept = controller.tabs.onDidChangeKept((change) => this.keptEmitter.fire(change));
     // The session keeps where each window is.
     const moved = (): void => this.boundsEmitter.fire();
     controller.window.on('move', moved);
     controller.window.on('resize', moved);
     controller.window.on('maximize', moved);
     controller.window.on('unmaximize', moved);
+    controller.window.on('enter-full-screen', moved);
+    controller.window.on('leave-full-screen', moved);
     const forget = (): void => {
       const index = this.focusOrder.indexOf(controller);
       if (index !== -1) this.focusOrder.splice(index, 1);
@@ -2008,9 +2410,25 @@ export class WindowManager implements Disposable {
       // The focus that a window got while it opened can reach it after it closed, on macOS
       // when it closes right away; a closed window never counts as the one used last.
       if (!this.windows.has(controller)) return;
+      const before = this.keptByFocus();
       forget();
       this.focusOrder.push(controller);
       this.options.onFocus?.();
+      // The session keeps the order in which the regular windows were used; popups and private
+      // windows are not in it.
+      const after = this.keptByFocus();
+      if (after.some((window, index) => before[index] !== window)) {
+        this.keptEmitter.fire(keptChange);
+      }
+    });
+    // The last regular window that closes takes the page states of its tabs of now into the
+    // session, such as the scroll positions, as its tabs are gone when the browser quits.
+    controller.window.on('close', () => {
+      if (!inSession(controller) || this.keptByFocus().some((other) => other !== controller)) {
+        return;
+      }
+      controller.readHistories();
+      this.keptEmitter.fire(keptChange);
     });
     controller.window.on('closed', () => {
       listener.dispose();
@@ -2018,7 +2436,7 @@ export class WindowManager implements Disposable {
       forget();
       this.windows.delete(controller);
       this.changeEmitter.fire();
-      this.keptEmitter.fire();
+      this.keptEmitter.fire(keptChange);
       if (controller.isPrivate && ![...this.windows].some((other) => other.isPrivate)) {
         this.options.onPrivateWindowsClosed?.();
       }
@@ -2034,6 +2452,11 @@ export class WindowManager implements Disposable {
     const focused = this.focusOrder.toReversed();
     const others = [...this.windows].filter((window) => !focused.includes(window)).toReversed();
     return [...focused, ...others].filter((window) => this.windows.has(window));
+  }
+
+  /** The windows that the session keeps, in the order of {@link WindowManager.byFocus}. */
+  private keptByFocus(): BrowserWindowController[] {
+    return this.byFocus.filter(inSession);
   }
 
   /** The open window that had the focus last, or else the newest open window. */
@@ -2120,6 +2543,17 @@ export class WindowManager implements Disposable {
   toDisposable(): Disposable {
     return toDisposable(() => this.dispose());
   }
+}
+
+/** Whether the session keeps a window: popups and private windows are not kept. */
+function inSession(window: BrowserWindowController): boolean {
+  return !window.popup && !window.isPrivate;
+}
+
+/** The history of a view with only the entry that it shows. */
+function onlyShown(view: ViewSnapshot): ViewSnapshot {
+  const entry = view.entries[view.index];
+  return entry === undefined ? view : { entries: [entry], index: 0 };
 }
 
 /** Whether two popovers of the shell are the same, or both none. */

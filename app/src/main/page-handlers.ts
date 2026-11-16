@@ -34,6 +34,11 @@ export interface PageDependencies {
   readonly startValues: ReadonlyMap<string, string>;
   /** The session of web pages in regular windows. */
   readonly webSession: () => Session;
+  /**
+   * Forgets the back and forward history of the tabs, of the session and of its backup, as
+   * when the whole history is cleared.
+   */
+  readonly forgetTabHistories: () => Promise<void>;
   /** The folder in the profile of the background image of the new tab page. */
   readonly newTabFolder: string;
   /** The shortcuts of the windows, and a way to wait for a key press of a page. */
@@ -61,11 +66,15 @@ export function connectPages(dependencies: PageDependencies): void {
     dependencies.definitions,
     dependencies.internal,
     dependencies.startValues,
-    { data, web: dependencies.webSession },
+    {
+      data,
+      web: dependencies.webSession,
+      forgetTabHistories: dependencies.forgetTabHistories,
+    },
     dependencies.shortcuts,
     dependencies.newTabFolder,
   );
-  connectHistoryPage(router, data, windows);
+  connectHistoryPage(router, data, windows, dependencies.forgetTabHistories);
   connectBookmarksPage(router, data, bookmarks, windows);
   connectBrowserImport(router, data, bookmarks, windows, dependencies.importAllowed);
   connectDefaultBrowser(

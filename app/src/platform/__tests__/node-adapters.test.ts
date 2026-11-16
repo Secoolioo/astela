@@ -10,7 +10,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { SessionSnapshot } from '../../domain/session/session.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import { writeFileAtomic, writeFileAtomicSync } from '../node/atomic-file.ts';
 import { RotatingFileLogSink } from '../node/file-log-sink.ts';
@@ -206,6 +207,52 @@ describe('createPolicyProviders', () => {
   });
 });
 
+/** What a session store reads back: the parsed session, and whether the browser quit normally. */
+async function readBack(store: {
+  read(): Promise<{ readonly unclean: boolean; data(): Promise<unknown> }>;
+}): Promise<{ data: unknown; unclean: boolean }> {
+  const stored = await store.read();
+  return { data: await stored.data(), unclean: stored.unclean };
+}
+
+/** A session of one window whose tab went from one page to another. */
+function travelled(title: string): SessionSnapshot {
+  return {
+    version: 1,
+    windows: [
+      {
+        tabs: [
+          {
+            url: 'https://b.example/',
+            title,
+            history: {
+              views: [
+                {
+                  entries: [
+                    { url: 'https://a.example/', title: 'A', pageState: 'QUJD' },
+                    { url: 'https://b.example/', title, pageState: 'REVG' },
+                  ],
+                  index: 1,
+                },
+              ],
+              view: 0,
+            },
+          },
+        ],
+        active: 0,
+      },
+    ],
+  };
+}
+
+/** The entries that each tab of the windows of a session file keeps. */
+function entriesOf(file: string): unknown[] {
+  const session = JSON.parse(readFileSync(file, 'utf8')) as SessionSnapshot;
+  return session.windows.flatMap((window) =>
+    window.tabs.map((tab) => tab.history?.views.map((view) => view.entries)),
+  );
+}
+
 describe('JsonFileSessionStore', () => {
   it('writes the newest session after the delay, keeps a backup and reads it back', async () => {
     const { JsonFileSessionStore } = await import('../node/session-store.ts');
@@ -213,7 +260,7 @@ describe('JsonFileSessionStore', () => {
     const clock = new ManualClock();
     const file = join(dir, 'session.json');
     const store = new JsonFileSessionStore(file, clock, 1000);
-    expect(await store.read()).toBeUndefined();
+    expect(await readBack(store)).toEqual({ data: undefined, unclean: false });
     const one = {
       version: 1 as const,
       windows: [{ tabs: [{ url: 'https://a.example/', title: 'A' }], active: 0 }],
@@ -227,12 +274,200 @@ describe('JsonFileSessionStore', () => {
     expect(existsSync(file)).toBe(false);
     clock.advance(1000);
     await store.flush();
-    expect(await store.read()).toEqual(two);
+    expect(await readBack(store)).toEqual({ data: two, unclean: false });
     store.schedule(one);
     await store.flush();
     expect(JSON.parse(readFileSync(`${file}.bak`, 'utf8'))).toEqual(two);
     writeFileSync(file, '{broken');
-    expect(await store.read()).toEqual(two);
+    expect(await readBack(store)).toEqual({ data: two, unclean: false });
+    rmSync(file);
+    expect(await readBack(store)).toEqual({ data: two, unclean: false });
+    store.dispose();
+  });
+
+  it('keeps the back and forward history of tabs and whether windows were in full screen', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    const store = new JsonFileSessionStore(file, new ManualClock(), 1000);
+    const session = {
+      version: 1 as const,
+      windows: [
+        {
+          tabs: [
+            {
+              url: 'https://b.example/',
+              title: 'B',
+              history: {
+                views: [
+                  { entries: [{ url: 'app://newtab/', title: 'New tab' }], index: 0 },
+                  {
+                    entries: [
+                      { url: 'https://a.example/', title: 'A', pageState: 'QUJD' },
+                      { url: 'https://b.example/', title: 'B' },
+                    ],
+                    index: 1,
+                  },
+                ],
+                view: 1,
+              },
+            },
+          ],
+          active: 0,
+          fullScreen: true,
+        },
+      ],
+    };
+    store.schedule(session);
+    await store.flush();
+    expect(await readBack(store)).toEqual({ data: session, unclean: false });
+    store.dispose();
+  });
+
+  it('writes at most 4 MiB of page states, and keeps those that the active tabs show', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    const store = new JsonFileSessionStore(file, new ManualClock(), 1000);
+    const state = 'A'.repeat(3 * 1024 * 1024);
+    const shown = (url: string): SessionSnapshot['windows'][number]['tabs'][number] => ({
+      url,
+      title: url,
+      history: { views: [{ entries: [{ url, title: url, pageState: state }], index: 0 }], view: 0 },
+    });
+    store.schedule({
+      version: 1,
+      windows: [{ tabs: [shown('https://a.example/'), shown('https://b.example/')], active: 1 }],
+    });
+    await store.flush();
+    const written = (await (await store.read()).data()) as SessionSnapshot;
+    expect(
+      written.windows[0]?.tabs.map((tab) => tab.history?.views[0]?.entries[0]?.pageState?.length),
+    ).toEqual([undefined, state.length]);
+    store.dispose();
+  });
+
+  it('tells whether the browser that wrote the session did not quit normally', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    const marker = `${file}.running`;
+    const store = new JsonFileSessionStore(file, new ManualClock(), 1000);
+    await store.markRunning();
+    expect(existsSync(marker)).toBe(true);
+    // The next start, after a crash, finds the marker.
+    expect(await readBack(new JsonFileSessionStore(file, new ManualClock(), 1000))).toEqual({
+      data: undefined,
+      unclean: true,
+    });
+    await store.markClean();
+    expect(existsSync(marker)).toBe(false);
+    expect((await store.read()).unclean).toBe(false);
+    // Once the browser quits, nothing marks it as running again, also not a late first window.
+    await store.markRunning();
+    expect(existsSync(marker)).toBe(false);
+    // A mark of a running browser that is still on its way when the browser quits leaves none.
+    const other = new JsonFileSessionStore(join(tempDir(), 'session.json'), new ManualClock());
+    void other.markRunning();
+    await other.markClean();
+    expect((await other.read()).unclean).toBe(false);
+    // A marker that cannot be written fails, so the browser can say so.
+    const missing = new JsonFileSessionStore(
+      join(tempDir(), 'gone', 'session.json'),
+      new ManualClock(),
+    );
+    await expect(missing.markRunning()).rejects.toThrow(/ENOENT/);
+    store.dispose();
+  });
+
+  it('reads the file at once, but parses it only when the start asks for the session', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    writeFileSync(file, JSON.stringify(travelled('B')));
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const stored = await new JsonFileSessionStore(file, new ManualClock()).read();
+      // A later change of the file does not change what the start reads.
+      writeFileSync(file, '{broken');
+      expect(parse).not.toHaveBeenCalled();
+      expect(await stored.data()).toEqual(travelled('B'));
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it('writes a change of titles alone after the longer delay, with the session of then', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const clock = new ManualClock();
+    const file = join(tempDir(), 'session.json');
+    const store = new JsonFileSessionStore(file, clock, 1000, 30_000);
+    let title = 'Ticking 1';
+    const take = vi.fn(() => travelled(title));
+    store.scheduleLater(take);
+    title = 'Ticking 2';
+    store.scheduleLater(take);
+    clock.advance(29_999);
+    expect(existsSync(file)).toBe(false);
+    expect(take).not.toHaveBeenCalled();
+    title = 'Ticking 3';
+    clock.advance(1);
+    await vi.waitFor(() => expect(existsSync(file)).toBe(true));
+    expect(take).toHaveBeenCalledTimes(1);
+    expect((await readBack(store)).data).toEqual(travelled('Ticking 3'));
+    // Another change writes within the short delay, with the titles of then.
+    store.scheduleLater(take);
+    store.schedule(travelled('Moved'));
+    clock.advance(1000);
+    await vi.waitFor(() =>
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(travelled('Moved')),
+    );
+    expect(take).toHaveBeenCalledTimes(1);
+    // A new title while a sooner write waits goes with that write.
+    store.schedule(travelled('Moved again'));
+    title = 'Ticking 4';
+    store.scheduleLater(take);
+    clock.advance(1000);
+    await vi.waitFor(() =>
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(travelled('Ticking 4')),
+    );
+    // When no session can be taken, as after the last window closed, the one that waits is
+    // written.
+    store.schedule(travelled('Kept'));
+    store.scheduleLater(() => undefined);
+    await store.flush();
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(travelled('Kept'));
+    store.dispose();
+  });
+
+  it('forgets the back and forward lists in the file and in its backup at once', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const clock = new ManualClock();
+    const file = join(tempDir(), 'session.json');
+    const store = new JsonFileSessionStore(file, clock, 1000);
+    store.schedule(travelled('B'));
+    await store.flush();
+    store.schedule(travelled('B'));
+    await store.flush();
+    const kept = [[[{ url: 'https://b.example/', title: 'B', pageState: 'REVG' }]]];
+    // The session that waits, which the browser just built, goes into both files.
+    store.schedule(travelled('B'));
+    await store.forgetHistories();
+    expect(entriesOf(file)).toEqual(kept);
+    expect(entriesOf(`${file}.bak`)).toEqual(kept);
+    clock.advance(1000);
+    await store.flush();
+    expect(entriesOf(file)).toEqual(kept);
+    // Without one, as while only private windows are open, the stored session loses its lists.
+    store.schedule(travelled('B'));
+    await store.flush();
+    store.schedule(travelled('B'));
+    await store.flush();
+    await store.forgetHistories();
+    expect(entriesOf(file)).toEqual(kept);
+    expect(entriesOf(`${file}.bak`)).toEqual(kept);
+    // Files without a session that can be read go.
+    writeFileSync(file, '{broken');
+    writeFileSync(`${file}.bak`, 'https://a.example/');
+    await store.forgetHistories();
+    expect(existsSync(file)).toBe(false);
+    expect(existsSync(`${file}.bak`)).toBe(false);
     store.dispose();
   });
 });

@@ -857,8 +857,13 @@ test('finds bookmarks and visited pages, narrows the search with a prefix and op
     // The star's shortcut adds the bookmark, and its popover closes with Escape.
     await pressNative(browser, 'D', ['primary'], fixture('index.html'));
     await expect.poll(async () => (await shellState(browser.shell)).tabs[0]?.bookmarked).toBe(true);
-    await expect.poll(() => overlayAttached(browser)).toBe(true);
-    await pressNative(browser, 'Escape', [], 'app://overlay');
+    // Escape goes to the popover once it shows, with its name focused: the overlay's page, once
+    // loaded, gets Escape itself, and the popover closes for it only once it is there.
+    const title = (await overlayPage(browser))
+      .getByRole('dialog', { name: 'Bookmark added' })
+      .getByRole('textbox', { name: 'Name' });
+    await expect(title).toBeFocused();
+    await title.press('Escape');
     await expect.poll(() => overlayAttached(browser)).toBe(false);
     await open(browser, 'find.html');
     await open(browser, 'second.html');

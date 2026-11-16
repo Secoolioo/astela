@@ -24,6 +24,10 @@ Tab search finds a tab in any window: press `Ctrl+Shift+A` (`Command+Shift+A` on
 
 Pin a tab from its menu to keep it at the start of the tab strip, where it shows only the icon of its page. Pinned tabs stay pinned at the next start, keep their place before the other tabs when you move tabs, and have no close button: close them from their menu or with the shortcut. In a tab strip at a side, pinned tabs keep their titles. Links that a pinned tab opens in the background line up after the pinned tabs, in the order you opened them.
 
+## Tabs at the next start
+
+From 0.1.0-beta.7, each tab comes back with its back and forward history when Astela starts again with the last session, also after a crash or an update: **Back** and **Forward** go where they went before, also to the new tab page and the browser's own pages, such as the history. The active tab of each window loads at once, at its scroll position and with what you typed into its fields; the other tabs load when you open them. Astela keeps up to 24 pages back and 24 forward for each tab. See [On startup](settings.md#on-startup) for when the last session comes back.
+
 ## The menu of a tab
 
 A click with the secondary button on a tab opens its menu: a new tab next to it, reload, duplicate, pin or unpin, mute or unmute, close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.

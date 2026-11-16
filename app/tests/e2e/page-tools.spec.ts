@@ -344,6 +344,102 @@ test('lets a page show an element in full screen, over the whole window', async 
   }
 });
 
+test('shows an element of a page that another page opened in full screen as for other pages, which the session does not keep', async () => {
+  const browser = await launch();
+  const { profile } = browser;
+  const url = `${server.origin}/find.html`;
+  try {
+    try {
+      const opener = await open(browser, `${server.origin}/opener.html`);
+      // The page opens in a tab of its own, as from a link with target="_blank".
+      await opener.evaluate((address) => void window.open(address), url);
+      const page = await waitForPage(browser, (address) => address === url);
+      await page.getByRole('button', { name: 'Full screen' }).click();
+      await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('player');
+      // The window takes the whole screen; on macOS, it covers the screen without a space of
+      // its own, as for other pages. Elsewhere, Electron knows only the full screen of the
+      // system.
+      await expect
+        .poll(() =>
+          browser.main.evaluate(({ BaseWindow }) => {
+            const window = BaseWindow.getAllWindows()[0];
+            return process.platform === 'darwin'
+              ? { simple: window?.isSimpleFullScreen(), system: window?.isFullScreen() }
+              : { system: window?.isFullScreen() };
+          }),
+        )
+        .toEqual(mac ? { simple: true, system: false } : { system: true });
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    // The browser quit while the page showed the element in full screen: the window comes back
+    // as it was before.
+    const session = JSON.parse(readFileSync(join(profile, 'data', 'session.json'), 'utf8')) as {
+      windows: { fullScreen?: boolean }[];
+    };
+    expect(session.windows[0]?.fullScreen ?? false).toBe(false);
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('puts the window back where people moved it, and maximized when it was, once a page leaves full screen', async () => {
+  test.skip(
+    !mac,
+    "Only on macOS is the full screen of a page the browser's own, which Electron ends where it last put the window itself; on Windows and Linux, it is the system's",
+  );
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/find.html`);
+    const place = (): Promise<
+      { bounds: Electron.Rectangle; normal: Electron.Rectangle; maximized: boolean } | undefined
+    > =>
+      browser.main.evaluate(({ BaseWindow }) => {
+        const window = BaseWindow.getAllWindows()[0];
+        return window === undefined
+          ? undefined
+          : {
+              bounds: window.getBounds(),
+              normal: window.getNormalBounds(),
+              maximized: window.isMaximized(),
+            };
+      });
+    const simpleFullScreen = (): Promise<boolean | undefined> =>
+      browser.main.evaluate(({ BaseWindow }) =>
+        BaseWindow.getAllWindows()[0]?.isSimpleFullScreen(),
+      );
+    const showAndLeave = async (): Promise<void> => {
+      await page.getByRole('button', { name: 'Full screen' }).click();
+      await expect.poll(simpleFullScreen).toBe(true);
+      await page.evaluate(() => document.exitFullscreen());
+      await expect.poll(simpleFullScreen).toBe(false);
+    };
+    // People move the window: center() moves it as a drag does, of which Electron takes no note.
+    const given = { x: 40, y: 60, width: 800, height: 500 };
+    await browser.main.evaluate(({ BaseWindow }, wanted) => {
+      BaseWindow.getAllWindows()[0]?.setBounds(wanted);
+    }, given);
+    await expect.poll(async () => (await place())?.bounds).toEqual(given);
+    await browser.main.evaluate(({ BaseWindow }) => {
+      BaseWindow.getAllWindows()[0]?.center();
+    });
+    const moved = (await place())?.bounds;
+    expect(moved).not.toEqual(given);
+    await showAndLeave();
+    await expect.poll(async () => (await place())?.bounds).toEqual(moved);
+    // A maximized window is maximized again, and goes back where people moved it once it is no
+    // longer maximized.
+    await browser.main.evaluate(({ BaseWindow }) => {
+      BaseWindow.getAllWindows()[0]?.maximize();
+    });
+    await expect.poll(async () => (await place())?.maximized).toBe(true);
+    await showAndLeave();
+    await expect.poll(place).toMatchObject({ maximized: true, normal: moved });
+  } finally {
+    await browser.close();
+  }
+});
+
 test('reloads without the cache, prints, saves and shows the source of a page', async () => {
   const browser = await launch();
   const folder = mkdtempSync(join(tmpdir(), 'saved-page-'));

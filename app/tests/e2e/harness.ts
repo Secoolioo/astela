@@ -56,6 +56,10 @@ export class FixtureServer {
   origin = '';
   /** The requests the server got, newest last, with their headers. */
   readonly requests: { readonly path: string; readonly headers: IncomingHttpHeaders }[] = [];
+  /** The fixtures whose answers wait, with the answers that wait. */
+  private readonly held = new Map<string, (() => void)[]>();
+  /** The fixtures that no cache may keep, as their answers once waited. */
+  private readonly uncached = new Set<string>();
 
   /** Starts the server on a random port of 127.0.0.1. */
   async start(): Promise<void> {
@@ -63,14 +67,22 @@ export class FixtureServer {
       this.requests.push({ path: request.url ?? '/', headers: request.headers });
       const name =
         new URL(request.url ?? '/', 'http://x').pathname.replace(/^\//, '') || 'index.html';
-      try {
-        const file = name.replace(/[^a-z0-9.-]/gi, '');
-        const body = readFileSync(join(fixtures, file));
-        response.writeHead(200, { 'content-type': contentType(file) });
-        response.end(body);
-      } catch {
-        response.writeHead(404).end();
-      }
+      const file = name.replace(/[^a-z0-9.-]/gi, '');
+      const answer = (): void => {
+        try {
+          const body = readFileSync(join(fixtures, file));
+          response.writeHead(200, {
+            'content-type': contentType(file),
+            ...(this.uncached.has(file) ? { 'cache-control': 'no-store' } : {}),
+          });
+          response.end(body);
+        } catch {
+          response.writeHead(404).end();
+        }
+      };
+      const waiting = this.held.get(file);
+      if (waiting === undefined) answer();
+      else waiting.push(answer);
     });
     await new Promise<void>((done) => this.server?.listen(0, '127.0.0.1', done));
     const address = this.server.address();
@@ -78,8 +90,27 @@ export class FixtureServer {
       typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : '';
   }
 
-  /** Stops the server. */
+  /**
+   * Holds the answers for a fixture until the returned function gives them, so that its page
+   * loads for as long as a test needs; no cache keeps the fixture from then on, so that every
+   * load of it, also Back and Forward, asks the server.
+   * @param file - The fixture, such as `second.html`.
+   * @returns Gives the answers that wait, and answers at once from then on.
+   */
+  hold(file: string): () => void {
+    this.uncached.add(file);
+    const waiting: (() => void)[] = [];
+    this.held.set(file, waiting);
+    return () => {
+      if (this.held.get(file) === waiting) this.held.delete(file);
+      for (const answer of waiting.splice(0)) answer();
+    };
+  }
+
+  /** Stops the server, after it gave every answer that waits. */
   async stop(): Promise<void> {
+    for (const waiting of this.held.values()) for (const answer of waiting.splice(0)) answer();
+    this.held.clear();
     await new Promise((done) => this.server?.close(done));
   }
 }
@@ -174,8 +205,17 @@ export interface Browser {
   readonly profile: string;
   /** The address of the browser's DevTools. */
   readonly devtools: string;
-  /** Quits the browser; the profile is removed unless it is kept for another start. */
-  close(options?: { readonly keepProfile?: boolean }): Promise<void>;
+  /**
+   * Quits the browser; the profile is removed unless it is kept for another start. With
+   * `byWindows`, it closes every window as its close button does, after which the browser quits
+   * on its own, or on macOS, which keeps it running without windows, as from its menu.
+   */
+  close(options?: { readonly keepProfile?: boolean; readonly byWindows?: boolean }): Promise<void>;
+  /**
+   * Ends the browser as a crash does: it gets no chance to save anything, and its profile stays
+   * for another start, which removes it with its own `close()`.
+   */
+  crash(): Promise<void>;
 }
 
 /** Waits until the process prints a line that matches, and returns the match. */
@@ -308,20 +348,29 @@ export async function launch(
     process: child,
     profile,
     devtools: devtoolsMatch[1] ?? '',
-    async close(closeOptions: { readonly keepProfile?: boolean } = {}): Promise<void> {
+    async close(
+      closeOptions: { readonly keepProfile?: boolean; readonly byWindows?: boolean } = {},
+    ): Promise<void> {
       // The browser saves its state before it quits, so wait for the process to exit.
       const exited =
         child.exitCode === null
           ? new Promise<void>((done) => child.once('exit', () => done()))
           : Promise.resolve();
       const answered = await reportState(main, shell, profile);
-      await within(
-        main.evaluate(({ app }) => {
-          setTimeout(() => app.quit(), 0);
-        }),
-        answerTime,
-        'The browser process',
-      ).catch(() => undefined);
+      const quit =
+        closeOptions.byWindows === true
+          ? main.evaluate(({ app, BaseWindow }) => {
+              setTimeout(() => {
+                if (process.platform === 'darwin') {
+                  app.once('window-all-closed', () => setTimeout(() => app.quit(), 0));
+                }
+                for (const window of BaseWindow.getAllWindows()) window.close();
+              }, 0);
+            })
+          : main.evaluate(({ app }) => {
+              setTimeout(() => app.quit(), 0);
+            });
+      await within(quit, answerTime, 'The browser process').catch(() => undefined);
       main.close();
       await cdp.close().catch(() => undefined);
       let timer: NodeJS.Timeout | undefined;
@@ -338,6 +387,19 @@ export async function launch(
         }),
       ]).finally(() => clearTimeout(timer));
       if (closeOptions.keepProfile !== true) removeAfterExit(profile);
+      if (!answered) throw new Error('The shell did not answer at the end of the test');
+    },
+    async crash(): Promise<void> {
+      const exited =
+        child.exitCode === null
+          ? new Promise<void>((done) => child.once('exit', () => done()))
+          : Promise.resolve();
+      const answered = await reportState(main, shell, profile);
+      // SIGKILL, or TerminateProcess on Windows: nothing of the browser runs on.
+      child.kill('SIGKILL');
+      await exited;
+      main.close();
+      await cdp.close().catch(() => undefined);
       if (!answered) throw new Error('The shell did not answer at the end of the test');
     },
   };
