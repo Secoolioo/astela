@@ -34,6 +34,11 @@ async function open(browser: Browser, name: string, shell = browser.shell): Prom
   await address.press('Enter');
   const page = await waitForPage(browser, (url) => url === fixture(name));
   await page.waitForLoadState('load');
+  // Chromium drops the key presses for a new page until it has painted its first content,
+  // which on a slow machine can come after the load event.
+  await page.waitForFunction(
+    () => performance.getEntriesByName('first-contentful-paint').length > 0,
+  );
   return page;
 }
 
