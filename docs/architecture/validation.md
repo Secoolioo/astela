@@ -118,3 +118,24 @@ For [ADR 0053](../adr/0053-sleeping-tabs-and-an-exact-session.md), a short scrip
 - `will-prevent-unload` does not need sticky user activation here, unlike the dialog of `beforeunload` in Chrome: any page with a handler that cancels stays when the browser asks it to close, and a page that hangs closes after about a second. The reason is in Electron: `close({ waitForBeforeUnload: true })` gives the main frame a user activation (`NotifyUserActivation` in `WebContents::Close`) before it dispatches `beforeunload`, so the page gets a gesture that no person made, with the file chooser, popups, full screen and the clipboard that it unlocks. The automatic sleep therefore never asks a page; it keeps pages awake that people typed into ([ADR 0053](../adr/0053-sleeping-tabs-and-an-exact-session.md)).
 - Closing a tab frees about 11 MB of the 26 MB that its renderer reports, because PSS shares the pages that several processes use; budgets for sleeping tabs measure the memory of all processes.
 - Not measured here: macOS 15, Windows 2025, and Linux on Wayland with headless Weston, which this machine does not have. The end-to-end tests that restore the history across views, the scroll position and the form of the page (`session.spec.ts`), full screen and the order of windows (`windows.spec.ts`) and the session after a crash, by `SIGKILL` and on Windows by `TerminateProcess` (`session.spec.ts`), run on the CI runners of macOS and Windows. Wayland needs a run by hand.
+
+## Focus between two views of a window
+
+For [ADR 0054](../adr/0054-split-view-with-two-tabs-side-by-side.md), a short script with Electron 45.2.3 (Chromium 156.0.8078.80) on Linux x64 (X11 under Xvfb, software rendering, a container without the sandbox) attached two `WebContentsView`s side by side to one `BaseWindow`, both with `focusOnNavigation: false`, and loaded a page with two fields and a link into each from a local HTTP server. It gave the left view the focus with `webContents.focus()` and recorded the `focus` and `blur` events of both views and `isFocused()` after each step. It ran on 2026-11-11.
+
+| Question                                                                            | Result on Linux x64 (X11)                                     |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| The right page calls `window.focus()` and focuses a field of its own                | The left view keeps the focus; no event fires.                |
+| The right page goes to another address of its site by itself                        | The left view keeps the focus; no event fires.                |
+| The right page goes to another site by itself, in a new process                     | The left view keeps the focus; no event fires.                |
+| Tab, eight times, in the left page with two fields and a link                       | The focus goes round the left page; the right view gets none. |
+| `webContents.focus()` of the right view, as the browser does for a click            | `blur` of the left view, `focus` of the right one.            |
+| A click of the X server into the left view (`xdotool`)                              | `blur` of the right view, `focus` of the left one.            |
+| A third view with `focusOnNavigation: true` loads a page while the window is active | The third view takes the focus when its page commits.         |
+
+**Results:**
+
+- With `focusOnNavigation: false`, only a click into a view, or the browser itself, moves the focus between the views of a window. Electron's `ActivateContents`, which `window.focus()` reaches, only tells its observers, and none listens for a `BaseWindow`; its `TakeFocus` at the end of the Tab order sends the focus round the same page (`FocusThroughTabTraversal`).
+- The `focus` event of the web contents is therefore the click into the side of a split view without the focus, and the browser makes that tab the active one on it. No gate on mouse presses through `before-mouse-event` is needed.
+- Views keep `focusOnNavigation: true` by default, with which any page that commits in the active window takes the keys; every tab view gets `false`, and the browser gives the page the focus itself where it did before.
+- Not measured here: macOS 15, Windows 2025 and Wayland. The end-to-end test in `split-view.spec.ts` checks the same on the CI runners of macOS and Windows: the other side keeps the focus when the page without it navigates, calls `window.focus()`, or when Tab goes past the end of the page with the focus.

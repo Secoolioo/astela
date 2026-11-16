@@ -20,6 +20,7 @@ export const shellLaterChannels = [
   'omnibox.select',
   'omnibox.accept',
   'omnibox.close',
+  'tabs.resizeSplit',
 ] as const;
 
 /**

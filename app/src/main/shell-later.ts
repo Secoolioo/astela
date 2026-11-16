@@ -20,6 +20,7 @@ import {
   SelectSuggestion,
   AcceptSuggestion,
   CloseSuggestions,
+  ResizeSplit,
   StopFinding,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
@@ -127,6 +128,10 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(MoveTab, ({ tabId, index }, { sender }) => {
     const { tabs } = windowOf(sender);
     if (tabs.all.some((tab) => tab.id === tabId)) tabs.move(tabId, index);
+    return null;
+  });
+  router.handle(ResizeSplit, ({ tabId, ratio, done }, { sender }) => {
+    windowOf(sender).resizeSplit(tabId, ratio, done);
     return null;
   });
   router.handle(

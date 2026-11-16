@@ -60,10 +60,18 @@ describe('macMenuBar', () => {
   });
 });
 
-/** The texts and shortcuts of the items of the View menu, while the palette is on or off. */
-function view(palette: boolean): unknown[] {
-  const template = macMenuBar(() => undefined, shortcutTable('darwin'), {
+/**
+ * The texts and shortcuts of the items of the View menu, while the palette and split view are
+ * on or off.
+ */
+function view(
+  palette: boolean,
+  splitView?: boolean,
+  table: ReturnType<typeof shortcutTable> = shortcutTable('darwin'),
+): unknown[] {
+  const template = macMenuBar(() => undefined, table, {
     palette,
+    ...(splitView === undefined ? {} : { splitView }),
   }) as unknown as MenuItemConstructorOptions[];
   const menu = template.find((item) => item.label?.replaceAll('&', '') === 'Darstellung');
   return (Array.isArray(menu?.submenu) ? menu.submenu : []).map((item) =>
@@ -79,6 +87,16 @@ describe('the View menu of macOS', () => {
       '-',
       ['Suchen…', 'Cmd+F'],
     ]);
+  });
+
+  it('opens or ends split view after full screen, with its shortcut, while split view is on', () => {
+    const shown = view(true);
+    const full = shown.findIndex((item) => Array.isArray(item) && item[0] === 'Vollbild');
+    expect(shown[full + 1]).toEqual(['Geteilte Ansicht', 'Ctrl+Cmd+S']);
+    expect(view(true, true)).toEqual(shown);
+    const changed = view(true, true, shortcutTable('darwin', { 'split.toggle': ['Alt+Cmd+S'] }));
+    expect(changed).toContainEqual(['Geteilte Ansicht', 'Alt+Cmd+S']);
+    expect(JSON.stringify(view(true, false))).not.toContain('Geteilte Ansicht');
   });
 
   it('has neither while the palette is off', () => {

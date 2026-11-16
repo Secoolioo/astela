@@ -21,6 +21,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
       canGoBack: false,
       canGoForward: false,
       muted: false,
+      split: null,
     },
   ],
   activeIndex: 0,
@@ -30,6 +31,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   privateWindows: true,
   developerTools: true,
   palette: true,
+  splitView: true,
   ...change,
 });
 
@@ -138,6 +140,7 @@ describe('browserMenu', () => {
             canGoBack: false,
             canGoForward: false,
             muted: false,
+            split: null,
           },
         ],
         webPage: false,

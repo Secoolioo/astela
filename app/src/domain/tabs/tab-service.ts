@@ -2,8 +2,10 @@ import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { historyMoves } from './tab-history.ts';
-import { TabStrip } from './tab-strip.ts';
+import { TabStrip, type SplitPair } from './tab-strip.ts';
 import type { TabHistory } from './view-history.ts';
+
+export type { SplitPair } from './tab-strip.ts';
 
 /** Identifier of a tab, such as `t1a`. */
 export type TabId = string;
@@ -75,8 +77,12 @@ export interface TabViewPort {
    * with its back and forward lists; the entry that the history shows has the URL.
    */
   create(id: TabId, url: string, lazy?: boolean, history?: TabHistory): void;
-  /** Shows the view of a tab and hides the previously shown one. */
-  show(id: TabId): void;
+  /**
+   * Shows the view of a tab and, with a split view, the view of the other tab of the pair
+   * beside it, and hides what showed before. It is called again when the split view of the
+   * active tab changes.
+   */
+  show(id: TabId, split?: SplitPair): void;
   /** Destroys the view of a tab. */
   destroy(id: TabId): void;
   /** Loads a URL in a tab. */
@@ -200,9 +206,73 @@ export class TabService implements Disposable {
     return this.strip.active;
   }
 
-  /** The tabs whose pages the content area shows: the active tab. */
+  /**
+   * The tabs whose pages the content area shows, from left to right: the active tab, and the
+   * other tab of its split view.
+   */
   get shown(): readonly TabId[] {
     return this.strip.shown;
+  }
+
+  /** The pairs of tabs that the window shows side by side, in the order of the tabs. */
+  get splits(): readonly SplitPair[] {
+    return this.strip.splits;
+  }
+
+  /**
+   * The split view that a tab is a side of.
+   * @param id - The tab.
+   * @returns The pair, or `undefined` when the tab is in none.
+   */
+  splitOf(id: TabId): SplitPair | undefined {
+    return this.stripOf(id)?.splitOf(id);
+  }
+
+  /**
+   * Shows a tab beside another one in a split view: the tab that is added moves next to the
+   * one that stays, on the right, or in the place of the other tab of its split view, which
+   * stays open next to the pair.
+   * @param keep - The tab that stays where it is.
+   * @param add - The tab that joins it.
+   * @param ratio - The share of the width of the left side of a new split view.
+   * @returns Whether the pair formed; pinned tabs are never in one.
+   */
+  split(keep: TabId, add: TabId, ratio?: number): boolean {
+    const strip = this.require(keep);
+    const before = [strip.splitOf(keep), strip.splitOf(add)];
+    if (!strip.split(keep, add, ratio)) return false;
+    this.pairChanged(...before, strip.splitOf(keep));
+    return true;
+  }
+
+  /**
+   * Ends the split view that a tab is a side of; both tabs stay open.
+   * @param id - The tab.
+   */
+  unsplit(id: TabId): void {
+    const strip = this.require(id);
+    const pair = strip.splitOf(id);
+    if (strip.unsplit(id)) this.pairChanged(pair);
+  }
+
+  /**
+   * Swaps the sides of the split view that a tab is a side of; each page keeps its width.
+   * @param id - The tab.
+   */
+  swapSplit(id: TabId): void {
+    const strip = this.require(id);
+    if (strip.swapSplit(id)) this.pairChanged(strip.splitOf(id));
+  }
+
+  /**
+   * Gives the left side of the split view that a tab is a side of another share of the width,
+   * from 0.2 to 0.8.
+   * @param id - The tab.
+   * @param ratio - The share.
+   */
+  resizeSplit(id: TabId, ratio: number): void {
+    const strip = this.require(id);
+    if (strip.resizeSplit(id, ratio)) this.pairChanged(strip.splitOf(id));
   }
 
   /**
@@ -214,7 +284,8 @@ export class TabService implements Disposable {
   }
 
   /**
-   * The tabs that move together with a tab, in their order: the tab alone.
+   * The tabs that move together with a tab, in their order: the two tabs of its split view, or
+   * the tab alone.
    * @param id - The tab.
    * @returns The tabs, or none for a tab that the window does not have.
    */
@@ -224,7 +295,7 @@ export class TabService implements Disposable {
 
   /**
    * Opens a tab after the active one, or in the background after the tabs opened there
-   * before it, as Chromium does.
+   * before it, as Chromium does; never between the two tabs of a split view.
    * @param url - URL to load; defaults to the blank page.
    * @param options - Whether to activate the tab.
    * @returns The new tab's id.
@@ -267,15 +338,17 @@ export class TabService implements Disposable {
    * @param id - The tab.
    */
   activate(id: TabId): void {
-    if (this.require(id).activate(id)) {
-      this.views.show(id);
+    const strip = this.require(id);
+    if (strip.activate(id)) {
+      this.views.show(id, strip.splitOf(id));
     }
     this.changed(keptChange);
   }
 
   /**
-   * Closes a tab. Closing the active tab activates its right neighbour, or the left one
-   * at the end. Closing the last tab opens a blank tab.
+   * Closes a tab. Closing the active tab activates the other tab of its split view, or its
+   * right neighbour, or the left one at the end; the split view ends with either of its tabs.
+   * Closing the last tab opens a blank tab.
    * @param id - The tab.
    */
   close(id: TabId): void {
@@ -284,6 +357,13 @@ export class TabService implements Disposable {
       return;
     }
     this.views.destroy(id);
+    // The active tab whose partner closed shows alone.
+    const active = this.active;
+    if (!closed.active && active !== undefined && closed.pair !== undefined) {
+      if (closed.pair.start === active.id || closed.pair.end === active.id) {
+        this.views.show(active.id, undefined);
+      }
+    }
     if (closed.active) {
       if (closed.next === undefined) {
         if (this.onLastClosed === undefined) this.open();
@@ -300,10 +380,12 @@ export class TabService implements Disposable {
   }
 
   /**
-   * Moves a tab to another place in the order of the tabs. Pinned tabs stay among the pinned
-   * tabs, the others after them.
+   * Moves a tab, with the other tab of its split view, to another place in the order of the
+   * tabs. Pinned tabs stay among the pinned tabs, the others after them, and nothing comes
+   * between the two tabs of a split view.
    * @param id - The tab.
-   * @param index - Its new index, counted without the tab itself; clamped to the tabs.
+   * @param index - The new index of the first tab of its unit, counted without the unit;
+   *   clamped to the tabs.
    */
   move(id: TabId, index: number): void {
     this.require(id).move(id, index);
@@ -325,14 +407,17 @@ export class TabService implements Disposable {
   }
 
   /**
-   * Pins a tab, which moves it to the end of the pinned tabs, or unpins it, which moves it
-   * right after them.
+   * Pins a tab, which moves it to the end of the pinned tabs and ends its split view, or unpins
+   * it, which moves it right after them.
    * @param id - The tab.
    * @param pinned - Whether the tab is pinned.
    */
   pin(id: TabId, pinned: boolean): void {
-    this.require(id).pin(id, pinned);
-    this.changed(keptChange);
+    const strip = this.require(id);
+    const pair = strip.splitOf(id);
+    strip.pin(id, pinned);
+    if (pair !== undefined && strip.splitOf(id) === undefined) this.pairChanged(pair);
+    else this.changed(keptChange);
   }
 
   /** Whether a closed tab can be opened again. */
@@ -408,6 +493,22 @@ export class TabService implements Disposable {
             : keptChange,
       );
     }
+  }
+
+  /**
+   * Tells the views and the session that split views changed: when the active tab was or is a
+   * side of one of them, the content area shows it anew.
+   * @param pairs - The pairs before and after the change.
+   */
+  private pairChanged(...pairs: readonly (SplitPair | undefined)[]): void {
+    const active = this.active;
+    if (
+      active !== undefined &&
+      pairs.some((pair) => pair?.start === active.id || pair?.end === active.id)
+    ) {
+      this.views.show(active.id, this.strip.splitOf(active.id));
+    }
+    this.changed(keptChange);
   }
 
   private changed(kept: KeptChange | undefined): void {

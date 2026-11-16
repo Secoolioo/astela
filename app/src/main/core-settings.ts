@@ -620,6 +620,19 @@ export const BookmarksBarSetting = defineSetting<boolean>({
 });
 
 /**
+ * Whether a window may show two tabs side by side in a split view. Turned off, the split views
+ * that show end, and the items of the menus and the shortcut of split view are gone.
+ */
+export const SplitViewSetting = defineSetting<boolean>({
+  key: 'splitView.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'SplitViewEnabled', recommended: true },
+  ui: { section: 'appearance', control: 'toggle', order: 6 },
+});
+
+/**
  * The language of the browser's menus, dialogs and own pages: `system` follows the language
  * of the system, a language code such as `de` sets one. It takes effect after a restart.
  */
@@ -683,5 +696,6 @@ export const coreSettings = [
   BlockThirdPartyCookiesSetting,
   SetupShownSetting,
   BookmarksBarSetting,
+  SplitViewSetting,
   LanguageSetting,
 ];

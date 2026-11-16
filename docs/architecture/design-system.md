@@ -145,6 +145,19 @@ The layout manager computes the bounds of the web content from the tab bar posit
 
 In every position, the tab bar is designed to be fully operable by keyboard, and F6 cycles focus from the toolbar to the tabs to the content.
 
+### Split view
+
+A window can show two tabs side by side ([ADR 0054](../adr/0054-split-view-with-two-tabs-side-by-side.md)). The sizes are layout widths in `app/src/shared/split-view.ts`, which the browser process and the shell share, and the density does not scale them:
+
+| Part                               | Size                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Divider between the sides          | 8 px, over the whole height; its grip is 2 px wide and `--control-large` high                  |
+| Line above the side with the focus | 2 px in `--focus-ring`, nothing above the other side                                           |
+| Each side                          | at least 200 px while the content area has room, else half of it                               |
+| Share of the left side             | 20 to 80 % of the width without the divider, 50 % for a new split view, steps of 5 % with keys |
+
+Hover, focus and a drag tint the grip with `--accent` and the divider with `--surface-hover`, over `--motion-instant`; the line changes its color over `--motion-fast`. With forced colors, the line is `Highlight` and the grip `CanvasText`. In the tab strip, the two tabs of a pair stand together without the gap between them, rounded at their outer corners, and the tab of the pair that does not have the surface of the active tab lies on `--surface-2`. The find bar ends where the side with the focus ends; a left side narrower than the bar's controls leaves them at the start of the window, and the bar is never wider than the window.
+
 ### Layout presets
 
 Presets give users a good layout without having to assemble it from individual settings:

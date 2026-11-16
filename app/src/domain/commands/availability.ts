@@ -7,6 +7,8 @@ export interface CommandTab {
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
   readonly muted: boolean;
+  /** Which side of a split view the tab is, or `null` for a tab that is in none. */
+  readonly split: 'start' | 'end' | null;
 }
 
 /** What decides which commands can run in a window now. */
@@ -27,6 +29,8 @@ export interface CommandContext {
   readonly developerTools: boolean;
   /** Whether the command palette is on, which a setting or a policy can turn off. */
   readonly palette: boolean;
+  /** Whether split view is on, which a setting or a policy can turn off. */
+  readonly splitView: boolean;
 }
 
 /**
@@ -47,6 +51,14 @@ export function availableCommands(context: CommandContext): WindowCommand[] {
 export function canRun(command: WindowCommand, context: CommandContext): boolean {
   const { tabs, activeIndex } = context;
   const active = tabs[activeIndex];
+  // The active tab moves with the other tab of its split view, and the tabs to its right
+  // start after the pair.
+  const [first, last] =
+    active?.split === 'start'
+      ? [activeIndex, activeIndex + 1]
+      : active?.split === 'end'
+        ? [activeIndex - 1, activeIndex]
+        : [activeIndex, activeIndex];
   switch (command) {
     case 'tab.new':
     case 'window.new':
@@ -77,13 +89,13 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
       return active !== undefined;
     case 'tab.closeOthers':
     case 'tab.closeRight':
-      // Pinned tabs stay; they are closed one by one.
+      // Pinned tabs stay; they are closed one by one. The other tab of a split view stays too.
       return (
         active !== undefined &&
         tabs.some(
           (tab, place) =>
             !tab.pinned &&
-            (command === 'tab.closeOthers' ? place !== activeIndex : place > activeIndex),
+            (command === 'tab.closeOthers' ? place < first || place > last : place > last),
         )
       );
     case 'tab.next':
@@ -104,9 +116,14 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
       if (active === undefined) return false;
       // Pinned tabs stay among the pinned tabs, the others after them.
       const pinned = tabs.filter((tab) => tab.pinned).length;
-      const [first, last] = active.pinned ? [0, pinned - 1] : [pinned, tabs.length - 1];
-      return command === 'tab.moveLeft' ? activeIndex > first : activeIndex < last;
+      const [low, high] = active.pinned ? [0, pinned - 1] : [pinned, tabs.length - 1];
+      return command === 'tab.moveLeft' ? first > low : last < high;
     }
+    case 'split.toggle':
+      // A pinned tab is never a side of a split view.
+      return context.splitView && active !== undefined && (active.split !== null || !active.pinned);
+    case 'split.swap':
+      return context.splitView && active !== undefined && active.split !== null;
     case 'page.back':
       return active?.canGoBack === true;
     case 'page.forward':

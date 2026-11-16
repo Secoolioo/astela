@@ -831,6 +831,10 @@ export class SettingsPage extends LitElement {
       render: () =>
         page.renderToggle('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote'),
     }),
+    'splitView.enabled': (page) => ({
+      render: () =>
+        page.renderToggle('splitView.enabled', 'settings.splitView', 'settings.splitViewNote'),
+    }),
     'startup.page': (page) => ({
       render: () => page.renderChoice('startup.page', 'settings.startupPage'),
     }),
@@ -2337,13 +2341,14 @@ export class SettingsPage extends LitElement {
 
   /**
    * Loads the shortcuts of every command, as the window uses them, for the value of the
-   * setting and of the switch of the command palette, whose commands have none while it is
-   * off: once, and again after one of them changed.
+   * setting and of the switches of the command palette and split view, whose commands have
+   * none while they are off: once, and again after one of them changed.
    */
   private loadShortcuts(): void {
     const value = JSON.stringify([
       this.client?.get('keys.shortcuts')?.value ?? null,
       this.client?.get('commandPalette.enabled')?.value ?? null,
+      this.client?.get('splitView.enabled')?.value ?? null,
     ]);
     if (value === this.shortcutsLoaded) return;
     this.shortcutsLoaded = value;

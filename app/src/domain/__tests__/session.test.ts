@@ -528,8 +528,8 @@ describe('sessions and 0.1.0-beta.6', () => {
 
   it('keeps every tab and the active tab of a session with the fields of later versions', () => {
     expect(parseBeta6Session(later)).toEqual(kept);
-    // This version reads the histories and full screen, and the fields it does not know yet
-    // the same way as 0.1.0-beta.6.
+    // This version reads the histories, full screen and the split views, and the fields it
+    // does not know yet the same way as 0.1.0-beta.6.
     expect(parseSession(later)).toEqual({
       version: 1,
       windows: [
@@ -543,6 +543,7 @@ describe('sessions and 0.1.0-beta.6', () => {
             tab('app://settings/'),
           ],
           fullScreen: true,
+          splits: [{ start: 2, ratio: 0.4 }],
         },
         {
           tabs: [{ ...tab('https://c.example/'), history: history('https://c.example/') }],
@@ -566,7 +567,7 @@ describe('sessions and 0.1.0-beta.6', () => {
         { ...tab('app://history/'), history: shown('app://history/') },
       ],
       3,
-      { bounds, maximized: true, fullScreen: true },
+      { bounds, maximized: true, fullScreen: true, splits: [{ start: 2, ratio: 0.35 }] },
     );
     const written: unknown = JSON.parse(JSON.stringify({ version: 1, windows: [window] }));
     expect(written).toEqual({
@@ -586,10 +587,12 @@ describe('sessions and 0.1.0-beta.6', () => {
           bounds,
           maximized: true,
           fullScreen: true,
+          splits: [{ start: 1, ratio: 0.35 }],
         },
       ],
     });
-    // 0.1.0-beta.6 reads every tab without its history, and the window without full screen.
+    // 0.1.0-beta.6 reads every tab without its history, and the window without full screen and
+    // split views.
     expect(parseBeta6Session(written)).toEqual({
       version: 1,
       windows: [
@@ -633,5 +636,108 @@ describe('sessions and 0.1.0-beta.6', () => {
       expect(parseBeta6Session(file)).toEqual(file);
       expect(parseSession(file)).toEqual(file);
     }
+  });
+});
+
+describe('split views in the session', () => {
+  const four = ['a', 'b', 'c', 'd'].map((name) => tab(`https://${name}.example/`));
+
+  it('keeps the pairs with their shares, at the places of the tabs that the session keeps', () => {
+    const window = sessionWindow([four[0], tab('app://setup/'), ...four.slice(1)], 0, {
+      splits: [
+        { start: 2, ratio: 0.35 },
+        { start: 4, ratio: 0.95 },
+      ],
+    });
+    expect(window?.splits).toEqual([{ start: 1, ratio: 0.35 }]);
+    // b|c and d without a partner: a share outside its limits is clamped.
+    const clamped = sessionWindow(four, 0, { splits: [{ start: 2, ratio: 0.95 }] });
+    expect(clamped?.splits).toEqual([{ start: 2, ratio: 0.8 }]);
+    expect(sessionWindow(four, 0, { splits: [{ start: 0, ratio: 0.1 }] })?.splits).toEqual([
+      { start: 0, ratio: 0.2 },
+    ]);
+  });
+
+  it('drops a pair whose tab is not kept, whose tabs are no longer neighbours, a pinned one and one that overlaps', () => {
+    const tabs = [
+      four[0],
+      tab('app://setup/'),
+      four[1],
+      { ...tab('https://c.example/'), pinned: true },
+      four[3],
+    ];
+    const window = sessionWindow(tabs, 0, {
+      splits: [
+        // a with the setup guide, which the session does not keep.
+        { start: 0, ratio: 0.5 },
+        // b with the pinned c.
+        { start: 2, ratio: 0.5 },
+        // A tab that is not there.
+        { start: 9, ratio: 0.5 },
+      ],
+    });
+    expect(window).not.toHaveProperty('splits');
+    const overlapping = sessionWindow(four, 0, {
+      splits: [
+        { start: 0, ratio: 0.5 },
+        { start: 1, ratio: 0.6 },
+        { start: 2, ratio: 0.7 },
+      ],
+    });
+    expect(overlapping?.splits).toEqual([
+      { start: 0, ratio: 0.5 },
+      { start: 2, ratio: 0.7 },
+    ]);
+    // Without pairs, the window has no field for them, as before.
+    expect(sessionWindow(four, 0, { splits: [] })).not.toHaveProperty('splits');
+    expect(sessionWindow(four, 0)).not.toHaveProperty('splits');
+  });
+
+  it('reads each pair on its own, so that a broken one costs nothing else', () => {
+    const file = (splits: unknown): unknown => ({
+      version: 1,
+      windows: [{ tabs: four, active: 1, splits }],
+    });
+    expect(
+      parseSession(
+        file([
+          { start: 0, ratio: 0.3 },
+          { start: 'x' },
+          null,
+          { start: 2, ratio: 2 },
+          { start: 2, ratio: 0.6 },
+        ]),
+      ),
+    ).toEqual({
+      version: 1,
+      windows: [
+        {
+          tabs: four,
+          active: 1,
+          splits: [
+            { start: 0, ratio: 0.3 },
+            { start: 2, ratio: 0.6 },
+          ],
+        },
+      ],
+    });
+    // A field that is no list costs only the pairs.
+    expect(parseSession(file('broken'))).toEqual({
+      version: 1,
+      windows: [{ tabs: four, active: 1 }],
+    });
+  });
+
+  it('opens the pairs again with their windows', () => {
+    const session = parseSession({
+      version: 1,
+      windows: [
+        { tabs: four, active: 3, splits: [{ start: 1, ratio: 0.25 }] },
+        { tabs: [four[0]], active: 0 },
+      ],
+    });
+    expect(
+      session === undefined ? [] : restoredWindows(session).map((window) => window.splits),
+    ).toEqual([[{ start: 1, ratio: 0.25 }], undefined]);
   });
 });

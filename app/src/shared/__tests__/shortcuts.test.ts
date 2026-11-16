@@ -5,6 +5,7 @@ import {
   displayShortcut,
   paletteCommands,
   shortcutProblem,
+  splitCommands,
   shortcutTable,
   windowCommands,
 } from '../shortcuts.ts';
@@ -56,6 +57,40 @@ describe('the shortcuts of the command palette', () => {
       expect(table.size).toBe(shortcutTable(platform).size - 2 + 1);
     }
     expect(paletteCommands).toEqual(['palette.open', 'tabs.search']);
+  });
+});
+
+describe('the shortcuts of split view', () => {
+  it('open or end split view with Ctrl+Shift+S, Control+Command+S on macOS, and swap the sides with none', () => {
+    for (const platform of ['win32', 'linux']) {
+      const table = shortcutTable(platform);
+      expect(shortcutsOf(table, 'split.toggle')).toEqual(['Ctrl+Shift+S']);
+      expect(shortcutsOf(table, 'split.swap')).toEqual([]);
+      expect(shortcutProblem('Ctrl+Shift+S', platform)).toBeUndefined();
+    }
+    const mac = shortcutTable('darwin');
+    expect(shortcutsOf(mac, 'split.toggle')).toEqual(['Ctrl+Cmd+S']);
+    expect(shortcutsOf(mac, 'split.swap')).toEqual([]);
+    expect(mac.get('Shift+Cmd+S')).toBeUndefined();
+    expect(shortcutProblem('Ctrl+Cmd+S', 'darwin')).toBeUndefined();
+    expect(displayShortcut('Ctrl+Cmd+S', true)).toBe('⌃⌘S');
+    expect(acceleratorOf('Ctrl+Cmd+S')).toBe('Ctrl+Cmd+S');
+    const mute = windowCommands.indexOf('tab.mute');
+    expect(windowCommands.slice(mute, mute + 3)).toEqual([
+      'tab.mute',
+      'split.toggle',
+      'split.swap',
+    ]);
+  });
+
+  it('leave out the commands of split view while it is off, also those that people gave them', () => {
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(platform, { 'split.swap': ['F9'] }, splitCommands);
+      expect(shortcutsOf(table, 'split.toggle')).toEqual([]);
+      expect(table.get('F9')).toBeUndefined();
+      expect(table.size).toBe(shortcutTable(platform).size - 1);
+    }
+    expect(splitCommands).toEqual(['split.toggle', 'split.swap']);
   });
 });
 

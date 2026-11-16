@@ -191,6 +191,10 @@ export const settingsIndex: readonly SettingsSection[] = [
         ],
       },
       { id: 'bookmarks.bar', keys: ['settings.bookmarksBar', 'settings.bookmarksBarNote'] },
+      {
+        id: 'splitView.enabled',
+        keys: ['settings.splitView', 'settings.splitViewNote', 'settings.splitView.keywords'],
+      },
     ],
   },
   {

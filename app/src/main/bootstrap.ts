@@ -4,7 +4,12 @@ import {
   thirdPartyCookieFeature,
 } from './cookie-blocking.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
-import { paletteCommands, shortcutTable, type WindowCommand } from '../shared/shortcuts.ts';
+import {
+  paletteCommands,
+  shortcutTable,
+  splitCommands,
+  type WindowCommand,
+} from '../shared/shortcuts.ts';
 import type { ShortcutRecorder } from '../platform/electron/shortcut-recorder.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type Session } from 'electron';
@@ -89,6 +94,7 @@ import {
   ShortcutsSetting,
   AltOpensMenuSetting,
   CommandPaletteSetting,
+  SplitViewSetting,
   BlockThirdPartyCookiesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
@@ -351,13 +357,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     dispose: () => startedClient?.dispose(),
   };
   // The keyboard shortcuts of the windows, made again when people change them. While the
-  // command palette is off, its two shortcuts reach the pages.
+  // command palette or split view is off, their shortcuts reach the pages.
   const shortcutsNow = (): Map<string, WindowCommand> =>
-    shortcutTable(
-      process.platform,
-      settings.get(ShortcutsSetting),
-      settings.get(CommandPaletteSetting) ? [] : paletteCommands,
-    );
+    shortcutTable(process.platform, settings.get(ShortcutsSetting), [
+      ...(settings.get(CommandPaletteSetting) ? [] : paletteCommands),
+      ...(settings.get(SplitViewSetting) ? [] : splitCommands),
+    ]);
   let shortcuts = shortcutsNow();
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
   // loads with the handlers of the browser's own pages, before the settings page.
@@ -664,6 +669,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     developerTools,
     openPalette,
     commandPalette: () => settings.get(CommandPaletteSetting),
+    splitView: () => settings.get(SplitViewSetting),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
@@ -1062,15 +1068,25 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         Menu.setApplicationMenu(
           macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts, {
             palette: settings.get(CommandPaletteSetting),
+            splitView: settings.get(SplitViewSetting),
           }),
         ),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
   };
   showMenuBar();
-  // The command palette turns on and off at once: its shortcuts and the items of the menus.
+  // The command palette and split view turn on and off at once: their shortcuts and the items
+  // of the menus. Split view turned off ends the split views that show.
+  const keyedSettings = new Set([
+    ShortcutsSetting.key,
+    CommandPaletteSetting.key,
+    SplitViewSetting.key,
+  ]);
   settings.onDidChange(({ keys }) => {
-    if (!keys.includes(ShortcutsSetting.key) && !keys.includes(CommandPaletteSetting.key)) return;
+    if (!keys.some((key) => keyedSettings.has(key))) return;
+    if (keys.includes(SplitViewSetting.key) && !settings.get(SplitViewSetting)) {
+      windows.endSplits();
+    }
     shortcuts = shortcutsNow();
     showMenuBar();
   });

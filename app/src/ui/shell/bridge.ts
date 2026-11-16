@@ -30,6 +30,7 @@ import type {
   SelectSuggestion,
   AcceptSuggestion,
   CloseSuggestions,
+  ResizeSplit,
   StopFinding,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
@@ -61,6 +62,7 @@ interface Requests {
   'omnibox.select': typeof SelectSuggestion;
   'omnibox.accept': typeof AcceptSuggestion;
   'omnibox.close': typeof CloseSuggestions;
+  'tabs.resizeSplit': typeof ResizeSplit;
 }
 
 interface Events {

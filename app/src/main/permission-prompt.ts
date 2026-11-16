@@ -13,6 +13,7 @@ import type { Logger } from '../kernel/logging/logger.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
+import type { OverlayAnchor } from '../shared/ipc/overlay-anchor.ts';
 import { AnswerPermission, ShareScreen } from '../shared/ipc/overlay-contracts.ts';
 import { overlayBySender, overlayOf, questionKeys, track } from './overlays.ts';
 
@@ -140,6 +141,7 @@ export function permissionPrompts(
           id: question.id,
           site: hostOf(question.origin),
           permissions: [...question.permissions],
+          ...paneOf(window, question.contents),
         },
         {
           keys: questionKeys,
@@ -239,6 +241,7 @@ export function permissionPrompts(
                   ? ''
                   : `data:image/jpeg;base64,${source.thumbnail.toJPEG(70).toString('base64')}`,
               })),
+              ...paneOf(window, contents),
             },
             {
               keys: questionKeys,
@@ -270,7 +273,19 @@ function busy(target: WindowOverlay): boolean {
   return !target.yieldsToQuestions;
 }
 
-/** Whether a page is still the visible tab of its window, at the same site. */
+/**
+ * The side of a split view that a page shows in, over which its question shows; nothing while
+ * the window shows one page.
+ */
+function paneOf(window: BrowserWindowController, contents: WebContents): { pane?: OverlayAnchor } {
+  const pane = window.paneOf(contents);
+  return pane === undefined ? {} : { pane };
+}
+
+/**
+ * Whether a page is still the visible tab of its window, at the same site: the active tab, which
+ * is the side of a split view with the focus (ADR 0054).
+ */
 function visible(window: BrowserWindowController, contents: WebContents, origin: string): boolean {
   return (
     !contents.isDestroyed() &&

@@ -31,6 +31,14 @@ interface Shield {
   readonly failed: boolean;
 }
 
+/** The side of a split view that a question of a page shows over, in CSS pixels. */
+interface Pane {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** A site, or a proxy, that asks for a user name and password. */
 interface Login {
   readonly kind: 'login';
@@ -38,6 +46,7 @@ interface Login {
   readonly realm: string;
   readonly proxy: boolean;
   readonly secure: boolean;
+  readonly pane?: Pane;
 }
 
 /** A site that asks for permissions. */
@@ -48,6 +57,7 @@ interface Permission {
   readonly permissions: readonly (
     'camera' | 'microphone' | 'location' | 'notifications' | 'clipboard'
   )[];
+  readonly pane?: Pane;
 }
 
 /** A site that wants to see a screen or a window, and what it can choose from. */
@@ -60,6 +70,7 @@ interface Screen {
     readonly screen: boolean;
     readonly thumbnail: string;
   }[];
+  readonly pane?: Pane;
 }
 
 /** A download of the list, as the browser process sends it. */
@@ -343,10 +354,11 @@ export class OverlayPage extends LitElement {
         outline: 2px solid var(--focus-ring);
         outline-offset: 1px;
       }
+      /* A question lies in the middle of the window, or of the side of a split view of its page. */
       .dialog {
         position: fixed;
         top: 96px;
-        left: 50%;
+        left: var(--dialog-center, 50%);
         width: 360px;
         max-width: calc(100% - 16px);
         box-sizing: border-box;
@@ -616,6 +628,21 @@ export class OverlayPage extends LitElement {
     for (const surface of this.renderRoot.querySelectorAll<HTMLElement>('[data-anchor]')) {
       place(surface);
     }
+    // A question of a page in a split view lies in the middle of its side, inside the window;
+    // another one in the middle of the window.
+    for (const dialog of this.renderRoot.querySelectorAll<HTMLElement>('.dialog')) {
+      if (dialog.dataset['center'] === undefined) {
+        dialog.style.removeProperty('--dialog-center');
+        continue;
+      }
+      const half = dialog.offsetWidth / 2;
+      const center = Number(dialog.dataset['center']);
+      const inside = Math.min(
+        Math.max(center, half + 8),
+        Math.max(half + 8, innerWidth - half - 8),
+      );
+      dialog.style.setProperty('--dialog-center', `${String(Math.round(inside))}px`);
+    }
     if (this.entering) {
       this.entering = false;
       const surface = this.renderRoot.querySelector<HTMLElement>('.current [data-surface]');
@@ -808,6 +835,7 @@ export class OverlayPage extends LitElement {
         role="dialog"
         aria-labelledby="login-title"
         data-surface
+        data-center=${centerOf(login.pane)}
         @submit=${this.signIn}
       >
         <h2 id="login-title">${this.t('overlay.signInTitle')}</h2>
@@ -845,6 +873,7 @@ export class OverlayPage extends LitElement {
         tabindex="-1"
         aria-labelledby="permission-title"
         data-surface
+        data-center=${centerOf(question.pane)}
       >
         <h2 id="permission-title">${this.t('overlay.permissionTitle', { site: question.site })}</h2>
         <ul>
@@ -896,7 +925,13 @@ export class OverlayPage extends LitElement {
         )}`;
     };
     return html`<div class="backdrop"></div>
-      <section class="dialog wide popover" role="dialog" aria-labelledby="share-title" data-surface>
+      <section
+        class="dialog wide popover"
+        role="dialog"
+        aria-labelledby="share-title"
+        data-surface
+        data-center=${centerOf(picker.pane)}
+      >
         <h2 id="share-title">${this.t('overlay.shareTitle', { site: picker.site })}</h2>
         <div class="sources">${group(true)} ${group(false)}</div>
         <div class="buttons">
@@ -1128,3 +1163,12 @@ const suggestionIcons = {
     <path d="M3 3v5h5M12 7v5l4 2" />
   </svg>`,
 };
+
+/**
+ * The middle of the side of a split view that a question shows over, or nothing for a question
+ * in the middle of the window.
+ * @param pane - The side, in CSS pixels.
+ */
+function centerOf(pane: Pane | undefined): string | typeof nothing {
+  return pane === undefined ? nothing : String(Math.round(pane.x + pane.width / 2));
+}

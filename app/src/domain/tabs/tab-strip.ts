@@ -1,3 +1,5 @@
+import { clampRatio, splitRatio } from '../../shared/split-view.ts';
+
 /** How many closed tabs can be reopened. */
 const closedTabLimit = 25;
 
@@ -10,27 +12,44 @@ export interface StripTab {
   readonly pinned: boolean;
 }
 
+/**
+ * Two neighbouring tabs that the window shows side by side in a split view. `start` is the
+ * left side and comes right before `end` in the strip; `ratio` is the share of the width that
+ * the left side takes, from 0.2 to 0.8. Pinned tabs are never in a pair, and a tab is in one
+ * pair at most.
+ */
+export interface SplitPair {
+  readonly start: string;
+  readonly end: string;
+  readonly ratio: number;
+}
+
 /** A tab that left a strip, and the tab that becomes active in its place. */
 export interface ClosedTab<T> {
   readonly tab: T;
   /** Whether the tab was the active tab, which leaves the strip without one. */
   readonly active: boolean;
   /**
-   * The tab to activate in place of the active tab: its right neighbour, or the left one at
-   * the end; `undefined` when the tab was not active or no tab is left.
+   * The tab to activate in place of the active tab: the other tab of its split view, or its
+   * right neighbour, or the left one at the end; `undefined` when the tab was not active or no
+   * tab is left.
    */
   readonly next: T | undefined;
+  /** The split view that the tab was a side of, which ended with it. */
+  readonly pair: SplitPair | undefined;
 }
 
 /**
- * The tabs of a window in their order, its active tab and the tabs that closed lately. Pinned
- * tabs come first. Tabs move in units: a tab and the tabs that move with it, which is the tab
- * alone for now. The strip knows of a tab only what {@link StripTab} names, and `TabService`
- * tells the views of the window what changed.
+ * The tabs of a window in their order, its active tab, the pairs of tabs that it shows side by
+ * side and the tabs that closed lately. Pinned tabs come first. Tabs move in units: a tab
+ * alone, or the two tabs of a pair, which nothing comes between. The strip knows of a tab only
+ * what {@link StripTab} names, and `TabService` tells the views of the window what changed.
  */
 export class TabStrip<T extends StripTab> {
   private readonly tabs: T[] = [];
   private activeId: string | undefined;
+  /** The pairs of tabs that the window shows side by side. */
+  private pairs: SplitPair[] = [];
   /** Tabs opened in the background since the active tab became active. */
   private readonly openedInBackground = new Set<string>();
   /** The addresses of the tabs that closed, the most recent last. */
@@ -46,9 +65,26 @@ export class TabStrip<T extends StripTab> {
     return this.activeId === undefined ? undefined : this.get(this.activeId);
   }
 
-  /** The tabs whose pages the content area of the window shows: the active tab. */
+  /**
+   * The tabs whose pages the content area of the window shows, from left to right: the active
+   * tab, and the other tab of its split view.
+   */
   get shown(): readonly string[] {
-    return this.activeId === undefined ? [] : [this.activeId];
+    return this.activeId === undefined ? [] : this.unitOf(this.activeId);
+  }
+
+  /** The pairs of tabs that the window shows side by side, in the order of the strip. */
+  get splits(): readonly SplitPair[] {
+    return this.pairs.toSorted((a, b) => this.indexOf(a.start) - this.indexOf(b.start));
+  }
+
+  /**
+   * The split view that a tab is a side of.
+   * @param id - The tab.
+   * @returns The pair, or `undefined` when the tab is in none.
+   */
+  splitOf(id: string): SplitPair | undefined {
+    return this.pairs.find((pair) => pair.start === id || pair.end === id);
   }
 
   /**
@@ -96,12 +132,98 @@ export class TabStrip<T extends StripTab> {
   }
 
   /**
-   * The tabs that move together with a tab, in their order: the tab alone.
+   * The tabs that move together with a tab, in their order: the two tabs of its split view,
+   * or the tab alone.
    * @param id - The tab.
    * @returns The tabs, or none when the tab is not in the strip.
    */
   unitOf(id: string): readonly string[] {
-    return this.has(id) ? [id] : [];
+    if (!this.has(id)) return [];
+    const pair = this.splitOf(id);
+    return pair === undefined ? [id] : [pair.start, pair.end];
+  }
+
+  /**
+   * Shows a tab beside another one in a split view. The tab that is added leaves a split view
+   * that it was a side of and moves next to the tab that stays, which keeps its place. Without
+   * a split view, it goes on the right. When the tab that stays has a partner already, the new
+   * tab takes the partner's side and share, and the partner stays open next to the pair.
+   * @param keep - The tab that stays where it is.
+   * @param add - The tab that joins it.
+   * @param ratio - The share of the left side of a new split view.
+   * @returns Whether the pair formed; not for a pinned tab, a tab with itself or a tab that the
+   *   strip does not have.
+   */
+  split(keep: string, add: string, ratio: number = splitRatio.even): boolean {
+    const kept = this.get(keep);
+    const added = this.get(add);
+    if (keep === add || kept === undefined || added === undefined) return false;
+    if (kept.pinned || added.pinned) return false;
+    const before = this.splitOf(keep);
+    // Two tabs that are a pair already stay as they are.
+    if (before !== undefined && before === this.splitOf(add)) return false;
+    this.pairs = this.pairs.filter((pair) => pair.start !== add && pair.end !== add);
+    // The tab that joins leaves its place, and the tab that stays keeps its own.
+    this.tabs.splice(this.indexOf(add), 1);
+    const place = this.indexOf(keep);
+    if (before === undefined) {
+      this.tabs.splice(place + 1, 0, added);
+      this.pairs.push({ start: keep, end: add, ratio: clampRatio(ratio) });
+      return true;
+    }
+    this.pairs = this.pairs.filter((pair) => pair !== before);
+    // The new tab takes the side of the partner, which stays open beside the pair.
+    if (before.start === keep) {
+      this.tabs.splice(place + 1, 0, added);
+      this.pairs.push({ start: keep, end: add, ratio: before.ratio });
+    } else {
+      this.tabs.splice(place, 0, added);
+      this.pairs.push({ start: add, end: keep, ratio: before.ratio });
+    }
+    return true;
+  }
+
+  /**
+   * Ends the split view that a tab is a side of; both tabs stay where they are.
+   * @param id - The tab.
+   * @returns Whether a split view ended.
+   */
+  unsplit(id: string): boolean {
+    const pair = this.splitOf(id);
+    if (pair === undefined) return false;
+    this.pairs = this.pairs.filter((other) => other !== pair);
+    return true;
+  }
+
+  /**
+   * Swaps the sides of the split view that a tab is a side of: the two tabs change their
+   * places, and each page keeps its width.
+   * @param id - The tab.
+   * @returns Whether the sides changed.
+   */
+  swapSplit(id: string): boolean {
+    const pair = this.splitOf(id);
+    if (pair === undefined) return false;
+    const place = this.indexOf(pair.start);
+    const [start, end] = this.tabs.slice(place, place + 2);
+    if (start === undefined || end === undefined) return false;
+    this.tabs.splice(place, 2, end, start);
+    this.replacePair(pair, { start: pair.end, end: pair.start, ratio: clampRatio(1 - pair.ratio) });
+    return true;
+  }
+
+  /**
+   * Gives the left side of the split view that a tab is a side of another share of the width.
+   * @param id - The tab.
+   * @param ratio - The share, which stays within its limits.
+   * @returns Whether the share changed.
+   */
+  resizeSplit(id: string, ratio: number): boolean {
+    const pair = this.splitOf(id);
+    const next = clampRatio(ratio);
+    if (pair === undefined || pair.ratio === next) return false;
+    this.replacePair(pair, { ...pair, ratio: next });
+    return true;
   }
 
   /**
@@ -117,12 +239,14 @@ export class TabStrip<T extends StripTab> {
     options: { readonly activate: boolean; readonly after?: string | undefined },
   ): void {
     const { activate, after } = options;
+    // A new tab never comes between the two tabs of a split view: it follows the pair.
     const index = tab.pinned
       ? this.pinnedCount
       : after === undefined
         ? this.insertionIndex(activate)
-        : this.indexOf(after) + 1;
-    this.tabs.splice(Math.max(index, tab.pinned ? 0 : this.pinnedCount), 0, tab);
+        : this.endOfUnit(after);
+    const place = Math.max(index, tab.pinned ? 0 : this.pinnedCount);
+    this.tabs.splice(tab.pinned ? place : this.outsidePairs(place), 0, tab);
     if (!activate) this.openedInBackground.add(tab.id);
   }
 
@@ -153,9 +277,14 @@ export class TabStrip<T extends StripTab> {
       this.closed.shift();
     }
     this.openedInBackground.delete(id);
-    if (this.activeId !== id) return { tab, active: false, next: undefined };
+    // The split view ends with either of its tabs; the other one shows alone.
+    const pair = this.splitOf(id);
+    if (pair !== undefined) this.pairs = this.pairs.filter((other) => other !== pair);
+    if (this.activeId !== id) return { tab, active: false, next: undefined, pair };
     this.activeId = undefined;
-    return { tab, active: true, next: this.tabs[index] ?? this.tabs[index - 1] };
+    const partner =
+      pair === undefined ? undefined : this.get(pair.start === id ? pair.end : pair.start);
+    return { tab, active: true, next: partner ?? this.tabs[index] ?? this.tabs[index - 1], pair };
   }
 
   /**
@@ -167,18 +296,23 @@ export class TabStrip<T extends StripTab> {
   }
 
   /**
-   * Moves a tab to another place in the order of the tabs. Pinned tabs stay among the pinned
-   * tabs, the others after them.
+   * Moves a tab, with the other tab of its split view, to another place in the order of the
+   * tabs. Pinned tabs stay among the pinned tabs, the others after them, and a place between
+   * the two tabs of another split view moves after that pair.
    * @param id - The tab.
-   * @param index - Its new index, counted without the tab itself; clamped to the tabs.
+   * @param index - The new index of the first tab of its unit, counted without the unit;
+   *   clamped to the tabs.
    */
   move(id: string, index: number): void {
-    const from = this.indexOf(id);
-    const [tab] = from === -1 ? [] : this.tabs.splice(from, 1);
-    if (tab === undefined) return;
+    const unit = this.unitOf(id);
+    const from = this.indexOf(unit[0] ?? id);
+    const moving = from === -1 ? [] : this.tabs.splice(from, unit.length);
+    const [head] = moving;
+    if (head === undefined) return;
     const pinned = this.pinnedCount;
-    const [first, last] = tab.pinned ? [0, pinned] : [pinned, this.tabs.length];
-    this.tabs.splice(Math.max(first, Math.min(index, last)), 0, tab);
+    const [first, last] = head.pinned ? [0, pinned] : [pinned, this.tabs.length];
+    const place = Math.max(first, Math.min(index, last));
+    this.tabs.splice(head.pinned ? place : this.outsidePairs(place), 0, ...moving);
   }
 
   /**
@@ -214,6 +348,8 @@ export class TabStrip<T extends StripTab> {
     const from = this.indexOf(id);
     const [tab] = from === -1 ? [] : this.tabs.splice(from, 1);
     if (tab === undefined) return;
+    // A pinned tab is never a side of a split view.
+    if (pinned) this.unsplit(id);
     this.tabs.splice(this.pinnedCount, 0, { ...tab, pinned });
   }
 
@@ -233,7 +369,29 @@ export class TabStrip<T extends StripTab> {
   clear(): T[] {
     this.activeId = undefined;
     this.openedInBackground.clear();
+    this.pairs = [];
     return this.tabs.splice(0);
+  }
+
+  /** Puts a newer state of a pair in the place of the pair. */
+  private replacePair(pair: SplitPair, next: SplitPair): void {
+    this.pairs = this.pairs.map((other) => (other === pair ? next : other));
+  }
+
+  /** The index right after the unit of a tab, such as after both tabs of a split view. */
+  private endOfUnit(id: string): number {
+    const unit = this.unitOf(id);
+    return this.indexOf(unit.at(-1) ?? id) + 1;
+  }
+
+  /**
+   * A place in the strip that does not lie between the two tabs of a split view: a place
+   * between them moves after the pair.
+   * @param index - The place, as an index of the tabs.
+   */
+  private outsidePairs(index: number): number {
+    const before = this.tabs[index - 1];
+    return before !== undefined && this.splitOf(before.id)?.start === before.id ? index + 1 : index;
   }
 
   /** Where a new tab goes: after the active tab and, in the background, its earlier tabs. */
@@ -242,8 +400,9 @@ export class TabStrip<T extends StripTab> {
       return this.tabs.length;
     }
     // A tab that is not pinned goes after the pinned tabs, also when a pinned tab is active,
-    // so the tabs opened in the background before it come first.
-    const next = Math.max(this.indexOf(this.activeId) + 1, this.pinnedCount);
+    // so the tabs opened in the background before it come first. The active tab counts with
+    // the other tab of its split view.
+    const next = Math.max(this.endOfUnit(this.activeId), this.pinnedCount);
     if (activate) {
       return next;
     }

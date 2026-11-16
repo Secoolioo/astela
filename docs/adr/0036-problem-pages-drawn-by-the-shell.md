@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Replaces the error page `app://error` that the plan for `0.1.0-beta.4` named.
+Accepted. Replaces the error page `app://error` that the plan for `0.1.0-beta.4` named. [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) draws the problem of a page in the side of a split view that it belongs to, and its buttons act on that side's tab.
 
 ## Date
 

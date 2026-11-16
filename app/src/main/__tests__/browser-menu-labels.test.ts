@@ -25,6 +25,7 @@ const context: CommandContext = {
       canGoBack: true,
       canGoForward: false,
       muted: false,
+      split: null,
     },
   ],
   activeIndex: 0,
@@ -34,6 +35,7 @@ const context: CommandContext = {
   privateWindows: true,
   developerTools: true,
   palette: true,
+  splitView: true,
 };
 
 /** The browser menu and its submenu with more tools, in a language on a system. */

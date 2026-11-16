@@ -8,6 +8,16 @@ import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { PopoverAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 import { controlsRoom } from '../../shared/window-controls.ts';
+import {
+  clampRatio,
+  ratioAt,
+  splitDivider,
+  splitMarker,
+  splitPanes,
+  splitPreviewEvery,
+  splitRatio,
+  type PaneRect,
+} from '../../shared/split-view.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
 import {
@@ -64,17 +74,99 @@ export class AppShell extends LitElement {
         var(--sidebar-width, 240px);
     }
     .content {
+      position: relative;
       grid-area: content;
       overflow: auto;
     }
-    /* The find bar of the active tab, between the toolbar and the page. */
+    /*
+     * Two tabs side by side: the line above the side with the focus, the two sides, where the
+     * pages lie or the problems of their tabs show, and the divider between them. The browser
+     * process lays the pages out with the same sizes (shared/split-view.ts), which the shell
+     * sets as --split-start, --split-divider and --split-marker.
+     */
+    .split {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: var(--split-marker) 1fr;
+      grid-template-columns: var(--split-start) var(--split-divider) 1fr;
+    }
+    .split .marker {
+      grid-row: 1;
+      background: transparent;
+      transition: background-color var(--motion-fast) var(--ease-standard);
+    }
+    .split .marker[data-focused] {
+      background: var(--focus-ring);
+    }
+    .split .pane {
+      grid-row: 2;
+      min-width: 0;
+      overflow: auto;
+    }
+    .split [data-side='start'] {
+      grid-column: 1;
+    }
+    .split [data-side='end'] {
+      grid-column: 3;
+    }
+    .split .divider {
+      position: relative;
+      grid-row: 1 / 3;
+      grid-column: 2;
+      cursor: col-resize;
+      touch-action: none;
+      transition: background-color var(--motion-instant) var(--ease-standard);
+    }
+    /* The grip in the middle of the divider. */
+    .split .divider::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 2px;
+      height: var(--control-large);
+      border-radius: var(--radius-pill);
+      background: var(--border-1);
+      transform: translate(-50%, -50%);
+      transition: background-color var(--motion-instant) var(--ease-standard);
+    }
+    .split .divider:hover,
+    .split .divider:focus-visible,
+    .split .divider[data-dragging] {
+      background: var(--surface-hover);
+    }
+    .split .divider:hover::before,
+    .split .divider:focus-visible::before,
+    .split .divider[data-dragging]::before {
+      background: var(--accent);
+    }
+    .split .divider:focus-visible {
+      outline-offset: -2px;
+    }
+    @media (forced-colors: active) {
+      .split .marker[data-focused] {
+        background: Highlight;
+      }
+      .split .divider::before {
+        background: CanvasText;
+      }
+    }
+    /*
+     * The find bar of the active tab, between the toolbar and the page, which in a split view
+     * ends where the side with the focus ends. A side narrower than the bar's controls leaves
+     * them at the start of the window: the room after them makes the bar no wider than the
+     * window, so the rows of the shell keep its width.
+     */
     .find {
       grid-area: find;
       display: flex;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: safe flex-end;
       gap: var(--space-1);
+      min-width: 0;
       padding: 2px var(--space-2);
+      padding-inline-end: calc(var(--find-end, 0px) + var(--space-2));
       border-bottom: 1px solid var(--line-1);
       background: var(--surface-1);
     }
@@ -304,7 +396,7 @@ export class AppShell extends LitElement {
       padding: 0 var(--space-2) var(--space-1);
       border-top: 1px solid var(--line-1);
     }
-    [aria-orientation='vertical'] {
+    [role='tablist'][aria-orientation='vertical'] {
       flex-direction: column;
       height: auto;
       min-height: 0;
@@ -426,6 +518,41 @@ export class AppShell extends LitElement {
     /* A tab that sleeps shows its icon faded; its title stays as it is. */
     .tab[data-sleeping] .favicon {
       opacity: 0.7;
+    }
+    /*
+     * The two tabs of a split view stand together: without the gap between them, rounded only
+     * at their outer corners, and on a surface of their own where the active tab's surface does
+     * not lie.
+     */
+    .tab[data-split='end'] {
+      margin-inline-start: calc(-1 * var(--space-1));
+    }
+    [aria-orientation='vertical'] .tab[data-split='end'] {
+      margin-inline-start: 0;
+      margin-block-start: calc(-1 * var(--space-1));
+    }
+    .tab[data-split]:not([aria-selected='true']) {
+      background: var(--surface-2);
+    }
+    .tab[data-split]:hover:not([aria-selected='true']) {
+      background: var(--surface-hover);
+    }
+    .tab[data-split='start'] {
+      border-start-end-radius: 0;
+      border-end-end-radius: 0;
+    }
+    .tab[data-split='end'] {
+      border-start-start-radius: 0;
+      border-end-start-radius: 0;
+    }
+    [aria-orientation='vertical'] .tab[data-split='start'] {
+      border-start-end-radius: var(--radius-2);
+      border-end-start-radius: 0;
+    }
+    [aria-orientation='vertical'] .tab[data-split='end'] {
+      border-start-start-radius: 0;
+      border-start-end-radius: 0;
+      border-end-start-radius: var(--radius-2);
     }
     .favicon img {
       width: 16px;
@@ -790,6 +917,27 @@ export class AppShell extends LitElement {
   private titleBarRoom = '';
   /** Whether the browser made the overlay ready for the menu, which it does once. */
   private overlayPrepared = false;
+  /**
+   * The divider of the split view while the pointer drags it, or after a change of the
+   * divider until the state brings it: the share of the left side and the pair it belongs to.
+   */
+  private splitDrag:
+    | {
+        /** The left and the right tab of the pair. */
+        readonly start: string;
+        readonly end: string;
+        readonly pointer: number;
+        ratio: number;
+        /** The animation frame that lets the pages follow, while one is due. */
+        frame: number | undefined;
+        /** When the pages last got a share to follow, in the time of the frames. */
+        sent: number;
+        /** Whether the divider was let go, or moved by a key, and waits for the state. */
+        done: boolean;
+        /** Gives up the wait for a state that does not bring the share. */
+        timer: ReturnType<typeof setTimeout> | undefined;
+      }
+    | undefined;
 
   constructor() {
     super();
@@ -807,6 +955,7 @@ export class AppShell extends LitElement {
       titleBar: null,
       covered: false,
       popover: null,
+      split: null,
     };
     this.drafts = new Map();
     this.addressFocused = false;
@@ -839,6 +988,7 @@ export class AppShell extends LitElement {
       this.layoutBookmarksBar();
       this.placeIndicator(false);
       this.markHiddenTabs();
+      this.placeSplit();
     });
     this.resizeObserver.observe(this);
   }
@@ -862,6 +1012,20 @@ export class AppShell extends LitElement {
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('state')) {
       this.settleOpening();
+      // The state that brings the share of the divider, or another split view, ends the share
+      // that the shell drew meanwhile. A drag goes on, and a state that the browser made
+      // before it took the share, such as of a page that loads, leaves the share as it is.
+      const drag = this.splitDrag;
+      const split = this.state.split;
+      if (
+        drag !== undefined &&
+        (split === null ||
+          split.start !== drag.start ||
+          split.end !== drag.end ||
+          (drag.done && split.ratio === drag.ratio))
+      ) {
+        this.dropSplitDrag();
+      }
       this.dataset['tabs'] = this.state.tabStrip;
       // The shell keeps the icons of its tabs only.
       this.favicons.keep(this.state.tabs.flatMap((tab) => tab.favicon ?? []));
@@ -901,6 +1065,7 @@ export class AppShell extends LitElement {
       this.markHiddenTabs();
       this.reportInsets();
       this.layoutBookmarksBar();
+      this.placeSplit();
       this.takeFindFocus();
       this.takeDownloadsOpening();
     }
@@ -920,7 +1085,15 @@ export class AppShell extends LitElement {
       this.renderRoot
         .querySelector('[role="tab"][aria-selected="true"]')
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      if (active?.url === newTabUrl && !keepsInput) {
+      // A new tab page that took the focus in the side of a split view keeps it for its own
+      // field, so there the shell takes it only while it has the focus of the window. Alone,
+      // the new tab page leaves the keys to the address bar also in a window in the
+      // background, which gets them once it comes to the front.
+      if (
+        active?.url === newTabUrl &&
+        !keepsInput &&
+        (this.state.split === null || document.hasFocus())
+      ) {
         this.focusAddress();
       }
     }
@@ -1062,8 +1235,262 @@ export class AppShell extends LitElement {
         ${active?.loading === true ? html`<div class="progress" aria-hidden="true"></div>` : nothing}
       </nav>
       ${this.renderBookmarksBar(t)} ${this.renderFind()}
-      <div class="content">${active?.problem ? this.renderProblem(active) : nothing}</div>
+      <div class="content">
+        ${
+          this.state.split === null
+            ? active?.problem
+              ? this.renderProblem(active)
+              : nothing
+            : this.renderSplit(this.state.split, t)
+        }
+      </div>
     `;
+  }
+
+  /**
+   * The two sides of a split view: the line above the side with the focus, the problem of the
+   * tab of a side, which shows in place of its page, and the divider between them. The pages
+   * lie above the sides, where the browser process puts them.
+   */
+  private renderSplit(
+    split: NonNullable<ShellState['split']>,
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): TemplateResult {
+    const sides = [
+      { side: 'start', tab: this.state.tabs.find((tab) => tab.id === split.start) },
+      { side: 'end', tab: this.state.tabs.find((tab) => tab.id === split.end) },
+    ] as const;
+    return html`<div class="split">
+      ${sides.map(
+        ({ side, tab }) =>
+          html`<div
+            class="marker"
+            data-side=${side}
+            ?data-focused=${tab?.id === this.state.activeTabId}
+          ></div>`,
+      )}
+      ${sides.map(
+        ({ side, tab }) =>
+          html`<div
+            class="pane"
+            data-side=${side}
+            data-id=${tab?.id ?? nothing}
+            @pointerdown=${() => this.focusSide(tab?.id)}
+          >
+            ${tab?.problem ? this.renderProblem(tab) : nothing}
+          </div>`,
+      )}
+      <div
+        class="divider"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        aria-valuemin=${Math.round(splitRatio.min * 100)}
+        aria-valuemax=${Math.round(splitRatio.max * 100)}
+        aria-label=${t('shell.splitDivider')}
+        title=${t('shell.splitDividerHint')}
+        @pointerdown=${this.startSplitDrag}
+        @pointermove=${this.moveSplitDrag}
+        @pointerup=${this.endSplitDrag}
+        @pointercancel=${this.endSplitDrag}
+        @lostpointercapture=${this.endSplitDrag}
+        @keydown=${this.onDividerKey}
+        @dblclick=${() => this.commitSplit(splitRatio.even)}
+      ></div>
+    </div>`;
+  }
+
+  /** Gives the side of a split view that was clicked the focus, as a click into its page does. */
+  private focusSide(tabId: string | undefined): void {
+    if (tabId !== undefined && tabId !== this.state.activeTabId) {
+      void this.bridge?.invoke('tabs.activate', { tabId });
+    }
+  }
+
+  /**
+   * The content area as the browser process lays the pages out in it, in the coordinates of
+   * the shell: its edges as whole pixels, as the shell reports them.
+   */
+  private splitArea(): PaneRect | undefined {
+    const box = this.renderRoot.querySelector('.content')?.getBoundingClientRect();
+    if (box === undefined) return undefined;
+    const left = Math.round(box.left);
+    const right = Math.round(window.innerWidth - box.right);
+    return { x: left, y: box.top, width: window.innerWidth - left - right, height: box.height };
+  }
+
+  /**
+   * Puts the divider and the line of the side with the focus where the browser process puts
+   * the pages, with the share of the drag while one runs, and lets the find bar end where the
+   * side with the focus ends.
+   */
+  private placeSplit(): void {
+    const split = this.state.split;
+    const element = this.renderRoot.querySelector<HTMLElement>('.split');
+    const area = this.splitArea();
+    if (split === null || element === null || area === undefined) {
+      this.style.removeProperty('--find-end');
+      return;
+    }
+    const ratio = this.splitDrag?.ratio ?? split.ratio;
+    const { start, end } = splitPanes(area, ratio);
+    element.style.setProperty('--split-start', `${String(start.width)}px`);
+    element.style.setProperty('--split-divider', `${String(splitDivider)}px`);
+    element.style.setProperty('--split-marker', `${String(splitMarker)}px`);
+    const left = Math.round(ratio * 100);
+    const divider = element.querySelector<HTMLElement>('.divider');
+    divider?.setAttribute('aria-valuenow', String(left));
+    divider?.setAttribute(
+      'aria-valuetext',
+      this.tp('shell.splitShare', {
+        start: percent(left / 100, this.i18n?.language),
+        end: percent((100 - left) / 100, this.i18n?.language),
+      }),
+    );
+    const focusedEnd =
+      split.start === this.state.activeTabId ? start.x + start.width : end.x + end.width;
+    this.style.setProperty(
+      '--find-end',
+      `${String(Math.max(0, window.innerWidth - focusedEnd))}px`,
+    );
+  }
+
+  /** Starts to drag the divider of the split view with the primary button. */
+  private readonly startSplitDrag = (event: PointerEvent): void => {
+    const split = this.state.split;
+    const divider = event.currentTarget;
+    if (event.button !== 0 || split === null || !(divider instanceof HTMLElement)) return;
+    divider.setPointerCapture(event.pointerId);
+    divider.toggleAttribute('data-dragging', true);
+    // The drag starts where the divider is drawn, also while a change waits for the state.
+    const ratio = this.splitDrag?.ratio ?? split.ratio;
+    this.dropSplitDrag();
+    this.splitDrag = {
+      start: split.start,
+      end: split.end,
+      pointer: event.pointerId,
+      ratio,
+      frame: undefined,
+      sent: Number.NEGATIVE_INFINITY,
+      done: false,
+      timer: undefined,
+    };
+  };
+
+  /**
+   * Moves the divider with the pointer: the shell draws it at once, and the pages follow with
+   * one request per frame at most.
+   */
+  private readonly moveSplitDrag = (event: PointerEvent): void => {
+    const drag = this.splitDrag;
+    const area = this.splitArea();
+    if (drag === undefined || drag.done || event.pointerId !== drag.pointer || area === undefined) {
+      return;
+    }
+    // The button was released where the divider did not see it.
+    if ((event.buttons & 1) === 0) {
+      this.endSplitDrag(event);
+      return;
+    }
+    drag.ratio = ratioAt(area, event.clientX);
+    this.placeSplit();
+    drag.frame ??= requestAnimationFrame(this.previewSplit);
+  };
+
+  /**
+   * Lets the pages follow the divider while it moves: in a frame, and once
+   * {@link splitPreviewEvery} ms passed since the last time, so that a display faster than
+   * 120 Hz sends no more and leaves room in the budget of the channel for the share that
+   * counts when the divider is let go.
+   */
+  private readonly previewSplit = (time: number): void => {
+    const drag = this.splitDrag;
+    if (drag === undefined || drag.done) return;
+    if (time - drag.sent < splitPreviewEvery) {
+      drag.frame = requestAnimationFrame(this.previewSplit);
+      return;
+    }
+    drag.frame = undefined;
+    drag.sent = time;
+    void this.bridge?.invoke('tabs.resizeSplit', {
+      tabId: drag.start,
+      ratio: drag.ratio,
+      done: false,
+    });
+  };
+
+  /** Forgets the share of the divider that the shell drew, with what waits for it. */
+  private dropSplitDrag(): void {
+    const drag = this.splitDrag;
+    if (drag === undefined) return;
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame);
+    clearTimeout(drag.timer);
+    this.splitDrag = undefined;
+  }
+
+  /** Lets the divider go where the pointer left it. */
+  private readonly endSplitDrag = (event: PointerEvent): void => {
+    const drag = this.splitDrag;
+    if (drag === undefined || drag.done || event.pointerId !== drag.pointer) return;
+    if (event.currentTarget instanceof HTMLElement) {
+      event.currentTarget.removeAttribute('data-dragging');
+    }
+    this.commitSplit(drag.ratio);
+  };
+
+  /** Moves the divider with the keys: the arrows by a step, Home and End to the limits. */
+  private readonly onDividerKey = (event: KeyboardEvent): void => {
+    const split = this.state.split;
+    if (split === null || event.altKey || event.ctrlKey || event.metaKey) return;
+    const ratio = this.splitDrag?.ratio ?? split.ratio;
+    const next =
+      event.key === 'ArrowLeft'
+        ? ratio - splitRatio.step
+        : event.key === 'ArrowRight'
+          ? ratio + splitRatio.step
+          : event.key === 'Home'
+            ? splitRatio.min
+            : event.key === 'End'
+              ? splitRatio.max
+              : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    this.commitSplit(next);
+  };
+
+  /**
+   * Gives the left side of the split view a share of the width, which counts for the browser,
+   * and draws it until the state brings it.
+   */
+  private commitSplit(ratio: number): void {
+    const split = this.state.split;
+    if (split === null) return;
+    const next = clampRatio(ratio);
+    const waiting = this.splitDrag?.done === true;
+    this.dropSplitDrag();
+    // A share that the state has already, with no other change that waits for the state,
+    // needs no drawing of its own.
+    if (next !== split.ratio || waiting) {
+      const drag = {
+        start: split.start,
+        end: split.end,
+        pointer: -1,
+        ratio: next,
+        frame: undefined,
+        sent: Number.NEGATIVE_INFINITY,
+        done: true,
+        // A state that never brings the share, as when the browser did not take it, lets the
+        // divider show the share of the state again.
+        timer: setTimeout(() => {
+          if (this.splitDrag !== drag) return;
+          this.splitDrag = undefined;
+          this.placeSplit();
+        }, splitEchoWait),
+      };
+      this.splitDrag = drag;
+    }
+    this.placeSplit();
+    void this.bridge?.invoke('tabs.resizeSplit', { tabId: split.start, ratio: next, done: true });
   }
 
   private renderTab(
@@ -1079,10 +1506,11 @@ export class AppShell extends LitElement {
         data-id=${tab.id}
         ?data-pinned=${tab.pinned}
         ?data-sleeping=${tab.sleeping}
+        data-split=${tab.split ?? nothing}
         tabindex=${selected ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
         aria-label=${title}
-        aria-description=${tab.sleeping ? t('shell.tabSleeping') : nothing}
+        aria-description=${this.tabDescription(tab, t) ?? nothing}
         title=${title}
         @pointerdown=${(e: PointerEvent) => this.startDrag(e, tab.id)}
         @contextmenu=${(e: MouseEvent) => this.openTabMenu(e, tab.id)}
@@ -1115,6 +1543,23 @@ export class AppShell extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  /**
+   * What a screen reader says of a tab besides its title: the side of a split view that it is,
+   * and that it sleeps.
+   */
+  private tabDescription(
+    tab: TabView,
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): string | undefined {
+    const parts = [
+      tab.split === null
+        ? undefined
+        : t(tab.split === 'start' ? 'shell.splitStart' : 'shell.splitEnd'),
+      tab.sleeping ? t('shell.tabSleeping') : undefined,
+    ].filter((part) => part !== undefined);
+    return parts.length === 0 ? undefined : parts.join(', ');
   }
 
   private get tabStrip(): HTMLElement | null {
@@ -2066,19 +2511,26 @@ export class AppShell extends LitElement {
     input.select();
   }
 
-  /** What the active tab shows when it has no page: why, and the ways on from there. */
+  /**
+   * What a tab shows when it has no page, in the content area or in its side of a split view:
+   * why, and the ways on from there, which act on that tab.
+   */
   private renderProblem(tab: TabView): TemplateResult | typeof nothing {
     const problem = tab.problem;
     if (problem === null) return nothing;
     const site = hostOf(problem.url);
+    // Two sides can show a problem at once; each title has an id of its own.
+    const title = `problem-title-${tab.id}`;
     if (problem.kind === 'certificate') {
-      return html`<section class="problem" aria-labelledby="problem-title">
-        <h1 id="problem-title">${this.tp('problem.certificateTitle')}</h1>
+      return html`<section class="problem" aria-labelledby=${title}>
+        <h1 id=${title}>${this.tp('problem.certificateTitle')}</h1>
         <p>${this.tp('problem.certificate', { site })}</p>
         <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
         ${
           tab.canGoBack
-            ? html`<button @click=${() => this.action('back')}>${this.tp('problem.back')}</button>`
+            ? html`<button @click=${() => this.action('back', tab.id)}>
+                ${this.tp('problem.back')}
+              </button>`
             : nothing
         }
         ${
@@ -2097,13 +2549,15 @@ export class AppShell extends LitElement {
       </section>`;
     }
     if (problem.kind === 'insecure') {
-      return html`<section class="problem" aria-labelledby="problem-title">
-        <h1 id="problem-title">${this.tp('problem.insecureTitle')}</h1>
+      return html`<section class="problem" aria-labelledby=${title}>
+        <h1 id=${title}>${this.tp('problem.insecureTitle')}</h1>
         <p>${this.tp('problem.insecure', { site })}</p>
         <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
         ${
           tab.canGoBack
-            ? html`<button @click=${() => this.action('back')}>${this.tp('problem.back')}</button>`
+            ? html`<button @click=${() => this.action('back', tab.id)}>
+                ${this.tp('problem.back')}
+              </button>`
             : nothing
         }
         <button
@@ -2114,13 +2568,11 @@ export class AppShell extends LitElement {
       </section>`;
     }
     const crashed = problem.kind === 'crashed';
-    return html`<section class="problem" aria-labelledby="problem-title">
-      <h1 id="problem-title">
-        ${this.tp(crashed ? 'problem.crashedTitle' : 'problem.errorTitle')}
-      </h1>
+    return html`<section class="problem" aria-labelledby=${title}>
+      <h1 id=${title}>${this.tp(crashed ? 'problem.crashedTitle' : 'problem.errorTitle')}</h1>
       <p>${this.tp(crashed ? 'problem.crashed' : problemMessage(problem.code), { site })}</p>
       <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
-      <button @click=${() => this.action('reload')}>
+      <button @click=${() => this.action('reload', tab.id)}>
         ${this.tp(crashed ? 'problem.reload' : 'problem.retry')}
       </button>
     </section>`;
@@ -2133,18 +2585,31 @@ export class AppShell extends LitElement {
     return this.i18n?.t(key, params) ?? key;
   }
 
-  private action(action: 'back' | 'forward' | 'reload' | 'stop' | 'home'): void {
-    const tabId = this.state.activeTabId;
+  /**
+   * Runs a history or loading action in a tab: the active one, or the tab of a side of a split
+   * view whose problem showed the button.
+   */
+  private action(
+    action: 'back' | 'forward' | 'reload' | 'stop' | 'home',
+    tabId: string | null = this.state.activeTabId,
+  ): void {
     if (tabId !== null) {
       void this.bridge?.invoke('tabs.action', { tabId, action });
     }
   }
 
-  /** The mouse's back and forward buttons act on the active tab, as they do over its page. */
+  /**
+   * The mouse's back and forward buttons act on the tab under the pointer, as they do over its
+   * page: the tab of the side of a split view, or else the active tab.
+   */
   private readonly onMouseUp = (event: MouseEvent): void => {
     if (event.button === 3 || event.button === 4) {
       event.preventDefault();
-      this.action(event.button === 3 ? 'back' : 'forward');
+      const pane = event
+        .composedPath()
+        .find((target) => target instanceof HTMLElement && target.classList.contains('pane'));
+      const tabId = pane instanceof HTMLElement ? pane.dataset['id'] : undefined;
+      this.action(event.button === 3 ? 'back' : 'forward', tabId ?? this.state.activeTabId);
     }
   };
 
@@ -2356,6 +2821,12 @@ type AddressOwner = Opening | string | null;
 function isOpening(owner: AddressOwner | undefined): owner is Opening {
   return typeof owner === 'object' && owner !== null;
 }
+
+/**
+ * How long in ms the divider of a split view keeps a share that was let go, or set with a
+ * key, while no state brings it.
+ */
+const splitEchoWait = 1000;
 
 /**
  * The part of the Window Controls Overlay API that the shell reads, which the DOM types of

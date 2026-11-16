@@ -85,17 +85,18 @@ export function runFromMenuBar(
 
 /**
  * The menu bar of macOS, with the browser's settings in the application menu and the command
- * palette, tab search and the tools of the page in the View menu. Its items run the commands of
- * the window, as the keys do, so they act on the page and not on the browser's own views, and
- * the policies apply.
+ * palette, tab search, split view and the tools of the page in the View menu. Its items run the
+ * commands of the window, as the keys do, so they act on the page and not on the browser's own
+ * views, and the policies apply.
  * @param run - Runs a command in the frontmost window.
  * @param table - The keyboard shortcuts of the windows, which the items show.
- * @param options - Whether the command palette is on; its items are missing while it is off.
+ * @param options - Whether the command palette and split view are on; their items are missing
+ *   while they are off.
  */
 export function macMenuBar(
   run: (command: WindowCommand) => void,
   table: ReadonlyMap<string, WindowCommand>,
-  options: { readonly palette: boolean } = { palette: true },
+  options: { readonly palette: boolean; readonly splitView?: boolean } = { palette: true },
 ): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
   // The window handles the keys itself, also while a page has the focus.
@@ -172,6 +173,7 @@ export function macMenuBar(
         command('menu.zoomOut', 'zoom.out'),
         { type: 'separator' },
         command('menu.fullScreen', 'window.fullscreen'),
+        ...(options.splitView === false ? [] : [command('menu.splitView', 'split.toggle')]),
         { type: 'separator' },
         command('menu.viewSource', 'page.source'),
         command('menu.developerTools', 'devtools.toggle'),

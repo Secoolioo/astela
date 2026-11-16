@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { tabStripPositions, toolbarItems } from '../layout.ts';
+import { splitRatio } from '../split-view.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 /** The id of a tab. */
@@ -37,8 +38,9 @@ export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
  * and was accepted after the warning, so its connection does not count as secure;
  * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
  * `audible` whether the page plays sound, `muted` whether its sound is muted, `pinned`
- * whether the tab is pinned, and `sleeping` whether the tab has no page loaded, as a tab that
- * was put to sleep or a restored tab that was not shown yet, which loads once it is shown.
+ * whether the tab is pinned, `sleeping` whether the tab has no page loaded, as a tab that
+ * was put to sleep or a restored tab that was not shown yet, which loads once it is shown, and
+ * `split` which side of a split view the tab is, or `null` for a tab that is in none.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -58,9 +60,17 @@ export const TabView = v.strictObject({
   muted: v.boolean(),
   pinned: v.boolean(),
   sleeping: v.boolean(),
+  split: v.nullable(v.picklist(['start', 'end'])),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;
+
+/** The share of the width that the left side of a split view takes. */
+export const SplitRatio = v.pipe(
+  v.number(),
+  v.minValue(splitRatio.min),
+  v.maxValue(splitRatio.max),
+);
 
 /** A bookmark or folder of the bookmarks bar; folders have no address. */
 export const BarItem = v.strictObject({
@@ -122,8 +132,9 @@ export type ShellPopover = v.InferOutput<typeof ShellPopover>;
  * `defaultZoom` the zoom of sites without a zoom of their own, `toolbar` the buttons next
  * to the address bar in their order, and `covered` whether the overlay covers the window, as a
  * popover or a question does, so that a click next to it reaches the overlay instead of moving
- * the window, and `popover` the popover of a button of the shell that the overlay shows, or
- * `null`.
+ * the window, `popover` the popover of a button of the shell that the overlay shows, or
+ * `null`, and `split` the split view of the active tab, with its left and right tab and the
+ * share of the left one, or `null` while the active tab shows alone.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -139,6 +150,7 @@ export const ShellState = v.strictObject({
   titleBar: v.nullable(TitleBarArea),
   covered: v.boolean(),
   popover: v.nullable(ShellPopover),
+  split: v.nullable(v.strictObject({ start: TabId, end: TabId, ratio: SplitRatio })),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

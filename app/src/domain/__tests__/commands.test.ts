@@ -14,6 +14,7 @@ const page = (tab: Partial<CommandTab> = {}): CommandTab => ({
   canGoBack: false,
   canGoForward: false,
   muted: false,
+  split: null,
   ...tab,
 });
 
@@ -27,6 +28,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   privateWindows: true,
   developerTools: true,
   palette: true,
+  splitView: true,
   ...change,
 });
 
@@ -136,6 +138,35 @@ describe('availableCommands', () => {
     expect(canRun('tab.closeOthers', context({ tabs: pinnedOthers, activeIndex: 2 }))).toBe(false);
     expect(canRun('tab.closeRight', context({ tabs: pinnedOthers, activeIndex: 0 }))).toBe(true);
     expect(canRun('tab.closeOthers', context())).toBe(false);
+  });
+
+  it('opens or ends split view on a tab that is not pinned, swaps sides only in one, and nothing while it is off', () => {
+    const tabs = [page({ pinned: true }), page({ split: 'start' }), page({ split: 'end' }), page()];
+    const split = (activeIndex: number, splitView = true): string =>
+      (['split.toggle', 'split.swap'] as const)
+        .map((command) =>
+          canRun(command, context({ tabs, activeIndex, splitView })) ? command : '-',
+        )
+        .join(' ');
+    expect(split(0)).toBe('- -');
+    expect(split(1)).toBe('split.toggle split.swap');
+    expect(split(2)).toBe('split.toggle split.swap');
+    expect(split(3)).toBe('split.toggle -');
+    expect(split(-1)).toBe('- -');
+    expect(split(2, false)).toBe('- -');
+    expect(split(3, false)).toBe('- -');
+  });
+
+  it('moves and closes around the two tabs of a split view as one', () => {
+    const tabs = [page(), page({ split: 'start' }), page({ split: 'end' })];
+    const able = (command: WindowCommand, activeIndex: number): boolean =>
+      canRun(command, context({ tabs, activeIndex }));
+    // The pair is at the end: it moves only to the left, and has no tabs to its right.
+    expect([able('tab.moveLeft', 2), able('tab.moveRight', 1)]).toEqual([true, false]);
+    expect([able('tab.closeRight', 1), able('tab.closeOthers', 2)]).toEqual([false, true]);
+    const pair = [page({ split: 'start' }), page({ split: 'end' })];
+    expect(canRun('tab.closeOthers', context({ tabs: pair, activeIndex: 0 }))).toBe(false);
+    expect(canRun('tab.moveLeft', context({ tabs: pair, activeIndex: 1 }))).toBe(false);
   });
 
   it('reopens a tab only after one closed, and acts on no tab without an active one', () => {

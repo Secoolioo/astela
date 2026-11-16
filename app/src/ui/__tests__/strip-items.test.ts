@@ -20,6 +20,7 @@ const tab = (id: string): TabView => ({
   muted: false,
   pinned: false,
   sleeping: false,
+  split: null,
 });
 
 /** Tabs of 100 pixels with 8 pixels between them, from 10 on. */
@@ -110,6 +111,58 @@ describe('strip items', () => {
         ['b', -108],
         ['c', -108],
         ['d', 0],
+      ]),
+    });
+  });
+
+  it('keeps the two tabs of a split view together as a unit, and a side without its partner alone', () => {
+    const side = (id: string, split: 'start' | 'end'): TabView => ({ ...tab(id), split });
+    const items = stripItems({
+      tabs: [tab('a'), side('b', 'start'), side('c', 'end'), side('d', 'end'), side('e', 'start')],
+    });
+    expect(unitsOf(items)).toEqual([['a'], ['b', 'c'], ['d'], ['e']]);
+    expect(
+      unitsOf(stripItems({ tabs: [side('a', 'start'), side('b', 'start'), side('c', 'end')] })),
+    ).toEqual([['a'], ['b', 'c']]);
+  });
+
+  it('moves the tabs of a split view, which have no space between them, as a whole', () => {
+    // a, then the pair b|c without a gap, then d: 100 px tabs, 8 px between units.
+    const places = new Map<string, Span>([
+      ['a', { start: 10, size: 100 }],
+      ['b', { start: 118, size: 100 }],
+      ['c', { start: 218, size: 100 }],
+      ['d', { start: 326, size: 100 }],
+    ]);
+    const units = [['a'], ['b', 'c'], ['d']];
+    // The pair, centered at 218, passes the center of d at 376.
+    expect(dropPlace(units, ['b', 'c'], 160, places, 8)).toEqual({
+      index: 2,
+      shifts: new Map([
+        ['a', 0],
+        ['d', -208],
+      ]),
+    });
+    // A tab dragged past the pair moves both of its tabs by the same length.
+    expect(dropPlace(units, ['a'], 220, places, 8)).toEqual({
+      index: 2,
+      shifts: new Map([
+        ['b', -108],
+        ['c', -108],
+        ['d', 0],
+      ]),
+    });
+    // Along a strip at a side, a vertical pair is a unit in the same way.
+    const vertical = new Map<string, Span>([
+      ['b', spanOf({ left: 0, top: 50, width: 200, height: 36 }, true)],
+      ['c', spanOf({ left: 0, top: 86, width: 200, height: 36 }, true)],
+      ['d', spanOf({ left: 0, top: 126, width: 200, height: 36 }, true)],
+    ]);
+    expect(dropPlace([['b', 'c'], ['d']], ['d'], -70, vertical, 4)).toEqual({
+      index: 0,
+      shifts: new Map([
+        ['b', 40],
+        ['c', 40],
       ]),
     });
   });
