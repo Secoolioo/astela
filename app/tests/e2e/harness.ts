@@ -1036,7 +1036,9 @@ export function overlayAttached(browser: Browser, windowId?: number): Promise<bo
 
 /**
  * Waits until the page of an overlay exists and returns it. Every window has an overlay of
- * its own, made with its first popover.
+ * its own, made with its first popover, or before it for the suggestions of its address bar or
+ * once the pointer or the focus reaches its menu or workspace button; with several windows,
+ * this may be any of them.
  * @param browser - The connected browser.
  * @param except - Pages of overlays to leave out, such as that of another window.
  */

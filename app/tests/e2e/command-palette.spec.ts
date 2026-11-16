@@ -46,7 +46,9 @@ interface Palette {
 
 /**
  * Opens the palette with its shortcut, or tab search with its own, as pressed in a view, and
- * returns it once its field has the focus.
+ * returns it once its field has the focus. Each window has an overlay of its own, and another
+ * window may have one already that shows nothing, such as one that its address bar made for
+ * its suggestions; the palette is in the overlay that shows it.
  * @param target - Start of the address of the view that gets the keys; the shell by default.
  * @param except - Pages of overlays of other windows.
  */
@@ -57,9 +59,31 @@ async function openPalette(
   except: readonly Page[] = [],
 ): Promise<Palette> {
   await pressNative(browser, tabs ? 'A' : 'K', tabs ? ['primary', 'shift'] : ['primary'], target);
-  const overlay = await overlayPage(browser, except);
-  const dialog = overlay.getByRole('dialog', { name: tabs ? 'Search tabs' : 'Command palette' });
-  await expect(dialog).toBeVisible();
+  // A window's first popover makes its overlay first, so wait for an overlay before the dialog.
+  await overlayPage(browser, except);
+  const name = tabs ? 'Search tabs' : 'Command palette';
+  let overlay: Page | undefined;
+  await expect
+    .poll(
+      async () => {
+        for (const page of browser.cdp.contexts().flatMap((context) => context.pages())) {
+          if (!page.url().startsWith('app://overlay') || except.includes(page)) continue;
+          const shows = await page
+            .getByRole('dialog', { name })
+            .isVisible()
+            .catch(() => false);
+          if (shows) {
+            overlay = page;
+            break;
+          }
+        }
+        return overlay !== undefined;
+      },
+      { message: `An overlay shows ${name}` },
+    )
+    .toBe(true);
+  if (overlay === undefined) throw new Error(`No overlay shows ${name}`);
+  const dialog = overlay.getByRole('dialog', { name });
   const field = dialog.getByRole('combobox');
   await expect(field).toBeFocused();
   return { overlay, dialog, field };
@@ -836,7 +860,8 @@ test('searches only the tabs of private windows in a private window, and never s
     const favicon = (overlay: Page): Promise<unknown> =>
       overlay.evaluate((key) => window.bridge.invoke('overlay.favicon', { key }), icon);
     expect(await favicon(inPrivate.overlay)).toBeNull();
-    await pressNative(browser, 'Escape', [], 'app://overlay');
+    // Escape goes to the palette's own overlay, as the regular window may have one too.
+    await inPrivate.field.press('Escape');
     await expect(inPrivate.dialog).toBeHidden();
     await focusWindow(browser, regularWindow);
     const regular = await openPalette(browser, fixture('icon.html'), true, [inPrivate.overlay]);
