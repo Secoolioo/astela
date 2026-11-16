@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The line on motion is replaced by [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md). [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md) mixes the lines and the raised surface of the dark mode from the palette in CSS, instead of in the theme engine.
+Accepted. The line on motion is replaced by [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md). [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md) mixes the lines and the raised surface of the dark mode from the palette in CSS, instead of in the theme engine. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) adds the tokens `--swatch-*`, the colors of groups of tabs and workspaces, which every theme keeps.
 
 ## Date
 

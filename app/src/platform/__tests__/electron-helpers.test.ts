@@ -12,7 +12,11 @@ import {
   ShellStateChanged,
   shellRequests,
 } from '../../shared/ipc/shell-contracts.ts';
-import { ResizeSplit, shellLaterRequests } from '../../shared/ipc/shell-later-contracts.ts';
+import {
+  EditGroupRequested,
+  ResizeSplit,
+  shellLaterRequests,
+} from '../../shared/ipc/shell-later-contracts.ts';
 import { splitPreviewEvery } from '../../shared/split-view.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import {
@@ -142,9 +146,9 @@ describe('contracts', () => {
     expect(shellLaterRequests.map((c) => c.channel).toSorted()).toEqual(
       [...shellLaterChannels].toSorted(),
     );
-    expect([ShellStateChanged.channel, ShellCommand.channel].toSorted()).toEqual(
-      [...shellEventChannels].toSorted(),
-    );
+    expect(
+      [ShellStateChanged.channel, ShellCommand.channel, EditGroupRequested.channel].toSorted(),
+    ).toEqual([...shellEventChannels].toSorted());
   });
 
   it('rejects invalid channel names', () => {

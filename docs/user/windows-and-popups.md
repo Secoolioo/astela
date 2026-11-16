@@ -10,6 +10,7 @@
 
 - A link that a page opens in a new tab opens next to the page, in front.
 - A middle click on a link, or a click with Ctrl (Command on macOS), opens it in a tab in the background.
+- From 0.1.0-beta.7, a tab that a page of a [tab group](tab-groups.md) opens in this way joins the group.
 - A click with Shift opens the link in a new window.
 - A popup that a page opens with a size, such as a sign-in or payment window, gets a window of its own. It stays connected to the page that opened it, so it can send its result back and close itself when it is done. Popups are not restored at the next start. A popup lies on a screen and is at most as large as it, whatever size and position the page asks for.
 

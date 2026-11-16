@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md). For the palette's own two shortcuts, it departs from the rule of ADR 0034 that a shortcut of the browser closes the overlay and runs. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) shows a tab that sleeps in tab search with its icon faded, the tag _Sleeping_ and a description for screen readers.
+Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md). For the palette's own two shortcuts, it departs from the rule of ADR 0034 that a shortcut of the browser closes the overlay and runs. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) shows a tab that sleeps in tab search with its icon faded, the tag _Sleeping_ and a description for screen readers. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) lists the commands that go to a tab only while a tab that no collapsed group hides is there to go to, and the moves of a tab of a group also at an end of the tab strip, where it leaves its group.
 
 ## Date
 

@@ -2,10 +2,10 @@ import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { historyMoves } from './tab-history.ts';
-import { TabStrip, type SplitPair } from './tab-strip.ts';
+import { TabStrip, type SplitPair, type TabGroup } from './tab-strip.ts';
 import type { TabHistory } from './view-history.ts';
 
-export type { SplitPair } from './tab-strip.ts';
+export type { SplitPair, TabGroup } from './tab-strip.ts';
 
 /** Identifier of a tab, such as `t1a`. */
 export type TabId = string;
@@ -54,10 +54,12 @@ export interface Tab {
    * a restored tab that was not shown yet; it loads again once it is shown.
    */
   readonly sleeping: boolean;
+  /** The group of tabs that the tab is in, or `null`; only the strip changes it. */
+  readonly group: TabGroup | null;
 }
 
 /** Fields of a tab that the web view reports. */
-export type TabUpdate = Partial<Omit<Tab, 'id'>>;
+export type TabUpdate = Partial<Omit<Tab, 'id' | 'group'>>;
 
 /**
  * Who puts a tab to sleep: people from the menu of the tab (`manual`), or the browser after
@@ -112,8 +114,15 @@ export interface OpenTabOptions {
   readonly title?: string;
   /** Opens the tab pinned, at the end of the pinned tabs. */
   readonly pinned?: boolean;
-  /** Opens the tab right after this tab instead of after the active one. */
+  /** Opens the tab right after this tab instead of after the active one, in its group. */
   readonly after?: TabId;
+  /**
+   * The tab whose page opened the tab, such as with a link: once the window has groups of tabs,
+   * the new tab joins the group of that tab.
+   */
+  readonly opener?: TabId | undefined;
+  /** The group that the tab joins, at its end; a group that the window does not have forms. */
+  readonly group?: TabGroup | undefined;
   /**
    * The back and forward history that the tab comes back with, such as that of a restored
    * tab; the entry that it shows has the tab's URL.
@@ -163,12 +172,13 @@ const titleChange: KeptChange = { titleOnly: true };
 
 /**
  * Owns the tabs of one window and tells its views what changed. A {@link TabStrip} keeps the
- * order of the tabs, the active tab and the tabs that closed lately. A window always keeps at
+ * order of the tabs, the active tab and the tabs that closed lately; a strip that knows groups
+ * of tabs takes its place with the first group (`tab-groups.ts`). A window always keeps at
  * least one tab.
  */
 export class TabService implements Disposable {
   /** The tabs of the window. */
-  private readonly tabStrip = new TabStrip<Tab>();
+  private tabStrip = new TabStrip<Tab>();
   private nextId = 1;
   private readonly changeEmitter = new Emitter<void>();
   private readonly views: TabViewPort;
@@ -320,10 +330,11 @@ export class TabService implements Disposable {
       muted: false,
       pinned: options.pinned === true,
       sleeping: lazy,
+      group: null,
     };
     const activate = options.activate ?? true;
     if (options.after !== undefined) this.require(options.after);
-    this.strip.insert(tab, { activate, after: options.after });
+    this.strip.insert(tab, { ...options, activate });
     this.views.create(id, url, lazy, options.history);
     if (activate) {
       this.activate(id);
@@ -352,31 +363,46 @@ export class TabService implements Disposable {
    * @param id - The tab.
    */
   close(id: TabId): void {
-    const closed = this.require(id).close(id);
-    if (closed === undefined) {
-      return;
-    }
-    this.views.destroy(id);
-    // The active tab whose partner closed shows alone.
+    const strip = this.require(id);
+    this.edit(() => {
+      const closed = strip.close(id);
+      if (closed?.next !== undefined) strip.activate(closed.next.id);
+      return closed === undefined ? [] : [closed.tab];
+    });
+  }
+
+  /**
+   * Changes the strip in a way of its own, such as the groups of tabs do, and tells the views
+   * and the session: the tabs that left the strip lose their views, the content area shows the
+   * tabs that the strip shows now, and a window that the change left without an active tab gets
+   * a new tab, or closes when it is a popup without tabs.
+   * @param change - Changes the strip, and gives the tabs that left it.
+   */
+  edit(change: (strip: TabStrip<Tab>) => readonly Tab[] | void): void {
+    const shown = this.shown.join();
+    for (const tab of change(this.strip) ?? []) this.views.destroy(tab.id);
     const active = this.active;
-    if (!closed.active && active !== undefined && closed.pair !== undefined) {
-      if (closed.pair.start === active.id || closed.pair.end === active.id) {
-        this.views.show(active.id, undefined);
+    if (active === undefined && shown !== '') {
+      if (this.all.length > 0 || this.onLastClosed === undefined) this.open();
+      else {
+        this.changed(keptChange);
+        this.onLastClosed();
       }
-    }
-    if (closed.active) {
-      if (closed.next === undefined) {
-        if (this.onLastClosed === undefined) this.open();
-        else {
-          this.changed(keptChange);
-          this.onLastClosed();
-        }
-        return;
-      }
-      this.activate(closed.next.id);
       return;
+    }
+    if (active !== undefined && this.shown.join() !== shown) {
+      this.views.show(active.id, this.strip.splitOf(active.id));
     }
     this.changed(keptChange);
+  }
+
+  /**
+   * Lets another kind of strip keep the tabs of the window, such as one that knows groups of
+   * tabs, which load with their first use; it takes over the tabs of the strip before.
+   * @param make - Makes the new strip from the one before.
+   */
+  useStrip(make: (strip: TabStrip<Tab>) => TabStrip<Tab>): void {
+    this.tabStrip = make(this.tabStrip);
   }
 
   /**
@@ -426,12 +452,11 @@ export class TabService implements Disposable {
   }
 
   /**
-   * Reopens the most recently closed tab.
+   * Reopens the most recently closed tab, or the tabs of the group that closed last.
    * @returns The reopened tab's id, or `undefined` if nothing was closed.
    */
   reopenClosed(): TabId | undefined {
-    const url = this.strip.reopen();
-    return url === undefined ? undefined : this.open(url);
+    return this.strip.reopenWith((url, place) => this.open(url, place));
   }
 
   /**

@@ -235,7 +235,7 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     const target =
       disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(privateWindow));
     if (target === undefined) windows.openWith(contents, url, { private: privateWindow });
-    else target.adopt(contents, url, disposition !== 'background-tab');
+    else target.adopt(contents, url, disposition !== 'background-tab', opener);
   };
   const blocksPopup = (url: string, opener: WebContents): boolean => {
     const blocked = blocker.blocksPopup(url, opener.getURL());

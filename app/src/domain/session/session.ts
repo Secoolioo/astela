@@ -1,14 +1,15 @@
 import * as v from 'valibot';
 import { tabPageOf } from '../../shared/internal-pages.ts';
+import { TabGroupView } from '../../shared/ipc/shell-contracts.ts';
 import { clampRatio } from '../../shared/split-view.ts';
 import {
   currentEntry,
   currentOnly,
   parseTabHistory,
   sessionLimits,
-  TabHistoryShape,
   trimHistory,
 } from '../tabs/tab-history.ts';
+import type { TabGroup } from '../tabs/tab-strip.ts';
 import type { TabHistory } from '../tabs/view-history.ts';
 import type { WindowBounds } from '../windows/window-bounds.ts';
 
@@ -35,47 +36,53 @@ const SessionSplit = v.object({
 /** Two tabs that a window showed side by side. */
 type SessionSplit = v.InferOutput<typeof SessionSplit>;
 
+/** The group of tabs that a tab of a session was in; `collapsed` tells whether it hid them. */
+const SessionGroup = v.object(TabGroupView.entries);
+
+/**
+ * A tab as the session keeps it: its address, at most 8,192 characters, its title, at most
+ * 1,024, whether it is pinned, and since 0.1.0-beta.7 its back and forward history: its views
+ * with their entries, within the limits of the session, and the group of tabs that it is in.
+ */
+export interface SessionTab {
+  url: string;
+  title: string;
+  pinned?: boolean;
+  history?: TabHistory;
+  group?: TabGroup;
+}
+
+/**
+ * A window of a session: its tabs, the index of its active tab, where it was, whether it was
+ * maximized, whether people put it in full screen (`fullScreen`, since 0.1.0-beta.7), which a
+ * page in full screen does not count as, and the pairs of tabs that it showed side by side
+ * (`splits`).
+ */
+export interface SessionWindow {
+  tabs: SessionTab[];
+  active: number;
+  bounds?: WindowBounds;
+  maximized?: boolean;
+  fullScreen?: boolean;
+  splits?: SessionSplit[];
+}
+
 /**
  * The tabs of the open windows, and where the windows were, as the session keeps them. The
  * format stays at version 1: a field that a later version adds is optional, and objects of
  * version 1 ignore the fields they do not know, so 0.1.0-beta.6 still reads the session of a
- * later version with every tab, such as after a rollback. Since 0.1.0-beta.7, a tab keeps its
- * back and forward history (`history`): its views with their entries, within the limits of
- * the session; and a window whether people put it in full screen (`fullScreen`), which a
- * page in full screen does not count as, and the pairs of tabs that it showed side by side
- * (`splits`). The windows come in the order in which they were used, the window used last at
- * the end.
+ * later version with every tab, such as after a rollback. The windows come in the order in
+ * which they were used, the window used last at the end. The browser reads the file field by
+ * field with {@link parseSession}.
  */
-export const SessionSnapshot = v.object({
-  version: v.literal(1),
-  windows: v.array(
-    v.object({
-      tabs: v.array(
-        v.object({
-          url: v.pipe(v.string(), v.maxLength(8192)),
-          title: v.pipe(v.string(), v.maxLength(1024)),
-          pinned: v.optional(v.boolean()),
-          history: v.optional(TabHistoryShape),
-        }),
-      ),
-      active: v.pipe(v.number(), v.integer(), v.minValue(0)),
-      bounds: v.optional(Bounds),
-      maximized: v.optional(v.boolean()),
-      fullScreen: v.optional(v.boolean()),
-      splits: v.optional(v.array(SessionSplit)),
-    }),
-  ),
-});
-
-/** The tabs of the open windows, and where the windows were, as the session keeps them. */
-export type SessionSnapshot = v.InferOutput<typeof SessionSnapshot>;
+export interface SessionSnapshot {
+  version: 1;
+  windows: SessionWindow[];
+}
 
 /** The longest title and address a session keeps; longer titles are cut, longer addresses dropped. */
 const titleLimit = 1024;
 const urlLimit = 8192;
-
-/** One window of a session. */
-export type SessionWindow = SessionSnapshot['windows'][number];
 
 /**
  * What a window of a session keeps besides its tabs and its active tab, such as where it
@@ -94,15 +101,14 @@ export function keepsUrl(url: string): boolean {
   return url.length <= urlLimit && /^https?:\/\/[^\s]+$/i.test(url);
 }
 
-/** A tab as a session keeps it. */
-type SessionTab = SessionWindow['tabs'][number];
-
 /** A tab that a session is to keep, with its history as far as it is known. */
 export interface KeptTab {
   readonly url: string;
   readonly title: string;
   readonly pinned?: boolean;
   readonly history?: TabHistory | undefined;
+  /** The group of tabs that the tab is in, if any. */
+  readonly group?: TabGroup | null | undefined;
 }
 
 /**
@@ -195,6 +201,7 @@ export function sessionWindow(
       title: tab.title.slice(0, titleLimit),
       ...(tab.pinned === true ? { pinned: true } : {}),
       ...(history === undefined ? {} : { history }),
+      ...(tab.group ? { group: tab.group } : {}),
     });
   });
   if (kept.length === 0) return undefined;
@@ -276,6 +283,7 @@ const StoredTab = v.object({
   title: v.string(),
   pinned: v.optional(v.unknown()),
   history: v.optional(v.unknown()),
+  group: v.optional(v.unknown()),
 });
 
 /**
@@ -289,11 +297,13 @@ function storedTab(stored: unknown): KeptTab | undefined {
   const { url, title, pinned } = tab.output;
   const history =
     tab.output.history === undefined ? undefined : parseTabHistory(tab.output.history, url);
+  const group = optionalField(SessionGroup, tab.output.group);
   return {
     url,
     title,
     ...(optionalField(Flag, pinned) === true ? { pinned: true } : {}),
     ...(history === undefined ? {} : { history }),
+    group,
   };
 }
 
@@ -340,6 +350,11 @@ export interface RestoredTab {
   readonly pinned?: boolean;
   /** The back and forward history of the tab, whose current entry is the tab's address. */
   readonly history?: TabHistory;
+  /**
+   * The group of tabs that the tab was in; neighbouring tabs with the same group form it again,
+   * with a new id.
+   */
+  readonly group?: TabGroup | undefined;
 }
 
 /**
@@ -376,11 +391,12 @@ export interface RestoredWindow {
  */
 export function restoredWindows(session: SessionSnapshot): RestoredWindow[] {
   return session.windows.map(({ tabs, active, bounds, maximized, fullScreen, splits }) => ({
-    tabs: tabs.map(({ url, title, pinned, history }) => ({
+    tabs: tabs.map(({ url, title, pinned, history, group }) => ({
       url,
       title,
       pinned: pinned === true,
       ...(history === undefined ? {} : { history }),
+      group,
     })),
     active,
     place: {

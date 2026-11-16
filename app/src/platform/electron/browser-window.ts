@@ -27,6 +27,7 @@ import {
   type KeptChange,
   type SleepMode,
   type SplitPair,
+  type TabGroup,
   type TabId,
   type TabProblem,
   type TabViewPort,
@@ -615,6 +616,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private focusing: TabId | undefined;
   /** The view that was given the focus while its page waited for its code. */
   private focusOnLoad: WebContents | undefined;
+  /** Whether a change of the active tab leaves the focus where it is, see `keepingFocus`. */
+  private focusKept = false;
   /** Where the content area is, as the shell reports it; until then, where it starts. */
   private insets: Insets;
   /** Whether the window draws its own title bar, which it keeps until it closes. */
@@ -848,6 +851,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           pinned: tab.pinned,
           sleeping: tab.sleeping,
           split: this.sideOf(id),
+          group: tab.group,
         }),
       ),
       activeTabId: active?.id ?? null,
@@ -985,9 +989,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Finds the tab that a `WebContents` shows.
-   * @param contents - A tab view's `WebContents`.
+   * @param contents - A tab view's `WebContents`, or none.
    */
-  tabIdOf(contents: WebContents): TabId | undefined {
+  tabIdOf(contents: WebContents | undefined): TabId | undefined {
     return [...this.entries].find(([, entry]) => entry.view.webContents === contents)?.[0];
   }
 
@@ -1019,16 +1023,17 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Shows the page that a script of another page opened in a new tab, which keeps that page
-   * as its opener.
+   * as its opener; a tab of this window that opened it takes it into its group.
    * @param contents - The new page, which Chromium made for the script.
    * @param url - The address it opens.
    * @param activate - Whether the tab becomes the active one.
+   * @param opener - The page that opened it.
    * @returns The tab.
    */
-  adopt(contents: WebContents, url: string, activate: boolean): TabId {
+  adopt(contents: WebContents, url: string, activate: boolean, opener?: WebContents): TabId {
     this.adopting = contents;
     try {
-      return this.tabs.open(url, { activate });
+      return this.tabs.open(url, { activate, opener: this.tabIdOf(opener) });
     } finally {
       this.adopting = undefined;
     }
@@ -1077,7 +1082,21 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.layout();
     // A page that took the focus keeps it; a change of the pages alone moves no focus, such as
     // from the shell or the divider.
-    if (before !== id && this.focusing !== id) this.focusContent();
+    if (before !== id && this.focusing !== id && !this.focusKept) this.focusContent();
+  }
+
+  /**
+   * Changes the tabs without moving the focus to the page of a tab that becomes active, such
+   * as a key on a chip of the shell does, which keeps the focus.
+   * @param change - The change.
+   */
+  keepingFocus(change: () => void): void {
+    this.focusKept = true;
+    try {
+      change();
+    } finally {
+      this.focusKept = false;
+    }
   }
 
   /**
@@ -2403,13 +2422,22 @@ export class WindowManager implements Disposable {
   }
 
   /**
-   * Opens windows again with their tabs, such as those of a stored session, and their split
-   * views while windows may show them. Only the active tab of each window loads, with the other
-   * tab of its split view; the others load when they are shown.
+   * Opens windows again with their tabs, such as those of a stored session, their groups of
+   * tabs and their split views while windows may show them. Only the active tab of each window
+   * loads, with the other tab of its split view; the others load when they are shown.
    * @param windows - The windows, with their tabs and where they were.
+   * @param regroup - Forms the groups of a window's tabs again; the session only has groups
+   *   when the browser loaded the code of groups for it.
    * @returns The first window, or a new window with a new tab page when there is none.
    */
-  restore(windows: readonly RestoredWindow[]): BrowserWindowController {
+  restore(
+    windows: readonly RestoredWindow[],
+    regroup?: (
+      tabs: TabService,
+      ids: readonly TabId[],
+      groups: readonly (TabGroup | undefined)[],
+    ) => void,
+  ): BrowserWindowController {
     const areas = workAreas();
     const splitView = this.options.splitView?.() ?? true;
     // The window used last opens last, so that it ends up in front.
@@ -2427,6 +2455,11 @@ export class WindowManager implements Disposable {
           pinned: tab.pinned === true,
           history: tab.history,
         }),
+      );
+      regroup?.(
+        controller.tabs,
+        ids,
+        tabs.map((tab) => tab.group),
       );
       for (const pair of splitView ? (splits ?? []) : []) {
         const [start, end] = [ids[pair.start], ids[pair.start + 1]];
@@ -2459,10 +2492,11 @@ export class WindowManager implements Disposable {
           const active = controller.tabs.active;
           const index = (id: TabId): number => tabs.findIndex((tab) => tab.id === id);
           const window = sessionWindow(
-            tabs.map(({ id, url, title, pinned }) => ({
+            tabs.map(({ id, url, title, pinned, group }) => ({
               url,
               title,
               pinned,
+              group,
               history: controller.historyOf(id, fresh),
             })),
             active === undefined ? -1 : tabs.indexOf(active),

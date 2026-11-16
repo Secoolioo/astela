@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) keeps tab groups and workspaces in the core model of the tabs, with chunks of their own in `app/src/main/` that load with their first use, until the module host exists; `workspaces.enabled` and the policy `WorkspacesEnabled` keep the activation contract of this decision.
 
 ## Date
 

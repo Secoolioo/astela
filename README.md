@@ -35,11 +35,12 @@ On `main` now, and in the next beta, 0.1.0-beta.7:
 - **Session:** each tab comes back with its back and forward history, and the last session also after a crash.
 - **Sleeping tabs:** tabs go to sleep from their menu or after a time, and wake when they are shown.
 - **Split view:** two tabs side by side, with a divider to move.
+- **Tab groups:** named, colored groups of tabs that collapse and come back after a restart.
 
 ## Planned for 0.1.0
 
 - Layout presets such as a compact and a zen layout, and site information in the address bar.
-- Tab groups, workspaces, a reader view and picture-in-picture.
+- Workspaces, a reader view and picture-in-picture.
 - Saved passwords and autofill.
 
 ## Documentation

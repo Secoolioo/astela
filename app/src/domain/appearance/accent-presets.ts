@@ -1,13 +1,10 @@
-/** Identifiers of the accent colors offered without picking a custom color. */
-export const accentPresets = [
-  'astela',
-  'blue',
-  'teal',
-  'green',
-  'orange',
-  'red',
-  'graphite',
-] as const;
+import { swatches } from '../../shared/swatches.ts';
+
+/**
+ * Identifiers of the accent colors offered without picking a custom color: Astela's own, and
+ * the six colors that groups of tabs take as well.
+ */
+export const accentPresets = ['astela', ...swatches] as const;
 
 /** An accent preset. */
 export type AccentPreset = (typeof accentPresets)[number];

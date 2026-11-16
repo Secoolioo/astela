@@ -1,7 +1,8 @@
 import { clampRatio, splitRatio } from '../../shared/split-view.ts';
+import type { Swatch } from '../../shared/swatches.ts';
 
 /** How many closed tabs can be reopened. */
-const closedTabLimit = 25;
+export const closedTabLimit = 25;
 
 /** What a tab strip needs to know of a tab. */
 export interface StripTab {
@@ -24,6 +25,44 @@ export interface SplitPair {
   readonly ratio: number;
 }
 
+/**
+ * A group of neighbouring tabs: its id, unique in its window, such as `g1`, its name, which may
+ * be empty, its color, and whether its tabs are hidden behind its chip. Each tab of a group
+ * carries the group; a strip without groups has none.
+ */
+export interface TabGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly color: Swatch;
+  readonly collapsed: boolean;
+}
+
+/**
+ * Where a new tab goes, and whether it becomes the active tab. A strip without groups looks at
+ * `activate` and `after`; a strip that knows groups also at the tab whose page opened the tab
+ * and at the group that the tab joins.
+ */
+export interface StripPlace {
+  readonly activate: boolean;
+  /** The tab that the new tab follows instead of the active one. */
+  readonly after?: string | undefined;
+  /** The tab whose page opened the new tab, such as with a link. */
+  readonly opener?: string | undefined;
+  /** The group that the new tab joins. */
+  readonly group?: TabGroup | undefined;
+}
+
+/** How a tab that closed opens again: its place and whether it loads at once. */
+export interface ReopenPlace {
+  readonly activate?: boolean;
+  /** Whether the tab loads only once it is shown. */
+  readonly lazy?: boolean;
+  /** The title that the tab shows until its page loads. */
+  readonly title?: string;
+  /** The group that the tab joins. */
+  readonly group?: TabGroup;
+}
+
 /** A tab that left a strip, and the tab that becomes active in its place. */
 export interface ClosedTab<T> {
   readonly tab: T;
@@ -44,16 +83,18 @@ export interface ClosedTab<T> {
  * side and the tabs that closed lately. Pinned tabs come first. Tabs move in units: a tab
  * alone, or the two tabs of a pair, which nothing comes between. The strip knows of a tab only
  * what {@link StripTab} names, and `TabService` tells the views of the window what changed.
+ * Groups of tabs follow the rules of `GroupedTabStrip` in `tab-groups.ts`, which takes the
+ * place of this strip with the first group, so that a window without groups never loads them.
  */
 export class TabStrip<T extends StripTab> {
-  private readonly tabs: T[] = [];
-  private activeId: string | undefined;
+  protected readonly tabs: T[] = [];
+  protected activeId: string | undefined;
   /** The pairs of tabs that the window shows side by side. */
-  private pairs: SplitPair[] = [];
+  protected pairs: SplitPair[] = [];
   /** Tabs opened in the background since the active tab became active. */
-  private readonly openedInBackground = new Set<string>();
+  protected readonly openedInBackground = new Set<string>();
   /** The addresses of the tabs that closed, the most recent last. */
-  private readonly closed: string[] = [];
+  protected readonly closed: string[] = [];
 
   /** All tabs in display order. */
   get all(): readonly T[] {
@@ -234,10 +275,7 @@ export class TabStrip<T extends StripTab> {
    * @param options - Whether the tab becomes the active tab right after, and the tab of the
    *   strip that it follows instead of the active tab.
    */
-  insert(
-    tab: T,
-    options: { readonly activate: boolean; readonly after?: string | undefined },
-  ): void {
+  insert(tab: T, options: StripPlace): void {
     const { activate, after } = options;
     // A new tab never comes between the two tabs of a split view: it follows the pair.
     const index = tab.pinned
@@ -288,11 +326,13 @@ export class TabStrip<T extends StripTab> {
   }
 
   /**
-   * The address of the tab that closed last, which leaves the list of closed tabs.
-   * @returns The address, or `undefined` when no tab closed.
+   * Opens the tab that closed last again, which leaves the list of closed tabs.
+   * @param open - Opens a tab with an address in the place that it names, and gives its id.
+   * @returns The id of the tab that opened, or `undefined` when no tab closed.
    */
-  reopen(): string | undefined {
-    return this.closed.pop();
+  reopenWith(open: (url: string, place: ReopenPlace) => string): string | undefined {
+    const url = this.closed.pop();
+    return url === undefined ? undefined : open(url, {});
   }
 
   /**
@@ -374,12 +414,12 @@ export class TabStrip<T extends StripTab> {
   }
 
   /** Puts a newer state of a pair in the place of the pair. */
-  private replacePair(pair: SplitPair, next: SplitPair): void {
+  protected replacePair(pair: SplitPair, next: SplitPair): void {
     this.pairs = this.pairs.map((other) => (other === pair ? next : other));
   }
 
   /** The index right after the unit of a tab, such as after both tabs of a split view. */
-  private endOfUnit(id: string): number {
+  protected endOfUnit(id: string): number {
     const unit = this.unitOf(id);
     return this.indexOf(unit.at(-1) ?? id) + 1;
   }
@@ -389,13 +429,13 @@ export class TabStrip<T extends StripTab> {
    * between them moves after the pair.
    * @param index - The place, as an index of the tabs.
    */
-  private outsidePairs(index: number): number {
+  protected outsidePairs(index: number): number {
     const before = this.tabs[index - 1];
     return before !== undefined && this.splitOf(before.id)?.start === before.id ? index + 1 : index;
   }
 
   /** Where a new tab goes: after the active tab and, in the background, its earlier tabs. */
-  private insertionIndex(activate: boolean): number {
+  protected insertionIndex(activate: boolean): number {
     if (this.activeId === undefined) {
       return this.tabs.length;
     }

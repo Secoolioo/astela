@@ -9,6 +9,11 @@ export interface CommandTab {
   readonly muted: boolean;
   /** Which side of a split view the tab is, or `null` for a tab that is in none. */
   readonly split: 'start' | 'end' | null;
+  /**
+   * The group of the tab, and whether it hides its tabs, or `null` for a tab in none. The
+   * commands that go to a tab skip the tabs that a group hides.
+   */
+  readonly group: { readonly collapsed: boolean } | null;
 }
 
 /** What decides which commands can run in a window now. */
@@ -51,6 +56,9 @@ export function availableCommands(context: CommandContext): WindowCommand[] {
 export function canRun(command: WindowCommand, context: CommandContext): boolean {
   const { tabs, activeIndex } = context;
   const active = tabs[activeIndex];
+  // The commands that go to the next tab, or to a tab by its place, count the tabs that the
+  // strip lists: all but those of collapsed groups, which never hold the active tab.
+  const listed = tabs.filter((tab) => tab.group?.collapsed !== true).length;
   // The active tab moves with the other tab of its split view, and the tabs to its right
   // start after the pair.
   const [first, last] =
@@ -101,7 +109,7 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
     case 'tab.next':
     case 'tab.previous':
     case 'tab.selectLast':
-      return tabs.length >= 2;
+      return listed >= 2;
     case 'tab.select1':
     case 'tab.select2':
     case 'tab.select3':
@@ -110,10 +118,13 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
     case 'tab.select6':
     case 'tab.select7':
     case 'tab.select8':
-      return tabs.length >= Number(command.slice(-1));
+      return listed >= Number(command.slice(-1));
     case 'tab.moveLeft':
     case 'tab.moveRight': {
       if (active === undefined) return false;
+      // A tab of a group that shows its tabs moves within the group, or first leaves it at
+      // its edge, also at an end of the strip.
+      if (!active.pinned && active.group?.collapsed === false) return true;
       // Pinned tabs stay among the pinned tabs, the others after them.
       const pinned = tabs.filter((tab) => tab.pinned).length;
       const [low, high] = active.pinned ? [0, pinned - 1] : [pinned, tabs.length - 1];

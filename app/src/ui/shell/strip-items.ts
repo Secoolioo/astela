@@ -1,11 +1,29 @@
 import type { ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 
-/** An item of the tab strip: a tab, which may be a side of a split view. */
-export interface StripItem {
-  readonly kind: 'tab';
-  /** The key of the item, which its element carries as `data-id`: the id of the tab. */
-  readonly key: string;
-  readonly tab: TabView;
+/** A group of tabs as the shell draws it. */
+type TabGroupView = NonNullable<TabView['group']>;
+
+/**
+ * An item of the tab strip: a tab, which may be a side of a split view, or the chip of a group
+ * of tabs, which comes before the group's first tab. The key of an item, which its element
+ * carries as `data-id`, is the id of the tab, or `group:` and the id of the group.
+ */
+export type StripItem =
+  | { readonly kind: 'tab'; readonly key: string; readonly tab: TabView }
+  | {
+      readonly kind: 'group';
+      readonly key: string;
+      readonly group: TabGroupView;
+      /** The tabs of the group, also while it hides them. */
+      readonly tabs: readonly TabView[];
+    };
+
+/**
+ * The key of the chip of a group of tabs.
+ * @param id - The group.
+ */
+export function chipKey(id: string): string {
+  return `group:${id}`;
 }
 
 /** The keys of the items of the tab strip that move together when one of them is dragged. */
@@ -29,17 +47,31 @@ export interface DropPlace {
 }
 
 /**
- * The items of the tab strip, in their order: one for each tab.
+ * The items of the tab strip, in their order: one for each tab, and the chip of each group of
+ * tabs before its first tab. The tabs of a collapsed group are not items; its chip stands for
+ * them.
  * @param state - The state of the shell.
  */
 export function stripItems(state: Pick<ShellState, 'tabs'>): StripItem[] {
-  return state.tabs.map((tab) => ({ kind: 'tab', key: tab.id, tab }));
+  const items: StripItem[] = [];
+  let open: string | undefined;
+  for (const tab of state.tabs) {
+    const group = tab.group;
+    if (group !== null && group.id !== open) {
+      const tabs = state.tabs.filter((other) => other.group?.id === group.id);
+      items.push({ kind: 'group', key: chipKey(group.id), group, tabs });
+    }
+    open = group?.id;
+    if (group?.collapsed !== true) items.push({ kind: 'tab', key: tab.id, tab });
+  }
+  return items;
 }
 
 /**
  * The units of the tab strip, in their order: the two tabs of a split view move together, as
  * a left tab with the right tab right after it; every other tab moves on its own, also a side
- * whose other side is not next to it.
+ * whose other side is not next to it, and so does the chip of a group, which stands for all
+ * tabs of a collapsed group.
  * @param items - The items of the strip, in their order.
  */
 export function unitsOf(items: readonly StripItem[]): StripUnit[] {
@@ -48,7 +80,12 @@ export function unitsOf(items: readonly StripItem[]): StripUnit[] {
     const item = items[index];
     const next = items[index + 1];
     if (item === undefined) continue;
-    if (item.tab.split === 'start' && next?.tab.split === 'end') {
+    if (
+      item.kind === 'tab' &&
+      item.tab.split === 'start' &&
+      next?.kind === 'tab' &&
+      next.tab.split === 'end'
+    ) {
       units.push([item.key, next.key]);
       index += 1;
     } else {
@@ -77,6 +114,20 @@ export function spanOf(
 }
 
 /**
+ * How many tabs the items of the strip stand for, by key: a tab one, the chip of a group that
+ * shows its tabs none, and the chip of a collapsed group the tabs that it hides.
+ * @param items - The items of the strip.
+ */
+export function tabCounts(items: readonly StripItem[]): Map<string, number> {
+  return new Map(
+    items.map((item) => [
+      item.key,
+      item.kind === 'tab' ? 1 : item.group.collapsed ? item.tabs.length : 0,
+    ]),
+  );
+}
+
+/**
  * Where a dragged unit lands: after every other unit whose center lies before the center of
  * the dragged unit. The other units close up where it was and make room where it lands, each
  * as a whole, with the space between units and none between the items of a unit.
@@ -86,6 +137,7 @@ export function spanOf(
  * @param spans - Where each item was when the drag started, by its key; a unit without a
  *   place counts as no part of the strip.
  * @param gap - The space between two items.
+ * @param counts - How many tabs each item stands for, by key; one without it.
  * @returns The place, or `undefined` when the dragged unit has no place in the strip.
  */
 export function dropPlace(
@@ -94,6 +146,7 @@ export function dropPlace(
   offset: number,
   spans: ReadonlyMap<string, Span>,
   gap = 0,
+  counts: ReadonlyMap<string, number> = new Map(),
 ): DropPlace | undefined {
   const own = spanOfUnit(dragged, spans);
   if (own === undefined) return undefined;
@@ -118,8 +171,46 @@ export function dropPlace(
     if (unit[0] !== dragged[0]) for (const key of unit) shifts.set(key, position - span.start);
     position += span.size + gap;
   }
-  const index = others.slice(0, before).reduce((count, { unit }) => count + unit.length, 0);
+  const index = others
+    .slice(0, before)
+    .reduce(
+      (count, { unit }) => count + unit.reduce((sum, key) => sum + (counts.get(key) ?? 1), 0),
+      0,
+    );
   return { index, shifts };
+}
+
+/**
+ * The group that a dragged tab joins where it is dropped: the group that shows its tabs over
+ * whose span, from the start of its chip to the end of its last tab, the center of the tab
+ * lies, the tab's own place included. A tab of a group that is dragged more than half its
+ * width past the first or the last tab of its group leaves it; collapsed groups take no tab.
+ * @param items - The items of the strip when the drag started.
+ * @param dragged - The dragged unit.
+ * @param offset - How far the pointer moved the dragged unit along the strip.
+ * @param spans - Where each item was when the drag started, by its key.
+ * @returns The id of the group, or `null` for none.
+ */
+export function dropGroup(
+  items: readonly StripItem[],
+  dragged: StripUnit,
+  offset: number,
+  spans: ReadonlyMap<string, Span>,
+): string | null {
+  const own = spanOfUnit(dragged, spans);
+  const head = items.find((item) => item.key === dragged[0]);
+  if (own === undefined || head?.kind !== 'tab' || head.tab.pinned) return null;
+  const center = own.start + own.size / 2 + offset;
+  for (const item of items) {
+    if (item.kind !== 'group' || item.group.collapsed) continue;
+    const keys = [item.key, ...item.tabs.map((tab) => tab.id)];
+    const placed = keys.flatMap((key) => spans.get(key) ?? []);
+    const first = placed[0];
+    const last = placed.at(-1);
+    if (first === undefined || last === undefined) continue;
+    if (center >= first.start && center <= last.start + last.size) return item.group.id;
+  }
+  return null;
 }
 
 /** Where a unit lies along the strip, from the start of its first item to the end of its last. */

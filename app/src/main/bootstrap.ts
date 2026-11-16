@@ -539,7 +539,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   };
   // Every tab that a page opens, from a script or from the context menu, takes this path.
   const openFromPage = (url: string, opener: Electron.WebContents, activate = true): void => {
-    if (mayOpenInNewTab(url)) windows.forTab(opener)?.tabs.open(url, { activate });
+    const window = windows.forTab(opener);
+    if (mayOpenInNewTab(url)) window?.tabs.open(url, { activate, opener: window.tabIdOf(opener) });
   };
   // Chromium's value 2 keeps the developer tools closed; 0 and 1 allow them for web pages.
   const developerTools = (): boolean => policies.mandatoryValue(DeveloperToolsAvailability) !== 2;
@@ -1005,10 +1006,14 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       : restoredWindows(lastSession);
   // Links from other apps open in tabs; a start without a session or the guide shows only them.
   const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
+  // The code of groups of tabs loads only for a session that has groups.
+  const regroup = lastSession?.windows.some((window) => window.tabs.some((tab) => tab.group))
+    ? (await import('../domain/tabs/tab-groups.ts')).restoreGroups
+    : undefined;
   const first =
     startWindows === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
-      : windows.restore(startWindows);
+      : windows.restore(startWindows, regroup);
   // Later links open in the window used last, which comes to the front, also without links;
   // without a window, the first link opens one.
   openLinks = (links) => {

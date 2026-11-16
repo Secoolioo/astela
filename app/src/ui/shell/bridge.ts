@@ -32,6 +32,9 @@ import type {
   CloseSuggestions,
   ResizeSplit,
   StopFinding,
+  ToggleGroup,
+  OpenGroupEditor,
+  EditGroupRequested,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
@@ -63,11 +66,14 @@ interface Requests {
   'omnibox.accept': typeof AcceptSuggestion;
   'omnibox.close': typeof CloseSuggestions;
   'tabs.resizeSplit': typeof ResizeSplit;
+  'groups.toggle': typeof ToggleGroup;
+  'groups.openEditor': typeof OpenGroupEditor;
 }
 
 interface Events {
   'shell.stateChanged': ShellState;
   'shell.command': PayloadOf<typeof ShellCommand>;
+  'shell.editGroup': PayloadOf<typeof EditGroupRequested>;
 }
 
 /** The API that the shell's preload script exposes. */
