@@ -2,7 +2,7 @@
 # It runs after every `CI` and `PR title` run, merges with the owner token
 # through the REST API and needs no auto-merge setting on the pull request.
 # A CI run whose failed jobs never got a runner, lost it, or failed only in the artifact
-# service of GitHub is run once more first.
+# service of GitHub is run once more first; jobs that never got a runner up to three times.
 # Like auto-pr.yml it always runs in the version stored on main; it never
 # checks out or executes branch code.
 name: Merge pull request
@@ -27,12 +27,13 @@ jobs:
     # Nor did one that failed only while it stored or fetched an artifact because
     # the artifact service of GitHub did not answer; the jobs that need its
     # artifact never ran. The failed jobs run once more and the second result
-    # counts, whatever it is.
+    # counts, whatever it is; while GitHub has too few runners, a job that never got
+    # one runs up to three times in all, as a shortage can outlast one attempt.
     if: >-
       (github.event.workflow_run.conclusion == 'failure' ||
       github.event.workflow_run.conclusion == 'cancelled') &&
       github.event.workflow_run.name == 'CI' &&
-      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.run_attempt < 3 &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.actor.login == github.repository_owner
@@ -50,10 +51,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           # ci-gate only collects the other jobs; its own failure says nothing.
-          failed=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" \
+          failed=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$ATTEMPT/jobs?per_page=100" \
             --jq '.jobs[] | select(.name != "ci-gate")
               | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
               | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("|"))"')
@@ -72,7 +74,7 @@ jobs:
             # MSI test of job 131478536154 failed, then its runner stopped answering.
             notes=$(gh api "repos/$REPOSITORY/check-runs/$id/annotations" \
               --jq '[.[] | select(.annotation_level == "failure") | .message] | join(" | ")')
-            if [[ "$conclusion" == cancelled && "$unfinished" -gt 0 && -z "$failing" && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
+            if [[ "$ATTEMPT" == 1 && "$conclusion" == cancelled && "$unfinished" -gt 0 && -z "$failing" && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
               echo "Lost its runner: $name"
               continue
             fi
@@ -82,7 +84,7 @@ jobs:
             service=$(gh api "repos/$REPOSITORY/check-runs/$id/annotations" \
               --jq '[.[] | select(.annotation_level == "failure") | .message
                 | select(test("^Failed to (CreateArtifact|FinalizeArtifact|ListArtifacts|GetSignedArtifactURL)|Failed to make request after") | not)] | length')
-            if [[ "$conclusion" == failure && -n "$failing" && "$artifacts" == 0 && -n "$notes" && "$service" == 0 ]]; then
+            if [[ "$ATTEMPT" == 1 && "$conclusion" == failure && -n "$failing" && "$artifacts" == 0 && -n "$notes" && "$service" == 0 ]]; then
               echo "The artifact service failed: $name"
               continue
             fi
@@ -91,12 +93,12 @@ jobs:
           done <<<"$failed"
           gh api -X POST "repos/$REPOSITORY/actions/runs/$RUN_ID/rerun-failed-jobs" >/dev/null
           state=""
-          until [[ "$state" == "2 completed" ]]; do
+          until [[ "$state" == "$((ATTEMPT + 1)) completed" ]]; do
             sleep 60
             state=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq '"\(.run_attempt) \(.status)"' || true)
           done
           conclusion=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
-          echo "The second attempt ended with $conclusion."
+          echo "Attempt $((ATTEMPT + 1)) ended with $conclusion."
           echo "conclusion=$conclusion" >>"$GITHUB_OUTPUT"
 
   merge:
