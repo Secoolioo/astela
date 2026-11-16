@@ -26,10 +26,13 @@ import {
   TabService,
   type KeptChange,
   type SleepMode,
+  type SplitPair,
   type TabId,
   type TabProblem,
   type TabViewPort,
 } from '../../domain/tabs/tab-service.ts';
+import { splitPanes } from '../../shared/split-view.ts';
+import type { OverlayAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { ViewHistory, type TabHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
 import {
@@ -158,6 +161,11 @@ export interface BrowserWindowOptions {
   readonly openPalette?: (window: BrowserWindowController, scope: PaletteOpening) => void;
   /** Whether the command palette is on, which a setting or a policy can turn off. */
   readonly commandPalette?: () => boolean;
+  /**
+   * Whether a window may show two tabs side by side, which a setting or a policy can turn off;
+   * it may when left out.
+   */
+  readonly splitView?: () => boolean;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
@@ -257,6 +265,16 @@ export interface WindowHost {
   readonly usedAt: Map<TabId, number>;
   /** Forgets the icon of a tab's page, and stops loading it. */
   dropFavicon(id: TabId): void;
+  /** Lays the shell and the pages out, the two sides of a split view beside each other. */
+  layout(): void;
+  /** The views of the pages that the content area shows, from left to right. */
+  readonly shown: readonly WebContentsView[];
+  /** The split view that the content area shows, or `undefined` while it shows one tab. */
+  shownSplit(): SplitPair | undefined;
+  /** Sets the share of the left side while the divider moves, or `undefined` once it is let go. */
+  setPreviewRatio(ratio: number | undefined): void;
+  /** The tab whose page in full screen covers the window. */
+  coveringTab(): TabId | undefined;
   /** The view that shows the page of a tab in the content area. */
   shownViewOf(entry: TabEntry): WebContentsView;
   /** When the browser last tried to put each tab to sleep by itself. */
@@ -283,6 +301,10 @@ export interface WindowHost {
   snapshot(entry: TabEntry): ViewSnapshot;
   /** Shows a view that the tab had before, with its history. */
   restore(id: TabId, entry: TabEntry, snapshot: ViewSnapshot | undefined): void;
+  /** Which side of a split view a tab is, or `null` for a tab that is in none. */
+  sideOf(id: TabId): 'start' | 'end' | null;
+  /** Opens a new tab page beside a tab in a split view, whose address bar takes the focus. */
+  splitWithNewTab(id: TabId): void;
 }
 
 /** The code of the windows for their web pages, which loads with the first of them. */
@@ -324,6 +346,7 @@ const commandsNow = [
   'find.next',
   'find.previous',
   'window.fullscreen',
+  'split.toggle',
 ] as const satisfies readonly WindowCommand[];
 
 /** A command that runs at once. */
@@ -361,10 +384,15 @@ export interface WindowCommands {
   forgetHistories(host: WindowHost): void;
   /** Runs an item of the menu of a tab. */
   tabAction(host: WindowHost, id: TabId, action: TabAction): void;
+  /** Moves the divider of the split view that the content area shows. */
+  resizeSplit(host: WindowHost, tabId: TabId, ratio: number, done: boolean): void;
+  /** Where the page of a tab lies while the content area shows a split view. */
+  paneOf(host: WindowHost, contents: WebContents): OverlayAnchor | undefined;
 }
 
 /** An item of the menu of a tab that the window runs. */
-export type TabAction = 'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight';
+export type TabAction =
+  'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight' | 'split' | 'endSplit' | 'swapSplit';
 
 /** The code that loads later for the windows of each window manager, by their options. */
 const laterCode = new WeakMap<
@@ -496,10 +524,11 @@ const settleTime = 1000;
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
  * tab. Tab views are created when a tab opens and destroyed when it closes; only the views
- * of the tabs that the content area shows, which is the active tab, are attached to the
- * window, always below the overlay. Web pages and internal pages use views of different
- * sessions: when a tab switches between them, its view is replaced and the old view's
- * history is kept for Back and Forward.
+ * of the tabs that the content area shows, which are the active tab and, in a split view, the
+ * other tab of its pair beside it, are attached to the window, always below the overlay. The
+ * active tab is the side of a split view that has the focus. Web pages and internal pages use
+ * views of different sessions: when a tab switches between them, its view is replaced and the
+ * old view's history is kept for Back and Forward.
  */
 export class BrowserWindowController implements Disposable, TabViewPort {
   readonly window: BaseWindow;
@@ -571,8 +600,21 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   readonly popup: boolean;
   /** Whether the window is a private window. */
   readonly isPrivate: boolean;
-  /** The views of the pages that the content area shows, attached to the window in this order. */
+  /**
+   * The views of the pages that the content area shows, attached to the window, from left to
+   * right.
+   */
   private readonly shown: WebContentsView[] = [];
+  /** The split view that the content area shows, or `undefined` while it shows one tab. */
+  private shownSplit: SplitPair | undefined;
+  /** The tab that the content area last showed as the active one, which has the find bar. */
+  private shownActive: TabId | undefined;
+  /** The share of the left side while the divider of the split view moves, until it is let go. */
+  private previewRatio: number | undefined;
+  /** The tab whose page took the focus, which becomes the active tab without being focused. */
+  private focusing: TabId | undefined;
+  /** The view that was given the focus while its page waited for its code. */
+  private focusOnLoad: WebContents | undefined;
   /** Where the content area is, as the shell reports it; until then, where it starts. */
   private insets: Insets;
   /** Whether the window draws its own title bar, which it keeps until it closes. */
@@ -783,6 +825,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /** The current shell state, as sent to the shell. */
   state(): ShellState {
+    const active = this.tabs.active;
+    const split = active === undefined ? undefined : this.tabs.splitOf(active.id);
     return {
       tabs: this.tabs.all.map(
         ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem, zoom, ...tab }) => ({
@@ -803,9 +847,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           muted: tab.muted,
           pinned: tab.pinned,
           sleeping: tab.sleeping,
+          split: this.sideOf(id),
         }),
       ),
-      activeTabId: this.tabs.active?.id ?? null,
+      activeTabId: active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
       find: this.finding,
@@ -817,7 +862,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       titleBar: this.titleBarShown,
       covered: this.covered,
       popover: this.popover,
+      split:
+        split === undefined ? null : { start: split.start, end: split.end, ratio: split.ratio },
     };
+  }
+
+  /** Which side of a split view a tab is, or `null` for a tab that is in none. */
+  private sideOf(id: TabId): 'start' | 'end' | null {
+    const pair = this.tabs.splitOf(id);
+    return pair === undefined ? null : pair.start === id ? 'start' : 'end';
   }
 
   /**
@@ -981,30 +1034,50 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
-  show(id: TabId): void {
-    this.wake(id);
+  show(id: TabId, split?: SplitPair): void {
+    const ids = split === undefined ? [id] : [split.start, split.end];
+    for (const tab of ids) this.wake(tab);
     const entry = this.entries.get(id);
     if (entry === undefined) return;
-    const view = this.shownViewOf(entry);
-    if (this.shown.includes(view)) {
+    const views = ids.flatMap((tab) => {
+      const shown = this.entries.get(tab);
+      return shown === undefined ? [] : [this.shownViewOf(shown)];
+    });
+    const before = this.shownActive;
+    const samePair = split?.start === this.shownSplit?.start && split?.end === this.shownSplit?.end;
+    const sameViews =
+      views.length === this.shown.length && views.every((view, at) => this.shown[at] === view);
+    if (before === id && samePair && sameViews) {
+      this.shownSplit = split;
+      this.layout();
       return;
     }
+    // A change of the active tab, or of the pages that show, closes a popover or a question.
     this.overlay?.close();
+    // The find bar belongs to the active tab and closes when another one becomes active.
+    if (before !== undefined && before !== id) this.closeFind(before);
     for (const previous of this.shownTabs()) {
-      this.stopFind(previous);
       // A tab that the window no longer shows was used until now.
-      this.usedAt.set(previous, this.now());
+      if (!ids.includes(previous)) this.usedAt.set(previous, this.now());
     }
-    // The pages that the content area showed make room for this one.
-    for (const previous of this.shown.filter((other) => other !== view)) this.detachPage(previous);
-    this.attachPage(view);
-    view.setVisible(this.problemOf(id) === null);
+    // The pages that the content area showed make room for these, which show in their order.
+    for (const previous of this.shown.filter((other) => !views.includes(other))) {
+      this.detachPage(previous);
+    }
+    views.forEach((view, at) => this.attachPage(view, at));
+    this.shown.splice(0, this.shown.length, ...views.filter((view) => this.shown.includes(view)));
+    if (!samePair) this.previewRatio = undefined;
+    this.shownSplit = split;
+    this.shownActive = id;
     // Another window may have zoomed the site meanwhile.
-    if (entry.page === undefined && !view.webContents.isDestroyed()) {
-      this.tabs.update(id, { zoom: view.webContents.getZoomFactor() });
+    const contents = this.shownViewOf(entry).webContents;
+    if (entry.page === undefined && !contents.isDestroyed()) {
+      this.tabs.update(id, { zoom: contents.getZoomFactor() });
     }
     this.layout();
-    this.focusContent();
+    // A page that took the focus keeps it; a change of the pages alone moves no focus, such as
+    // from the shell or the divider.
+    if (before !== id && this.focusing !== id) this.focusContent();
   }
 
   /**
@@ -1025,10 +1098,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.window.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
     const { width, height } = this.window.getContentBounds();
     // Only the tab whose page is in full screen covers the shell.
-    const covering = this.fullScreenTab !== undefined && this.isShown(this.fullScreenTab);
-    const { top, right, bottom, left } = covering
-      ? { top: 0, right: 0, bottom: 0, left: 0 }
-      : this.insets;
+    const { top, right, bottom, left } =
+      this.coveringTab() === undefined ? this.insets : { top: 0, right: 0, bottom: 0, left: 0 };
     return {
       x: left,
       y: top,
@@ -1044,6 +1115,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   contentArea(): Rectangle {
     return this.pageArea();
+  }
+
+  /**
+   * The tab whose page in full screen covers the window: that of the active tab, while it
+   * shows. A page in full screen in the side of a split view without the focus covers nothing.
+   */
+  private coveringTab(): TabId | undefined {
+    const id = this.fullScreenTab;
+    return id !== undefined && id === this.tabs.active?.id && this.isShown(id) ? id : undefined;
   }
 
   /** The view that shows the page of a tab in the content area: the tab's own view. */
@@ -1129,9 +1209,30 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const entry = id === undefined ? undefined : this.entries.get(id);
     // The shell shows the new tab page's address bar and the problems of pages.
     if (entry === undefined || entry.page === 'newtab' || this.problemOf(id ?? '') !== null) {
-      this.shell.webContents.focus();
+      this.focusShell();
     } else {
-      this.shownViewOf(entry).webContents.focus();
+      this.focusView(this.shownViewOf(entry).webContents);
+    }
+  }
+
+  /**
+   * Gives a view the focus. A view takes it only once its page loads, so a view whose page waits
+   * for its code gets it as its page starts to load, unless the focus moved on meanwhile.
+   */
+  private focusView(contents: WebContents): void {
+    this.focusOnLoad = this.waiting.has(contents) ? contents : undefined;
+    contents.focus();
+  }
+
+  /**
+   * Gives the shell the focus, and with a command the field that it names.
+   * @param command - The field, such as the address bar.
+   */
+  private focusShell(command?: 'omnibox.focus' | 'find.focus'): void {
+    this.focusOnLoad = undefined;
+    this.shell.webContents.focus();
+    if (command !== undefined) {
+      this.options.router.publish(ShellCommand, this.shell.webContents, command);
     }
   }
 
@@ -1143,9 +1244,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (entry === undefined) {
       return;
     }
-    // The find bar looks in the page that the content area shows and closes with it, as when
-    // another tab shows; the change of the tabs that follows tells the shell.
-    if (this.isShown(id)) this.finding = null;
+    // The find bar looks in the page of the active tab and closes with it, as when another tab
+    // becomes active; the change of the tabs that follows tells the shell.
+    if (id === this.shownActive) this.finding = null;
     this.entries.delete(id);
     entry.iconLoad?.abort();
     this.close(entry.view, entry.registration);
@@ -1176,7 +1277,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       entry.history.leave(this.snapshot(entry));
       this.replaceView(id, entry, url, (contents) => this.loadInto(contents, url));
     }
-    entry.view.webContents.focus();
+    this.focusView(entry.view.webContents);
   }
 
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void {
@@ -1236,12 +1337,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         // The shell learns of the new tab before its address bar takes the focus, so that the
         // keys typed right away go to the new tab and not to the tab that was active.
         this.publishNow();
-        this.shell.webContents.focus();
-        this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
+        this.focusShell('omnibox.focus');
+        break;
+      case 'split.toggle':
+        // The shortcut opens a new tab beside the active tab, or ends its split view.
+        if (active === undefined || !this.splitView()) break;
+        if (this.tabs.splitOf(active.id) !== undefined) this.tabs.unsplit(active.id);
+        else if (!active.pinned) this.splitWithNewTab(active.id);
         break;
       case 'omnibox.focus':
-        this.shell.webContents.focus();
-        this.options.router.publish(ShellCommand, this.shell.webContents, 'omnibox.focus');
+        this.focusShell('omnibox.focus');
         break;
       case 'palette.open':
       case 'tabs.search':
@@ -1263,8 +1368,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
             if (this.lastQuery !== '') this.find(active.id, this.lastQuery, true, false);
           }
           this.schedulePublish();
-          this.shell.webContents.focus();
-          this.options.router.publish(ShellCommand, this.shell.webContents, 'find.focus');
+          this.focusShell('find.focus');
         } else {
           this.find(active.id, this.finding.query, command === 'find.next', true);
         }
@@ -1274,6 +1378,47 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.setFullScreen(this.userFullScreen);
         break;
     }
+  }
+
+  /** Whether the window may show two tabs side by side, which a setting or a policy can turn off. */
+  splitView(): boolean {
+    return this.options.splitView?.() ?? true;
+  }
+
+  /**
+   * Opens a new tab page beside a tab in a split view, whose address bar takes the focus, as
+   * for a new tab.
+   * @param id - The tab that stays on the left.
+   */
+  private splitWithNewTab(id: TabId): void {
+    const opened = this.tabs.open(this.options.newTabUrl, { after: id, activate: false });
+    this.tabs.split(id, opened);
+    this.tabs.activate(opened);
+    this.publishNow();
+    this.focusShell('omnibox.focus');
+  }
+
+  /**
+   * Moves the divider of the split view that the content area shows. While it moves, only the
+   * pages follow; the share counts, for the state of the shell and the session, once the
+   * divider is let go.
+   * @param tabId - A tab of the split view.
+   * @param ratio - The share of the left side.
+   * @param done - Whether the divider was let go, or moved by a key.
+   */
+  resizeSplit(tabId: TabId, ratio: number, done: boolean): void {
+    this.withCommands((code, host) => code.resizeSplit(host, tabId, ratio, done));
+  }
+
+  /**
+   * Where the page of a tab lies in the window while the content area shows a split view, so
+   * that a question of the page shows over its side. The questions load with the commands of
+   * the windows.
+   * @param contents - The page.
+   * @returns The bounds of its side, or `undefined` while the content area shows one page.
+   */
+  paneOf(contents: WebContents): OverlayAnchor | undefined {
+    return this.laterCommands()?.paneOf(this.windowHost(), contents);
   }
 
   /** Whether the find bar of the window is open. */
@@ -1362,12 +1507,21 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param id - The tab.
    */
   stopFind(id: TabId): void {
+    if (this.closeFind(id)) this.focusContent();
+  }
+
+  /**
+   * Stops looking in a tab's page and closes the find bar, without moving the focus.
+   * @param id - The tab.
+   * @returns Whether the find bar was open.
+   */
+  private closeFind(id: TabId): boolean {
     const contents = this.entries.get(id)?.view.webContents;
     if (contents !== undefined && !contents.isDestroyed()) contents.stopFindInPage('keepSelection');
-    if (this.finding === null) return;
+    if (this.finding === null) return false;
     this.finding = null;
     this.schedulePublish();
-    this.focusContent();
+    return true;
   }
 
   /**
@@ -1614,6 +1768,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       webPreferences:
         page === undefined
           ? {
+              // A page takes no focus when it loads: the browser gives it the focus, so the page
+              // in the side of a split view without the focus never takes the keys.
+              focusOnNavigation: false,
               // A private window's pages keep their data in memory.
               ...(this.isPrivate
                 ? { session: this.options.privateSession() }
@@ -1631,6 +1788,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               zoomFactor: this.options.defaultZoom?.() ?? 1,
             }
           : {
+              // The new tab page so also leaves the focus in the address bar, where typing goes,
+              // when it commits after the address bar took the focus, as at the start or right
+              // after a new tab opened.
+              focusOnNavigation: false,
               preload: this.options.pagePreload,
               partition: this.options.internalPartition,
               additionalArguments: [
@@ -1644,11 +1805,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               nodeIntegration: false,
               spellcheck: false,
               v8CacheOptions: 'bypassHeatCheck',
-              // Chromium focuses a page when it commits in the active window. The new tab page
-              // leaves the focus in the address bar, where typing goes, also when it commits
-              // after the address bar took the focus, as at the start or right after a new tab
-              // opened.
-              ...(page === 'newtab' ? { focusOnNavigation: false } : {}),
             },
     };
   }
@@ -1723,6 +1879,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // for web pages takes note of it, which is there before the page loads.
       if (!taken && page === undefined) {
         this.webPages().loaded?.typed(this.windowHost(), contents, input);
+      }
+    });
+    // A click into the side of a split view without the focus gives its page the focus, which
+    // makes its tab the active one. Pages take no focus by themselves (`focusOnNavigation`).
+    contents.on('focus', () => {
+      if (this.entries.get(id)?.view !== view || id === this.tabs.active?.id) return;
+      if (!this.tabs.shown.includes(id)) return;
+      this.focusing = id;
+      try {
+        this.tabs.activate(id);
+      } finally {
+        this.focusing = undefined;
       }
     });
     this.forwardContextMenu(view, id);
@@ -1951,7 +2119,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.close(old, oldRegistration);
     start(entry.view.webContents);
     if (focused) {
-      entry.view.webContents.focus();
+      this.focusView(entry.view.webContents);
     }
     this.sync(id, entry.view.webContents);
   }
@@ -2009,6 +2177,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       if (this.waiting.get(contents) !== job || contents.isDestroyed()) return;
       this.waiting.delete(contents);
       this.startJob(contents, job);
+      if (this.focusOnLoad === contents) {
+        this.focusOnLoad = undefined;
+        contents.focus();
+      }
     };
     // A web page loads once the code for web pages follows its view, which a view made while
     // that code loads waits for; it loads without it when the code cannot load.
@@ -2070,6 +2242,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       webContentsOf: (id) => this.webContentsOf(id),
       usedAt: this.usedAt,
       dropFavicon: (id) => this.dropFavicon(id),
+      layout: () => this.layout(),
+      shown: this.shown,
+      shownSplit: () => this.shownSplit,
+      setPreviewRatio: (ratio) => {
+        this.previewRatio = ratio;
+      },
+      coveringTab: () => this.coveringTab(),
       shownViewOf: (entry) => this.shownViewOf(entry),
       triedAt: this.triedAt,
       putToSleep: (id, entry, dormant) => this.putToSleep(id, entry, dormant),
@@ -2088,6 +2267,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       sync: (id, contents) => this.sync(id, contents),
       snapshot: (entry) => this.snapshot(entry),
       restore: (id, entry, snapshot) => this.restore(id, entry, snapshot),
+      sideOf: (id) => this.sideOf(id),
+      splitWithNewTab: (id) => this.splitWithNewTab(id),
     };
     return this.host;
   }
@@ -2116,7 +2297,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
   }
 
-  /** Lays the shell over the whole window and the shown pages out in the page area. */
+  /**
+   * Lays the shell over the whole window and the shown pages out in the page area: one page in
+   * the whole area, or the two sides of a split view with the divider between them. A page in
+   * full screen covers the window, and the other side hides meanwhile; a page with a problem
+   * hides, and the shell shows the problem in its place.
+   */
   private layout(): void {
     if (this.window.isDestroyed()) {
       return;
@@ -2124,7 +2310,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const { width, height } = this.window.getContentBounds();
     this.shell.setBounds({ x: 0, y: 0, width, height });
     const area = this.pageArea();
-    for (const view of this.shown) view.setBounds(area);
+    const covering = this.coveringTab();
+    const split = this.shownSplit;
+    const panes =
+      split === undefined || covering !== undefined || this.shown.length < 2
+        ? undefined
+        : splitPanes(area, this.previewRatio ?? split.ratio);
+    for (const id of this.shownTabs()) {
+      const entry = this.entries.get(id);
+      if (entry === undefined) continue;
+      const view = this.shownViewOf(entry);
+      view.setBounds(panes === undefined ? area : id === split?.start ? panes.start : panes.end);
+      view.setVisible(this.problemOf(id) === null && (covering === undefined || covering === id));
+    }
   }
 
   private schedulePublish(): void {
@@ -2205,15 +2403,17 @@ export class WindowManager implements Disposable {
   }
 
   /**
-   * Opens windows again with their tabs, such as those of a stored session. Only the active
-   * tab of each window loads; the others load when they are shown.
+   * Opens windows again with their tabs, such as those of a stored session, and their split
+   * views while windows may show them. Only the active tab of each window loads, with the other
+   * tab of its split view; the others load when they are shown.
    * @param windows - The windows, with their tabs and where they were.
    * @returns The first window, or a new window with a new tab page when there is none.
    */
   restore(windows: readonly RestoredWindow[]): BrowserWindowController {
     const areas = workAreas();
+    const splitView = this.options.splitView?.() ?? true;
     // The window used last opens last, so that it ends up in front.
-    const controllers = windows.map(({ tabs, active, place }) => {
+    const controllers = windows.map(({ tabs, active, place, splits }) => {
       const controller = this.add({
         bounds: place.bounds === undefined ? undefined : visibleBounds(place.bounds, areas),
         maximized: place.maximized,
@@ -2228,6 +2428,10 @@ export class WindowManager implements Disposable {
           history: tab.history,
         }),
       );
+      for (const pair of splitView ? (splits ?? []) : []) {
+        const [start, end] = [ids[pair.start], ids[pair.start + 1]];
+        if (start !== undefined && end !== undefined) controller.tabs.split(start, end, pair.ratio);
+      }
       const activeId = ids[active] ?? ids[0];
       if (activeId !== undefined) controller.tabs.activate(activeId);
       return controller;
@@ -2253,6 +2457,7 @@ export class WindowManager implements Disposable {
         .flatMap((controller) => {
           const tabs = controller.tabs.all;
           const active = controller.tabs.active;
+          const index = (id: TabId): number => tabs.findIndex((tab) => tab.id === id);
           const window = sessionWindow(
             tabs.map(({ id, url, title, pinned }) => ({
               url,
@@ -2264,6 +2469,10 @@ export class WindowManager implements Disposable {
             {
               ...controller.normalPlace,
               fullScreen: controller.fullScreen,
+              splits: controller.tabs.splits.map((pair) => ({
+                start: index(pair.start),
+                ratio: pair.ratio,
+              })),
             },
           );
           return window === undefined ? [] : [window];
@@ -2281,6 +2490,13 @@ export class WindowManager implements Disposable {
       if (!window.isPrivate) window.forgetHistories();
     }
     this.keptEmitter.fire(keptChange);
+  }
+
+  /** Ends every split view of every window, as when they are turned off. */
+  endSplits(): void {
+    for (const window of this.windows) {
+      for (const pair of window.tabs.splits) window.tabs.unsplit(pair.start);
+    }
   }
 
   private add(place?: WindowPlace): BrowserWindowController {

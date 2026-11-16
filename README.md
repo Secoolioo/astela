@@ -34,11 +34,12 @@ On `main` now, and in the next beta, 0.1.0-beta.7:
 - **Command palette:** `Ctrl+K` (`Command+K` on macOS) finds and runs commands, and finds open tabs, bookmarks, history and settings; `Ctrl+Shift+A` (`Command+Shift+A`) searches the open tabs alone.
 - **Session:** each tab comes back with its back and forward history, and the last session also after a crash.
 - **Sleeping tabs:** tabs go to sleep from their menu or after a time, and wake when they are shown.
+- **Split view:** two tabs side by side, with a divider to move.
 
 ## Planned for 0.1.0
 
 - Layout presets such as a compact and a zen layout, and site information in the address bar.
-- Split view, tab groups, workspaces, a reader view and picture-in-picture.
+- Tab groups, workspaces, a reader view and picture-in-picture.
 - Saved passwords and autofill.
 
 ## Documentation

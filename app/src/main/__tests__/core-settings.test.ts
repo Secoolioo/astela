@@ -12,6 +12,7 @@ import {
   coreSettings,
   DownloadFolderSetting,
   ShortcutsSetting,
+  SplitViewSetting,
   StartupSetting,
   TabSleepAfterSetting,
   TabSleepSetting,
@@ -104,6 +105,24 @@ describe('CommandPaletteSetting', () => {
     );
     expect(v.safeParse(CommandPaletteSetting.schema, false).success).toBe(true);
     expect(v.safeParse(CommandPaletteSetting.schema, 'off').success).toBe(false);
+  });
+});
+
+describe('SplitViewSetting', () => {
+  it('turns split view on by default, and a policy can set or recommend it', () => {
+    expect(SplitViewSetting).toMatchObject({
+      key: 'splitView.enabled',
+      default: true,
+      scope: 'global',
+      policy: { name: 'SplitViewEnabled', recommended: true },
+      ui: { section: 'appearance', control: 'toggle' },
+    });
+    expect(coreSettings).toContain(SplitViewSetting);
+    expect(settingPolicies(coreSettings)).toContainEqual(
+      expect.objectContaining({ name: 'SplitViewEnabled', recommended: true }),
+    );
+    expect(v.safeParse(SplitViewSetting.schema, false).success).toBe(true);
+    expect(v.safeParse(SplitViewSetting.schema, 'off').success).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
 
-/** An item of the tab strip: a tab, for now. */
+/** An item of the tab strip: a tab, which may be a side of a split view. */
 export interface StripItem {
   readonly kind: 'tab';
   /** The key of the item, which its element carries as `data-id`: the id of the tab. */
@@ -37,11 +37,25 @@ export function stripItems(state: Pick<ShellState, 'tabs'>): StripItem[] {
 }
 
 /**
- * The units of the tab strip, in their order: each tab moves on its own.
+ * The units of the tab strip, in their order: the two tabs of a split view move together, as
+ * a left tab with the right tab right after it; every other tab moves on its own, also a side
+ * whose other side is not next to it.
  * @param items - The items of the strip, in their order.
  */
 export function unitsOf(items: readonly StripItem[]): StripUnit[] {
-  return items.map((item) => [item.key]);
+  const units: StripUnit[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const next = items[index + 1];
+    if (item === undefined) continue;
+    if (item.tab.split === 'start' && next?.tab.split === 'end') {
+      units.push([item.key, next.key]);
+      index += 1;
+    } else {
+      units.push([item.key]);
+    }
+  }
+  return units;
 }
 
 /**
@@ -64,7 +78,8 @@ export function spanOf(
 
 /**
  * Where a dragged unit lands: after every other unit whose center lies before the center of
- * the dragged unit. The other units close up where it was and make room where it lands.
+ * the dragged unit. The other units close up where it was and make room where it lands, each
+ * as a whole, with the space between units and none between the items of a unit.
  * @param units - The units of the strip, in their order when the drag started.
  * @param dragged - The dragged unit.
  * @param offset - How far the pointer moved the dragged unit along the strip.
@@ -97,10 +112,10 @@ export function dropPlace(
   ];
   let position = placed[0]?.span.start ?? own.start;
   const shifts = new Map<string, number>();
-  for (const key of order.flat()) {
-    const span = spans.get(key);
+  for (const unit of order) {
+    const span = spanOfUnit(unit, spans);
     if (span === undefined) continue;
-    if (!dragged.includes(key)) shifts.set(key, position - span.start);
+    if (unit[0] !== dragged[0]) for (const key of unit) shifts.set(key, position - span.start);
     position += span.size + gap;
   }
   const index = others.slice(0, before).reduce((count, { unit }) => count + unit.length, 0);

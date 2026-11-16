@@ -22,7 +22,8 @@ const ShieldPopover = v.strictObject({
 
 /**
  * A site, or a proxy, that asks for a user name and password: its host, the realm that it
- * names, and whether the connection is encrypted.
+ * names, and whether the connection is encrypted. In a split view, `pane` is the side of the
+ * page, over which the question shows; the questions below have it as well.
  */
 const LoginPrompt = v.strictObject({
   kind: v.literal('login'),
@@ -30,6 +31,7 @@ const LoginPrompt = v.strictObject({
   realm: v.pipe(v.string(), v.maxLength(300)),
   proxy: v.boolean(),
   secure: v.boolean(),
+  pane: v.optional(OverlayAnchor),
 });
 
 /**
@@ -45,6 +47,7 @@ const PermissionPrompt = v.strictObject({
     v.minLength(1),
     v.maxLength(5),
   ),
+  pane: v.optional(OverlayAnchor),
 });
 
 /**
@@ -70,6 +73,7 @@ const ScreenPicker = v.strictObject({
     v.minLength(1),
     v.maxLength(100),
   ),
+  pane: v.optional(OverlayAnchor),
 });
 
 /**

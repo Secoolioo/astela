@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Puts into practice the prompt per origin that [security](../architecture/security.md#permission-handlers) planned, which until now refused every request.
+Accepted. Puts into practice the prompt per origin that [security](../architecture/security.md#permission-handlers) planned, which until now refused every request. In a split view, [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) lets only the side with the focus ask, over its side; the other side is treated like a tab in the background.
 
 ## Date
 

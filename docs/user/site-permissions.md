@@ -7,7 +7,7 @@ Some sites want more than to show a page: the camera and the microphone for a ca
 - **Allow** gives the site what it asked for, and **Block** refuses it. Astela keeps your answer for the site, so the site does not ask again. The buttons take clicks a moment after the question shows, as in other browsers, so the second click of a double click meant for something before does not answer it.
 - If you close the question without an answer, for example with Escape or a click next to it, the site gets nothing this time and can ask again.
 - While a question shows, the shortcuts of the [command palette](command-palette.md) do nothing; any other shortcut of the browser closes the question without an answer.
-- Only the tab that you see can ask. A site in a tab in the background gets nothing.
+- Only the tab that you see can ask. A site in a tab in the background gets nothing. In a [split view](tabs.md#split-view), only the side with the focus can ask, and the question shows over that side; a site in the other side gets nothing until you click into it and it asks again.
 
 Full screen, locking the mouse pointer, for example for a game, and copying to the clipboard need no question, as in other browsers.
 

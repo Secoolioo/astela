@@ -27,6 +27,8 @@ export const windowCommands = [
   'tab.moveRight',
   'tab.pin',
   'tab.mute',
+  'split.toggle',
+  'split.swap',
   'page.back',
   'page.forward',
   'page.reload',
@@ -118,6 +120,8 @@ const macShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Cmd+-', 'zoom.out'],
   ['Cmd+0', 'zoom.reset'],
   ['Ctrl+Cmd+F', 'window.fullscreen'],
+  // Shift+Cmd+S stays free: it means Save As.
+  ['Ctrl+Cmd+S', 'split.toggle'],
   ['Cmd+P', 'page.print'],
   ['Cmd+S', 'page.save'],
   ['Alt+Cmd+U', 'page.source'],
@@ -143,6 +147,7 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ...selectShortcuts('Ctrl'),
   ['Ctrl+Shift+PageUp', 'tab.moveLeft'],
   ['Ctrl+Shift+PageDown', 'tab.moveRight'],
+  ['Ctrl+Shift+S', 'split.toggle'],
   ['F5', 'page.reload'],
   ['Alt+Home', 'page.home'],
   ['Ctrl+R', 'page.reload'],
@@ -200,6 +205,9 @@ export const shortcutPattern = /^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Cmd\+)?[^\s
 
 /** The commands of the command palette, which have no shortcut while the palette is off. */
 export const paletteCommands: readonly WindowCommand[] = ['palette.open', 'tabs.search'];
+
+/** The commands of split view, which have no shortcut while split view is off. */
+export const splitCommands: readonly WindowCommand[] = ['split.toggle', 'split.swap'];
 
 /**
  * The shortcuts of the window: the defaults of the system, where a command has no shortcut

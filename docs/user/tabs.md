@@ -1,6 +1,6 @@
 # Tabs
 
-> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search and sleeping tabs from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search, sleeping tabs and split view from 0.1.0-beta.7.
 
 ## What a tab shows
 
@@ -11,7 +11,7 @@
 
 ## Moving tabs
 
-Drag a tab along the tab strip to move it; the other tabs make room for it, and it lands where you let go. Dragging a tab does not switch to it. Tabs open, close and move with a short animation, which the system's setting for reduced motion turns off. The surface of the active tab slides with it to its new place. On macOS, a Control-click on a tab opens its menu and does not drag the tab.
+Drag a tab along the tab strip to move it; the other tabs make room for it, and it lands where you let go. Dragging a tab does not switch to it. The two tabs of a [split view](#split-view) move together: dragging either of them drags both, and the other tabs make room for both. Tabs open, close and move with a short animation, which the system's setting for reduced motion turns off. The surface of the active tab slides with it to its new place. On macOS, a Control-click on a tab opens its menu and does not drag the tab.
 
 ## Many tabs
 
@@ -38,10 +38,23 @@ From 0.1.0-beta.7, a tab that you have not used for a while goes to sleep: its p
 
 A tab stays awake while it shows, plays sound or a video, uses the camera, the microphone or the screen, downloads a file, has the developer tools open or is linked to a page that it opened or that opened it, such as a sign-in window. Then **Put tab to sleep** cannot be chosen. A paused download, or one that stopped and waits for **Resume**, does not keep its tab awake. Pinned tabs do not go to sleep by themselves, and neither does a page that you typed into since it loaded, such as an editor with changes that are not saved yet; it may sleep once it loads another page. Astela never asks the page or you. A page that keeps something that it does not save, such as the state of a game or of a call, or a drawing made with the mouse alone, loses it when it sleeps; pin such a tab to keep it awake. A page that shows something in full screen while you look at another tab leaves full screen when it sleeps.
 
+## Split view
+
+From 0.1.0-beta.7, a window can show two of its tabs side by side.
+
+- **Open a split view:** in the menu of a tab, **Open in split view** shows that tab beside the active tab, which stays where it is; the tab moves next to it, on the right, and gets the focus. When the active tab is already in a split view, the tab takes the side of the other tab there, on the left or on the right, and that tab stays open as a tab of its own next to the split view. In the menu of the active tab, **New tab in split view** opens a new tab page on the right, where you type an address. `Ctrl+Shift+S` (`Control+Command+S` on macOS) does the same, and on macOS so does **View › Split View**. Pinned tabs are never in a split view.
+- **The side you work in:** the line above a side and the tab with the surface of the active tab mark the side with the focus. The address bar, the buttons of the toolbar, the star, the shield, zoom, find, print, the developer tools and every shortcut act on that side. Click into the other side, or press `Ctrl+Tab` or `Ctrl+Shift+Tab`, to work there. A page in the other side cannot take the focus by itself, also not when it loads another page. Clicking a tab outside the split view shows that tab alone; the split view comes back with either of its tabs.
+- **The width of the sides:** drag the divider between them. With the keyboard, move to the divider with Tab and press the arrow keys to move it by 5 %, Home or End for its ends; a double click makes the sides equal. The left side takes 20 to 80 % of the width, and each side keeps at least 200 pixels while the window has room.
+- **In the tab strip,** the two tabs stand together, the left side first, or the upper one in a tab strip at a side. Screen readers say _Left side of the split view_ or _Right side of the split view_ after the title. New tabs, copies of tabs and links that open in the background open after the two tabs, never between them. **Close other tabs** and **Close tabs to the right** leave the other side open.
+- **Swap or end it:** the menu of either tab offers **Swap sides** and **End split view**. Closing either tab ends the split view, and the other tab fills the window. Pinning either tab, or `Ctrl+Shift+S` (`Control+Command+S`) in it, ends it too: the side with the focus fills the window, and the other tab stays in the tab strip.
+- **At the next start,** a split view comes back with the width of its sides, and both of its pages load when it shows.
+
+A page that could not be loaded shows why in its own side; see [When a page does not load](page-problems.md). A page in full screen covers the whole window while its side has the focus. Questions of sites show only for the side with the focus; see [Site permissions](site-permissions.md). Turn split view off with **Split view** under [Appearance](settings.md#appearance) in the settings.
+
 ## The menu of a tab
 
-A click with the secondary button on a tab opens its menu: a new tab next to it, reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
+A click with the secondary button on a tab opens its menu: a new tab next to it, [split view](#split-view), reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
 
 ## Keyboard
 
-`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab. They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab. The settings can give these commands shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md). They can also give shortcuts to duplicating, pinning and muting a tab, and to closing the other tabs and the tabs to the right (below, in a tab strip at a side), which have none at first; see [commands without a shortcut](keyboard-shortcuts.md#commands-without-a-shortcut).
+`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab. They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab, together with the other side of its split view, past the tab or the split view next to it. The settings can give these commands shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md). They can also give shortcuts to duplicating, pinning and muting a tab, and to closing the other tabs and the tabs to the right (below, in a tab strip at a side), which have none at first; see [commands without a shortcut](keyboard-shortcuts.md#commands-without-a-shortcut).

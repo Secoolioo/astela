@@ -111,6 +111,8 @@ const windowsAndLinux: Row[] = [
   ['Ctrl+K', press('k', ctrl), 'palette.open'],
   ['Ctrl+Shift+A', press('A', ctrlShift), 'tabs.search'],
   ['Ctrl+K on a Cyrillic layout', press('л', { ...ctrl, code: 'KeyK' }), 'palette.open'],
+  ['Ctrl+Shift+S', press('S', ctrlShift), 'split.toggle'],
+  ['no Ctrl+Cmd+S off macOS', press('s', { ...ctrl, ...cmd }), undefined],
   ['no Ctrl+Alt+K, which is AltGr', press('k', { control: true, alt: true }), undefined],
   ['no Cmd+K off macOS', press('k', cmd), undefined],
   ['F6', press('F6'), 'omnibox.focus'],
@@ -200,6 +202,10 @@ const macOS: Row[] = [
   ['Cmd+Shift+A', press('A', cmdShift), 'tabs.search'],
   // Control+K deletes to the end of the line in the text fields of macOS.
   ['no Ctrl+K on macOS', press('k', ctrl), undefined],
+  ['Ctrl+Cmd+S', press('s', { control: true, meta: true }), 'split.toggle'],
+  // Shift+Cmd+S means Save As.
+  ['no Shift+Cmd+S', press('S', cmdShift), undefined],
+  ['no Ctrl+Shift+S on macOS', press('S', ctrlShift), undefined],
   ['Cmd+Y', press('y', cmd), 'history.open'],
   ['Alt+Cmd+L', press('l', cmdOption), 'downloads.open'],
   ['Cmd+N', press('n', cmd), 'window.new'],

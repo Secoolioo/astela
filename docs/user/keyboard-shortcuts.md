@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, and the shortcuts of the command palette and tab search, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, and the shortcuts of the command palette, tab search and split view, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -12,7 +12,7 @@ A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function k
 
 ## Commands without a shortcut
 
-Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **About Astela** and **Quit Astela**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
+Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **About Astela** and **Quit Astela**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
 
 ## Windows and Linux
 
@@ -29,6 +29,7 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Last tab                       | `Ctrl+9`                                        |
 | Move the tab to the left       | `Ctrl+Shift+Page Up`                            |
 | Move the tab to the right      | `Ctrl+Shift+Page Down`                          |
+| Open or end split view         | `Ctrl+Shift+S`                                  |
 | Back                           | `Alt+Left Arrow` or the keyboard's Back key     |
 | Forward                        | `Alt+Right Arrow` or the keyboard's Forward key |
 | Reload                         | `F5` or `Ctrl+R`                                |
@@ -72,6 +73,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Previous tab                   | `Control+Shift+Tab`, `Command+Option+Left Arrow` or `Command+Shift+[` |
 | First to eighth tab            | `Command+1` to `Command+8`                                            |
 | Last tab                       | `Command+9`                                                           |
+| Open or end split view         | `Control+Command+S`                                                   |
 | Back                           | `Command+[`                                                           |
 | Forward                        | `Command+]`                                                           |
 | Reload                         | `Command+R`                                                           |
@@ -101,6 +103,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 `Command+Left Arrow` and `Command+Right Arrow` move the cursor to the start and the end of the line, as everywhere on macOS, so they do not go back and forward. `Command+Tab` switches between apps. **Open the menu** has no shortcut on macOS, whose menu bar opens the menus of Astela; you can give it one.
 
 On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, such as German or French, press Command together with the keys that type the bracket.
+
+**Open or end split view** opens a new tab page beside the active tab in a [split view](tabs.md#split-view), or ends the split view of the active tab. `Command+Shift+S` stays free, as it means Save As on macOS. While split view is off in the settings, the shortcut reaches the page.
 
 ## The browser menu
 

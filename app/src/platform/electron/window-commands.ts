@@ -8,6 +8,8 @@ import {
   type WindowHost,
 } from './browser-window.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
+import { clampRatio } from '../../shared/split-view.ts';
+import type { OverlayAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import {
   currentEntry,
   currentOnly,
@@ -31,6 +33,8 @@ import { ShellCommand } from '../../shared/ipc/shell-contracts.ts';
  */
 export const windowCommands: WindowCommands = {
   run,
+  resizeSplit,
+  paneOf,
   canSleep,
   sleep,
   sleepCandidates,
@@ -98,6 +102,9 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       break;
     case 'tab.mute':
       if (active !== undefined) window.setMuted(active.id, !active.muted);
+      break;
+    case 'split.swap':
+      if (active !== undefined && window.splitView()) window.tabs.swapSplit(active.id);
       break;
     case 'page.reload':
     case 'page.back':
@@ -291,6 +298,12 @@ function pageAction(
       contents.stop();
       break;
   }
+  // Pages take no focus by themselves when they load: the page of the active tab gets it, as
+  // after the buttons of the toolbar. A window in the background stays there.
+  const { window } = host;
+  if (action !== 'stop' && id === window.tabs.active?.id && window.window.isFocused()) {
+    window.focusContent();
+  }
 }
 
 /**
@@ -302,12 +315,13 @@ function context(host: WindowHost): CommandContext {
   const { window, options } = host;
   const active = window.tabs.active;
   return {
-    tabs: window.tabs.all.map(({ url, pinned, canGoBack, canGoForward, muted }) => ({
+    tabs: window.tabs.all.map(({ id, url, pinned, canGoBack, canGoForward, muted }) => ({
       url,
       pinned,
       canGoBack,
       canGoForward,
       muted,
+      split: host.sideOf(id),
     })),
     activeIndex: active === undefined ? -1 : window.tabs.all.indexOf(active),
     canReopen: window.tabs.canReopen,
@@ -316,6 +330,7 @@ function context(host: WindowHost): CommandContext {
     privateWindows: options.privateWindows?.() ?? true,
     developerTools: options.developerTools?.() ?? true,
     palette: options.openPalette !== undefined && (options.commandPalette?.() ?? true),
+    splitView: window.splitView(),
   };
 }
 
@@ -423,15 +438,85 @@ function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
       break;
     case 'closeOthers':
     case 'closeRight': {
-      const index = tabs.all.indexOf(tab);
-      // Pinned tabs stay; they are closed one by one.
+      // The other tab of a split view stays with the tab, and pinned tabs stay; they are
+      // closed one by one. The tabs to the right start after the split view.
+      const unit = tabs.unitOf(id);
+      const end = Math.max(
+        ...unit.map((member) => tabs.all.findIndex((other) => other.id === member)),
+      );
       const closing = tabs.all.filter(
         (other, place) =>
-          other.id !== id && !other.pinned && (action === 'closeOthers' || place > index),
+          !unit.includes(other.id) && !other.pinned && (action === 'closeOthers' || place > end),
       );
       if (closing.length > 0) tabs.activate(id);
       for (const other of closing) tabs.close(other.id);
       break;
     }
+    case 'split': {
+      // The tab joins the active tab on its side; the menu of the active tab opens a new tab
+      // beside it.
+      const active = tabs.active;
+      if (!host.window.splitView() || active === undefined) break;
+      if (active.id === id) {
+        if (tabs.splitOf(id) === undefined && !tab.pinned) host.splitWithNewTab(id);
+      } else if (tabs.split(active.id, id)) {
+        tabs.activate(id);
+      }
+      break;
+    }
+    case 'endSplit':
+      tabs.unsplit(id);
+      break;
+    case 'swapSplit':
+      tabs.swapSplit(id);
+      break;
   }
+}
+
+/**
+ * Moves the divider of the split view that the content area shows. While it moves, only the
+ * pages follow; the share counts, for the state of the shell and the session, once the
+ * divider is let go.
+ * @param host - The window.
+ * @param tabId - A tab of the split view.
+ * @param ratio - The share of the left side.
+ * @param done - Whether the divider was let go, or moved by a key.
+ */
+function resizeSplit(host: WindowHost, tabId: TabId, ratio: number, done: boolean): void {
+  const { tabs } = host.window;
+  const pair = tabs.splitOf(tabId);
+  const shown = host.shownSplit();
+  if (pair === undefined || shown?.start !== pair.start || shown.end !== pair.end) return;
+  if (!done) {
+    host.setPreviewRatio(clampRatio(ratio));
+    host.layout();
+    return;
+  }
+  host.setPreviewRatio(undefined);
+  tabs.resizeSplit(tabId, ratio);
+  host.layout();
+}
+
+/**
+ * Where the page of a tab lies in the window while the content area shows a split view, so
+ * that a question of the page shows over its side.
+ * @param host - The window.
+ * @param contents - The page.
+ * @returns The bounds of its side, or `undefined` while the content area shows one page.
+ */
+function paneOf(host: WindowHost, contents: WebContents): OverlayAnchor | undefined {
+  const id = host.window.tabIdOf(contents);
+  const entry = id === undefined ? undefined : host.entries.get(id);
+  if (entry === undefined || host.shown.length < 2 || host.coveringTab() !== undefined) {
+    return undefined;
+  }
+  const view = host.shownViewOf(entry);
+  if (!host.shown.includes(view)) return undefined;
+  const { x, y, width, height } = view.getBounds();
+  return {
+    x: Math.max(0, x),
+    y: Math.max(0, y),
+    width: Math.max(0, width),
+    height: Math.max(0, height),
+  };
 }

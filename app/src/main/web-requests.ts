@@ -183,7 +183,7 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     const window = contents === null ? undefined : windows.forTab(contents);
     if (window === undefined || contents === null) return;
     event.preventDefault();
-    void import('./login-prompt.ts').then(({ askForLogin }) =>
+    void Promise.all([import('./login-prompt.ts'), windows.laterCode()]).then(([{ askForLogin }]) =>
       askForLogin(window, contents, details, info, callback, options.overlay, options.router),
     );
   });
@@ -246,8 +246,9 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   // question loads with the first one.
   let prompts: Promise<PermissionPrompts> | undefined;
   const loadPrompts = (): Promise<PermissionPrompts> => {
-    prompts ??= import('./permission-prompt.ts').then(({ permissionPrompts }) =>
-      permissionPrompts(options.overlay, options.router, options.logger),
+    prompts ??= Promise.all([import('./permission-prompt.ts'), windows.laterCode()]).then(
+      ([{ permissionPrompts }]) =>
+        permissionPrompts(options.overlay, options.router, options.logger),
     );
     return prompts;
   };

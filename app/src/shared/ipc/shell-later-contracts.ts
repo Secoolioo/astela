@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { defineRequest, type RequestContract } from './contract.ts';
 import { PopoverAnchor } from './overlay-anchor.ts';
-import { Done, Empty, FaviconKey, TabId } from './shell-contracts.ts';
+import { Done, Empty, FaviconKey, SplitRatio, TabId } from './shell-contracts.ts';
 
 // Requests of the shell that its first paint does not need. They load with the first of
 // them, so the browser does not read them at its start; `shellLaterChannels` names them.
@@ -145,6 +145,20 @@ export const MoveTab = defineRequest({
   capability: 'shell',
 });
 
+/**
+ * Moves the divider of the split view of a tab: while it moves, only the pages follow; once
+ * it is let go, or moved by a key (`done`), the share counts for the state and the session.
+ * Previews come once per frame and at most every `splitPreviewEvery` ms, fewer than the budget
+ * gives back, so the share that counts always finds room in it.
+ */
+export const ResizeSplit = defineRequest({
+  channel: 'tabs.resizeSplit',
+  request: v.strictObject({ tabId: TabId, ratio: SplitRatio, done: v.boolean() }),
+  response: Done,
+  capability: 'shell',
+  ratePerSecond: 240,
+});
+
 /** Opens the menu of a tab at a point of the shell in CSS pixels. */
 export const OpenTabMenu = defineRequest({
   channel: 'tabs.openMenu',
@@ -226,4 +240,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   SelectSuggestion,
   AcceptSuggestion,
   CloseSuggestions,
+  ResizeSplit,
 ];

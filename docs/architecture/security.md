@@ -17,6 +17,7 @@ Every item in this section is designed to be covered by an automated test.
 - There is no `<webview>`: `will-attach-webview` is always denied.
 - Web tabs have no preload script; the only planned exception is the content blocker's minimal frame preload in M2 (see [IPC](ipc.md)). Feature scripts, such as the reader view, will run only on demand in an isolated world.
 - Internal pages get a capability-scoped preload that exposes only the IPC channels they need (see [IPC](ipc.md)).
+- Every tab view has `focusOnNavigation: false`, so a page cannot take the focus, and with it the keys that people type, by loading another page. In a [split view](../adr/0054-split-view-with-two-tabs-side-by-side.md), only a click into a side gives its page the focus and makes its tab the active one; the browser gives the focus to the page of the active tab itself.
 
 ### Navigation and window guards
 
@@ -37,7 +38,7 @@ The pages are sent without a `Cross-Origin-Opener-Policy`. That policy keeps a p
 
 Electron grants every permission by default (as of October 2026). Astela therefore installs request, check and device permission handlers on **every** session, including sessions created later (`session-created`):
 
-- The camera, the microphone, the location, notifications and reading the clipboard are asked for per origin in the overlay, and the answer is stored ([ADR 0038](../adr/0038-site-permissions-asked-in-the-overlay.md)). Without an answer, the request is refused.
+- The camera, the microphone, the location, notifications and reading the clipboard are asked for per origin in the overlay, and the answer is stored ([ADR 0038](../adr/0038-site-permissions-asked-in-the-overlay.md)). Without an answer, the request is refused. Only the page of the active tab asks, which in a split view is the side with the focus; the question shows over its side, and the other side is treated like a tab in the background, so that a site cannot borrow the trust of the site in the address bar ([ADR 0054](../adr/0054-split-view-with-two-tabs-side-by-side.md)).
 - Full screen, pointer lock and writing to the clipboard are granted; sharing the screen asks with a picker for every request.
 - Everything else, such as `local-network`, `loopback-network`, `local-fonts`, `window-management`, `idle-detection` and `sensors`, is refused, and the browser's own pages get no permissions.
 

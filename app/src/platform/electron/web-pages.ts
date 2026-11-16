@@ -184,11 +184,11 @@ function setProblem(host: WindowHost, id: TabId, problem: TabProblem | null): vo
   // In place of its page, the tab shows no icon of a page.
   if (problem !== null) host.dropFavicon(id);
   window.tabs.update(id, { problem });
-  const entry = host.entries.get(id);
-  if (entry !== undefined && window.isShown(id) && !window.window.isDestroyed()) {
-    host.shownViewOf(entry).setVisible(problem === null);
-    // Focusing a view raises its window: a window in the background stays there.
-    if (window.window.isFocused()) window.focusContent();
+  if (window.isShown(id) && !window.window.isDestroyed()) {
+    host.layout();
+    // Focusing a view raises its window: a window in the background stays there. A problem
+    // of the side of a split view without the focus takes no focus.
+    if (id === window.tabs.active?.id && window.window.isFocused()) window.focusContent();
   }
 }
 

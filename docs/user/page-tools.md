@@ -6,7 +6,7 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 
 ## Find in the page
 
-`Ctrl+F` (`Command+F` on macOS) opens the find bar below the toolbar. Astela marks every match on the page while you type and shows which match is selected and how many there are, or that there are none. Enter or the down arrow goes to the next match, Shift+Enter or the up arrow to the previous one, also with `F3` and `Shift+F3` (`Command+G` and `Command+Shift+G` on macOS). Escape or the close button closes the bar and leaves the last match selected. The bar also closes when you switch to another tab or close its tab. It opens again with the text you looked for last.
+`Ctrl+F` (`Command+F` on macOS) opens the find bar below the toolbar. Astela marks every match on the page while you type and shows which match is selected and how many there are, or that there are none. Enter or the down arrow goes to the next match, Shift+Enter or the up arrow to the previous one, also with `F3` and `Shift+F3` (`Command+G` and `Command+Shift+G` on macOS). Escape or the close button closes the bar and leaves the last match selected. The bar also closes when you switch to another tab or close its tab. It opens again with the text you looked for last. In a [split view](tabs.md#split-view), the bar searches the side with the focus and ends where that side ends, or starts at the left edge of the window when the left side is narrower than the bar; it closes when you click into the other side.
 
 ## Zoom
 
@@ -14,7 +14,7 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 
 ## Full screen
 
-`F11` (`Control+Command+F` on macOS) shows the window in full screen. When a page shows a video or another element in full screen, it covers the whole window; Escape or the page's own button ends it.
+`F11` (`Control+Command+F` on macOS) shows the window in full screen. When a page shows a video or another element in full screen, it covers the whole window; Escape or the page's own button ends it. In a [split view](tabs.md#split-view), it covers the whole window while its side has the focus, and the other side comes back when it ends.
 
 ## Reload without the cache
 

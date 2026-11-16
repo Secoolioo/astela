@@ -69,6 +69,7 @@ export function askForLogin(
     return;
   }
   const prompt = { key, answers: [answer] };
+  const pane = window.paneOf(contents);
   target.open(
     {
       kind: 'login',
@@ -78,6 +79,8 @@ export function askForLogin(
       // The address is the site's, not the proxy's: a proxy usually gets the password
       // unencrypted, also on the way to an https site.
       secure: !info.isProxy && /^https:/i.test(details.url),
+      // In a split view, the prompt shows over the side of the page.
+      ...(pane === undefined ? {} : { pane }),
     },
     {
       keys: questionKeys,

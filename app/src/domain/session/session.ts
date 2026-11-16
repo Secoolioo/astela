@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { tabPageOf } from '../../shared/internal-pages.ts';
+import { clampRatio } from '../../shared/split-view.ts';
 import {
   currentEntry,
   currentOnly,
@@ -23,14 +24,27 @@ const Bounds = v.object({
 });
 
 /**
+ * Two tabs that a window showed side by side: the index of the left one among the tabs of the
+ * window, the right one being the next, and the share of the width that the left one took.
+ */
+const SessionSplit = v.object({
+  start: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  ratio: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+});
+
+/** Two tabs that a window showed side by side. */
+type SessionSplit = v.InferOutput<typeof SessionSplit>;
+
+/**
  * The tabs of the open windows, and where the windows were, as the session keeps them. The
  * format stays at version 1: a field that a later version adds is optional, and objects of
  * version 1 ignore the fields they do not know, so 0.1.0-beta.6 still reads the session of a
  * later version with every tab, such as after a rollback. Since 0.1.0-beta.7, a tab keeps its
  * back and forward history (`history`): its views with their entries, within the limits of
  * the session; and a window whether people put it in full screen (`fullScreen`), which a
- * page in full screen does not count as. The windows come in the order in which they were
- * used, the window used last at the end.
+ * page in full screen does not count as, and the pairs of tabs that it showed side by side
+ * (`splits`). The windows come in the order in which they were used, the window used last at
+ * the end.
  */
 export const SessionSnapshot = v.object({
   version: v.literal(1),
@@ -48,6 +62,7 @@ export const SessionSnapshot = v.object({
       bounds: v.optional(Bounds),
       maximized: v.optional(v.boolean()),
       fullScreen: v.optional(v.boolean()),
+      splits: v.optional(v.array(SessionSplit)),
     }),
   ),
 });
@@ -126,11 +141,39 @@ function optionalField<T>(schema: v.GenericSchema<unknown, T>, value: unknown): 
 }
 
 /**
+ * The split views of a window as a session keeps them, with the places of their tabs among
+ * the tabs that the session keeps. A pair goes when one of its tabs is not kept, when its tabs
+ * are no longer neighbours, when one of them is pinned, or when it shares a tab with a pair
+ * before it; a share outside its limits is clamped.
+ * @param splits - The pairs, with the places of their left tabs among all tabs of the window.
+ * @param places - The place of each tab among the kept tabs, or -1 for a tab that is not kept.
+ * @param tabs - The kept tabs.
+ */
+function keptSplits(
+  splits: readonly SessionSplit[],
+  places: readonly number[],
+  tabs: readonly SessionTab[],
+): SessionSplit[] {
+  const kept: SessionSplit[] = [];
+  for (const pair of splits) {
+    const start = places[pair.start] ?? -1;
+    const end = places[pair.start + 1] ?? -1;
+    const neighbours = start !== -1 && end === start + 1;
+    const pinned = tabs[start]?.pinned === true || tabs[end]?.pinned === true;
+    const overlaps = kept.some((other) => Math.abs(other.start - start) < 2);
+    if (neighbours && !pinned && !overlaps) kept.push({ start, ratio: clampRatio(pair.ratio) });
+  }
+  return kept;
+}
+
+/**
  * The window of a session for some tabs: tabs that a session does not keep are dropped,
- * titles are cut to their limit, and the active tab moves with the tabs that stay.
+ * titles are cut to their limit, and the active tab and the split views move with the tabs
+ * that stay.
  * @param tabs - The window's tabs, in order; `undefined` for a tab that could not be read.
  * @param active - Index of the active tab among them, or -1.
- * @param extras - What else the window keeps, such as where it is, as far as it is known.
+ * @param extras - What else the window keeps, such as where it is and its split views, with
+ *   the places of their tabs among `tabs`, as far as it is known.
  * @returns The window, or `undefined` when no tab is left.
  */
 export function sessionWindow(
@@ -139,9 +182,12 @@ export function sessionWindow(
   extras: SessionWindowExtras = {},
 ): SessionWindow | undefined {
   const kept: SessionTab[] = [];
+  const places: number[] = [];
   let keptActive = 0;
   tabs.forEach((tab, index) => {
+    places.push(-1);
     if (tab === undefined || !keepsUrl(tab.url)) return;
+    places[index] = kept.length;
     if (index === active) keptActive = kept.length;
     const history = keptHistory(tab);
     kept.push({
@@ -153,12 +199,15 @@ export function sessionWindow(
   });
   if (kept.length === 0) return undefined;
   const bounds = optionalField(Bounds, extras.bounds);
+  // A session without split views writes no field for them, as before.
+  const splits = keptSplits(extras.splits ?? [], places, kept);
   return {
     tabs: kept,
     active: keptActive,
     ...(bounds === undefined ? {} : { bounds }),
     ...(extras.maximized === undefined ? {} : { maximized: extras.maximized }),
     ...(extras.fullScreen === undefined ? {} : { fullScreen: extras.fullScreen }),
+    ...(splits.length === 0 ? {} : { splits }),
   };
 }
 
@@ -219,6 +268,7 @@ const StoredWindow = v.object({
   bounds: v.optional(v.unknown()),
   maximized: v.optional(v.unknown()),
   fullScreen: v.optional(v.unknown()),
+  splits: v.optional(v.unknown()),
 });
 /** A tab as the session file holds it; its optional fields are read on their own. */
 const StoredTab = v.object({
@@ -267,10 +317,15 @@ export function parseSession(data: unknown): SessionSnapshot | undefined {
     const bounds = optionalField(Bounds, window.output.bounds);
     const maximized = optionalField(Flag, window.output.maximized);
     const fullScreen = optionalField(Flag, window.output.fullScreen);
+    // Each pair of a split view is read on its own; one that cannot be read costs only itself.
+    const splits = optionalField(v.array(v.unknown()), window.output.splits)?.flatMap(
+      (pair) => optionalField(SessionSplit, pair) ?? [],
+    );
     const kept = sessionWindow(window.output.tabs.map(storedTab), window.output.active, {
       ...(bounds === undefined ? {} : { bounds }),
       ...(maximized === undefined ? {} : { maximized }),
       ...(fullScreen === undefined ? {} : { fullScreen }),
+      ...(splits === undefined ? {} : { splits }),
     });
     return kept === undefined ? [] : [kept];
   });
@@ -308,6 +363,11 @@ export interface RestoredWindow {
   readonly active: number;
   /** Where the window was; it opens where the system puts it when the place is empty. */
   readonly place: RestoredPlace;
+  /**
+   * The pairs of tabs that the window shows side by side: the index of the left tab, the right
+   * one being the next, and the share of the width of the left one.
+   */
+  readonly splits?: readonly { readonly start: number; readonly ratio: number }[];
 }
 
 /**
@@ -315,7 +375,7 @@ export interface RestoredWindow {
  * @param session - The session, as {@link parseSession} read it.
  */
 export function restoredWindows(session: SessionSnapshot): RestoredWindow[] {
-  return session.windows.map(({ tabs, active, bounds, maximized, fullScreen }) => ({
+  return session.windows.map(({ tabs, active, bounds, maximized, fullScreen, splits }) => ({
     tabs: tabs.map(({ url, title, pinned, history }) => ({
       url,
       title,
@@ -328,5 +388,6 @@ export function restoredWindows(session: SessionSnapshot): RestoredWindow[] {
       ...(maximized === undefined ? {} : { maximized }),
       ...(fullScreen === undefined ? {} : { fullScreen }),
     },
+    ...(splits === undefined ? {} : { splits }),
   }));
 }

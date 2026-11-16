@@ -12,7 +12,8 @@ import {
   ShellStateChanged,
   shellRequests,
 } from '../../shared/ipc/shell-contracts.ts';
-import { shellLaterRequests } from '../../shared/ipc/shell-later-contracts.ts';
+import { ResizeSplit, shellLaterRequests } from '../../shared/ipc/shell-later-contracts.ts';
+import { splitPreviewEvery } from '../../shared/split-view.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import {
   appContentSecurityPolicy,
@@ -30,6 +31,31 @@ const Ping = defineRequest({
   ratePerSecond: 2,
 });
 const shellSender = { viewId: 7, frameUrl: 'app://shell/index.html', isMainFrame: true };
+
+/**
+ * Drags the divider of a split view on a display of 360 Hz for five seconds: the shell sends a
+ * preview in a frame once `every` ms passed since the last one, and in the last frame the
+ * share that counts, as the pointer lets go.
+ * @param every - The shortest time between two previews, in ms.
+ * @returns Whether the gate let the share that counts through.
+ */
+function dragDivider(every: number): boolean {
+  const clock = new ManualClock();
+  const gate = new IpcGate(clock);
+  gate.registerView(7, { origin: 'app://shell', capabilities: new Set(['shell']) });
+  const resize = (done: boolean): boolean =>
+    gate.check(ResizeSplit, shellSender, { tabId: 't1', ratio: 0.4, done }).ok;
+  const frame = 1000 / 360;
+  let sent = Number.NEGATIVE_INFINITY;
+  for (let at = 0; at < 5000; at += frame) {
+    clock.advance(frame);
+    if (at - sent >= every) {
+      sent = at;
+      resize(false);
+    }
+  }
+  return resize(true);
+}
 
 describe('IpcGate', () => {
   it('accepts valid requests from registered views', () => {
@@ -78,6 +104,12 @@ describe('IpcGate', () => {
     clock.advance(500);
     expect(call()).toBe('ok');
     expect(call()).toBe('limited');
+  });
+
+  it('lets the share of a long drag of the divider through on a display of 360 Hz', () => {
+    // A preview in every frame uses the budget up, and the share that counts is refused.
+    expect(dragDivider(0)).toBe(false);
+    expect(dragDivider(splitPreviewEvery)).toBe(true);
   });
 
   it('forgets a view when it is unregistered, but not a newer registration', () => {
