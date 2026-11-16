@@ -59,6 +59,11 @@ On macOS, Astela reopens its windows itself, as **Open** says, so macOS does not
 - **Save downloads in:** from 0.1.0-beta.5, the folder where downloads are saved; by default the downloads folder of the system. **Change…** picks another one in the dialog of the system.
 - **Ask where to save each file:** asks before each download where to save it and suggests that folder. The download starts meanwhile under the name of the file with `.part` added; a cancelled question cancels it.
 
+## Performance
+
+- **Put inactive tabs to sleep:** from 0.1.0-beta.7, on by default. A tab that you have not used for a while gives its memory back and loads again with its history when you open it; see [Sleeping tabs](tabs.md#sleeping-tabs). Tabs that play sound or a video, use the camera, the microphone or the screen, download a file or are pinned stay awake, and so do pages that you typed into since they loaded. Turning it off wakes no tab, and you can still put a tab to sleep from its menu.
+- **Put tabs to sleep after:** how long a tab stays unused in the background before it sleeps: from 5 minutes to 12 hours, 1 hour by default. It cannot be changed while tabs do not go to sleep by themselves. A policy of your organization or an imported settings file can also set 30 seconds; the list shows it only then.
+
 ## Languages
 
 - **Language of the browser:** from 0.1.0-beta.5, the language of the menus, the dialogs and the pages of Astela, such as the settings and the new tab page. Same as the system follows the language of your operating system; English and Deutsch set one. Websites keep their own language.

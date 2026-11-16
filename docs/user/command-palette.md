@@ -57,7 +57,7 @@ The sign becomes a chip in front of the field. Backspace in the empty field, or 
 ## What a row does
 
 - A **command** runs on the active tab of the window.
-- A **tab** shows; a tab of another window brings that window to the front, also when it was minimized.
+- A **tab** shows; a tab of another window brings that window to the front, also when it was minimized. A tab that [sleeps](tabs.md#sleeping-tabs) shows its icon faded and **Sleeping**, and loads again when you choose it.
 - A **bookmark**, a **visited page**, a **search** or an **address** opens in a new tab after the active one, or in the active tab when it shows the new tab page.
 - A **setting** opens the settings at its row, whose control gets the focus, also when the settings are open already.
 

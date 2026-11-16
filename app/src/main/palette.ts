@@ -218,6 +218,7 @@ function tabsOf(window: BrowserWindowController, windows: WindowManager): Palett
       url: tab.url,
       favicon: tab.favicon,
       place: owner !== window ? 'other' : tab.id === active ? 'current' : 'window',
+      sleeping: tab.sleeping,
     })),
   );
 }
@@ -256,6 +257,7 @@ function view(result: PaletteResult): PaletteItem {
       url: result.tab.url.slice(0, 2048),
       favicon: result.tab.favicon,
       place: result.tab.place,
+      sleeping: result.tab.sleeping,
     };
   }
   if (result.kind === 'search') {

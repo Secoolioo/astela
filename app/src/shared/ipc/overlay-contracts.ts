@@ -458,9 +458,9 @@ export const OpenDownloadsFolder = defineRequest({
 const PaletteScope = v.picklist(['all', 'tabs', 'bookmarks', 'history']);
 
 /**
- * A result of the palette from the browser process: an open tab with the icon of its page and
- * where it is, a bookmark, a visited page, a search with the host of its search engine, or an
- * address to open.
+ * A result of the palette from the browser process: an open tab with the icon of its page,
+ * where it is and whether it sleeps, a bookmark, a visited page, a search with the host of its
+ * search engine, or an address to open.
  */
 const PaletteItem = v.variant('kind', [
   v.strictObject({
@@ -469,6 +469,7 @@ const PaletteItem = v.variant('kind', [
     url: v.pipe(v.string(), v.maxLength(2048)),
     favicon: v.nullable(FaviconKey),
     place: v.picklist(['current', 'window', 'other']),
+    sleeping: v.boolean(),
   }),
   v.strictObject({
     kind: v.picklist(['bookmark', 'history']),

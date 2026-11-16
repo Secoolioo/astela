@@ -72,6 +72,7 @@ describe('settingsIndex', () => {
       'startup',
       'newtab',
       'downloads',
+      'performance',
       'languages',
       'search',
       'privacy',
@@ -80,6 +81,22 @@ describe('settingsIndex', () => {
       'import',
       'setup',
     ]);
+  });
+
+  it('lists the switch of sleeping tabs before their time in the section of performance', () => {
+    const performance = settingsIndex.find((section) => section.id === 'performance');
+    expect(performance?.title).toBe('settings.performance');
+    expect(performance?.rows.map((candidate) => candidate.id)).toEqual([
+      'tabs.sleep',
+      'tabs.sleepAfter',
+    ]);
+    // Words of both languages find both rows.
+    for (const id of ['tabs.sleep', 'tabs.sleepAfter']) {
+      const text = textOf(row(id).keys, row(id).words);
+      for (const word of ['sleep', 'schlafen', 'memory', 'arbeitsspeicher']) {
+        expect(text).toContain(word);
+      }
+    }
   });
 
   it('shows the list of pages to open at start only while the browser opens them', () => {

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Video</title>
+  </head>
+  <body>
+    <p>This page plays a short video without sound, again and again.</p>
+    <canvas width="64" height="48"></canvas>
+    <video muted loop></video>
+    <script>
+      // The page records a clip of a canvas that changes its color and plays it as a file.
+      const canvas = document.querySelector('canvas');
+      const context = canvas.getContext('2d');
+      let frame = 0;
+      const paint = setInterval(() => {
+        context.fillStyle = `hsl(${(frame += 30) % 360} 60% 50%)`;
+        context.fillRect(0, 0, 64, 48);
+      }, 40);
+      const recorder = new MediaRecorder(canvas.captureStream(25), { mimeType: 'video/webm' });
+      const parts = [];
+      recorder.ondataavailable = (event) => parts.push(event.data);
+      recorder.onstop = () => {
+        clearInterval(paint);
+        const video = document.querySelector('video');
+        video.src = URL.createObjectURL(new Blob(parts, { type: 'video/webm' }));
+        void video.play();
+      };
+      recorder.start();
+      setTimeout(() => recorder.stop(), 1000);
+    </script>
+  </body>
+</html>

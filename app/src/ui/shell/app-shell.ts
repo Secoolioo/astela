@@ -421,6 +421,11 @@ export class AppShell extends LitElement {
       width: 16px;
       height: 16px;
       color: var(--text-2);
+      transition: opacity var(--motion-fast) var(--ease-standard);
+    }
+    /* A tab that sleeps shows its icon faded; its title stays as it is. */
+    .tab[data-sleeping] .favicon {
+      opacity: 0.7;
     }
     .favicon img {
       width: 16px;
@@ -1073,9 +1078,11 @@ export class AppShell extends LitElement {
         role="tab"
         data-id=${tab.id}
         ?data-pinned=${tab.pinned}
+        ?data-sleeping=${tab.sleeping}
         tabindex=${selected ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
         aria-label=${title}
+        aria-description=${tab.sleeping ? t('shell.tabSleeping') : nothing}
         title=${title}
         @pointerdown=${(e: PointerEvent) => this.startDrag(e, tab.id)}
         @contextmenu=${(e: MouseEvent) => this.openTabMenu(e, tab.id)}

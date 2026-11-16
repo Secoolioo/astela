@@ -228,6 +228,10 @@ export class CommandPalette extends LitElement {
         width: 16px;
         height: 16px;
       }
+      /* A tab that sleeps shows its icon faded, as in the tab strip. */
+      .icon[data-sleeping] {
+        opacity: 0.7;
+      }
       .label {
         flex: 0 1 auto;
         min-width: 0;
@@ -250,6 +254,10 @@ export class CommandPalette extends LitElement {
         margin-inline-start: auto;
         color: var(--text-2);
         font-size: var(--font-size-small);
+      }
+      /* The tags of a row stand together at its end. */
+      .tag + .tag {
+        margin-inline-start: 0;
       }
       .none,
       .hint {
@@ -500,11 +508,14 @@ export class CommandPalette extends LitElement {
   }
 
   private renderRow(row: PaletteRow, place: number): TemplateResult {
+    // A tab that sleeps says so, as in the tab strip.
+    const sleeping = row.kind === 'item' && row.item.kind === 'tab' && row.item.sleeping;
     return html`<div
       class="row"
       role="option"
       id="palette-option-${String(place)}"
       aria-selected=${row.key === this.marked ? 'true' : 'false'}
+      aria-description=${sleeping ? this.t('shell.tabSleeping') : nothing}
       @mousedown=${(event: MouseEvent) => event.preventDefault()}
       @click=${() => this.activate(row)}
     >
@@ -545,11 +556,17 @@ export class CommandPalette extends LitElement {
           : item.place === 'other'
             ? this.t('palette.otherWindow')
             : '';
-      return html`<span class="icon" aria-hidden="true"
+      // The description of the row tells screen readers that the tab sleeps.
+      return html`<span class="icon" aria-hidden="true" ?data-sleeping=${item.sleeping}
           >${icon === undefined ? icons.globe : html`<img src=${icon} alt="" />`}</span
         >
         <span class="label">${item.title || item.url}</span>
         <span class="detail">${hostOf(item.url)}</span>
+        ${
+          item.sleeping
+            ? html`<span class="tag" aria-hidden="true">${this.t('palette.sleeping')}</span>`
+            : nothing
+        }
         ${tag === '' ? nothing : html`<span class="tag">${tag}</span>`}`;
     }
     if (item.kind === 'bookmark' || item.kind === 'history') {

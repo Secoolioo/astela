@@ -9,12 +9,12 @@ import { translatorFor, type MessageKey } from './i18n/i18n.ts';
 /** What the menu of a tab needs from the window of the tab. */
 export type TabMenuWindow = Pick<
   BrowserWindowController,
-  'tabs' | 'tabAction' | 'setMuted' | 'shortcuts' | 'tabStripPosition'
+  'tabs' | 'tabAction' | 'setMuted' | 'canSleep' | 'shortcuts' | 'tabStripPosition'
 >;
 
 /**
  * Shows the menu of a tab, at a point of the shell: a new tab next to it, reload, duplicate,
- * pin, mute and the ways to close tabs.
+ * pin, mute, sleep and the ways to close tabs.
  * @param window - The window of the tab.
  * @param tabId - The tab whose menu opens.
  * @param position - Where the menu opens, in the window's coordinates.
@@ -90,6 +90,12 @@ export function tabMenuTemplate(
       label: i18n.t(tab.muted ? 'tabMenu.unmute' : 'tabMenu.mute'),
       ...ofTab('tab.mute'),
       click: () => window.setMuted(tabId, !tab.muted),
+    },
+    // A tab that shows, sleeps already or is busy, such as with sound or a camera, stays awake.
+    {
+      label: i18n.t('tabMenu.sleep'),
+      enabled: window.canSleep(tabId, 'manual'),
+      click: whileOpen(() => void window.tabs.sleep(tabId, 'manual')),
     },
     { type: 'separator' },
     {

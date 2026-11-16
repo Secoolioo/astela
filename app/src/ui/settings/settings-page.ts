@@ -17,6 +17,7 @@ import {
 } from '../../shared/themes.ts';
 import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
+import { sleepAfterChoices } from '../../shared/tab-sleep.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
@@ -862,6 +863,10 @@ export class SettingsPage extends LitElement {
       render: () =>
         page.renderToggle('downloads.ask', 'settings.downloadAsk', 'settings.downloadAskNote'),
     }),
+    'tabs.sleep': (page) => ({
+      render: () => page.renderToggle('tabs.sleep', 'settings.tabSleep', 'settings.tabSleepNote'),
+    }),
+    'tabs.sleepAfter': (page) => ({ render: () => page.renderTabSleepAfter() }),
     'i18n.language': (page) => ({ render: () => page.renderLanguage() }),
     'search.urlTemplate': (page) => ({ render: () => page.renderSearch() }),
     'search.engines': (page) => ({ render: () => page.renderSearchEngines() }),
@@ -1777,6 +1782,58 @@ export class SettingsPage extends LitElement {
           (factor) =>
             html`<option value=${String(factor)} ?selected=${factor === value}>
               ${format.format(factor)}
+            </option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /**
+   * After how long tabs that are not used go to sleep, while they do: the times of the policy
+   * from 5 minutes on, and 30 seconds only while a policy or the settings file sets it.
+   */
+  private renderTabSleepAfter(): TemplateResult {
+    const setting = this.client?.get('tabs.sleepAfter');
+    const value = typeof setting?.value === 'number' ? setting.value : 3600;
+    const offered: readonly number[] = sleepAfterChoices;
+    const times = offered.includes(value) ? offered : [value, ...offered];
+    const label = (seconds: number): string => {
+      const [unit, count] =
+        seconds < 60
+          ? (['second', seconds] as const)
+          : seconds < 3600
+            ? (['minute', seconds / 60] as const)
+            : (['hour', seconds / 3600] as const);
+      return new Intl.NumberFormat(this.i18n?.language, {
+        style: 'unit',
+        unit,
+        unitDisplay: 'long',
+      }).format(count);
+    };
+    const on = this.client?.get('tabs.sleep')?.value !== false;
+    return html`<div class="row">
+      <span class="label">
+        <span>${this.t('settings.tabSleepAfter')}</span>
+        ${
+          setting?.locked === true || setting?.recommended === true
+            ? this.managedNote(setting)
+            : html`<span class="note">${this.t('settings.tabSleepAfterNote')}</span>`
+        }
+      </span>
+      <select
+        aria-label=${this.t('settings.tabSleepAfter')}
+        ?disabled=${setting?.locked !== false || !on}
+        @change=${(event: Event) => {
+          const select = event.target;
+          if (select instanceof HTMLSelectElement) {
+            void this.client?.set('tabs.sleepAfter', Number(select.value));
+          }
+        }}
+      >
+        ${times.map(
+          (seconds) =>
+            html`<option value=${String(seconds)} ?selected=${seconds === value}>
+              ${label(seconds)}
             </option>`,
         )}
       </select>

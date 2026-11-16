@@ -21,6 +21,8 @@ export interface PaletteTab {
   /** The key of the icon of its page, or `null` without one. */
   readonly favicon: string | null;
   readonly place: 'current' | 'window' | 'other';
+  /** Whether the tab sleeps: it has no page loaded, and loads when it is shown. */
+  readonly sleeping: boolean;
 }
 
 /** A bookmark or a visited page. */

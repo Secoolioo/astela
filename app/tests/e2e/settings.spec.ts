@@ -1145,3 +1145,71 @@ test('colors every view with the theme and the custom colors, and imports a them
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test('turns sleeping tabs off and chooses after how long they sleep, in English and German', async () => {
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await address.fill('app://settings/#tabs.sleep');
+  await address.press('Enter');
+  const page = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  const sleep = page.getByRole('switch', { name: /Put inactive tabs to sleep/ });
+  await expect(sleep).toBeFocused();
+  await expect(sleep).toBeChecked();
+  await expect(page.getByRole('heading', { name: 'Performance' })).toBeVisible();
+  const after = page.getByRole('combobox', { name: 'Put tabs to sleep after' });
+  await expect(after).toHaveValue('3600');
+  await expect(after.locator('option:checked')).toHaveText('1 hour');
+  // 30 seconds is only for policies and the settings file.
+  expect(await after.locator('option').allTextContents()).toEqual(
+    [
+      '5 minutes',
+      '15 minutes',
+      '30 minutes',
+      '1 hour',
+      '2 hours',
+      '3 hours',
+      '6 hours',
+      '12 hours',
+    ].map((text) => expect.stringContaining(text)),
+  );
+  await after.selectOption({ label: '2 hours' });
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'tabs.sleepAfter', value: 7200 }),
+      ]),
+    });
+  await sleep.uncheck();
+  await expect(after).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => window.bridge.invoke('settings.getAll', {})))
+    .toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({ key: 'tabs.sleep', value: false }),
+      ]),
+    });
+  // A German word finds the rows on the English page too.
+  const search = page.getByRole('searchbox', { name: 'Search settings' });
+  await search.fill('schlafen');
+  await expect(sleep).toBeVisible();
+  await expect(after).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Color mode' })).toBeHidden();
+
+  await browser.close();
+  browser = await launch(['--lang=de'], { settings: { 'tabs.sleepAfter': 30 } });
+  const field = browser.shell.getByRole('textbox', { name: 'Adress- und Suchleiste' });
+  await field.fill('app://settings/#tabs.sleepAfter');
+  await field.press('Enter');
+  const german = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+  await expect(german.getByRole('heading', { name: 'Leistung' })).toBeVisible();
+  await expect(german.getByRole('switch', { name: /Inaktive Tabs schlafen legen/ })).toBeChecked();
+  const nach = german.getByRole('combobox', { name: 'Tabs schlafen legen nach' });
+  await expect(nach).toBeFocused();
+  await expect(nach).toHaveValue('30');
+  await expect(nach.locator('option:checked')).toHaveText('30 Sekunden');
+  await expect(nach.locator('option')).toHaveCount(9);
+  await nach.selectOption({ label: '1 Stunde' });
+  await expect(nach).toHaveValue('3600');
+  await expect(nach.locator('option')).toHaveCount(8);
+  await expect(nach.locator('option').first()).toHaveText('5 Minuten');
+});

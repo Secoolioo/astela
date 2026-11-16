@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) moves the browser menu into the overlay in 0.1.0-beta.7. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) adds to the session whether a window was in full screen, and writes the windows in the order in which they were used, so the window used last comes back in front.
+Accepted. [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md) moves the browser menu into the overlay in 0.1.0-beta.7. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) adds to the session whether a window was in full screen, and writes the windows in the order in which they were used, so the window used last comes back in front, and keeps a tab awake while it is linked to a live page that opened it or that it opened, so that the link between them stays.
 
 ## Date
 

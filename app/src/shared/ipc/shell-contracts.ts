@@ -36,8 +36,9 @@ export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
  * `certificateException` whether the page is from a site whose certificate was not trusted
  * and was accepted after the warning, so its connection does not count as secure;
  * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
- * `audible` whether the page plays sound, `muted` whether its sound is muted, and `pinned`
- * whether the tab is pinned.
+ * `audible` whether the page plays sound, `muted` whether its sound is muted, `pinned`
+ * whether the tab is pinned, and `sleeping` whether the tab has no page loaded, as a tab that
+ * was put to sleep or a restored tab that was not shown yet, which loads once it is shown.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -56,6 +57,7 @@ export const TabView = v.strictObject({
   audible: v.boolean(),
   muted: v.boolean(),
   pinned: v.boolean(),
+  sleeping: v.boolean(),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

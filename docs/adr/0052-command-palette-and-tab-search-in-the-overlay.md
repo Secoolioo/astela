@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md). For the palette's own two shortcuts, it departs from the rule of ADR 0034 that a shortcut of the browser closes the overlay and runs.
+Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0050](0050-browser-menus-and-popovers-in-the-overlay.md). For the palette's own two shortcuts, it departs from the rule of ADR 0034 that a shortcut of the browser closes the overlay and runs. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) shows a tab that sleeps in tab search with its icon faded, the tag _Sleeping_ and a description for screen readers.
 
 ## Date
 
@@ -45,7 +45,7 @@ Such a field must lie above web pages, which lie above the shell, so it belongs 
 - The held text is at most 200 UTF-16 code units, as the field and the contract count, and Backspace deletes what a person sees as one character.
 - Choosing the command Search the open tabs in the palette switches the scope in the page, instead of closing the palette and opening it again.
 - A text of its own, `palette.empty`, says that a scope without text has nothing, such as without bookmarks.
-- The group and the workspace of a tab in tab search come with the workspaces. Until then, tab search lists the tabs of each window (`tabs.all`), as there are no strips per workspace (`allTabs()`) yet, and no tab shows a tag for sleeping, which comes with the sleeping tabs (`TabView.sleeping`).
+- The group and the workspace of a tab in tab search come with the workspaces. Until then, tab search lists the tabs of each window (`tabs.all`), as there are no strips per workspace (`allTabs()`) yet, and the tag of a tab that sleeps came with the sleeping tabs (`PaletteTab.sleeping`, ADR 0053).
 - The design let every shortcut close a site's question; the palette's own two do nothing there, because the palette would take the question's place.
 - The design gave the focus back only while the window had it; a palette that closed because its window lost the focus left the window without a focused view after the switch back, which an end-to-end test showed.
 

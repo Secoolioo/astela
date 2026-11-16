@@ -24,12 +24,19 @@ class FakeViews implements TabViewPort {
   run(id: string, action: string): void {
     this.log.push(`${action} ${id}`);
   }
+  sleep(id: string, mode: string): boolean {
+    this.log.push(`sleep ${id} ${mode}`);
+    return true;
+  }
 }
 
-/** A window with three tabs, the second of them pinned or muted when asked, and its tab strip. */
+/**
+ * A window with three tabs, the second of them pinned or muted when asked, and its tab strip.
+ * The tabs that the window does not show may sleep, unless the second one is busy.
+ */
 function windowWith(
   position: TabStripPosition,
-  tab: { readonly pinned?: boolean; readonly muted?: boolean } = {},
+  tab: { readonly pinned?: boolean; readonly muted?: boolean; readonly busy?: boolean } = {},
 ): { window: Mutable<TabMenuWindow>; views: FakeViews; ids: string[] } {
   const views = new FakeViews();
   const tabs = new TabService(views, 'about:blank');
@@ -41,6 +48,7 @@ function windowWith(
     tabs,
     tabAction: vi.fn(),
     setMuted: vi.fn(),
+    canSleep: (id) => id !== tabs.active?.id && !(tab.busy === true && id === middle),
     shortcuts: () => shortcutTable('linux'),
     tabStripPosition: () => position,
   };
@@ -65,6 +73,42 @@ function texts(position: TabStripPosition, locale: string, platform: string): st
   );
 }
 
+/** The items of the menu of the second of three tabs, `-` for separators, in English. */
+function menuItems(state: { readonly pinned?: boolean; readonly muted?: boolean }): string[] {
+  const { window, ids } = windowWith('top', state);
+  return (tabMenuTemplate(window, ids[1] ?? '', translatorFor('en-US', 'linux')) ?? []).map(
+    (item) => (item.type === 'separator' ? '-' : (item.label ?? '')),
+  );
+}
+
+/** The items of the tab menu with the texts of Pin and Mute for the state of the tab. */
+function around(pin: string, mute: string): string[] {
+  return [
+    '&New tab to the right',
+    '-',
+    '&Reload',
+    '&Duplicate',
+    pin,
+    mute,
+    'Put tab to &sleep',
+    '-',
+    '&Close',
+    'Close &other tabs',
+    'Close tabs to the righ&t',
+    '-',
+    'R&eopen closed tab',
+  ];
+}
+
+/** The item of the menu of a tab that puts the tab to sleep. */
+function sleepItem(window: TabMenuWindow, id: string): MenuItemConstructorOptions {
+  const found = (tabMenuTemplate(window, id, translatorFor('en-US', 'linux')) ?? []).find(
+    (item) => item.label === 'Put tab to &sleep',
+  );
+  if (found === undefined) throw new Error('No sleep item');
+  return found;
+}
+
 describe('tabMenuTemplate', () => {
   it.each(['en-US', 'de'])(
     'gives every item of the tab menu in %s its own access key on Windows and Linux',
@@ -76,13 +120,40 @@ describe('tabMenuTemplate', () => {
             const { window, ids } = windowWith(position, state);
             const items = labels(tabMenuTemplate(window, ids[1] ?? '', i18n));
             const name = `${platform} ${position} ${JSON.stringify(state)}`;
-            expect(items).toHaveLength(9);
+            expect(items).toHaveLength(10);
+            expect(items).toContain(locale === 'de' ? 'Tab schla&fen legen' : 'Put tab to &sleep');
             expect([name, ...accessKeyProblems(items)]).toEqual([name]);
           }
         }
       }
     },
   );
+
+  it('lists its items in their order for a plain, a pinned and a muted tab', () => {
+    expect(menuItems({})).toEqual(around('&Pin', '&Mute tab'));
+    expect(menuItems({ pinned: true })).toEqual(around('Un&pin', '&Mute tab'));
+    expect(menuItems({ muted: true })).toEqual(around('&Pin', 'Un&mute tab'));
+    expect(texts('top', 'en-US', 'darwin')).toContain('Put Tab to Sleep');
+  });
+
+  it('offers sleep only for a tab that may sleep, and puts it to sleep while it is open', () => {
+    const { window, views, ids } = windowWith('top');
+    const [first = '', middle = '', last = ''] = ids;
+    // The last tab that opened is the active one, which the window shows.
+    expect(sleepItem(window, last).enabled).toBe(false);
+    expect(sleepItem(window, middle).enabled).toBe(true);
+    const busy = windowWith('top', { busy: true });
+    expect(sleepItem(busy.window, busy.ids[1] ?? '').enabled).toBe(false);
+    expect(sleepItem(busy.window, busy.ids[0] ?? '').enabled).toBe(true);
+    const item = sleepItem(window, middle);
+    choose(item);
+    expect(views.log).toEqual([`sleep ${middle} manual`]);
+    // A tab that closed while its menu was open does not sleep.
+    const closing = sleepItem(window, first);
+    window.tabs.close(first);
+    choose(closing);
+    expect(views.log).toEqual([`sleep ${middle} manual`, `destroy ${first}`]);
+  });
 
   it('names the tabs below a tab in a tab strip at a side, and to its right otherwise', () => {
     for (const position of ['top', 'bottom'] as const) {

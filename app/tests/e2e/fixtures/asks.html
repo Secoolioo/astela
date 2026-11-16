@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Asks to stay</title>
+  </head>
+  <body>
+    <p>This page asks to stay whenever it is to close, also when nobody typed into it.</p>
+    <script>
+      // When it is asked, it tells the other pages of its site whether it has a user gesture
+      // then, which only a person may give it.
+      const channel = new BroadcastChannel('asked');
+      window.onbeforeunload = (event) => {
+        channel.postMessage({
+          active: navigator.userActivation.isActive,
+          beenActive: navigator.userActivation.hasBeenActive,
+        });
+        event.preventDefault();
+        event.returnValue = '';
+      };
+    </script>
+  </body>
+</html>
