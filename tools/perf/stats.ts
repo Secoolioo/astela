@@ -60,3 +60,22 @@ export function mannWhitneyGreater(a: readonly number[], b: readonly number[]): 
   const z = (u - (n1 * n2) / 2 - 0.5) / Math.sqrt(variance);
   return 1 - normalCdf(z);
 }
+
+/**
+ * The limit of the idle CPU of all processes together, in percent of one core: the ceiling and
+ * the bare reference plus the allowed difference, whichever is lower. On macOS only the
+ * relative part gates (ADR 0017), as the 3-core runners alone used up to 0.5 % of a core.
+ * @param bare - Idle CPU of the bare reference in the same job.
+ * @param ceiling - The absolute ceiling.
+ * @param extraPoints - The percentage points that the browser may add to the reference.
+ * @param platform - The system the job runs on.
+ */
+export function idleCpuLimit(
+  bare: number,
+  ceiling: number,
+  extraPoints: number,
+  platform: NodeJS.Platform,
+): number {
+  const relative = bare + extraPoints;
+  return platform === 'darwin' ? relative : Math.min(ceiling, relative);
+}
