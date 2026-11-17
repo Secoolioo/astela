@@ -11,6 +11,7 @@ import {
   pageRows,
   parseQuery,
   remoteScope,
+  tabLabel,
   type LocalContent,
   type PaletteGroup,
 } from '../overlay/palette-model.ts';
@@ -292,5 +293,16 @@ describe('moveSelection', () => {
     expect(keptSelection(['a', 'c'], 'b', true)).toBe('a');
     expect(keptSelection(['x', 'a', 'b'], 'a', false)).toBe('x');
     expect(keptSelection([], 'a', true)).toBeUndefined();
+  });
+});
+
+describe('tabLabel', () => {
+  it('names a tab without a title as the tab strip does', () => {
+    expect(tabLabel({ title: '', url: 'app://newtab/' }, 'New tab')).toBe('New tab');
+    expect(tabLabel({ title: '', url: 'about:blank' }, 'New tab')).toBe('New tab');
+    expect(tabLabel({ title: '', url: 'https://example.com/a' }, 'New tab')).toBe(
+      'https://example.com/a',
+    );
+    expect(tabLabel({ title: 'Example', url: 'app://newtab/' }, 'New tab')).toBe('Example');
   });
 });

@@ -17,6 +17,7 @@ import {
   moveSelection,
   parseQuery,
   remoteScope,
+  tabLabel,
   type PaletteAnswer,
   type PaletteGroup,
   type PaletteRow,
@@ -560,7 +561,7 @@ export class CommandPalette extends LitElement {
       return html`<span class="icon" aria-hidden="true" ?data-sleeping=${item.sleeping}
           >${icon === undefined ? icons.globe : html`<img src=${icon} alt="" />`}</span
         >
-        <span class="label">${item.title || item.url}</span>
+        <span class="label">${tabLabel(item, this.t('shell.untitled'))}</span>
         <span class="detail">${hostOf(item.url)}</span>
         ${
           item.sleeping

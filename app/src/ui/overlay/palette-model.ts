@@ -1,3 +1,4 @@
+import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { CommandPalette, PaletteItem } from '../../shared/ipc/overlay-contracts.ts';
 import { matchesAll, matchRank, searchWords } from '../../shared/search-text.ts';
 import type { WindowCommand } from '../../shared/shortcuts.ts';
@@ -88,6 +89,20 @@ export interface PaletteGroup {
 
 /** What the palette's page needs of its content to make its own rows. */
 export type LocalContent = Pick<CommandPalette, 'commands' | 'recent' | 'vertical' | 'absent'>;
+
+/**
+ * The name of an open tab as the tab strip shows it: its title, else its address, and a new tab
+ * for a blank page or a new tab page that has no title yet.
+ * @param tab - Its title and its address.
+ * @param untitled - The name of a new tab in the language of the page.
+ */
+export function tabLabel(
+  tab: { readonly title: string; readonly url: string },
+  untitled: string,
+): string {
+  if (tab.title !== '') return tab.title;
+  return tab.url === '' || tab.url === 'about:blank' || tab.url === newTabUrl ? untitled : tab.url;
+}
 
 /**
  * The scope and the text of what was typed: a prefix of a scope followed by a space, such as
