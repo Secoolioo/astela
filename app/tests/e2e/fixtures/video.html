@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture video</title>
+  </head>
+  <body>
+    <h1>Fixture video</h1>
+    <video
+      id="clip"
+      src="/clip.webm"
+      muted
+      loop
+      autoplay
+      playsinline
+      width="320"
+      height="180"
+    ></video>
+    <p><button id="own" type="button">Picture in picture of the page</button></p>
+    <script>
+      // The button of the page itself, as video sites have, which shows its video in picture in
+      // picture without the browser.
+      document.getElementById('own').addEventListener('click', () => {
+        void document.getElementById('clip').requestPictureInPicture();
+      });
+    </script>
+  </body>
+</html>

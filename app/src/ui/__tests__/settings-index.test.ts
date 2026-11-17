@@ -84,10 +84,19 @@ describe('settingsIndex', () => {
     ]);
   });
 
-  it('lists the switch of the reader view before its font in the section of page tools', () => {
+  it('lists the switch of the reader view before its font, then picture in picture, in the section of page tools', () => {
     const tools = settingsIndex.find((section) => section.id === 'pageTools');
     expect(tools?.title).toBe('settings.pageTools');
-    expect(tools?.rows.map((candidate) => candidate.id)).toEqual(['reader.enabled', 'reader.font']);
+    expect(tools?.rows.map((candidate) => candidate.id)).toEqual([
+      'reader.enabled',
+      'reader.font',
+      'pictureInPicture.enabled',
+    ]);
+    // Words of both languages find the row of picture in picture.
+    const pictureInPicture = row('pictureInPicture.enabled');
+    const words = textOf(pictureInPicture.keys, pictureInPicture.words);
+    for (const word of ['picture in picture', 'bild im bild', 'video'])
+      expect(words).toContain(word);
     // Words of both languages find both rows, and the font row finds its choices.
     for (const id of ['reader.enabled', 'reader.font']) {
       const text = textOf(row(id).keys, row(id).words);

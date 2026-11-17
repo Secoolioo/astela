@@ -11,6 +11,14 @@ export interface EditFlags {
   readonly canSelectAll: boolean;
 }
 
+/** What Chromium tells about a clicked video, as far as picture in picture goes. */
+export interface MediaFlags {
+  /** Whether the video can show in picture in picture. */
+  readonly canShowPictureInPicture: boolean;
+  /** Whether the video shows in picture in picture now. */
+  readonly isShowingPictureInPicture: boolean;
+}
+
 /**
  * What was clicked: the fields of Electron's `ContextMenuParams` that the menu uses, so
  * Electron's object can be passed as it is.
@@ -33,6 +41,8 @@ export interface ContextMenuParams {
   /** Replacements for the misspelled word under the pointer, when spell checking is on. */
   readonly dictionarySuggestions: readonly string[];
   readonly editFlags: EditFlags;
+  /** What a clicked video allows; tests may leave it out. */
+  readonly mediaFlags?: MediaFlags;
 }
 
 /** Everything the menu depends on besides its texts. */
@@ -53,6 +63,8 @@ export interface ContextMenuInput {
   readonly searchTemplate: string;
   /** Whether the developer tools may open for the page, which the policies decide. */
   readonly canInspect: boolean;
+  /** Whether picture in picture is on, which a setting or a policy can turn off. */
+  readonly pictureInPicture: boolean;
 }
 
 /** The texts of the menu items in the user's language. */
@@ -62,6 +74,8 @@ export interface ContextMenuLabels {
   readonly openImageInNewTab: string;
   readonly copyImage: string;
   readonly copyImageAddress: string;
+  readonly pictureInPicture: string;
+  readonly exitPictureInPicture: string;
   readonly undo: string;
   readonly redo: string;
   readonly cut: string;
@@ -85,13 +99,15 @@ export type EditCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAl
 
 /**
  * What a menu item does. `openTab` opens a URL in a new tab next to the page, in the
- * background unless `activate` is set; `copyImage` copies the image that was clicked, and
- * `inspect` opens the developer tools at the clicked element.
+ * background unless `activate` is set; `copyImage` copies the image that was clicked,
+ * `pictureInPicture` shows the clicked video in picture in picture or ends picture in picture,
+ * and `inspect` opens the developer tools at the clicked element.
  */
 export type ContextMenuAction =
   | { readonly kind: 'openTab'; readonly url: string; readonly activate: boolean }
   | { readonly kind: 'copyText'; readonly text: string }
   | { readonly kind: 'copyImage' }
+  | { readonly kind: 'pictureInPicture'; readonly enter: boolean }
   | { readonly kind: 'edit'; readonly command: EditCommand }
   | { readonly kind: 'replaceMisspelling'; readonly word: string }
   | { readonly kind: 'navigate'; readonly command: 'back' | 'forward' | 'reload' }
@@ -124,10 +140,10 @@ const separator: ContextMenuEntry = { type: 'separator' };
 
 /**
  * Describes the context menu for a click, for Electron to show as a native menu. The groups
- * follow Chromium's menus: link, image, text field with spelling suggestions first, then
- * the selection. A page where nothing specific was clicked gets the history items, and every
- * page menu ends with Inspect while the developer tools may open; the shell gets the text
- * field items only.
+ * follow Chromium's menus: link, image, video, text field with spelling suggestions first,
+ * then the selection. A page where nothing specific was clicked gets the history items, and
+ * every page menu ends with Inspect while the developer tools may open; the shell gets the
+ * text field items only.
  * @param input - What was clicked and where.
  * @param labels - The texts in the user's language.
  * @param platform - `process.platform`. Windows and Linux show the shortcuts of the editing
@@ -143,7 +159,7 @@ export function buildContextMenu(
   const page = input.surface === 'page';
   const groups: ContextMenuItem[][] = [];
   if (page) {
-    groups.push(linkItems(params, labels), imageItems(input, labels));
+    groups.push(linkItems(params, labels), imageItems(input, labels), mediaItems(input, labels));
   }
   if (params.isEditable) {
     groups.push(spellingItems(params), ...editItems(params, labels, platform));
@@ -193,6 +209,21 @@ function imageItems(input: ContextMenuInput, labels: ContextMenuLabels): Context
     item(labels.copyImage, { kind: 'copyImage' }, params.hasImageContents && input.canCopyImage),
     ...(srcURL === '' ? [] : [item(labels.copyImageAddress, { kind: 'copyText', text: srcURL })]),
   ];
+}
+
+/**
+ * Picture in picture for a clicked video that can show in it, or that shows in it, while
+ * picture in picture is on.
+ */
+function mediaItems(input: ContextMenuInput, labels: ContextMenuLabels): ContextMenuItem[] {
+  const { mediaType, mediaFlags } = input.params;
+  if (mediaType !== 'video' || mediaFlags === undefined || !input.pictureInPicture) return [];
+  if (mediaFlags.isShowingPictureInPicture) {
+    return [item(labels.exitPictureInPicture, { kind: 'pictureInPicture', enter: false })];
+  }
+  return mediaFlags.canShowPictureInPicture
+    ? [item(labels.pictureInPicture, { kind: 'pictureInPicture', enter: true })]
+    : [];
 }
 
 function spellingItems(params: ContextMenuParams): ContextMenuItem[] {

@@ -55,8 +55,15 @@ function idle(id: string, idleSince: number, change: Partial<SleepCandidate> = {
 
 let clock = new ManualClock();
 
-/** Starts a sleeper over windows with settings, on a clock whose wall time starts at 0. */
-function sleeper(windows: FakeWindow[], values: { sleep?: boolean; after?: number } = {}) {
+/**
+ * Starts a sleeper over windows with settings, on a clock whose wall time starts at 0, which
+ * asks the pages of the tabs before they sleep when it is given what asks them.
+ */
+function sleeper(
+  windows: FakeWindow[],
+  values: { sleep?: boolean; after?: number } = {},
+  beforeSleep?: (window: FakeWindow, ids: readonly string[]) => Promise<void>,
+) {
   clock = new ManualClock();
   const changes = new Emitter<void>();
   const busy = new Emitter<void>();
@@ -72,6 +79,7 @@ function sleeper(windows: FakeWindow[], values: { sleep?: boolean; after?: numbe
     windows: { all: windows, onDidChange: changes.event },
     settings,
     activity: { onDidChange: busy.event },
+    ...(beforeSleep === undefined ? {} : { beforeSleep }),
     clock,
     logger,
   });
@@ -221,6 +229,66 @@ describe('startTabSleeper', () => {
     clock.advance(1);
     await settle();
     expect(window.asked).toEqual(['stay auto', 'stay auto']);
+    run.stop.dispose();
+  });
+
+  it('asks the pages of the tabs that are due first, and puts to sleep those that are due still', async () => {
+    const window = new FakeWindow();
+    window.candidates = [idle('a', 0), idle('b', 0), idle('c', 9 * minute)];
+    const asked: string[][] = [];
+    let answer: (() => void) | undefined;
+    const run = sleeper([window], {}, (_window, ids) => {
+      asked.push([...ids]);
+      return new Promise((done) => {
+        answer = done;
+      });
+    });
+    clock.advance(10 * minute);
+    await settle();
+    expect(asked).toEqual([['a', 'b']]);
+    expect(window.asked).toEqual([]);
+    // Its page tells that b is busy, as with a video in picture in picture; looks that come
+    // meanwhile do not ask again.
+    window.candidates = window.candidates.map((each) =>
+      each.id === 'b' ? { ...each, busy: true } : each,
+    );
+    run.changed();
+    await settle();
+    expect(asked).toEqual([['a', 'b']]);
+    answer?.();
+    await settle();
+    expect(window.asked).toEqual(['a auto']);
+    // The next tab is asked once it is due, ten minutes after it was used.
+    clock.advance(9 * minute);
+    await settle();
+    expect(asked).toEqual([['a', 'b'], ['c']]);
+    answer?.();
+    await settle();
+    expect(window.asked).toEqual(['a auto', 'c auto']);
+    run.stop.dispose();
+  });
+
+  it('puts the tabs to sleep when their pages could not be asked, unless they were used meanwhile', async () => {
+    const window = new FakeWindow();
+    window.candidates = [idle('a', 0), idle('b', 0)];
+    let fail: (() => void) | undefined;
+    const run = sleeper(
+      [window],
+      {},
+      () =>
+        new Promise((_done, reject) => {
+          fail = () => reject(new Error('The page did not answer'));
+        }),
+    );
+    clock.advance(10 * minute);
+    await settle();
+    // Tab b is used while its page is asked.
+    window.candidates = window.candidates.map((each) =>
+      each.id === 'b' ? { ...each, idleSince: clock.wallTime() } : each,
+    );
+    fail?.();
+    await settle();
+    expect(window.asked).toEqual(['a auto']);
     run.stop.dispose();
   });
 

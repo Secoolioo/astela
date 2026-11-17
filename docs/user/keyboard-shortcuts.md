@@ -12,7 +12,7 @@ A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function k
 
 ## Commands without a shortcut
 
-Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **About Astela** and **Quit Astela**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
+Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **Picture in picture**, **About Astela** and **Quit Astela**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
 
 ## Windows and Linux
 
@@ -109,6 +109,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, such as German or French, press Command together with the keys that type the bracket.
 
 **Reader view** shows the article of a page in the [reader view](page-tools.md#reader-view), on pages that have one, and ends it again; the key works in the page and in the reader view. While the reader view is off in the settings, the key reaches the page.
+
+**Picture in picture** shows a video of the page that plays in [picture in picture](page-tools.md#picture-in-picture), or ends picture in picture, as its button does. It has no key at first, as in Chrome; the keys of other browsers need AltGr on German keyboards. While picture in picture is off in the settings, a key that you gave it reaches the page.
 
 **Open or end split view** opens a new tab page beside the active tab in a [split view](tabs.md#split-view), or ends the split view of the active tab. `Command+Shift+S` stays free, as it means Save As on macOS. While split view is off in the settings, the shortcut reaches the page.
 

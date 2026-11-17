@@ -223,6 +223,41 @@ describe('tabMenuTemplate', () => {
     expect(views.log).toEqual([`sleep ${middle} manual`, `destroy ${first}`]);
   });
 
+  it('asks the page of a tab before the tab goes to sleep, and lets it sleep when it cannot be asked', async () => {
+    const { window, views, ids } = windowWith('top');
+    const middle = ids[1] ?? '';
+    const asked: string[] = [];
+    let answer: (() => void) | undefined;
+    const item = (beforeSleep: () => Promise<void>): MenuItemConstructorOptions => {
+      const template = tabMenuTemplate(window, middle, translatorFor('en-US', 'linux'), {
+        beforeSleep,
+      });
+      const found = template?.find((each) => each.label === 'Put tab to &sleep');
+      if (found === undefined) throw new Error('No item to sleep');
+      return found;
+    };
+    choose(
+      item(
+        () =>
+          new Promise((done) => {
+            asked.push(middle);
+            answer = done;
+          }),
+      ),
+    );
+    // The tab waits for the answer of its page.
+    expect(asked).toEqual([middle]);
+    await Promise.resolve();
+    expect(views.log).toEqual([]);
+    answer?.();
+    await vi.waitFor(() => expect(views.log).toEqual([`sleep ${middle} manual`]));
+    // A page that cannot be asked keeps nothing awake.
+    choose(item(() => Promise.reject(new Error('gone'))));
+    await vi.waitFor(() =>
+      expect(views.log).toEqual([`sleep ${middle} manual`, `sleep ${middle} manual`]),
+    );
+  });
+
   it('names the tabs below a tab in a tab strip at a side, and to its right otherwise', () => {
     for (const position of ['top', 'bottom'] as const) {
       expect(texts(position, 'en-US', 'linux')).toEqual(

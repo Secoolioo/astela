@@ -82,6 +82,13 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
       options.onPageEvent?.(window, id, contents, 'loaded');
     }
   });
+  // Picture in picture looks at the videos of the page again when one plays or pauses, in any
+  // of its frames.
+  const media = (): void => {
+    if (host.entries.get(id)?.view === view) options.onPageEvent?.(window, id, contents, 'media');
+  };
+  contents.on('media-started-playing', media);
+  contents.on('media-paused', media);
   contents.on('page-title-updated', (_event, title) => {
     const address = contents.getURL();
     if (/^https?:/i.test(address)) onVisit?.(address, title, true);
@@ -141,10 +148,11 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   contents.on('did-navigate', (_event, address) => {
     setProblem(host, id, null);
     // Another document ends a cover over the page, and needs a check of its own; the cover tells
-    // the same address loaded again from another one.
+    // the same address loaded again from another one. Its videos are gone, and with them a video
+    // in picture in picture.
     if (host.entries.get(id)?.view === view) {
       window.uncover(id, 'navigated');
-      window.tabs.update(id, { reader: 'none' });
+      window.tabs.update(id, { reader: 'none', pictureInPicture: 'none' });
     }
     // A site keeps the zoom it was left at, also after the browser restarts, and other
     // sites get the default zoom. Chromium gives a page the zoom that its site had in this
@@ -204,13 +212,16 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
 function setProblem(host: WindowHost, id: TabId, problem: TabProblem | null): void {
   const { window } = host;
   if (problem === null && problemOf(host, id) === null) return;
-  // In place of its page, the tab shows no icon of a page, no cover and no article; the page
-  // gets a check of its own once it has loaded again.
+  // In place of its page, the tab shows no icon of a page, no cover, no article and no video;
+  // the page gets a check of its own once it has loaded again.
   if (problem !== null) {
     host.dropFavicon(id);
     window.uncover(id, 'gone');
   }
-  window.tabs.update(id, problem === null ? { problem } : { problem, reader: 'none' });
+  window.tabs.update(
+    id,
+    problem === null ? { problem } : { problem, reader: 'none', pictureInPicture: 'none' },
+  );
   if (window.isShown(id) && !window.window.isDestroyed()) {
     host.layout();
     // Focusing a view raises its window: a window in the background stays there. A problem

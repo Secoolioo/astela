@@ -1,5 +1,5 @@
 import type { Disposable } from '../../shared/disposable.ts';
-import type { ReaderState } from '../../shared/page-tools.ts';
+import type { PictureInPictureState, ReaderState } from '../../shared/page-tools.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { historyMoves } from './tab-history.ts';
@@ -59,6 +59,8 @@ export interface Tab {
   readonly group: TabGroup | null;
   /** Whether the page has an article for the reader view, and whether the reader view shows it. */
   readonly reader: ReaderState;
+  /** Whether a video of the page plays, which picture in picture can show, or shows in it. */
+  readonly pictureInPicture: PictureInPictureState;
 }
 
 /** Fields of a tab that the web view reports. */
@@ -152,6 +154,7 @@ const tabFields = [
   'pinned',
   'sleeping',
   'reader',
+  'pictureInPicture',
 ] as const;
 
 /**
@@ -377,6 +380,7 @@ export class TabService implements Disposable {
       sleeping: lazy,
       group: null,
       reader: 'none',
+      pictureInPicture: 'none',
     };
     const activate = options.activate ?? true;
     if (options.after !== undefined) this.require(options.after);

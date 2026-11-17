@@ -6,6 +6,7 @@ import {
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import {
   paletteCommands,
+  pictureInPictureCommands,
   readerCommands,
   shortcutTable,
   splitCommands,
@@ -102,6 +103,7 @@ import {
   CommandPaletteSetting,
   SplitViewSetting,
   ReaderEnabledSetting,
+  PictureInPictureEnabledSetting,
   BlockThirdPartyCookiesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
@@ -134,6 +136,7 @@ import { chooseLanguage } from './ui-language.ts';
 import type { Bookmarks } from './bookmarks.ts';
 import type { Workspaces } from './workspaces.ts';
 import type { ReaderController } from './reader.ts';
+import type { PictureInPictureController } from './picture-in-picture.ts';
 import {
   canBeDefaultBrowser,
   DefaultBrowserSettingEnabled,
@@ -368,13 +371,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     dispose: () => startedClient?.dispose(),
   };
   // The keyboard shortcuts of the windows, made again when people change them. While the
-  // command palette, split view or the workspaces are off, their shortcuts reach the pages.
+  // command palette, split view, the workspaces, the reader view or picture in picture are off,
+  // their shortcuts reach the pages.
   const shortcutsNow = (): Map<string, WindowCommand> =>
     shortcutTable(process.platform, settings.get(ShortcutsSetting), [
       ...(settings.get(CommandPaletteSetting) ? [] : paletteCommands),
       ...(settings.get(SplitViewSetting) ? [] : splitCommands),
       ...(settings.get(WorkspacesEnabledSetting) ? [] : workspaceCommands),
       ...(settings.get(ReaderEnabledSetting) ? [] : readerCommands),
+      ...(settings.get(PictureInPictureEnabledSetting) ? [] : pictureInPictureCommands),
     ]);
   let shortcuts = shortcutsNow();
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
@@ -567,6 +572,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           openTab: openFromPage,
           developerTools,
           isInternal: (contents) => contents.session === internal,
+          pictureInPictureEnabled: () => settings.get(PictureInPictureEnabledSetting),
+          pictureInPicture: ({ window, tabId, contents, params }, enter) => {
+            if (tabId === undefined) return;
+            const { frame, x, y, srcURL: src, pageURL: page } = params;
+            const menu = { frame, x, y, src, page };
+            loadPictureInPicture()
+              .then((controller) => controller.atPoint(window, tabId, contents, { ...menu, enter }))
+              .catch(failedPictureInPicture);
+          },
           logger,
         }),
       )
@@ -634,6 +648,30 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       ({ ReaderController: Controller }) =>
         (reader = new Controller({ windows, settings, scripts: layout.pageScripts, logger })),
     ));
+  // Picture in picture loads with the first video that plays or pauses while it is on, once it
+  // is turned on, with its command or the context menu of a video, or before a tab goes to sleep.
+  let pictureInPicture: PictureInPictureController | undefined;
+  let pictureInPictureLoaded: Promise<PictureInPictureController> | undefined;
+  const loadPictureInPicture = (): Promise<PictureInPictureController> =>
+    (pictureInPictureLoaded ??= import('./picture-in-picture.ts').then(
+      ({ PictureInPictureController: Controller }) =>
+        (pictureInPicture = new Controller({
+          windows,
+          settings,
+          scripts: layout.pageScripts,
+          activity: () => activity,
+          logger,
+        })),
+    ));
+  const failedPictureInPicture = (error: unknown): void =>
+    logger.error('Picture in picture failed', error);
+  // A page may show a video in picture in picture that it started itself, which keeps its tab
+  // awake: picture in picture looks at the pages of tabs before they go to sleep, also while it
+  // is off, as the page did that, not the browser.
+  const beforeSleep = async (
+    window: BrowserWindowController,
+    ids: readonly string[],
+  ): Promise<void> => (await loadPictureInPicture()).beforeSleep(window, ids);
   // The workspaces of the profile while windows have them; their code loads with its first use.
   const workspacesNow = (): readonly Workspace[] | undefined =>
     settings.get(WorkspacesEnabledSetting) ? settings.get(WorkspacesSetting) : undefined;
@@ -710,7 +748,18 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       void loadWorkspaces().then((code) => code.run(window, command)),
     reader: () => settings.get(ReaderEnabledSetting),
     onPageEvent: (window, tabId, contents, event) => {
-      if (!settings.get(ReaderEnabledSetting)) return;
+      // Picture in picture loads with the first video of a page that plays or pauses; a tab that
+      // shows reaches it once it is there.
+      if (
+        (event === 'media' || event === 'shown') &&
+        settings.get(PictureInPictureEnabledSetting)
+      ) {
+        const code = event === 'media' ? loadPictureInPicture() : pictureInPictureLoaded;
+        code
+          ?.then((controller) => controller.page(window, tabId, contents, event))
+          .catch(failedPictureInPicture);
+      }
+      if (event === 'media' || !settings.get(ReaderEnabledSetting)) return;
       // The reader view's code loads once a web page has loaded in the active tab: a page that
       // shows while it still loads, as at the start, tells once it has, and one in the
       // background once its tab shows. Until then, there is nothing to check.
@@ -723,6 +772,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     },
     onReaderCommand: (window, tabId) =>
       void loadReader().then((code) => code.toggle(window, tabId)),
+    pictureInPicture: () => settings.get(PictureInPictureEnabledSetting),
+    onPictureInPictureCommand: (window, tabId) =>
+      void loadPictureInPicture()
+        .then((controller) => controller.toggle(window, tabId))
+        .catch(failedPictureInPicture),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
@@ -734,9 +788,11 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         .catch((error: unknown) => logger.error('The version of the browser was not shown', error));
     },
     // Administrators expect a change of policy to show when they come back to the browser.
-    // The focus that the first window gets at start does not read them a second time.
-    onFocus: () => {
+    // The focus that the first window gets at start does not read them a second time. Picture
+    // in picture looks at its videos again, as its window has no event of its own.
+    onFocus: (window) => {
       if (shellLoaded) void policies.refresh();
+      pictureInPicture?.focused(window);
     },
     onPrivateWindowsClosed: forgetPrivate,
     // The shortcut shows the downloads button first; the shell opens the list at it.
@@ -895,6 +951,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             history: (text) => pageSources.history(text, 10),
             bookmarks: pageSources.bookmarks,
           },
+          beforeSleep,
           openShieldPopover: async (window, anchor) => {
             const { openShieldPopover } = await import('./shield-popover.ts');
             openShieldPopover(window, anchor, {
@@ -1151,6 +1208,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             palette: settings.get(CommandPaletteSetting),
             splitView: settings.get(SplitViewSetting),
             reader: settings.get(ReaderEnabledSetting),
+            pictureInPicture: settings.get(PictureInPictureEnabledSetting),
           }),
         ),
       )
@@ -1165,15 +1223,23 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     SplitViewSetting.key,
     WorkspacesEnabledSetting.key,
     ReaderEnabledSetting.key,
+    PictureInPictureEnabledSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (!keys.some((key) => keyedSettings.has(key))) return;
     if (keys.includes(SplitViewSetting.key) && !settings.get(SplitViewSetting)) {
       windows.endSplits();
     }
-    // The reader view checks the pages that show once it is on; it turns itself off.
+    // The reader view checks the pages that show once it is on, and picture in picture looks
+    // at their videos; both turn themselves off.
     if (keys.includes(ReaderEnabledSetting.key) && settings.get(ReaderEnabledSetting)) {
       void loadReader();
+    }
+    if (
+      keys.includes(PictureInPictureEnabledSetting.key) &&
+      settings.get(PictureInPictureEnabledSetting)
+    ) {
+      loadPictureInPicture().catch(failedPictureInPicture);
     }
     shortcuts = shortcutsNow();
     showMenuBar();
@@ -1196,6 +1262,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           windows,
           settings,
           activity: loaded,
+          beforeSleep,
           clock,
           logger: logger.child('sleep'),
         }),

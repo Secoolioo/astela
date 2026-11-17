@@ -8,6 +8,7 @@ A right-click opens a context menu with the commands that fit what you clicked. 
 | -------------- | ----------------------------------------------------- |
 | A link         | Open link in new tab, Copy link address               |
 | An image       | Open image in new tab, Copy image, Copy image address |
+| A video        | Picture in picture, or Exit picture in picture        |
 | Selected text  | Copy, Search for the selection                        |
 | A text field   | Undo, Redo, Cut, Copy, Paste, Select all              |
 | Anything else  | Back, Forward, Reload                                 |
@@ -22,6 +23,7 @@ An image inside a link gets the commands of both. A command that cannot run at t
 - **Search:** the search uses the search engine of the address bar. The menu names the engine by its address, such as `duckduckgo.com`, and shows the first 50 characters of the selection. Password fields and very long selections have no search.
 - **Text fields:** on Windows and Linux, the menu also shows the keyboard shortcut of each command; context menus on macOS show none. Spell checking is not available yet; once it is, suggestions for a misspelled word appear at the top of the menu.
 - **Copy image:** copies the picture itself. An image in a frame of another website cannot be copied this way; copy its address instead.
+- **Videos:** from 0.1.0-beta.7, **Picture in picture** shows the video that you clicked in a small window above other windows, also when another video of the page plays, and **Exit picture in picture** ends it while it shows there; see [picture in picture](page-tools.md#picture-in-picture). A video that cannot show in picture in picture, such as one whose page forbids it, has neither, and neither does a video while **Offer picture in picture** is off in the settings.
 
 ## In the address bar
 

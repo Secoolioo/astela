@@ -180,10 +180,11 @@ export interface BrowserWindowOptions {
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
-  readonly onFocus?: () => void;
+  readonly onFocus?: (window: BrowserWindowController) => void;
   /**
    * Called when the main frame of a tab's web page has loaded, when its page changes its
-   * address with the History API, and when the tab is shown, for the reader view's check.
+   * address with the History API and when the tab is shown, for the reader view's check, and
+   * when a video or other media of the page plays or pauses, for picture in picture.
    */
   readonly onPageEvent?: (
     window: BrowserWindowController,
@@ -195,6 +196,13 @@ export interface BrowserWindowOptions {
   readonly onReaderCommand?: (window: BrowserWindowController, tabId: TabId) => void;
   /** Whether the reader view is on, which a setting or a policy can turn off. */
   readonly reader?: () => boolean;
+  /**
+   * Shows a video of a tab's page in picture in picture, or ends picture in picture, for the
+   * command `media.pictureInPicture`.
+   */
+  readonly onPictureInPictureCommand?: (window: BrowserWindowController, tabId: TabId) => void;
+  /** Whether picture in picture is on, which a setting or a policy can turn off. */
+  readonly pictureInPicture?: () => boolean;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -376,10 +384,11 @@ export interface WebPages {
 }
 
 /**
- * What happened to the web page of a tab: its main frame has `loaded`, the tab was `shown`, or
- * the page `changed` its address with the History API.
+ * What happened to the web page of a tab: its main frame has `loaded`, the tab was `shown`, the
+ * page `changed` its address with the History API, or a video or other `media` of it played or
+ * paused.
  */
-export type PageEvent = 'loaded' | 'shown' | 'changed';
+export type PageEvent = 'loaded' | 'shown' | 'changed' | 'media';
 
 /**
  * A view that covers the page of a tab, such as the reader view, while the page's own view stays
@@ -404,10 +413,11 @@ export interface TabCover {
 }
 
 /**
- * Why a cover ends: it was `closed`, the page `navigated` elsewhere or `reloaded`, or the page
- * is `gone`, as it crashed, failed, went to sleep or its tab closed.
+ * Why a cover ends: it was `closed`, the page `navigated` elsewhere or `reloaded`, its tab
+ * `slept`, which brings the page back once the tab wakes, or the page is `gone`, as it crashed,
+ * failed or its tab closed.
  */
-export type CoverEnd = 'closed' | 'navigated' | 'reloaded' | 'gone';
+export type CoverEnd = 'closed' | 'navigated' | 'reloaded' | 'slept' | 'gone';
 
 /** The commands that move the focus, or the state of the window itself: they run at once. */
 const commandsNow = [
@@ -951,6 +961,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           split: this.sideOf(id),
           group: tab.group,
           reader: tab.reader,
+          pictureInPicture: tab.pictureInPicture,
         }),
       ),
       activeTabId: active?.id ?? null,
@@ -2289,12 +2300,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const old = entry.view;
     const oldRegistration = entry.registration;
     const focused = old.webContents.isFocused();
-    // The new view shows its own page, not the problem, the icon, the sound or the article of
-    // the old one: the old view's events no longer count, a new page plays no sound until it
-    // says so, and a web page has an article only once it was checked.
+    // The new view shows its own page, not the problem, the icon, the sound, the article or the
+    // videos of the old one: the old view's events no longer count, a new page plays no sound
+    // until it says so, and a web page has an article only once it was checked.
     if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
     this.dropFavicon(id);
-    this.tabs.update(id, { audible: false, reader: 'none' });
+    this.tabs.update(id, { audible: false, reader: 'none', pictureInPicture: 'none' });
     // The new view's first page is a page of its own, not the one that a waking tab restores.
     Object.assign(entry, this.createView(id, url), {
       requested: url,
@@ -2763,7 +2774,7 @@ export class WindowManager implements Disposable {
       const before = this.keptByFocus();
       forget();
       this.focusOrder.push(controller);
-      this.options.onFocus?.();
+      this.options.onFocus?.(controller);
       // The session keeps the order in which the regular windows were used; popups and private
       // windows are not in it.
       const after = this.keptByFocus();

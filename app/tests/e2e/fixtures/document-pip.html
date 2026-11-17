@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture document picture in picture</title>
+  </head>
+  <body>
+    <h1>Fixture document picture in picture</h1>
+    <button id="open" type="button">Open a window of the page</button>
+    <output id="result"></output>
+    <script>
+      // The page asks for a window of its own above other windows, which shows its document.
+      document.getElementById('open').addEventListener('click', () => {
+        const result = document.getElementById('result');
+        if (!('documentPictureInPicture' in window)) {
+          result.textContent = 'missing';
+          return;
+        }
+        documentPictureInPicture.requestWindow({ width: 320, height: 180 }).then(
+          () => (result.textContent = 'opened'),
+          (error) => (result.textContent = `refused: ${error.name}`),
+        );
+      });
+    </script>
+  </body>
+</html>

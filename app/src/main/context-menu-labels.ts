@@ -15,6 +15,8 @@ export function contextMenuLabels(locale: string, platform: string): ContextMenu
     openImageInNewTab: i18n.t('contextMenu.openImageInNewTab'),
     copyImage: i18n.t('contextMenu.copyImage'),
     copyImageAddress: i18n.t('contextMenu.copyImageAddress'),
+    pictureInPicture: i18n.t('contextMenu.pictureInPicture'),
+    exitPictureInPicture: i18n.t('contextMenu.exitPictureInPicture'),
     undo: i18n.t('contextMenu.undo'),
     redo: i18n.t('contextMenu.redo'),
     cut: i18n.t('contextMenu.cut'),

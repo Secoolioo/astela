@@ -61,19 +61,21 @@ describe('macMenuBar', () => {
 });
 
 /**
- * The texts and shortcuts of the items of the View menu, while the palette and split view are
- * on or off.
+ * The texts and shortcuts of the items of the View menu, while the palette, split view, the
+ * reader view and picture in picture are on or off.
  */
 function view(
   palette: boolean,
   splitView?: boolean,
   table: ReturnType<typeof shortcutTable> = shortcutTable('darwin'),
   reader?: boolean,
+  pictureInPicture?: boolean,
 ): unknown[] {
   const template = macMenuBar(() => undefined, table, {
     palette,
     ...(splitView === undefined ? {} : { splitView }),
     ...(reader === undefined ? {} : { reader }),
+    ...(pictureInPicture === undefined ? {} : { pictureInPicture }),
   }) as unknown as MenuItemConstructorOptions[];
   const menu = template.find((item) => item.label?.replaceAll('&', '') === 'Darstellung');
   return (Array.isArray(menu?.submenu) ? menu.submenu : []).map((item) =>
@@ -104,12 +106,28 @@ describe('the View menu of macOS', () => {
   it('shows or ends the reader view after split view, with its shortcut, while the reader view is on', () => {
     const shown = view(true);
     const split = shown.findIndex((item) => Array.isArray(item) && item[0] === 'Geteilte Ansicht');
-    expect(shown.slice(split + 1, split + 3)).toEqual([['Leseansicht', 'Alt+Cmd+R'], '-']);
+    expect(shown.slice(split + 1, split + 4)).toEqual([
+      ['Leseansicht', 'Alt+Cmd+R'],
+      ['Bild im Bild', undefined],
+      '-',
+    ]);
     expect(view(true, true, shortcutTable('darwin'), true)).toEqual(shown);
     const changed = view(true, true, shortcutTable('darwin', { 'reader.toggle': ['Ctrl+Cmd+R'] }));
     expect(changed).toContainEqual(['Leseansicht', 'Ctrl+Cmd+R']);
     const off = view(true, true, shortcutTable('darwin'), false);
     expect(JSON.stringify(off)).not.toContain('Leseansicht');
+    expect(off).toHaveLength(shown.length - 1);
+  });
+
+  it('shows picture in picture after the reader view, with the shortcut that people give it, while it is on', () => {
+    const shown = view(true);
+    const reader = shown.findIndex((item) => Array.isArray(item) && item[0] === 'Leseansicht');
+    expect(shown[reader + 1]).toEqual(['Bild im Bild', undefined]);
+    expect(view(true, true, shortcutTable('darwin'), true, true)).toEqual(shown);
+    const given = shortcutTable('darwin', { 'media.pictureInPicture': ['Ctrl+Cmd+P'] });
+    expect(view(true, true, given)).toContainEqual(['Bild im Bild', 'Ctrl+Cmd+P']);
+    const off = view(true, true, shortcutTable('darwin'), true, false);
+    expect(JSON.stringify(off)).not.toContain('Bild im Bild');
     expect(off).toHaveLength(shown.length - 1);
   });
 

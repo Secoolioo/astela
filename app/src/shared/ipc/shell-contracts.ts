@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { tabStripPositions, toolbarItems } from '../layout.ts';
-import { readerStates } from '../page-tools.ts';
+import { pictureInPictureStates, readerStates } from '../page-tools.ts';
 import { splitRatio } from '../split-view.ts';
 import { swatches } from '../swatches.ts';
 import { Workspace } from '../workspaces.ts';
@@ -59,8 +59,10 @@ export const TabGroupView = v.strictObject({
  * whether the tab is pinned, `sleeping` whether the tab has no page loaded, as a tab that
  * was put to sleep or a restored tab that was not shown yet, which loads once it is shown,
  * `split` which side of a split view the tab is, or `null` for a tab that is in none,
- * `group` the group of tabs that the tab is in, or `null`, and `reader` whether its page has an
- * article that the reader view shows, and whether the reader view shows it now.
+ * `group` the group of tabs that the tab is in, or `null`, `reader` whether its page has an
+ * article that the reader view shows, and whether the reader view shows it now, and
+ * `pictureInPicture` whether a video of its page plays, which picture in picture can show, or
+ * shows in it now.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -83,6 +85,7 @@ export const TabView = v.strictObject({
   split: v.nullable(v.picklist(['start', 'end'])),
   group: v.nullable(TabGroupView),
   reader: v.picklist(readerStates),
+  pictureInPicture: v.picklist(pictureInPictureStates),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

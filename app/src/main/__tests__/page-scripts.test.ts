@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import type { WebContents, WebFrameMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PageScripts, PageScriptTimeout, wrap } from '../page-scripts.ts';
+import { PageScriptRefused, PageScripts, PageScriptTimeout, wrap } from '../page-scripts.ts';
 
 /** An answer that nobody waits for. */
 const ignore = (): void => undefined;
@@ -121,6 +121,65 @@ describe('PageScripts', () => {
     answer({ readable: true });
     await vi.advanceTimersByTimeAsync(10);
     expect(await late).toBeInstanceOf(PageScriptTimeout);
+  });
+
+  it('runs a call for a document at once or not at all: not while the main frame loads, nor in another document', async () => {
+    const page = { url: 'https://example.com/video.html', loading: false };
+    const calls: unknown[] = [];
+    const contents = {
+      isDestroyed: () => false,
+      getURL: () => page.url,
+      isLoadingMainFrame: () => page.loading,
+      executeJavaScriptInIsolatedWorld: (...args: unknown[]): Promise<unknown> => {
+        calls.push(args);
+        return Promise.resolve('ran');
+      },
+    } as unknown as WebContents;
+    const scripts = new PageScripts(folder);
+    const call = { gesture: true, timeoutMs: 1000, page: 'https://example.com/video.html' };
+    // The page begins to load while the script is read: Electron would hold the call back and
+    // run it in the page that loads next.
+    const reading = scripts.inMainFrame(contents, 'reader', {}, call);
+    page.loading = true;
+    await expect(reading).rejects.toBeInstanceOf(PageScriptRefused);
+    page.loading = false;
+    expect(await scripts.inMainFrame(contents, 'reader', {}, call)).toBe('ran');
+    page.url = 'https://example.com/next.html';
+    await expect(scripts.inMainFrame(contents, 'reader', {}, call)).rejects.toBeInstanceOf(
+      PageScriptRefused,
+    );
+    // Nothing has loaded yet, which Electron waits for too.
+    page.url = '';
+    await expect(
+      scripts.inMainFrame(contents, 'reader', {}, { ...call, page: '' }),
+    ).rejects.toBeInstanceOf(PageScriptRefused);
+    // A call without an address waits as Electron lets it, as the reader view's check does.
+    page.loading = true;
+    expect(await scripts.inMainFrame(contents, 'reader', {}, { timeoutMs: 1000 })).toBe('ran');
+    expect(calls).toHaveLength(2);
+    // A frame of another site runs it only in the document at the address.
+    const shown = { url: 'https://video.test/frame.html', detached: false };
+    const frame = {
+      isDestroyed: () => false,
+      get detached() {
+        return shown.detached;
+      },
+      get url() {
+        return shown.url;
+      },
+      executeJavaScript: (): Promise<unknown> => Promise.resolve('frame'),
+    } as unknown as WebFrameMain;
+    const inFrame = { timeoutMs: 1000, page: 'https://video.test/frame.html' };
+    expect(await scripts.inFrame(frame, 'reader', {}, inFrame)).toBe('frame');
+    shown.url = 'https://video.test/other.html';
+    await expect(scripts.inFrame(frame, 'reader', {}, inFrame)).rejects.toBeInstanceOf(
+      PageScriptRefused,
+    );
+    shown.url = 'https://video.test/frame.html';
+    shown.detached = true;
+    await expect(scripts.inFrame(frame, 'reader', {}, inFrame)).rejects.toBeInstanceOf(
+      PageScriptRefused,
+    );
   });
 
   it('fails when the script is missing, and reads it again on the next call', async () => {

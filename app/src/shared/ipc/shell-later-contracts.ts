@@ -246,6 +246,17 @@ export const ToggleReader = defineRequest({
   capability: 'shell',
 });
 
+/**
+ * Shows a video of the active tab in picture in picture, or ends picture in picture, as the
+ * button next to the address bar says.
+ */
+export const TogglePictureInPicture = defineRequest({
+  channel: 'shell.togglePictureInPicture',
+  request: Empty,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Shows the suggestions for text typed in the address bar, below the field. */
 export const SuggestAddresses = defineRequest({
   channel: 'omnibox.suggest',
@@ -321,4 +332,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   OpenWorkspaces,
   MoveTabToWorkspace,
   ToggleReader,
+  TogglePictureInPicture,
 ];

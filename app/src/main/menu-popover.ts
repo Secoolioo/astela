@@ -73,6 +73,7 @@ const menuTexts: Readonly<Record<BrowserMenuText, MessageKey>> = {
   searchTabs: 'menu.searchTabs',
   find: 'menu.find',
   readerView: 'menu.readerView',
+  pictureInPicture: 'menu.pictureInPicture',
   print: 'menu.print',
   savePage: 'menu.savePage',
   moreTools: 'menu.moreTools',

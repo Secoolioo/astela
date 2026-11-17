@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture videos</title>
+  </head>
+  <body>
+    <h1>Fixture videos</h1>
+    <!-- A large video that waits, a small one that plays, and the frame of another site. -->
+    <video id="poster" src="/clip.webm" preload="auto" muted width="480" height="270"></video>
+    <video
+      id="small"
+      src="/clip.webm"
+      muted
+      loop
+      autoplay
+      playsinline
+      width="160"
+      height="90"
+    ></video>
+    <iframe id="frame" title="Frame video" width="360" height="220"></iframe>
+    <script>
+      // The addresses of the frame and of a picture, which the page loads until it has, come
+      // with the address of the page.
+      const params = new URLSearchParams(location.search);
+      const frame = params.get('frame');
+      if (frame !== null) document.getElementById('frame').src = frame;
+      const picture = params.get('picture');
+      if (picture !== null) {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.src = picture;
+        document.body.append(image);
+      }
+    </script>
+  </body>
+</html>

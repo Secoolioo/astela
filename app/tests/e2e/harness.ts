@@ -55,6 +55,7 @@ function contentType(file: string): string {
   if (file.endsWith('.gif')) return 'image/gif';
   if (file.endsWith('.png')) return 'image/png';
   if (file.endsWith('.pdf')) return 'application/pdf';
+  if (file.endsWith('.webm')) return 'video/webm';
   return 'text/html; charset=utf-8';
 }
 
@@ -67,6 +68,22 @@ interface ServedRequest {
 
 /** The fixture servers that run in this worker, whose requests the record of a test lists. */
 const runningServers = new Set<FixtureServer>();
+
+/**
+ * The part of a video that a player asks for, as servers of media answer it: players ask for
+ * the rest of a file from a byte on, and go back to its start when they loop.
+ * @param range - The `Range` header of the request, if any.
+ * @param size - The size of the file.
+ * @returns The first and the last byte, `null` for a part that the file does not have, or
+ *   `undefined` without a range that the server understands.
+ */
+function rangeOf(range: string | undefined, size: number): [number, number] | null | undefined {
+  const match = /^bytes=(\d+)-(\d*)$/.exec(range ?? '');
+  if (match === null) return undefined;
+  const start = Number(match[1]);
+  const end = match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1);
+  return start <= end ? [start, end] : null;
+}
 
 /** A local web server for test pages; tests never load third-party sites. */
 export class FixtureServer {
@@ -95,11 +112,28 @@ export class FixtureServer {
         served.answered = Date.now();
         try {
           const body = readFileSync(join(fixtures, file));
-          response.writeHead(200, {
+          const headers = {
             'content-type': contentType(file),
             ...(this.uncached.has(file) ? { 'cache-control': 'no-store' } : {}),
-          });
-          response.end(body);
+          };
+          // Videos come in the parts that their player asks for.
+          const part = file.endsWith('.webm')
+            ? rangeOf(request.headers.range, body.length)
+            : undefined;
+          if (part === null) {
+            response.writeHead(416, { 'content-range': `bytes */${String(body.length)}` }).end();
+          } else if (part === undefined) {
+            response.writeHead(200, headers);
+            response.end(body);
+          } else {
+            const [start, end] = part;
+            response.writeHead(206, {
+              ...headers,
+              'accept-ranges': 'bytes',
+              'content-range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,
+            });
+            response.end(body.subarray(start, end + 1));
+          }
         } catch {
           response.writeHead(404).end();
         }

@@ -877,6 +877,14 @@ export class SettingsPage extends LitElement {
     'reader.font': (page) => ({
       render: () => page.renderChoice('reader.font', 'settings.readerFont'),
     }),
+    'pictureInPicture.enabled': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'pictureInPicture.enabled',
+          'settings.pictureInPicture',
+          'settings.pictureInPictureNote',
+        ),
+    }),
     'tabs.sleep': (page) => ({
       render: () => page.renderToggle('tabs.sleep', 'settings.tabSleep', 'settings.tabSleepNote'),
     }),

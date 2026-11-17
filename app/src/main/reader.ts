@@ -90,10 +90,11 @@ export class ReaderController {
   /** The checks that wait for a page that changed its address to be quiet. */
   private readonly changes = new Map<WebContents, NodeJS.Timeout>();
   /**
-   * The address of a page whose reader view was open when the page loaded again, such as after
-   * a reload: the next check of the page opens it again if the page has the same address.
+   * The address of the page of a tab whose reader view was open when the page loaded again,
+   * such as after a reload, or when the tab went to sleep: the next check of the tab's page
+   * opens it again if the page has the same address, also in the view of a tab that woke.
    */
-  private wanted = new WeakMap<WebContents, string>();
+  private wanted = new WeakMap<BrowserWindowController, Map<TabId, string>>();
   /** The pages whose reader view is being made. */
   private readonly opening = new WeakSet<WebContents>();
   /** The reader views that show. */
@@ -140,7 +141,12 @@ export class ReaderController {
    * @param contents - Its page.
    * @param event - What happened.
    */
-  page(window: BrowserWindowController, id: TabId, contents: WebContents, event: PageEvent): void {
+  page(
+    window: BrowserWindowController,
+    id: TabId,
+    contents: WebContents,
+    event: Exclude<PageEvent, 'media'>,
+  ): void {
     if (!this.on()) return;
     if (event === 'changed') {
       this.checked.delete(contents);
@@ -184,7 +190,8 @@ export class ReaderController {
 
   /**
    * Takes note that a reader view ended: its view closes, and its tab shows that its page has
-   * an article. After a reload, the next check of the page opens the reader view again.
+   * an article. After a reload, and once a tab that went to sleep has woken, the next check of
+   * the page opens the reader view again.
    * @param cover - The reader view.
    * @param end - Why it ended.
    */
@@ -193,13 +200,16 @@ export class ReaderController {
     const { window, id, page, view } = cover;
     if (!view.webContents.isDestroyed()) view.webContents.close();
     if (page.isDestroyed()) return;
-    // The page loaded its address again, as after Reload, or the page itself did.
+    // The page loaded its address again, as after Reload, or the page itself did, or the tab
+    // goes to sleep, and loads the page again when it wakes.
     const again =
       end === 'reloaded' ||
+      end === 'slept' ||
       (end === 'navigated' && withoutHash(page.getURL()) === withoutHash(cover.address));
-    if (again) this.wanted.set(page, withoutHash(cover.address));
+    if (again && this.on()) this.want(window, id, withoutHash(cover.address));
     if (window.webContentsOf(id) === page) {
-      window.tabs.update(id, { reader: end === 'gone' || !this.on() ? 'none' : 'available' });
+      const gone = end === 'gone' || end === 'slept' || !this.on();
+      window.tabs.update(id, { reader: gone ? 'none' : 'available' });
     }
   }
 
@@ -211,6 +221,20 @@ export class ReaderController {
   /** Whether the reader view is on, which a setting or a policy can turn off. */
   private on(): boolean {
     return this.settings.get(ReaderEnabledSetting);
+  }
+
+  /**
+   * Takes note that the next check of a tab's page opens the reader view at an address, and
+   * forgets the tabs of the window that closed meanwhile.
+   */
+  private want(window: BrowserWindowController, id: TabId, address: string): void {
+    let tabs = this.wanted.get(window);
+    if (tabs === undefined) {
+      tabs = new Map();
+      this.wanted.set(window, tabs);
+    }
+    for (const tab of tabs.keys()) if (window.tabs.get(tab) === undefined) tabs.delete(tab);
+    tabs.set(id, address);
   }
 
   /** The reader view that shows over a tab's page, if any. */
@@ -246,8 +270,9 @@ export class ReaderController {
     if (!/^https?:/i.test(address) || this.checked.get(contents) === key) return;
     this.checked.set(contents, key);
     // A reader view that was open comes back only with the next check of its page.
-    const wanted = this.wanted.get(contents);
-    this.wanted.delete(contents);
+    const tabs = this.wanted.get(window);
+    const wanted = tabs?.get(id);
+    tabs?.delete(id);
     let readable: boolean;
     try {
       const answer = await this.scripts.inMainFrame(

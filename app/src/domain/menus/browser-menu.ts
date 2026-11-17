@@ -47,6 +47,7 @@ export type BrowserMenuText =
   | 'searchTabs'
   | 'find'
   | 'readerView'
+  | 'pictureInPicture'
   | 'print'
   | 'savePage'
   | 'moreTools'
@@ -119,8 +120,9 @@ const separator: ModelEntry = { type: 'separator' };
  * of them, the settings, About and Quit, which Windows calls Exit. Items whose command cannot
  * run now, such as the page tools on the browser's own pages, cannot be chosen; New private
  * window is missing when a policy forbids private windows, the palette's items while the
- * palette is off, and the reader view's item while the reader view is off. That item has a
- * check mark while the reader view shows.
+ * palette is off, and the items of the reader view and of picture in picture while they are
+ * off. They have a check mark while the reader view shows, or a video of the page shows in
+ * picture in picture.
  * @param input - The window, its shortcuts and its zoom.
  * @param text - The texts of the items, in the language of the menus.
  */
@@ -132,15 +134,19 @@ export function browserMenu(
     commandItem(input, text, name, run);
   const { zoom, context } = input;
   const zooms = zoom !== null;
-  // The reader view's item has a check mark while the reader view shows.
+  // The items of the reader view and of picture in picture have a check mark while they show.
+  const active = context.tabs[context.activeIndex];
   const reader = context.reader
+    ? [commandItem(input, text, 'readerView', 'reader.toggle', active?.reader === 'open')]
+    : [];
+  const pictureInPicture = context.pictureInPicture
     ? [
         commandItem(
           input,
           text,
-          'readerView',
-          'reader.toggle',
-          context.tabs[context.activeIndex]?.reader === 'open',
+          'pictureInPicture',
+          'media.pictureInPicture',
+          active?.pictureInPicture === 'open',
         ),
       ]
     : [];
@@ -185,6 +191,7 @@ export function browserMenu(
         : []),
       item('find', 'find.open'),
       ...reader,
+      ...pictureInPicture,
       item('print', 'page.print'),
       item('savePage', 'page.save'),
       {

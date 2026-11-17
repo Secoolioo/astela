@@ -17,6 +17,7 @@ const page = (tab: Partial<CommandTab> = {}): CommandTab => ({
   split: null,
   group: null,
   reader: 'none',
+  pictureInPicture: 'none',
   ...tab,
 });
 
@@ -32,6 +33,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   palette: true,
   splitView: true,
   reader: true,
+  pictureInPicture: true,
   workspaces: 1,
   ...change,
 });
@@ -115,6 +117,29 @@ describe('availableCommands', () => {
       canRun(
         'reader.toggle',
         context({ tabs: [page({ url: 'app://newtab/', reader: 'available' })] }),
+      ),
+    ).toBe(false);
+  });
+
+  it('shows a video of a web page that plays in picture in picture, and ends it, while it is on', () => {
+    expect(canRun('media.pictureInPicture', context())).toBe(false);
+    for (const state of ['available', 'open'] as const) {
+      expect(
+        canRun('media.pictureInPicture', context({ tabs: [page({ pictureInPicture: state })] })),
+      ).toBe(true);
+    }
+    expect(
+      canRun(
+        'media.pictureInPicture',
+        context({ tabs: [page({ pictureInPicture: 'available' })], pictureInPicture: false }),
+      ),
+    ).toBe(false);
+    expect(canRun('media.pictureInPicture', context({ tabs: [], activeIndex: -1 }))).toBe(false);
+    // The browser's own pages show no video in it, whatever their tab still says.
+    expect(
+      canRun(
+        'media.pictureInPicture',
+        context({ tabs: [page({ url: 'app://newtab/', pictureInPicture: 'open' })] }),
       ),
     ).toBe(false);
   });

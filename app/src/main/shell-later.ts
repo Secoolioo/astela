@@ -28,8 +28,10 @@ import {
   OpenWorkspaces,
   MoveTabToWorkspace,
   ToggleReader,
+  TogglePictureInPicture,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
+import type { TabId } from '../domain/tabs/tab-service.ts';
 import type {
   BrowserWindowController,
   WindowManager,
@@ -67,6 +69,11 @@ export interface LaterShellDependencies {
     window: BrowserWindowController,
     anchor: PopoverAnchor,
   ) => Promise<void>;
+  /**
+   * Asks the pages of tabs what only they can tell before the tabs go to sleep, such as a video
+   * in picture in picture that a page started itself.
+   */
+  readonly beforeSleep: (window: BrowserWindowController, ids: readonly TabId[]) => Promise<void>;
 }
 
 /**
@@ -97,10 +104,14 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
-  // The button of the reader view runs its command, as the shortcut does.
+  // The buttons of the reader view and of picture in picture run their commands, as the keys do.
   router.handle(
     ToggleReader,
     (_request, { sender }) => (windowOf(sender).execute('reader.toggle'), null),
+  );
+  router.handle(
+    TogglePictureInPicture,
+    (_request, { sender }) => (windowOf(sender).execute('media.pictureInPicture'), null),
   );
   router.handle(
     GetFavicon,
@@ -151,6 +162,7 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
           router.publish(EditGroupRequested, window.shellContents, { groupId, keyboard }),
         workspaces: workspaces?.targets(window, tabId) ?? [],
         moveToWorkspace: (workspaceId) => workspaces?.moveTab(window, tabId, workspaceId),
+        beforeSleep: () => dependencies.beforeSleep(window, [tabId]),
       },
     );
     return null;

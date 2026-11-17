@@ -1,4 +1,4 @@
-import type { ReaderState } from '../../shared/page-tools.ts';
+import type { PictureInPictureState, ReaderState } from '../../shared/page-tools.ts';
 import { windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 
 /** A tab of a window, as far as the commands that can run depend on it. */
@@ -17,6 +17,8 @@ export interface CommandTab {
   readonly group: { readonly collapsed: boolean } | null;
   /** Whether the page has an article for the reader view, and whether it shows. */
   readonly reader: ReaderState;
+  /** Whether a video of the page plays, which picture in picture can show, or shows in it. */
+  readonly pictureInPicture: PictureInPictureState;
 }
 
 /** What decides which commands can run in a window now. */
@@ -41,6 +43,8 @@ export interface CommandContext {
   readonly splitView: boolean;
   /** Whether the reader view is on, which a setting or a policy can turn off. */
   readonly reader: boolean;
+  /** Whether picture in picture is on, which a setting or a policy can turn off. */
+  readonly pictureInPicture: boolean;
   /**
    * How many workspaces the window can show, or 0 without workspaces: in private windows, in
    * popups and while a setting or a policy turns them off.
@@ -154,6 +158,14 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
         context.reader &&
         active !== undefined &&
         active.reader !== 'none' &&
+        /^https?:/i.test(active.url)
+      );
+    case 'media.pictureInPicture':
+      // Picture in picture shows a video of a web page that plays, and ends where it shows.
+      return (
+        context.pictureInPicture &&
+        active !== undefined &&
+        active.pictureInPicture !== 'none' &&
         /^https?:/i.test(active.url)
       );
     case 'workspace.select1':
