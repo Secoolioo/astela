@@ -57,8 +57,13 @@ export async function runPageCommand(
       break;
     }
     case 'devtools.toggle':
-      if (contents.isDevToolsOpened()) contents.closeDevTools();
-      else if (deps.developerTools()) contents.openDevTools({ mode: 'detach' });
+      if (contents.isDevToolsOpened()) {
+        // The key that closes them is still being handled; on Windows, closing the window of
+        // the tools before that ended the browser.
+        setTimeout(() => {
+          if (!contents.isDestroyed()) contents.closeDevTools();
+        }, 0);
+      } else if (deps.developerTools()) contents.openDevTools({ mode: 'detach' });
       break;
   }
 }
