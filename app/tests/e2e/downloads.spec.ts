@@ -263,7 +263,8 @@ test('saves a canceled download that is tried again under its name once its file
     // On Windows, the file of a canceled download can go away only after a click on Try again.
     writeFileSync(join(folder, 'large.bin'), part);
     await item.getByRole('button', { name: 'Try again: large.bin' }).click();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // The download waits for the file to go away, and only then starts again.
+    await expect(downloads.getByRole('listitem')).toHaveCount(0);
     rmSync(join(folder, 'large.bin'));
     await expect(item.getByRole('button', { name: 'Show in folder: large.bin' })).toBeVisible({
       timeout: 20_000,
