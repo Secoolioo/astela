@@ -528,7 +528,8 @@ async function reportState(
       main.evaluate(({ webContents }) =>
         webContents.getAllWebContents().map((contents) => ({
           id: contents.id,
-          url: contents.getURL(),
+          // A reader view has a data: address of up to 2 MiB.
+          url: contents.getURL().slice(0, 300),
           title: contents.getTitle(),
           loading: contents.isLoading(),
           crashed: contents.isCrashed(),

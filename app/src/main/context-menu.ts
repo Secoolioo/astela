@@ -40,13 +40,15 @@ export async function popupContextMenu(
   if (contents.isDestroyed() || window.window.isDestroyed()) {
     return;
   }
-  const history = tabId === undefined ? undefined : contents.navigationHistory;
+  // Back and Forward go where the tab goes, also from a view that covers its page, such as the
+  // reader view, which Back ends.
+  const tab = tabId === undefined ? undefined : window.tabs.get(tabId);
   const entries = buildContextMenu(
     {
       surface: tabId === undefined ? 'shell' : 'page',
       params,
-      canGoBack: history?.canGoBack() ?? false,
-      canGoForward: history?.canGoForward() ?? false,
+      canGoBack: tab?.canGoBack ?? false,
+      canGoForward: tab?.canGoForward ?? false,
       canCopyImage: params.frame?.processId === contents.mainFrame.processId,
       searchTemplate,
       canInspect: tabId !== undefined && !deps.isInternal(contents) && deps.developerTools(),

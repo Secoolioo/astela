@@ -594,8 +594,23 @@ test('collapses a group with a click, moves the active tab out of it and opens t
   }
 });
 
+/**
+ * Waits until nothing moves in the strip: a dropped tab slides from where it was dropped to its
+ * place, so its box before the end of that is not where it is.
+ */
+async function stripAtRest(browser: Browser): Promise<void> {
+  await expect
+    .poll(() =>
+      browser.shell.evaluate(
+        () => document.querySelector('app-shell')?.shadowRoot?.getAnimations().length ?? 0,
+      ),
+    )
+    .toBe(0);
+}
+
 /** Drags a tab of the strip by an offset along the strip, in steps, and drops it. */
 async function drag(browser: Browser, title: string, dx: number, dy: number): Promise<void> {
+  await stripAtRest(browser);
   const box = await tab(browser, title).boundingBox();
   if (box === null) throw new Error(`The tab ${title} does not show`);
   const { mouse } = browser.shell;
@@ -622,6 +637,7 @@ test('drags a tab into a group and out of it again, at the top and at a side, an
       .poll(() => groupsOfTabs(browser))
       .toEqual(['Fixture home -', 'Fixture second g1', 'Fixture opened g1', 'Fixture opener -']);
     // Dropped between two tabs of the group, a tab joins it.
+    await stripAtRest(browser);
     const width = (await tab(browser, 'Fixture home').boundingBox())?.width ?? 0;
     const second = await tab(browser, 'Fixture second').boundingBox();
     const opened = await tab(browser, 'Fixture opened').boundingBox();
@@ -649,6 +665,7 @@ test('drags a tab into a group and out of it again, at the top and at a side, an
     const settings = await openInNewTab(browser, 'app://settings/', 5);
     await stripAt(browser, settings, 'Left');
     await tab(browser, 'Fixture opener').click();
+    await stripAtRest(browser);
     const height = (await tab(browser, 'Fixture home').boundingBox())?.height ?? 0;
     const row = await tab(browser, 'Fixture opened').boundingBox();
     const last = await tab(browser, 'Fixture home').boundingBox();

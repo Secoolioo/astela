@@ -14,6 +14,7 @@ export const choices = {
   'tabs.position': ['top', 'bottom', 'left', 'right'],
   'appearance.titleBar': ['integrated', 'system'],
   'startup.page': ['restore', 'newtab', 'pages'],
+  'reader.font': ['browser', 'serif'],
 } as const;
 
 /** A setting that the settings page offers as a choice between a few values. */
@@ -266,6 +267,24 @@ export const settingsIndex: readonly SettingsSection[] = [
         ],
       },
       { id: 'downloads.ask', keys: ['settings.downloadAsk', 'settings.downloadAskNote'] },
+    ],
+  },
+  {
+    id: 'pageTools',
+    title: 'settings.pageTools',
+    rows: [
+      {
+        id: 'reader.enabled',
+        keys: ['settings.reader', 'settings.readerNote', 'settings.reader.keywords'],
+      },
+      {
+        id: 'reader.font',
+        keys: [
+          'settings.readerFont',
+          'settings.reader.keywords',
+          ...optionKeys('reader.font', 'settings.readerFont'),
+        ],
+      },
     ],
   },
   {

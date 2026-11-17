@@ -109,6 +109,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             'Search Tabs… ⇧⌘A',
             '-',
             'Find… ⌘F',
+            'Reader View ⌥⌘R',
             'Print… ⌘P',
             'Save Page As… ⌘S',
             'More Tools',
@@ -132,6 +133,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             'Search tabs… Ctrl+Shift+A',
             '-',
             'Find… Ctrl+F',
+            'Reader view F9',
             'Print… Ctrl+P',
             'Save page as… Ctrl+S',
             'More tools',
@@ -150,6 +152,13 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
         'true',
       );
     }
+    // It has no article, so the reader view cannot show; its item is not checked.
+    const reader = menu.getByRole('menuitemcheckbox', {
+      name: mac ? 'Reader View' : 'Reader view',
+      exact: true,
+    });
+    await expect(reader).toHaveAttribute('aria-disabled', 'true');
+    await expect(reader).toHaveAttribute('aria-checked', 'false');
     await expect(menu.getByRole('menuitem', { name: mac ? 'New Tab' : 'New tab' })).toHaveAttribute(
       'aria-keyshortcuts',
       mac ? 'Meta+T' : 'Control+T',

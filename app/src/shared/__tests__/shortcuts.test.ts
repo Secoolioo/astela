@@ -4,6 +4,7 @@ import {
   defaultShortcuts,
   displayShortcut,
   paletteCommands,
+  readerCommands,
   shortcutProblem,
   splitCommands,
   shortcutTable,
@@ -48,12 +49,12 @@ describe('the shortcuts of the command palette', () => {
     for (const platform of ['darwin', 'win32', 'linux']) {
       const table = shortcutTable(
         platform,
-        { 'tabs.search': ['F9'], 'tab.duplicate': ['F8'] },
+        { 'tabs.search': ['F7'], 'tab.duplicate': ['F8'] },
         paletteCommands,
       );
       expect(shortcutsOf(table, 'palette.open')).toEqual([]);
       expect(shortcutsOf(table, 'tabs.search')).toEqual([]);
-      expect(table.get('F9')).toBeUndefined();
+      expect(table.get('F7')).toBeUndefined();
       expect(table.get('F8')).toBe('tab.duplicate');
       expect(table.size).toBe(shortcutTable(platform).size - 2 + 1);
     }
@@ -86,12 +87,37 @@ describe('the shortcuts of split view', () => {
 
   it('leave out the commands of split view while it is off, also those that people gave them', () => {
     for (const platform of ['darwin', 'win32', 'linux']) {
-      const table = shortcutTable(platform, { 'split.swap': ['F9'] }, splitCommands);
+      const table = shortcutTable(platform, { 'split.swap': ['F7'] }, splitCommands);
       expect(shortcutsOf(table, 'split.toggle')).toEqual([]);
-      expect(table.get('F9')).toBeUndefined();
+      expect(table.get('F7')).toBeUndefined();
       expect(table.size).toBe(shortcutTable(platform).size - 1);
     }
     expect(splitCommands).toEqual(['split.toggle', 'split.swap']);
+  });
+});
+
+describe('the shortcut of the reader view', () => {
+  it('shows or ends the reader view with F9, Option+Command+R on macOS, after full screen', () => {
+    for (const platform of ['win32', 'linux']) {
+      expect(shortcutsOf(shortcutTable(platform), 'reader.toggle')).toEqual(['F9']);
+      expect(shortcutProblem('F9', platform)).toBeUndefined();
+    }
+    expect(shortcutsOf(shortcutTable('darwin'), 'reader.toggle')).toEqual(['Alt+Cmd+R']);
+    expect(shortcutProblem('Alt+Cmd+R', 'darwin')).toBeUndefined();
+    expect(displayShortcut('Alt+Cmd+R', true)).toBe('⌥⌘R');
+    expect(windowCommands.at(windowCommands.indexOf('window.fullscreen') + 1)).toBe(
+      'reader.toggle',
+    );
+  });
+
+  it('leaves out the command of the reader view while it is off, also the keys that people gave it', () => {
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(platform, { 'reader.toggle': ['F7'] }, readerCommands);
+      expect(shortcutsOf(table, 'reader.toggle')).toEqual([]);
+      expect(table.get('F7')).toBeUndefined();
+      expect(table.size).toBe(shortcutTable(platform).size - 1);
+    }
+    expect(readerCommands).toEqual(['reader.toggle']);
   });
 });
 
@@ -130,9 +156,9 @@ describe('the shortcuts of the workspaces', () => {
 
   it('leave out the commands of the workspaces while they are off, also those that people gave them', () => {
     for (const platform of ['darwin', 'win32', 'linux']) {
-      const table = shortcutTable(platform, { 'workspace.next': ['F9'] }, workspaceCommands);
+      const table = shortcutTable(platform, { 'workspace.next': ['F7'] }, workspaceCommands);
       expect(shortcutsOf(table, 'workspace.select1')).toEqual([]);
-      expect(table.get('F9')).toBeUndefined();
+      expect(table.get('F7')).toBeUndefined();
       expect(table.size).toBe(shortcutTable(platform).size - 9);
     }
   });

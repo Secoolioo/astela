@@ -1,3 +1,4 @@
+import type { ReaderState } from '../../shared/page-tools.ts';
 import { windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 
 /** A tab of a window, as far as the commands that can run depend on it. */
@@ -14,6 +15,8 @@ export interface CommandTab {
    * commands that go to a tab skip the tabs that a group hides.
    */
   readonly group: { readonly collapsed: boolean } | null;
+  /** Whether the page has an article for the reader view, and whether it shows. */
+  readonly reader: ReaderState;
 }
 
 /** What decides which commands can run in a window now. */
@@ -36,6 +39,8 @@ export interface CommandContext {
   readonly palette: boolean;
   /** Whether split view is on, which a setting or a policy can turn off. */
   readonly splitView: boolean;
+  /** Whether the reader view is on, which a setting or a policy can turn off. */
+  readonly reader: boolean;
   /**
    * How many workspaces the window can show, or 0 without workspaces: in private windows, in
    * popups and while a setting or a policy turns them off.
@@ -143,6 +148,14 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
     case 'tab.newGroup':
       // Pinned tabs are never in a group.
       return active !== undefined && !active.pinned;
+    case 'reader.toggle':
+      // The reader view opens on web pages with an article, and closes where it shows.
+      return (
+        context.reader &&
+        active !== undefined &&
+        active.reader !== 'none' &&
+        /^https?:/i.test(active.url)
+      );
     case 'workspace.select1':
     case 'workspace.select2':
     case 'workspace.select3':

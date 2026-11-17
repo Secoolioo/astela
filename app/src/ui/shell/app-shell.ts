@@ -846,6 +846,18 @@ export class AppShell extends LitElement {
       color: var(--accent);
       fill: currentColor;
     }
+    /* The reader view's button fades in once the page turns out to have an article. */
+    .reader {
+      animation: appear var(--motion-fast) var(--ease-out);
+    }
+    .reader[aria-pressed='true'] svg {
+      color: var(--accent);
+    }
+    @keyframes appear {
+      from {
+        opacity: 0;
+      }
+    }
     .count {
       font-size: var(--font-size-tiny);
       line-height: var(--line-height-ui);
@@ -1187,7 +1199,7 @@ export class AppShell extends LitElement {
       private: false,
       home: false,
       defaultZoom: 1,
-      toolbar: ['bookmark', 'shield', 'downloads'],
+      toolbar: ['reader', 'bookmark', 'shield', 'downloads'],
       titleBar: null,
       covered: false,
       popover: null,
@@ -1482,11 +1494,13 @@ export class AppShell extends LitElement {
               </button>`
         }
         ${this.state.toolbar.map((item) =>
-          item === 'bookmark'
-            ? this.renderBookmarkButton(active)
-            : item === 'shield'
-              ? this.renderShieldButton(active)
-              : this.renderDownloadsButton(),
+          item === 'reader'
+            ? this.renderReaderButton(active)
+            : item === 'bookmark'
+              ? this.renderBookmarkButton(active)
+              : item === 'shield'
+                ? this.renderShieldButton(active)
+                : this.renderDownloadsButton(),
         )}
         ${
           this.state.private
@@ -2748,6 +2762,28 @@ export class AppShell extends LitElement {
   };
 
   /**
+   * The button of the reader view, on web pages with an article, pressed while the reader view
+   * shows the article; the browser finds the article in the page. The browser's own pages and
+   * the problems of pages have none.
+   */
+  private renderReaderButton(active: TabView | undefined): TemplateResult | typeof nothing {
+    return active === undefined ||
+      active.reader === 'none' ||
+      active.problem !== null ||
+      !/^https?:/i.test(active.url)
+      ? nothing
+      : html`<button
+          class="icon reader"
+          title=${this.tp('shell.reader')}
+          aria-label=${this.tp('shell.reader')}
+          aria-pressed=${active.reader === 'open' ? 'true' : 'false'}
+          @click=${() => void this.bridge?.invoke('shell.toggleReader', {})}
+        >
+          ${icons.bookOpen}
+        </button>`;
+  }
+
+  /**
    * The star that bookmarks a web page and opens its popover, where the bookmark gets its name
    * and folder; the browser's own pages have none.
    */
@@ -3628,6 +3664,12 @@ const icons = {
     <path d="M5 5a1 1 0 0 0-1 1v7c0 5 3.5 7.5 7.7 9a1 1 0 0 0 .7 0 13 13 0 0 0 4.9-3.2" />
     <path
       d="M9.3 3.5c.7-.4 1.3-.8 1.9-1.2a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1v7a8 8 0 0 1-.3 2.3"
+    />
+  </svg>`,
+  bookOpen: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 7v14" />
+    <path
+      d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
     />
   </svg>`,
   star: html`<svg viewBox="0 0 24 24" aria-hidden="true">

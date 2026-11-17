@@ -181,6 +181,20 @@ export interface BrowserWindowOptions {
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
   readonly onFocus?: () => void;
+  /**
+   * Called when the main frame of a tab's web page has loaded, when its page changes its
+   * address with the History API, and when the tab is shown, for the reader view's check.
+   */
+  readonly onPageEvent?: (
+    window: BrowserWindowController,
+    tabId: TabId,
+    contents: WebContents,
+    event: PageEvent,
+  ) => void;
+  /** Shows the reader view of a tab, or ends it, for the command `reader.toggle`. */
+  readonly onReaderCommand?: (window: BrowserWindowController, tabId: TabId) => void;
+  /** Whether the reader view is on, which a setting or a policy can turn off. */
+  readonly reader?: () => boolean;
   readonly gate: IpcGate;
   readonly router: IpcRouter;
   readonly logger: Logger;
@@ -318,6 +332,15 @@ export interface WindowHost {
   splitWithNewTab(id: TabId): void;
   /** The workspaces of the profile while the window has them. */
   workspaceList(): readonly Workspace[] | undefined;
+  /** Follows the keys, the focus and the context menu of a view that covers a tab's page. */
+  follow(id: TabId, view: WebContentsView): void;
+  /**
+   * Puts a view in the place of another one in the content area, while the other one shows; a
+   * popover or a question over the page closes, unless the overlay is to stay.
+   */
+  swap(old: WebContentsView, view: WebContentsView, overlay?: 'close' | 'keep'): void;
+  /** Gives a view the focus, once its page loads. */
+  focusView(contents: WebContents): void;
 }
 
 /** The code of the windows for their web pages, which loads with the first of them. */
@@ -346,7 +369,45 @@ export interface WebPages {
     id: TabId,
     allow: (contents: WebContents, address: string) => void,
   ): void;
+  /** Covers the page of a tab with a view, as {@link BrowserWindowController.cover} does. */
+  cover(host: WindowHost, id: TabId, cover: TabCover): boolean;
+  /** Ends the cover of a tab's page, as {@link BrowserWindowController.uncover} does. */
+  uncover(host: WindowHost, id: TabId, end: CoverEnd): void;
 }
+
+/**
+ * What happened to the web page of a tab: its main frame has `loaded`, the tab was `shown`, or
+ * the page `changed` its address with the History API.
+ */
+export type PageEvent = 'loaded' | 'shown' | 'changed';
+
+/**
+ * A view that covers the page of a tab, such as the reader view, while the page's own view stays
+ * alive outside the window. The content area, the keys, find, print and zoom reach the cover;
+ * save, the source and the developer tools reach the page.
+ */
+export interface TabCover {
+  readonly view: WebContentsView;
+  /**
+   * Whether a person asked for the cover, as with a click or a key: it takes the focus of a
+   * window that has it and closes a popover over the page. A cover that comes back by itself, as
+   * after a reload, leaves the focus and the popovers where they are, unless the page had the
+   * focus, which the cover then takes.
+   */
+  readonly asked: boolean;
+  /** The zoom that the tab shows while the cover shows, 1 for 100 %. */
+  readonly zoom: number;
+  /** Zooms the cover in or out by one step, or back to the default zoom. */
+  zoomBy(direction: 1 | -1 | 0): void;
+  /** Tells the cover why it ends; its view is out of the window by then, and it closes it. */
+  ended(end: CoverEnd): void;
+}
+
+/**
+ * Why a cover ends: it was `closed`, the page `navigated` elsewhere or `reloaded`, or the page
+ * is `gone`, as it crashed, failed, went to sleep or its tab closed.
+ */
+export type CoverEnd = 'closed' | 'navigated' | 'reloaded' | 'gone';
 
 /** The commands that move the focus, or the state of the window itself: they run at once. */
 const commandsNow = [
@@ -529,6 +590,8 @@ export interface TabEntry {
    * a reload, and the view drops them once that load ends.
    */
   clearing?: boolean | undefined;
+  /** The view that covers the page, such as the reader view, while it does. */
+  cover?: TabCover | undefined;
 }
 
 /**
@@ -887,6 +950,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           sleeping: tab.sleeping,
           split: this.sideOf(id),
           group: tab.group,
+          reader: tab.reader,
         }),
       ),
       activeTabId: active?.id ?? null,
@@ -1036,7 +1100,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @param contents - A tab view's `WebContents`, or none.
    */
   tabIdOf(contents: WebContents | undefined): TabId | undefined {
-    return [...this.entries].find(([, entry]) => entry.view.webContents === contents)?.[0];
+    return [...this.entries].find(
+      ([, entry]) =>
+        entry.view.webContents === contents || entry.cover?.view.webContents === contents,
+    )?.[0];
   }
 
   create(id: TabId, url: string, lazy = false, history?: TabHistory): void {
@@ -1119,9 +1186,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.shownSplit = split;
     this.shownActive = id;
     // Another window may have zoomed the site meanwhile.
-    const contents = this.shownViewOf(entry).webContents;
+    const contents = entry.view.webContents;
     if (entry.page === undefined && !contents.isDestroyed()) {
-      this.tabs.update(id, { zoom: contents.getZoomFactor() });
+      this.tabs.update(id, { zoom: entry.cover?.zoom ?? contents.getZoomFactor() });
+      if (before !== id) this.options.onPageEvent?.(this, id, contents, 'shown');
     }
     this.layout();
     // A page that took the focus keeps it; a change of the pages alone moves no focus, such as
@@ -1189,9 +1257,35 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return id !== undefined && id === this.tabs.active?.id && this.isShown(id) ? id : undefined;
   }
 
-  /** The view that shows the page of a tab in the content area: the tab's own view. */
+  /**
+   * The view that shows the page of a tab in the content area: the view that covers it, such as
+   * the reader view, or else the tab's own view.
+   */
   private shownViewOf(entry: TabEntry): WebContentsView {
-    return entry.view;
+    return entry.cover?.view ?? entry.view;
+  }
+
+  /**
+   * Covers the web page of a tab with a view, such as the reader view: the page's view leaves
+   * the window and stays alive, and the cover takes its place, gets the keys and the focus. The
+   * code for web pages, which every web page has loaded, does it.
+   * @param id - The tab.
+   * @param cover - The view and what it does when it ends.
+   * @returns Whether the cover shows; not over a page with a problem or one that is covered.
+   */
+  cover(id: TabId, cover: TabCover): boolean {
+    return this.webPages().loaded?.cover(this.windowHost(), id, cover) === true;
+  }
+
+  /**
+   * Ends the cover of a tab's page, which shows the page again where it was, unchanged.
+   * @param id - The tab.
+   * @param end - Why the cover ends.
+   */
+  uncover(id: TabId, end: CoverEnd = 'closed'): void {
+    if (this.entries.get(id)?.cover !== undefined) {
+      this.webPages().loaded?.uncover(this.windowHost(), id, end);
+    }
   }
 
   /** The tabs whose pages the content area shows, in the order of their views. */
@@ -1325,6 +1419,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   load(id: TabId, url: string): void {
+    this.uncover(id, 'navigated');
     this.wake(id);
     const entry = this.entries.get(id);
     if (entry === undefined) {
@@ -1346,8 +1441,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
-   * Paints the window and the views of internal pages in the current light or dark mode, and
-   * gives the window controls the colors of the theme.
+   * Paints the window, the views of internal pages and the covers of pages, such as the reader
+   * view, in the current light or dark mode, and gives the window controls the colors of the
+   * theme.
    */
   repaintBackground(): void {
     if (this.window.isDestroyed()) {
@@ -1358,6 +1454,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.shell.setBackgroundColor(color);
     for (const entry of this.entries.values()) {
       if (entry.page !== undefined) entry.view.setBackgroundColor(color);
+      // A cover, such as the reader view, has the background of the window under its page.
+      entry.cover?.view.setBackgroundColor(color);
     }
     this.fitTitleBar();
   }
@@ -1583,7 +1681,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * @returns Whether the find bar was open.
    */
   private closeFind(id: TabId): boolean {
-    const contents = this.entries.get(id)?.view.webContents;
+    const entry = this.entries.get(id);
+    const contents = entry === undefined ? undefined : this.shownViewOf(entry).webContents;
     if (contents !== undefined && !contents.isDestroyed()) contents.stopFindInPage('keepSelection');
     if (this.finding === null) return false;
     this.finding = null;
@@ -1613,8 +1712,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.webPages().loaded?.applyDefaultZoom(this.windowHost(), factor);
   }
 
-  /** The web contents of a tab that shows a web page, and no internal page or problem. */
-  private webContentsOf(id: TabId): WebContents | undefined {
+  /**
+   * The web contents of a tab's web page, also while a cover shows over it; `undefined` for one
+   * of the browser's own pages and a tab without a view.
+   */
+  webContentsOf(id: TabId): WebContents | undefined {
     const entry = this.entries.get(id);
     return entry === undefined || entry.page !== undefined || entry.view.webContents.isDestroyed()
       ? undefined
@@ -1767,6 +1869,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * the background may still show an element in full screen; it ends with the page.
    */
   private dropView(id: TabId, entry: TabEntry): void {
+    this.uncover(id, 'gone');
     this.entries.delete(id);
     entry.iconLoad?.abort();
     entry.iconLoad = undefined;
@@ -1935,6 +2038,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       // A video or another element in full screen covers the whole window, which takes the
       // whole screen until the page leaves full screen, unless the user put it in full screen.
       contents.on('enter-html-full-screen', () => {
+        this.uncover(id);
         this.fullScreenTab = id;
         if (!this.window.isFullScreen()) this.setPageFullScreen(true);
         this.layout();
@@ -1958,19 +2062,31 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     contents.on('did-navigate', sync);
     contents.on('did-navigate-in-page', sync);
     contents.on('page-title-updated', sync);
+    this.follow(id, view, page === undefined);
+    return { view, page, registration };
+  }
+
+  /**
+   * Follows the keys, the focus and the context menu of a view that shows the page of a tab: its
+   * own view, or a view that covers it.
+   * @param id - The tab.
+   * @param view - The view.
+   * @param web - Whether the view shows a web page, whose typing keeps its tab awake.
+   */
+  private follow(id: TabId, view: WebContentsView, web: boolean): void {
+    const contents = view.webContents;
     contents.on('before-input-event', (event, input) => {
       const taken = this.intercept(event, input, contents.id);
       // A web page that people type into may hold changes that it has not saved yet; the code
       // for web pages takes note of it, which is there before the page loads.
-      if (!taken && page === undefined) {
-        this.webPages().loaded?.typed(this.windowHost(), contents, input);
-      }
+      if (!taken && web) this.webPages().loaded?.typed(this.windowHost(), contents, input);
     });
     // A click into the side of a split view without the focus gives its page the focus, which
     // makes its tab the active one. Pages take no focus by themselves (`focusOnNavigation`).
     contents.on('focus', () => {
-      if (this.entries.get(id)?.view !== view || id === this.tabs.active?.id) return;
-      if (!this.tabs.shown.includes(id)) return;
+      const entry = this.entries.get(id);
+      if (entry === undefined || this.shownViewOf(entry) !== view) return;
+      if (id === this.tabs.active?.id || !this.tabs.shown.includes(id)) return;
       this.focusing = id;
       try {
         this.tabs.activate(id);
@@ -1979,7 +2095,6 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       }
     });
     this.forwardContextMenu(view, id);
-    return { view, page, registration };
   }
 
   /**
@@ -2124,9 +2239,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       url: contents.getURL() || entry.requested,
       title: contents.getTitle(),
       loading: contents.isLoading(),
-      canGoBack: (steps && history.canGoBack()) || entry.history.canGoBack,
+      // Back ends a cover, such as the reader view.
+      canGoBack:
+        entry.cover !== undefined || (steps && history.canGoBack()) || entry.history.canGoBack,
       canGoForward: (steps && history.canGoForward()) || entry.history.canGoForward,
-      zoom: contents.getZoomFactor(),
+      zoom: entry.cover?.zoom ?? contents.getZoomFactor(),
     });
   }
 
@@ -2172,11 +2289,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const old = entry.view;
     const oldRegistration = entry.registration;
     const focused = old.webContents.isFocused();
-    // The new view shows its own page, not the problem, the icon or the sound of the old one:
-    // the old view's events no longer count, and a new page plays no sound until it says so.
+    // The new view shows its own page, not the problem, the icon, the sound or the article of
+    // the old one: the old view's events no longer count, a new page plays no sound until it
+    // says so, and a web page has an article only once it was checked.
     if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
     this.dropFavicon(id);
-    this.tabs.update(id, { audible: false });
+    this.tabs.update(id, { audible: false, reader: 'none' });
     // The new view's first page is a page of its own, not the one that a waking tab restores.
     Object.assign(entry, this.createView(id, url), {
       requested: url,
@@ -2184,19 +2302,31 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       clearing: undefined,
     });
     // The new view takes the place of the old one in the content area.
-    const place = this.shown.indexOf(old);
-    if (place !== -1 && !this.window.isDestroyed()) {
-      this.overlay?.close();
-      this.detachPage(old);
-      this.attachPage(entry.view, place);
-      this.layout();
-    }
+    this.swap(old, entry.view);
     this.close(old, oldRegistration);
     start(entry.view.webContents);
     if (focused) {
       this.focusView(entry.view.webContents);
     }
     this.sync(id, entry.view.webContents);
+  }
+
+  /**
+   * Puts a view in the place of another one in the content area, while the other one shows: a
+   * popover or a question over the page closes, unless the overlay is to stay, as for a cover
+   * that comes back by itself. The overlay stays above the new view.
+   */
+  private swap(
+    old: WebContentsView,
+    view: WebContentsView,
+    overlay: 'close' | 'keep' = 'close',
+  ): void {
+    const place = this.shown.indexOf(old);
+    if (place === -1 || this.window.isDestroyed()) return;
+    if (overlay === 'close') this.overlay?.close();
+    this.detachPage(old);
+    this.attachPage(view, place);
+    this.layout();
   }
 
   /** Closes a tab view that no longer shows a tab. */
@@ -2345,6 +2475,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       sideOf: (id) => this.sideOf(id),
       splitWithNewTab: (id) => this.splitWithNewTab(id),
       workspaceList: () => this.workspaceList(),
+      follow: (id, view) => this.follow(id, view, false),
+      swap: (old, view, overlay) => this.swap(old, view, overlay),
+      focusView: (contents) => this.focusView(contents),
     };
     return this.host;
   }

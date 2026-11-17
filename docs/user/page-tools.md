@@ -1,6 +1,6 @@
 # Page tools
 
-> **Status:** available from 0.1.0-beta.4.
+> **Status:** available from 0.1.0-beta.4; the reader view from 0.1.0-beta.7.
 
 These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; the browser menu at the end of the toolbar has them too, Find, Print and Save page as with the others and View source and Developer tools under More tools, and on macOS the File and View menus of the menu bar. On the browser's own pages, such as the settings, these items cannot be chosen.
 
@@ -27,6 +27,17 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 ## Developer tools
 
 `F12` or `Ctrl+Shift+I` (`Command+Option+I`) opens the developer tools of the page in a window of their own, and closes them again. Inspect at the end of the context menu opens them at the element you clicked. Organizations can turn the developer tools off with the policy `DeveloperToolsAvailability`, which also takes them out of the browser menu; see the [policies](../architecture/enterprise.md).
+
+## Reader view
+
+On a page with an article, such as a news story or a blog post, a button with an open book shows next to the address bar. It shows the article alone, in the colors and the font of the browser: its title, who wrote it, when it was published and how long it takes to read, then its text with its pictures, lists, quotes, code and tables, without menus, ads, comments, sidebars and cookie notices. `F9` (`Option+Command+R` on macOS) and **Reader view** in the browser menu, after Find, do the same; on macOS, the View menu has it too. The button, the key and the item end the reader view again, and so does Back, also with the back button of a mouse. The page is then where it was, as it did not load again, and gets the keys again, such as Space to scroll.
+
+- **Look:** the reader view takes the colors of the theme and the accent color, light or dark with the color mode, and only dark ones in a private window. Its font is the font of the browser, or the serif font of web pages if you choose it under [Page tools](settings.md#page-tools) in the settings. Its text has the size of web pages.
+- **Zoom:** the zoom keys change the size of its text in the steps of page zoom. The address bar shows that zoom, and a click on it, or `Ctrl+0` (`Command+0`), returns to the default zoom. The site keeps its own zoom.
+- **Tools:** Find and Print work on the article. Save page as, View source and the developer tools of the keys and menus work on the page; Inspect in the context menu shows the reader view's own document.
+- **Links:** a link of the article opens in its tab, which ends the reader view; a middle click or the context menu opens it in a new tab. Reload ends the reader view and opens it again once the page has loaded, without taking the focus from what you type meanwhile, such as an address.
+
+Astela looks for the article in the page itself, in a part of the page that its scripts cannot see, and nothing leaves your computer. It shows what the page has loaded, also without a network; the pictures load from the site, with the rules of the content blocker for that site. A very long article shows its first part, with a note at its end. Pages that load their text only while you scroll may show less of it. The browser's own pages, pages that could not load and PDF documents have no reader view, and a tab that went to sleep shows its page when it wakes. Turn off **Offer the reader view** in the settings to remove the button, the items and the key; organizations can turn it off with the policy `ReaderViewEnabled`.
 
 ## PDF documents
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md) adds the layer `app/src/page-scripts` for the scripts that the browser runs in web pages, which may import `domain` and `shared` and neither Node nor Electron.
 
 ## Date
 

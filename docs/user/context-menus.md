@@ -14,6 +14,8 @@ A right-click opens a context menu with the commands that fit what you clicked. 
 
 Menus in a web page end with Inspect, which opens the [developer tools](page-tools.md#developer-tools) at the element you clicked. Inspect is missing on the browser's own pages, and where an organization turns the developer tools off with the policy `DeveloperToolsAvailability`.
 
+The [reader view](page-tools.md#reader-view) has the menus of a web page. There, Back ends the reader view, and Inspect shows the reader view's own document.
+
 An image inside a link gets the commands of both. A command that cannot run at the moment is grayed out, such as Undo in a field you have not changed.
 
 - **New tabs:** links and images open in a new tab next to the page, in the background. Several of them line up in the order you opened them. A search opens in a new tab in the foreground. Only web addresses (`http` and `https`) open from a page. Links and images with other addresses, such as internal pages of the browser, local files or scripts, do not open from the menu, but their address can be copied.

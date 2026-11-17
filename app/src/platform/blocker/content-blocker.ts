@@ -1,5 +1,9 @@
 import type { RequestType } from '@ghostery/adblocker';
-import type { OnBeforeRequestListenerDetails, OnHeadersReceivedListenerDetails } from 'electron';
+import type {
+  OnBeforeRequestListenerDetails,
+  OnHeadersReceivedListenerDetails,
+  WebContents,
+} from 'electron';
 import type {
   HeaderAdditions,
   RequestDecision,
@@ -100,7 +104,7 @@ export class ContentBlocker implements RequestInterceptor {
       return this.loaded.mainFrame(details.url);
     }
     const type = requestTypes[details.resourceType];
-    const sourceUrl = pageUrl(details);
+    const sourceUrl = pageUrl(details, this.options.pageOf);
     if (
       type === undefined ||
       !/^(?:https?|wss?):/i.test(details.url) ||
@@ -215,8 +219,22 @@ export class ContentBlocker implements RequestInterceptor {
  * before it, or has no address, and so has the tab. For a request of the top document, the
  * origin of the document that started it decides, or else its referrer, which names that
  * document; a request of an embedded frame belongs to the top page, which is there by then.
+ * A view that shows a page in place of its own document, such as a reader view, makes the
+ * requests of that page; its own address is never read, as it can be very long.
+ * @param details - The request.
+ * @param pageOf - The page that a view shows in place of its own document, if any.
  */
-function pageUrl(details: OnBeforeRequestListenerDetails): string {
+function pageUrl(
+  details: OnBeforeRequestListenerDetails,
+  pageOf: ((contents: WebContents) => string | undefined) | undefined,
+): string {
+  try {
+    const contents = pageOf === undefined ? undefined : details.webContents;
+    const shown = contents === undefined ? undefined : pageOf?.(contents);
+    if (shown !== undefined) return shown;
+  } catch {
+    // A view that is gone shows nothing.
+  }
   let top: string | undefined;
   let fromTop = true;
   try {

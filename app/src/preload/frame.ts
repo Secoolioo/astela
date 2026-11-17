@@ -5,6 +5,7 @@ import {
 } from '@ghostery/adblocker-extended-selectors';
 import { ipcRenderer, webFrame } from 'electron';
 import { noAppRegionCss } from '../shared/app-region.ts';
+import { scriptletWorld } from '../shared/isolated-worlds.ts';
 
 /**
  * Runs in every frame of web pages, top frames and iframes alike. It first keeps the frame
@@ -45,10 +46,11 @@ const isFrameRules = (value: unknown): value is FrameRules =>
   'elements' in value &&
   typeof value.elements === 'boolean';
 
-/** Marks a scriptlet that runs in an isolated world; tools/blocker/build.ts adds it. */
+/**
+ * Marks a scriptlet that runs in an isolated world of its own, `scriptletWorld`, rather than in
+ * the page's; tools/blocker/build.ts adds it. The preload itself runs in Electron's world 999.
+ */
 const isolatedMark = '/*astela:isolated-world*/';
-/** The isolated world of such scriptlets; the preload itself runs in Electron's world 999. */
-const scriptletWorld = 1001;
 
 /**
  * Wraps a scriptlet in a scope of its own: scriptlets bring their helpers as declarations,

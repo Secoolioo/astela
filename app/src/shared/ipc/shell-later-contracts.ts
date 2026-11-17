@@ -235,6 +235,17 @@ export const OpenTabMenu = defineRequest({
   capability: 'shell',
 });
 
+/**
+ * Shows the reader view of the active tab, or ends it, as the button next to the address bar
+ * and the shortcut do.
+ */
+export const ToggleReader = defineRequest({
+  channel: 'shell.toggleReader',
+  request: Empty,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Shows the suggestions for text typed in the address bar, below the field. */
 export const SuggestAddresses = defineRequest({
   channel: 'omnibox.suggest',
@@ -309,4 +320,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   OpenGroupEditor,
   OpenWorkspaces,
   MoveTabToWorkspace,
+  ToggleReader,
 ];

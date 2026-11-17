@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { lineColor, readerRadii } from '../../domain/reader/document.ts';
+import { systemFontStack } from '../../shared/fonts.ts';
 import { builtInThemes, lineOpacity, paletteTokens, statusColors } from '../../shared/themes.ts';
 
 /** The design tokens of the browser's own views, which every view loads. */
@@ -43,13 +45,6 @@ function declarations(selector: string, inside?: string): Map<string, string> {
   );
 }
 
-/** `--line-1` as `tokens.css` mixes it from `--border-1` at an opacity. */
-function line(opacity: number): string {
-  return opacity === 1
-    ? 'var(--border-1)'
-    : `color-mix(in oklch, var(--border-1) ${String(Math.round(opacity * 100))}%, transparent)`;
-}
-
 /** The palette tokens of a rule, by token. */
 function palette(rule: Map<string, string>): Record<string, string | undefined> {
   return Object.fromEntries(paletteTokens.map((token) => [token, rule.get(`--${token}`)]));
@@ -68,12 +63,14 @@ describe('tokens.css', () => {
   });
 
   it('mixes the line and the raised surface from the palette in every mode', () => {
-    expect(light.get('--line-1')).toBe(line(lineOpacity.light));
+    expect(light.get('--line-1')).toBe(lineColor(lineOpacity.light));
     expect(light.get('--surface-raised')).toBe('var(--surface-1)');
     // The line of the dark mode lets 40 % of the surface below it show through.
-    expect(line(lineOpacity.dark)).toBe('color-mix(in oklch, var(--border-1) 60%, transparent)');
+    expect(lineColor(lineOpacity.dark)).toBe(
+      'color-mix(in oklch, var(--border-1) 60%, transparent)',
+    );
     for (const rule of [dark, privateWindow]) {
-      expect(rule.get('--line-1')).toBe(line(lineOpacity.dark));
+      expect(rule.get('--line-1')).toBe(lineColor(lineOpacity.dark));
       expect(rule.get('--surface-raised')).toBe(
         'color-mix(in oklch, var(--surface-1), var(--surface-2))',
       );
@@ -84,5 +81,15 @@ describe('tokens.css', () => {
     expect(privateWindow.get('color-scheme')).toBe('dark');
     const withoutScheme = new Map([...privateWindow].filter(([name]) => name !== 'color-scheme'));
     expect(withoutScheme).toEqual(dark);
+  });
+
+  it('names the fonts of the systems that the reader view takes as the font of the browser', () => {
+    expect(declarations(':root').get('--font-system')).toBe(systemFontStack);
+  });
+
+  it('gives the reader view the radii of the tokens', () => {
+    for (const [name, value] of Object.entries(readerRadii)) {
+      expect(declarations(':root').get(`--${name}`)).toBe(value);
+    }
   });
 });

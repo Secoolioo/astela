@@ -158,6 +158,9 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
         window.zoom(active.id, command === 'zoom.in' ? 1 : command === 'zoom.out' ? -1 : 0);
       }
       break;
+    case 'reader.toggle':
+      if (active !== undefined) options.onReaderCommand?.(window, active.id);
+      break;
     case 'page.reloadHard':
     case 'page.print':
     case 'page.save':
@@ -165,9 +168,19 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'devtools.toggle': {
       // These work on web pages; the browser's own pages keep them to themselves.
       const contents = active === undefined ? undefined : host.webContentsOf(active.id);
-      if (contents === undefined) break;
-      if (command === 'page.reloadHard') contents.reloadIgnoringCache();
-      else options.onPageCommand?.(window, command, contents);
+      if (contents === undefined || active === undefined) break;
+      // A cover, such as the reader view, prints what it shows; the other tools are the page's.
+      const cover = host.entries.get(active.id)?.cover;
+      if (command === 'page.reloadHard') {
+        window.uncover(active.id, 'reloaded');
+        contents.reloadIgnoringCache();
+      } else {
+        options.onPageCommand?.(
+          window,
+          command,
+          command === 'page.print' && cover !== undefined ? cover.view.webContents : contents,
+        );
+      }
       break;
     }
     case 'app.about':
@@ -283,12 +296,22 @@ function pageAction(
   if (entry === undefined) {
     return;
   }
+  // Back ends a cover over the page, such as the reader view, which leaves the page as it was;
+  // Forward and Reload end it, and act on the page.
+  const covered = entry.cover !== undefined && action !== 'stop';
+  if (covered) {
+    host.window.uncover(
+      id,
+      action === 'reload' ? 'reloaded' : action === 'back' ? 'closed' : 'navigated',
+    );
+  }
   const contents = entry.view.webContents;
   const history = contents.navigationHistory;
   // Entries that go once a load ends lead nowhere.
   const steps = entry.clearing !== true;
   switch (action) {
     case 'back':
+      if (covered) break;
       if (steps && history.canGoBack()) history.goBack();
       else host.restore(id, entry, entry.history.goBack(host.snapshot(entry)));
       break;
@@ -304,7 +327,8 @@ function pageAction(
       break;
   }
   // Pages take no focus by themselves when they load: the page of the active tab gets it, as
-  // after the buttons of the toolbar. A window in the background stays there.
+  // after the buttons of the toolbar, also the page that a cover showed over. A window in the
+  // background stays there.
   const { window } = host;
   if (action !== 'stop' && id === window.tabs.active?.id && window.window.isFocused()) {
     window.focusContent();
@@ -320,15 +344,18 @@ function context(host: WindowHost): CommandContext {
   const { window, options } = host;
   const active = window.tabs.active;
   return {
-    tabs: window.tabs.all.map(({ id, url, pinned, canGoBack, canGoForward, muted, group }) => ({
-      url,
-      pinned,
-      canGoBack,
-      canGoForward,
-      muted,
-      split: host.sideOf(id),
-      group,
-    })),
+    tabs: window.tabs.all.map(
+      ({ id, url, pinned, canGoBack, canGoForward, muted, group, reader }) => ({
+        url,
+        pinned,
+        canGoBack,
+        canGoForward,
+        muted,
+        split: host.sideOf(id),
+        group,
+        reader,
+      }),
+    ),
     activeIndex: active === undefined ? -1 : window.tabs.all.indexOf(active),
     canReopen: window.tabs.canReopen,
     finding: window.findOpen,
@@ -337,6 +364,7 @@ function context(host: WindowHost): CommandContext {
     developerTools: options.developerTools?.() ?? true,
     palette: options.openPalette !== undefined && (options.commandPalette?.() ?? true),
     splitView: window.splitView(),
+    reader: options.reader?.() ?? false,
     workspaces: host.workspaceList()?.length ?? 0,
   };
 }
@@ -550,7 +578,8 @@ function renewView(host: WindowHost, id: TabId, history: TabHistory | undefined)
 
 /**
  * Closes the view of a tab, which keeps its history until it wakes, and shows the tab as a tab
- * that sleeps, with its title and icon.
+ * that sleeps, with its title and icon. It has no page, and so no article, until it has woken
+ * and its page was checked.
  * @param host - The window.
  * @param id - The tab.
  * @param entry - The view of the tab.
@@ -566,6 +595,7 @@ function putToSleep(host: WindowHost, id: TabId, entry: TabEntry, dormant: Dorma
     loading: false,
     audible: false,
     problem: null,
+    reader: 'none',
     canGoBack: moves.back,
     canGoForward: moves.forward,
   });

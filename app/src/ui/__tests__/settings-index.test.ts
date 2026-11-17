@@ -72,6 +72,7 @@ describe('settingsIndex', () => {
       'startup',
       'newtab',
       'downloads',
+      'pageTools',
       'performance',
       'languages',
       'search',
@@ -81,6 +82,23 @@ describe('settingsIndex', () => {
       'import',
       'setup',
     ]);
+  });
+
+  it('lists the switch of the reader view before its font in the section of page tools', () => {
+    const tools = settingsIndex.find((section) => section.id === 'pageTools');
+    expect(tools?.title).toBe('settings.pageTools');
+    expect(tools?.rows.map((candidate) => candidate.id)).toEqual(['reader.enabled', 'reader.font']);
+    // Words of both languages find both rows, and the font row finds its choices.
+    for (const id of ['reader.enabled', 'reader.font']) {
+      const text = textOf(row(id).keys, row(id).words);
+      for (const word of ['reader', 'leseansicht', 'article', 'artikel']) {
+        expect(text).toContain(word);
+      }
+    }
+    const font = textOf(row('reader.font').keys, row('reader.font').words);
+    for (const word of ['serif', 'serifenschrift', 'font of the browser', 'schrift des browsers']) {
+      expect(font).toContain(word);
+    }
   });
 
   it('lists the switch of sleeping tabs before their time in the section of performance', () => {

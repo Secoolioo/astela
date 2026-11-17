@@ -16,6 +16,7 @@ const page = (tab: Partial<CommandTab> = {}): CommandTab => ({
   muted: false,
   split: null,
   group: null,
+  reader: 'none',
   ...tab,
 });
 
@@ -30,6 +31,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   developerTools: true,
   palette: true,
   splitView: true,
+  reader: true,
   workspaces: 1,
   ...change,
 });
@@ -98,6 +100,23 @@ describe('availableCommands', () => {
     expect(canRun('find.next', context())).toBe(false);
     expect(missing(['find.next', 'find.previous'], context({ finding: true }))).toEqual([]);
     expect(canRun('find.next', context({ finding: true, webPage: false }))).toBe(false);
+  });
+
+  it('shows and ends the reader view on pages with an article, while the reader view is on', () => {
+    expect(canRun('reader.toggle', context())).toBe(false);
+    expect(canRun('reader.toggle', context({ tabs: [page({ reader: 'available' })] }))).toBe(true);
+    expect(canRun('reader.toggle', context({ tabs: [page({ reader: 'open' })] }))).toBe(true);
+    expect(
+      canRun('reader.toggle', context({ tabs: [page({ reader: 'available' })], reader: false })),
+    ).toBe(false);
+    expect(canRun('reader.toggle', context({ tabs: [], activeIndex: -1 }))).toBe(false);
+    // The browser's own pages have no reader view, whatever their tab still says.
+    expect(
+      canRun(
+        'reader.toggle',
+        context({ tabs: [page({ url: 'app://newtab/', reader: 'available' })] }),
+      ),
+    ).toBe(false);
   });
 
   it('follows the policies for private windows and developer tools', () => {

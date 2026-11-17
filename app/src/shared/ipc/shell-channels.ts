@@ -25,6 +25,7 @@ export const shellLaterChannels = [
   'groups.openEditor',
   'workspaces.open',
   'workspaces.moveTab',
+  'shell.toggleReader',
 ] as const;
 
 /**

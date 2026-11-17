@@ -20,6 +20,9 @@
       "path": "src/preload"
     },
     {
+      "path": "src/page-scripts"
+    },
+    {
       "path": "src/ui"
     },
     {

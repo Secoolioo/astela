@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0047](0047-address-suggestions-in-a-part-of-the-overlay.md), and amends [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md) and the platform rule of the [design system](../architecture/design-system.md#design-rules). [ADR 0052](0052-command-palette-and-tab-search-in-the-overlay.md) adds the command palette and tab search to the browser menu and to the View menu of macOS, holds the keys typed after the palette's shortcut before Alt alone is checked, and lets the menu bar of macOS offer its commands to a popover first.
+Accepted. Extends [ADR 0034](0034-overlay-view-for-popovers-and-prompts.md) and [ADR 0047](0047-address-suggestions-in-a-part-of-the-overlay.md), and amends [ADR 0046](0046-motion-rounder-shapes-and-one-shadow.md) and the platform rule of the [design system](../architecture/design-system.md#design-rules). [ADR 0052](0052-command-palette-and-tab-search-in-the-overlay.md) adds the command palette and tab search to the browser menu and to the View menu of macOS, holds the keys typed after the palette's shortcut before Alt alone is checked, and lets the menu bar of macOS offer its commands to a popover first. [ADR 0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md) adds **Reader view** after **Find…**, the first item with a check mark, and the reader to the View menu of macOS.
 
 ## Date
 

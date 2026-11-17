@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md) adds a budget of 20 KiB for each script that the browser runs in web pages, which do not count as preloads.
 
 ## Date
 

@@ -1,3 +1,4 @@
+import type { WebContents } from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
 
 /**
@@ -48,6 +49,11 @@ export interface ContentBlockerOptions {
   readonly onBlocked?: (webContentsId: number) => void;
   /** Called when the status of the content blocker changes. */
   readonly onStatus?: (status: BlockerStatus) => void;
+  /**
+   * The address of the page that a view shows in place of its own document, such as the page
+   * under a reader view, whose requests count as those of that page; `undefined` for others.
+   */
+  readonly pageOf?: (contents: WebContents) => string | undefined;
   /** The groups of optional lists that are on; read for every request and frame. */
   readonly extras?: () => readonly ExtraLists[];
   readonly logger: Logger;

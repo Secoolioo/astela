@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view and workspaces, and the moves of tabs into and out of groups, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view, workspaces and the reader view, and the moves of tabs into and out of groups, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -52,6 +52,7 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Zoom out                       | `Ctrl+-`                                        |
 | Reset zoom                     | `Ctrl+0`                                        |
 | Full screen                    | `F11`                                           |
+| Reader view                    | `F9`                                            |
 | Print                          | `Ctrl+P`                                        |
 | Save the page                  | `Ctrl+S`                                        |
 | View the source                | `Ctrl+U`                                        |
@@ -97,6 +98,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | Zoom out                       | `Command+-`                                                           |
 | Reset zoom                     | `Command+0`                                                           |
 | Full screen                    | `Control+Command+F`                                                   |
+| Reader view                    | `Option+Command+R`                                                    |
 | Print                          | `Command+P`                                                           |
 | Save the page                  | `Command+S`                                                           |
 | View the source                | `Command+Option+U`                                                    |
@@ -105,6 +107,8 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 `Command+Left Arrow` and `Command+Right Arrow` move the cursor to the start and the end of the line, as everywhere on macOS, so they do not go back and forward. `Command+Tab` switches between apps. **Open the menu** has no shortcut on macOS, whose menu bar opens the menus of Astela; you can give it one.
 
 On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, such as German or French, press Command together with the keys that type the bracket.
+
+**Reader view** shows the article of a page in the [reader view](page-tools.md#reader-view), on pages that have one, and ends it again; the key works in the page and in the reader view. While the reader view is off in the settings, the key reaches the page.
 
 **Open or end split view** opens a new tab page beside the active tab in a [split view](tabs.md#split-view), or ends the split view of the active tab. `Command+Shift+S` stays free, as it means Save As on macOS. While split view is off in the settings, the shortcut reaches the page.
 
