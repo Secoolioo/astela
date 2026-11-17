@@ -10,7 +10,7 @@ A group keeps tabs that belong together side by side in the tab strip, under a n
 - When the window has groups already, the menu offers **Add to group** instead: **New group** makes a new one, and each group of the window takes the tab at its end. A group without a name is listed as _Group with “…”_, after the title of its first tab; a long title is cut after 300 characters.
 - **Remove from group** takes a tab out of its group, right after the group.
 
-Pinned tabs are never in a group: pinning a tab takes it out of its group. The two tabs of a [split view](tabs.md#split-view) are always in the same group. When the last tab of a group closes or leaves it, the group is gone.
+Pinned tabs are never in a group: pinning a tab takes it out of its group. The two tabs of a [split view](tabs.md#split-view) are always in the same group. When the last tab of a group closes or leaves it, the group is gone. A group belongs to one [workspace](workspaces.md): a tab that moves into another workspace leaves its group.
 
 ## What a group shows
 

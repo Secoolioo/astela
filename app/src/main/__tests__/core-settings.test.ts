@@ -16,6 +16,9 @@ import {
   StartupSetting,
   TabSleepAfterSetting,
   TabSleepSetting,
+  WorkspacesEnabledSetting,
+  WorkspacesRemovedSetting,
+  WorkspacesSetting,
 } from '../core-settings.ts';
 import { sleepAfterSeconds } from '../../shared/tab-sleep.ts';
 
@@ -123,6 +126,36 @@ describe('SplitViewSetting', () => {
     );
     expect(v.safeParse(SplitViewSetting.schema, false).success).toBe(true);
     expect(v.safeParse(SplitViewSetting.schema, 'off').success).toBe(false);
+  });
+});
+
+describe('the settings of the workspaces', () => {
+  it('turns workspaces on by default, and a policy can set or recommend it', () => {
+    expect(WorkspacesEnabledSetting).toMatchObject({
+      key: 'workspaces.enabled',
+      default: true,
+      scope: 'global',
+      policy: { name: 'WorkspacesEnabled', recommended: true },
+      ui: { section: 'appearance', control: 'toggle' },
+    });
+    expect(coreSettings).toContain(WorkspacesEnabledSetting);
+    expect(settingPolicies(coreSettings)).toContainEqual(
+      expect.objectContaining({ name: 'WorkspacesEnabled', recommended: true }),
+    );
+    expect(v.safeParse(WorkspacesEnabledSetting.schema, 'off').success).toBe(false);
+  });
+
+  it('keeps the list of the workspaces and the deleted ones, which no policy sets', () => {
+    expect(WorkspacesSetting.default).toEqual([
+      { id: 'default', name: '', icon: 'home', color: 'blue', isolated: false },
+    ]);
+    expect(WorkspacesSetting.policy).toBeUndefined();
+    expect(WorkspacesRemovedSetting.policy).toBeUndefined();
+    expect(coreSettings).toContain(WorkspacesSetting);
+    expect(coreSettings).toContain(WorkspacesRemovedSetting);
+    expect(v.safeParse(WorkspacesRemovedSetting.schema, ['w1', 'w2']).success).toBe(true);
+    // An id that leaves the folder of the partitions is never kept.
+    expect(v.safeParse(WorkspacesRemovedSetting.schema, ['../w1']).success).toBe(false);
   });
 });
 

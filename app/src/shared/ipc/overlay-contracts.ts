@@ -1,6 +1,8 @@
 import * as v from 'valibot';
 import { shortcutPattern, windowCommands } from '../shortcuts.ts';
 import { swatches } from '../swatches.ts';
+import { workspaceIcons } from '../workspace-icons.ts';
+import { Workspace, WorkspaceId, workspaceLimit, workspaceNameLimit } from '../workspaces.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 import { OverlayAnchor } from './overlay-anchor.ts';
 import { FaviconKey, GroupId } from './shell-contracts.ts';
@@ -263,6 +265,34 @@ const GroupEditor = v.strictObject({
 /** The popover of a group of tabs. */
 export type GroupEditor = v.InferOutput<typeof GroupEditor>;
 
+/**
+ * A workspace in the list of the workspaces: the workspace, how many tabs it has in the window
+ * of the list, whether one of them plays sound, and the shortcut that shows it, if any.
+ */
+const WorkspaceItem = v.strictObject({
+  ...Workspace.entries,
+  tabs: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
+  audible: v.boolean(),
+  shortcut: v.nullable(v.pipe(v.string(), v.maxLength(40), v.regex(shortcutPattern))),
+});
+
+/**
+ * The list of the workspaces at the button of the workspaces: the workspaces in their order,
+ * the one that the window shows, whether the list is full, so that no workspace can be added,
+ * and whether the browser runs on macOS, whose shortcuts look different.
+ */
+const WorkspaceList = v.strictObject({
+  kind: v.literal('workspaces'),
+  anchor: OverlayAnchor,
+  mac: v.boolean(),
+  current: WorkspaceId,
+  full: v.boolean(),
+  items: v.pipe(v.array(WorkspaceItem), v.minLength(1), v.maxLength(workspaceLimit)),
+});
+
+/** The list of the workspaces. */
+export type WorkspaceList = v.InferOutput<typeof WorkspaceList>;
+
 /** A command of the window. */
 const PaletteCommandId = v.picklist(windowCommands);
 
@@ -316,6 +346,7 @@ export const OverlayContent = v.nullable(
     BookmarkEditor,
     CommandPalette,
     GroupEditor,
+    WorkspaceList,
   ]),
 );
 
@@ -506,8 +537,8 @@ const PaletteScope = v.picklist(['all', 'tabs', 'bookmarks', 'history']);
 
 /**
  * A result of the palette from the browser process: an open tab with the icon of its page,
- * where it is and whether it sleeps, a bookmark, a visited page, a search with the host of its
- * search engine, or an address to open.
+ * where it is, whether it sleeps, its group and its workspace, a bookmark, a visited page, a
+ * search with the host of its search engine, or an address to open.
  */
 const PaletteItem = v.variant('kind', [
   v.strictObject({
@@ -517,6 +548,14 @@ const PaletteItem = v.variant('kind', [
     favicon: v.nullable(FaviconKey),
     place: v.picklist(['current', 'window', 'other']),
     sleeping: v.boolean(),
+    group: v.nullable(v.strictObject({ name: GroupName, color: v.picklist(swatches) })),
+    workspace: v.nullable(
+      v.strictObject({
+        name: Workspace.entries.name,
+        icon: v.picklist(workspaceIcons),
+        color: v.picklist(swatches),
+      }),
+    ),
   }),
   v.strictObject({
     kind: v.picklist(['bookmark', 'history']),
@@ -565,6 +604,55 @@ export const QueryPalette = defineRequest({
   }),
   capability: 'overlay',
   ratePerSecond: 60,
+});
+
+/** Shows another workspace in the window of the list of the workspaces, which closes. */
+export const SwitchWorkspace = defineRequest({
+  channel: 'overlay.switchWorkspace',
+  request: v.strictObject({ id: WorkspaceId }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Makes a workspace with a name, an icon and a color, and whether it keeps its cookies and
+ * sign-ins apart, which the window then shows, or renames a workspace or gives it another icon
+ * or color (`id`), which never changes whether it keeps them apart. The answer is the id of the
+ * workspace, or `null` when it could not be saved, such as with 20 workspaces.
+ */
+export const SaveWorkspace = defineRequest({
+  channel: 'overlay.saveWorkspace',
+  request: v.strictObject({
+    id: v.optional(WorkspaceId),
+    name: v.pipe(v.string(), v.maxLength(workspaceNameLimit)),
+    icon: v.picklist(workspaceIcons),
+    color: v.picklist(swatches),
+    isolated: v.boolean(),
+  }),
+  response: v.nullable(WorkspaceId),
+  capability: 'overlay',
+});
+
+/** Moves a workspace to another place in the list of the workspaces. */
+export const MoveWorkspace = defineRequest({
+  channel: 'overlay.moveWorkspace',
+  request: v.strictObject({
+    id: WorkspaceId,
+    index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(workspaceLimit - 1)),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Deletes a workspace, other than the default one: its tabs close in every window, and the
+ * cookies, site data and sign-ins of one that kept them apart are deleted.
+ */
+export const DeleteWorkspace = defineRequest({
+  channel: 'overlay.deleteWorkspace',
+  request: v.strictObject({ id: WorkspaceId }),
+  response: v.null(),
+  capability: 'overlay',
 });
 
 /** Opens a result of an answer of the palette by its place, and closes the palette. */

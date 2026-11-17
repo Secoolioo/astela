@@ -1,5 +1,6 @@
 import { clampRatio, splitRatio } from '../../shared/split-view.ts';
 import type { Swatch } from '../../shared/swatches.ts';
+import { defaultWorkspaceId } from '../../shared/workspaces.ts';
 
 /** How many closed tabs can be reopened. */
 export const closedTabLimit = 25;
@@ -63,6 +64,14 @@ export interface ReopenPlace {
   readonly group?: TabGroup;
 }
 
+/**
+ * The tabs of a workspace of a window as those outside the tab model read them: the workspace,
+ * its tabs in their order, its active tab and its split views.
+ */
+export type WorkspaceTabs<T extends StripTab> = Readonly<
+  Pick<TabStrip<T>, 'workspace' | 'all' | 'active' | 'splits' | 'has'>
+>;
+
 /** A tab that left a strip, and the tab that becomes active in its place. */
 export interface ClosedTab<T> {
   readonly tab: T;
@@ -85,8 +94,16 @@ export interface ClosedTab<T> {
  * what {@link StripTab} names, and `TabService` tells the views of the window what changed.
  * Groups of tabs follow the rules of `GroupedTabStrip` in `tab-groups.ts`, which takes the
  * place of this strip with the first group, so that a window without groups never loads them.
+ * The strip holds the tabs of one workspace; a window with several workspaces gets a strip for
+ * each of them in `WorkspaceStrips` of `workspace-strips.ts`, which takes the place of this
+ * strip with the window's second workspace.
  */
 export class TabStrip<T extends StripTab> {
+  /**
+   * The workspace whose tabs the strip holds; for the strips of several workspaces, the one
+   * that the window shows.
+   */
+  workspace: string;
   protected readonly tabs: T[] = [];
   protected activeId: string | undefined;
   /** The pairs of tabs that the window shows side by side. */
@@ -96,9 +113,30 @@ export class TabStrip<T extends StripTab> {
   /** The addresses of the tabs that closed, the most recent last. */
   protected readonly closed: string[] = [];
 
+  /** @param workspace - The workspace whose tabs the strip holds. */
+  constructor(workspace: string = defaultWorkspaceId) {
+    this.workspace = workspace;
+  }
+
   /** All tabs in display order. */
   get all(): readonly T[] {
     return this.tabs;
+  }
+
+  /** The strips of the workspaces that this strip holds, in their order: this strip alone. */
+  get strips(): readonly WorkspaceTabs<T>[] {
+    return [this];
+  }
+
+  /**
+   * Lets another kind of strip take the place of the strip of the tabs that the window shows,
+   * such as one with groups: of this strip, or of the shown strip among those of several
+   * workspaces.
+   * @param make - Makes the new strip from the shown one.
+   * @returns The strip that the window keeps.
+   */
+  withShown(make: (strip: TabStrip<T>) => TabStrip<T>): TabStrip<T> {
+    return make(this);
   }
 
   /** The active tab, if any. */
@@ -303,14 +341,15 @@ export class TabStrip<T extends StripTab> {
   /**
    * Takes a tab out of the strip and keeps its address, so that it can be opened again.
    * @param id - The tab.
+   * @param keep - Whether the tab can be opened again; not for a tab that moves elsewhere.
    * @returns The tab, and the one to activate in its place, or `undefined` when the tab is
    *   not in the strip.
    */
-  close(id: string): ClosedTab<T> | undefined {
+  close(id: string, keep = true): ClosedTab<T> | undefined {
     const index = this.indexOf(id);
     const [tab] = index === -1 ? [] : this.tabs.splice(index, 1);
     if (tab === undefined) return undefined;
-    this.closed.push(tab.url);
+    if (keep) this.closed.push(tab.url);
     if (this.closed.length > closedTabLimit) {
       this.closed.shift();
     }

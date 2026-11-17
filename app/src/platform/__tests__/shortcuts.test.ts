@@ -95,7 +95,20 @@ const windowsAndLinux: Row[] = [
   ['Ctrl++ on Swiss, Shift and the 1 key', press('+', { ...ctrlShift, code: 'Digit1' }), 'zoom.in'],
   ['no Ctrl+Shift+1 on English, typing !', press('!', { ...ctrlShift, code: 'Digit1' }), undefined],
   ['no AltGr+3 on French, typing #', press('#', { ...ctrl, ...alt, code: 'Digit3' }), undefined],
-  ['no Alt+1 on French, typing &', press('&', { ...alt, code: 'Digit1' }), undefined],
+  ['Alt+1 on French, typing &', press('&', { ...alt, code: 'Digit1' }), 'workspace.select1'],
+  ['Alt+1', press('1', { ...alt, code: 'Digit1' }), 'workspace.select1'],
+  ['Alt+9', press('9', { ...alt, code: 'Digit9' }), 'workspace.select9'],
+  // Alt with the number pad types the Alt codes of Windows.
+  ['no Alt+1 on the number pad', press('1', { ...alt, code: 'Numpad1' }), undefined],
+  ['no Alt+0 on the number pad', press('0', { ...alt, code: 'Numpad0' }), undefined],
+  // Without Num Lock, the keys of the pad are arrows and the like.
+  ['Alt+Left on the 4 of the pad', press('ArrowLeft', { ...alt, code: 'Numpad4' }), 'page.back'],
+  [
+    'Alt+Right on the 6 of the pad',
+    press('ArrowRight', { ...alt, code: 'Numpad6' }),
+    'page.forward',
+  ],
+  ['Alt+Home on the 7 of the pad', press('Home', { ...alt, code: 'Numpad7' }), 'page.home'],
   ['F11', press('F11'), 'window.fullscreen'],
   ['Ctrl+P', press('p', ctrl), 'page.print'],
   ['Ctrl+S', press('s', ctrl), 'page.save'],
@@ -224,6 +237,9 @@ const macOS: Row[] = [
   ['Cmd+] on InScript, a nukta', press('़', { ...cmd, code: 'BracketRight' }), 'page.forward'],
   ['no Cmd+Option+[ on Russian', press('х', { ...cmdOption, code: 'BracketLeft' }), undefined],
   ['no Cmd+ü on German, on the [ key', press('ü', { ...cmd, code: 'BracketLeft' }), undefined],
+  ['Ctrl+1 to the first workspace', press('1', { ...ctrl, code: 'Digit1' }), 'workspace.select1'],
+  ['Ctrl+9 to the ninth workspace', press('9', { ...ctrl, code: 'Digit9' }), 'workspace.select9'],
+  ['no Option+1, typing ¡', press('¡', { ...alt, code: 'Digit1' }), undefined],
   [
     'Cmd++ on German zooms in, not forward, on the ] key',
     press('+', { ...cmd, code: 'BracketRight' }),

@@ -209,6 +209,8 @@ const tab = (title: string, place: 'current' | 'window' | 'other'): PaletteItem 
   favicon: null,
   place,
   sleeping: false,
+  group: null,
+  workspace: null,
 });
 
 describe('mergeGroups', () => {

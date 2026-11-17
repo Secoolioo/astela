@@ -10,6 +10,7 @@ import { keyNamesOf } from '../ui-kit/key-names.ts';
 import { popoverStyles } from '../ui-kit/popover-styles.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
 import { TabIcons } from '../ui-kit/tab-icons.ts';
+import { workspaceIconSvg } from '../ui-kit/workspace-icons.ts';
 import {
   keptSelection,
   localGroups,
@@ -260,6 +261,45 @@ export class CommandPalette extends LitElement {
       .tag + .tag {
         margin-inline-start: 0;
       }
+      /* The group of a tab with a dot, and its workspace with its icon, in their colors. */
+      .place {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        max-width: 120px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .place .dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: var(--radius-pill);
+        background: var(--place-color);
+      }
+      .place svg {
+        flex: none;
+        color: var(--place-color);
+      }
+      [data-color='blue'] {
+        --place-color: var(--swatch-blue);
+      }
+      [data-color='teal'] {
+        --place-color: var(--swatch-teal);
+      }
+      [data-color='green'] {
+        --place-color: var(--swatch-green);
+      }
+      [data-color='orange'] {
+        --place-color: var(--swatch-orange);
+      }
+      [data-color='red'] {
+        --place-color: var(--swatch-red);
+      }
+      [data-color='graphite'] {
+        --place-color: var(--swatch-graphite);
+      }
       .none,
       .hint {
         margin: 0;
@@ -509,19 +549,42 @@ export class CommandPalette extends LitElement {
   }
 
   private renderRow(row: PaletteRow, place: number): TemplateResult {
-    // A tab that sleeps says so, as in the tab strip.
-    const sleeping = row.kind === 'item' && row.item.kind === 'tab' && row.item.sleeping;
+    const description = row.kind === 'item' ? this.describe(row.item) : '';
     return html`<div
       class="row"
       role="option"
       id="palette-option-${String(place)}"
       aria-selected=${row.key === this.marked ? 'true' : 'false'}
-      aria-description=${sleeping ? this.t('shell.tabSleeping') : nothing}
+      aria-description=${description === '' ? nothing : description}
       @mousedown=${(event: MouseEvent) => event.preventDefault()}
       @click=${() => this.activate(row)}
     >
       ${this.renderParts(row)}
     </div>`;
+  }
+
+  /**
+   * What a screen reader hears of a tab besides its title, as in the tab strip: its group, its
+   * workspace and that it sleeps.
+   */
+  private describe(item: PaletteItem): string {
+    if (item.kind !== 'tab') return '';
+    const { group, workspace } = item;
+    return [
+      group === null
+        ? undefined
+        : group.name === ''
+          ? this.t('shell.inUnnamedGroup')
+          : this.t('shell.inGroup', { name: group.name }),
+      workspace === null
+        ? undefined
+        : this.t('shell.workspace', {
+            name: workspace.name === '' ? this.t('shell.workspaceDefault') : workspace.name,
+          }),
+      item.sleeping ? this.t('shell.tabSleeping') : undefined,
+    ]
+      .filter((part) => part !== undefined)
+      .join(', ');
   }
 
   /** The icon, the name and the details of a row. */
@@ -563,6 +626,22 @@ export class CommandPalette extends LitElement {
         >
         <span class="label">${tabLabel(item, this.t('shell.untitled'))}</span>
         <span class="detail">${hostOf(item.url)}</span>
+        ${
+          item.group === null
+            ? nothing
+            : html`<span class="tag place" data-color=${item.group.color} aria-hidden="true"
+                ><span class="dot"></span>${item.group.name || this.t('shell.groupUnnamed')}</span
+              >`
+        }
+        ${
+          item.workspace === null
+            ? nothing
+            : html`<span class="tag place" data-color=${item.workspace.color} aria-hidden="true"
+                >${workspaceIconSvg[item.workspace.icon]}${
+                  item.workspace.name || this.t('shell.workspaceDefault')
+                }</span
+              >`
+        }
         ${
           item.sleeping
             ? html`<span class="tag" aria-hidden="true">${this.t('palette.sleeping')}</span>`

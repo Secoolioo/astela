@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amends [ADR 0002](0002-electron-and-webcontentsview.md): a window attaches the views of two tabs while it shows a split view. Amends [ADR 0036](0036-problem-pages-drawn-by-the-shell.md): the shell draws the problem of a page in the side of a split view that it belongs to. Amends [ADR 0038](0038-site-permissions-asked-in-the-overlay.md): of the two pages that a split view shows, only the side with the focus asks. The roadmap's layouts of two to four panes come later; this decision covers two tabs side by side. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) keeps both tabs of a split view in one group of tabs: the tab that joins takes the group of the tab that stays.
+Accepted. Amends [ADR 0002](0002-electron-and-webcontentsview.md): a window attaches the views of two tabs while it shows a split view. Amends [ADR 0036](0036-problem-pages-drawn-by-the-shell.md): the shell draws the problem of a page in the side of a split view that it belongs to. Amends [ADR 0038](0038-site-permissions-asked-in-the-overlay.md): of the two pages that a split view shows, only the side with the focus asks. The roadmap's layouts of two to four panes come later; this decision covers two tabs side by side. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) keeps both tabs of a split view in one group of tabs and one workspace: the tab that joins takes the group of the tab that stays, and a tab that moves into another workspace leaves its split view first.
 
 ## Date
 

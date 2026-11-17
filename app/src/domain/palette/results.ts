@@ -1,4 +1,6 @@
 import { matchRank, searchWords } from '../../shared/search-text.ts';
+import type { Swatch } from '../../shared/swatches.ts';
+import type { WorkspaceIcon } from '../../shared/workspace-icons.ts';
 import type { OmniboxTarget } from '../navigation/omnibox.ts';
 
 /**
@@ -23,6 +25,17 @@ export interface PaletteTab {
   readonly place: 'current' | 'window' | 'other';
   /** Whether the tab sleeps: it has no page loaded, and loads when it is shown. */
   readonly sleeping: boolean;
+  /** The name and the color of the group of the tab, or `null` for a tab in none. */
+  readonly group: { readonly name: string; readonly color: Swatch } | null;
+  /**
+   * The name, icon and color of the workspace of the tab, or `null` without workspaces, as in
+   * private windows and while they are off.
+   */
+  readonly workspace: {
+    readonly name: string;
+    readonly icon: WorkspaceIcon;
+    readonly color: Swatch;
+  } | null;
 }
 
 /** A bookmark or a visited page. */

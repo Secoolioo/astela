@@ -16,8 +16,11 @@ export interface ShutdownDependencies {
   readonly settings: Pick<JsonFileSettingsStore, 'flush'>;
   readonly sessions: Pick<JsonFileSessionStore, 'schedule' | 'flush' | 'markClean'>;
   readonly windows: Pick<WindowManager, 'snapshot' | 'dispose'>;
-  /** The session of web pages, whose storage and cookies are written to disk. */
-  readonly web: Session;
+  /**
+   * The sessions of web pages used in this run, such as those of workspaces with cookies of
+   * their own; those that keep their data on disk write their storage and cookies.
+   */
+  readonly web: Iterable<Session>;
   readonly data: Pick<DataClient, 'dispose'>;
   /** The update service, once it has started. */
   readonly updates: Pick<UpdateService, 'installOnExit' | 'dispose'> | undefined;
@@ -45,8 +48,11 @@ export async function shutDown(dependencies: ShutdownDependencies): Promise<void
         logger.debug('The browser could not mark that it quit', { error: String(error) }),
       );
     e.join(session, 'session');
-    web.flushStorageData();
-    e.join(web.cookies.flushStore(), 'cookies');
+    for (const each of web) {
+      if (!each.isPersistent()) continue;
+      each.flushStorageData();
+      e.join(each.cookies.flushStore(), 'cookies');
+    }
   });
   await lifecycle.shutdown('quit');
   // A window that fails to close must not keep the browser from quitting.

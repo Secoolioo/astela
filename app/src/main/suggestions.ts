@@ -5,6 +5,7 @@ import {
   type SuggestionSource,
 } from '../domain/navigation/suggestions.ts';
 import type { TabId } from '../domain/tabs/tab-service.ts';
+import { showTab } from '../domain/tabs/show-tab.ts';
 import type { WebContents } from 'electron';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
@@ -84,7 +85,8 @@ export async function suggest(
   const own = tabId ?? window.openedByShell ?? window.tabs.active?.id;
   const items = suggestionsFor(text, {
     target,
-    tabs: window.tabs.all
+    // The open tabs of every workspace of the window, of which a chosen one shows.
+    tabs: window.tabs.allTabs
       .filter((tab) => tab.id !== own)
       .map(({ id, title, url }) => ({ id, title, url })),
     bookmarks,
@@ -182,17 +184,24 @@ export function close(window: BrowserWindowController): void {
 }
 
 /**
- * Opens a suggestion: the tab it names, or its address in the tab whose address bar it was
- * for, or in the active tab once that tab closed.
+ * Opens a suggestion: the tab it names, also in another workspace of the window, which shows
+ * then, or its address in the tab whose address bar it was for, or in the active tab once that
+ * tab closed.
  */
 function open(window: BrowserWindowController, item: Suggestion, tabId: TabId | undefined): void {
   if (item.kind === 'tab' && item.tabId !== undefined) {
-    if (window.tabs.all.some((tab) => tab.id === item.tabId)) window.tabs.activate(item.tabId);
-  } else {
-    const target = window.tabs.all.find((tab) => tab.id === tabId) ?? window.tabs.active;
-    if (target === undefined) window.tabs.open(item.url);
-    else window.tabs.navigate(target.id, item.url);
+    void showTab(window.tabs, item.tabId).then(() => done(window));
+    return;
   }
+  const target = (tabId === undefined ? undefined : window.tabs.get(tabId)) ?? window.tabs.active;
+  if (target === undefined) window.tabs.open(item.url);
+  else window.tabs.navigate(target.id, item.url);
+  done(window);
+}
+
+/** Gives the page of a window the focus after a suggestion, and tells the shell. */
+function done(window: BrowserWindowController): void {
+  if (window.window.isDestroyed()) return;
   window.focusContent();
   connectedRouter?.publish(ShellCommand, window.shellContents, 'omnibox.done');
 }

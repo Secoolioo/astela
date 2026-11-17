@@ -336,6 +336,19 @@ export class SettingsService implements Disposable {
     }
   }
 
+  /**
+   * Removes every override of a workspace, such as of one that was deleted, also those of
+   * settings that this version does not know.
+   * @param workspaceId - The workspace.
+   */
+  clearWorkspace(workspaceId: string): void {
+    const keys = [...(this.workspaces.get(workspaceId)?.keys() ?? [])];
+    const { [workspaceId]: unknown, ...others } = this.unknownWorkspaces;
+    this.workspaces.delete(workspaceId);
+    this.unknownWorkspaces = others;
+    if (keys.length > 0 || unknown !== undefined) this.changed(keys);
+  }
+
   /** User values that differ from the defaults, sorted by key, for export. Never contains secrets. */
   exportUserSettings(): Record<string, unknown> {
     return Object.fromEntries([...this.user].toSorted(([a], [b]) => a.localeCompare(b)));

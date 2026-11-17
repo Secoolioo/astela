@@ -558,3 +558,90 @@ describe('the items of groups in the tab menu', () => {
     expect(edited).toEqual([made]);
   });
 });
+
+describe('the items of workspaces in the tab menu', () => {
+  const home = { id: 'default', name: '', icon: 'home', color: 'blue', isolated: false } as const;
+  const work = {
+    id: 'w1',
+    name: 'Work & play',
+    icon: 'briefcase',
+    color: 'teal',
+    isolated: false,
+  } as const;
+  const bank = { id: 'w2', name: 'Bank', icon: 'heart', color: 'red', isolated: true } as const;
+
+  /** The menu of the second of three tabs with the workspaces that it can move into. */
+  function withWorkspaces(locale = 'en-US', platform = 'linux') {
+    const { window, ids } = windowWith('top', { groups: 'own' });
+    const moveToWorkspace = vi.fn();
+    const options = {
+      workspaces: [
+        { workspace: home, reload: true },
+        { workspace: work, reload: false },
+        { workspace: bank, reload: true },
+      ],
+      moveToWorkspace,
+    };
+    const template = onPlatform(platform, () =>
+      tabMenuTemplate(window, ids[1] ?? '', translatorFor(locale, platform), options),
+    );
+    return { window, ids, template: template ?? [], moveToWorkspace };
+  }
+
+  it('moves a tab into another workspace after the items of groups, and says where it loads again', () => {
+    const { window, ids, template, moveToWorkspace } = withWorkspaces();
+    const items = labels(template);
+    expect(items.slice(2, 5)).toEqual([
+      'Add to new &group',
+      'Remo&ve from group',
+      'Move to wor&kspace',
+    ]);
+    const item = template.find((entry) => entry.label === 'Move to wor&kspace');
+    const submenu = Array.isArray(item?.submenu) ? item.submenu : [];
+    // The name of a workspace is no access key, as for groups.
+    expect(labels(submenu)).toEqual([
+      'Default (loads again)',
+      'Work && play',
+      'Bank (loads again)',
+    ]);
+    const [, , last] = submenu;
+    if (last !== undefined) choose(last);
+    expect(moveToWorkspace.mock.calls).toEqual([['w2']]);
+    // Nothing happens for a tab that closed while the menu was open.
+    window.tabs.close(ids[1] ?? '');
+    if (last !== undefined) choose(last);
+    expect(moveToWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the item an access key of its own in English and German, and title case on macOS', () => {
+    for (const platform of ['win32', 'linux']) {
+      for (const locale of ['en-US', 'de']) {
+        const items = labels(withWorkspaces(locale, platform).template);
+        expect([locale, ...accessKeyProblems(items)]).toEqual([locale]);
+      }
+    }
+    const german = withWorkspaces('de', 'linux').template;
+    const item = german.find((entry) => entry.label === 'In Arbeits&bereich verschieben');
+    expect(Array.isArray(item?.submenu) ? labels(item.submenu) : []).toEqual([
+      'Standard (lädt neu)',
+      'Work && play',
+      'Bank (lädt neu)',
+    ]);
+    const mac = withWorkspaces('en-US', 'darwin').template;
+    const macItem = mac.find((entry) => entry.label === 'Move to Workspace');
+    expect(Array.isArray(macItem?.submenu) ? labels(macItem.submenu) : []).toEqual([
+      'Default (Loads Again)',
+      'Work && play',
+      'Bank (Loads Again)',
+    ]);
+  });
+
+  it('leaves the item out without another workspace, as in private windows and while workspaces are off', () => {
+    const { window, ids } = windowWith('top');
+    const i18n = translatorFor('en-US', 'linux');
+    expect(labels(tabMenuTemplate(window, ids[1] ?? '', i18n, { workspaces: [] }))).not.toContain(
+      'Move to wor&kspace',
+    );
+    expect(labels(tabMenuTemplate(window, ids[1] ?? '', i18n))).not.toContain('Move to wor&kspace');
+  });
+});

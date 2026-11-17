@@ -37,6 +37,7 @@ A setting that a policy of your organization sets shows a lock and _Managed by y
 - **Title bar:** from 0.1.0-beta.6, With the tabs makes the top row of the window, the tabs or the toolbar, its title bar: drag its free space to move the window. Some space after its last button stays free for that, also when the tabs fill the row. The buttons to minimize, maximize and close the window sit in its corner; on Windows and Linux, they take the color of the row, and on Linux they sit where your desktop puts them, at the left end, the right end or both. In full screen, the row leaves no room for them. Web pages cannot make parts of the window move it. Of the system brings back the title bar of your operating system above it. The change applies after a restart.
 - **Show bookmarks bar:** shows the [bookmarks bar](bookmarks.md#bookmarks-bar) below the toolbar.
 - **Split view:** from 0.1.0-beta.7, lets a window show two tabs side by side, from the menu of a tab or with a keyboard shortcut; see [split view](tabs.md#split-view). Turning it off ends the split views that show; the menus no longer offer it, and its shortcut reaches web pages. Your organization can turn it on or off.
+- **Workspaces:** from 0.1.0-beta.7, a button at the start of the tabs switches between [workspaces](workspaces.md), each with tabs, a name, an icon and a color of its own. Off shows the tabs of every workspace together, in the default workspace; the button, the shortcuts and **Move to workspace** in the menu of a tab are gone. Your organization can turn it on or off.
 
 ## On startup
 

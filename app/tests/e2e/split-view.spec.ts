@@ -8,6 +8,8 @@ import {
   FixtureServer,
   launch,
   menuCount,
+  overlayAttached,
+  overlayPage,
   pressNative,
   recordedMenu,
   recordMenus,
@@ -1071,6 +1073,121 @@ test('leaves the keys to the address bar of a new tab page in a window behind an
     await expect(addressBar(browser)).toBeFocused();
     await browser.shell.keyboard.type('typed here');
     await expect(addressBar(browser)).toHaveValue('typed here');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps both tabs of a split view in one group and one workspace', async () => {
+  const browser = await launch();
+  try {
+    const home = fixture('index.html');
+    const second = fixture('second.html');
+    await recordMenus(browser);
+    await open(browser, fixture('opened.html'));
+    await browser.shell.getByRole('button', { name: 'New tab' }).click();
+    await newTabShown(browser, 2);
+    await splitWith(browser, home, second, 3);
+    expect(await strip(browser)).toEqual(['Fixture opened', 'Fixture home', 'Fixture second']);
+    // A group takes both tabs of a split view.
+    await tabMenu(browser, 'Fixture home');
+    await chooseMenuItem(browser, [mac ? 'Add to New Group' : 'Add to new group']);
+    const overlay = await overlayPage(browser);
+    await expect(overlay.getByRole('dialog', { name: 'Tab group' })).toBeVisible();
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    let state = await shellState(browser.shell);
+    expect(state.tabs.map((tab) => tab.group?.id ?? '-')).toEqual([
+      '-',
+      state.tabs[1]?.group?.id,
+      state.tabs[1]?.group?.id,
+    ]);
+    // Hiding the group of the split view that shows makes the nearest tab outside it active.
+    const chip = browser.shell.getByRole('button', { name: 'Group without a name' });
+    await chip.click();
+    await expect(chip).toHaveAttribute('aria-expanded', 'false');
+    await expect
+      .poll(async () => (await tabViews(browser)).map((view) => view.url))
+      .toEqual([fixture('opened.html')]);
+    await chip.click();
+    await browser.shell.getByRole('tab', { name: 'Fixture home', exact: true }).click();
+    await expect.poll(async () => (await tabViews(browser)).length).toBe(2);
+    // A new workspace, and back.
+    const button = browser.shell.getByRole('button', { name: 'Workspace Default', exact: true });
+    await expect(button).toBeVisible();
+    await button.click();
+    const list = (await overlayPage(browser)).getByRole('dialog', { name: 'Workspaces' });
+    await list.getByRole('button', { name: 'New workspace' }).click();
+    await list.getByRole('textbox', { name: 'Name' }).fill('Work');
+    await list.getByRole('button', { name: 'Create' }).click();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Workspace Work', exact: true }),
+    ).toBeVisible();
+    await newTabShown(browser, 1);
+    await pressNative(browser, '1', [mac ? 'control' : 'alt']);
+    // The split view shows again with the workspace.
+    await expect
+      .poll(async () => (await tabViews(browser)).map((view) => view.url).toSorted())
+      .toEqual([home, second].toSorted());
+    // Moving one of its tabs into another workspace ends the split view first: the content area
+    // shows the other tab alone, which stays in its group.
+    await tabMenu(browser, 'Fixture second');
+    const moveItem = mac ? 'Move to Workspace' : 'Move to workspace';
+    await chooseMenuItem(browser, [moveItem, 'Work']);
+    await expect.poll(() => strip(browser)).toEqual(['Fixture opened', 'Fixture home']);
+    state = await shellState(browser.shell);
+    expect(state.split).toBeNull();
+    expect(state.tabs.map((tab) => tab.split)).toEqual([null, null]);
+    expect(state.tabs[1]?.group).not.toBeNull();
+    await expect
+      .poll(async () => (await tabViews(browser)).map((view) => view.url))
+      .toEqual([home]);
+    await pressNative(browser, '2', [mac ? 'control' : 'alt']);
+    await expect.poll(() => strip(browser)).toEqual(['New tab', 'Fixture second']);
+    state = await shellState(browser.shell);
+    expect(state.split).toBeNull();
+    expect(state.tabs.map((tab) => [tab.split, tab.group])).toEqual([
+      [null, null],
+      [null, null],
+    ]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('ends the split views of every workspace when split view is turned off', async () => {
+  const browser = await launch();
+  try {
+    const home = fixture('index.html');
+    const second = fixture('second.html');
+    await open(browser, fixture('opened.html'));
+    // A split view in a workspace that does not show.
+    await browser.shell.getByRole('button', { name: 'Workspace Default', exact: true }).click();
+    const list = (await overlayPage(browser)).getByRole('dialog', { name: 'Workspaces' });
+    await list.getByRole('button', { name: 'New workspace' }).click();
+    await list.getByRole('textbox', { name: 'Name' }).fill('Work');
+    await list.getByRole('button', { name: 'Create' }).click();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Workspace Work', exact: true }),
+    ).toBeVisible();
+    await newTabShown(browser, 1);
+    await splitWith(browser, home, second);
+    expect((await shellState(browser.shell)).split).not.toBeNull();
+    await pressNative(browser, '1', [mac ? 'control' : 'alt']);
+    await expect.poll(() => strip(browser)).toEqual(['Fixture opened']);
+    // Turned off in the settings, split view ends there too.
+    await browser.shell.getByRole('button', { name: 'New tab' }).click();
+    await newTabShown(browser, 2);
+    const settings = await open(browser, 'app://settings/#splitView.enabled');
+    await settings.getByRole('switch', { name: /^Split view/ }).uncheck();
+    await pressNative(browser, '2', [mac ? 'control' : 'alt']);
+    await expect.poll(() => strip(browser)).toEqual(['Fixture home', 'Fixture second']);
+    const state = await shellState(browser.shell);
+    expect(state.split).toBeNull();
+    expect(state.tabs.map((tab) => tab.split)).toEqual([null, null]);
+    await expect
+      .poll(async () => (await tabViews(browser)).map((view) => view.url))
+      .toEqual([second]);
   } finally {
     await browser.close();
   }

@@ -1,6 +1,6 @@
 # Tabs
 
-> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search, sleeping tabs, split view and tab groups from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search, sleeping tabs, split view, tab groups and workspaces from 0.1.0-beta.7.
 
 ## What a tab shows
 
@@ -17,13 +17,17 @@ Drag a tab along the tab strip to move it; the other tabs make room for it, and 
 
 From 0.1.0-beta.7, tabs can stand together in named, colored groups, whose tabs you can hide behind the chip of the group. **Add to new group** in the menu of a tab starts one. See [Tab groups](tab-groups.md).
 
+## Workspaces
+
+From 0.1.0-beta.7, each window can keep sets of tabs in workspaces and show one of them at a time; the others stay open in the background. The button at the start of the tab strip switches between them, and **Move to workspace** in the menu of a tab, or a drag onto that button, moves a tab into another workspace. See [Workspaces](workspaces.md).
+
 ## Many tabs
 
 Tabs get narrower as you open more of them. Narrow tabs show only the icon of their page, and the active tab shows its close button instead; a middle click closes any tab. When the tabs no longer fit, the tab strip scrolls, also with the mouse wheel, and a line marks each side behind which tabs are hidden.
 
 ## Finding a tab
 
-Tab search finds a tab in any window: press `Ctrl+Shift+A` (`Command+Shift+A` on macOS), or choose **Search tabs…** in the browser menu. With an empty field, it lists the tabs of this window in their order, the active one marked **Current tab**, and then the tabs of the other windows, the window you used last first. Type words of a tab's title or address to narrow the list, and press Enter or click a tab to switch to it; a tab of another window brings its window to the front. Private windows find only the tabs of private windows, and regular windows only those of regular windows. Tab search is the [command palette](command-palette.md) for the open tabs: `%` and a space in front of the words in the palette do the same, and the palette finds open tabs among its other results too.
+Tab search finds a tab in any window: press `Ctrl+Shift+A` (`Command+Shift+A` on macOS), or choose **Search tabs…** in the browser menu. With an empty field, it lists the tabs of this window in their order, the active one marked **Current tab**, and then the tabs of the other windows, the window you used last first. The tabs of this window come from every one of its [workspaces](workspaces.md), each with its group and, while you have more than one workspace, its workspace. Type words of a tab's title or address to narrow the list, and press Enter or click a tab to switch to it; a tab of another workspace shows that workspace, and a tab of another window brings its window to the front. Private windows find only the tabs of private windows, and regular windows only those of regular windows. Tab search is the [command palette](command-palette.md) for the open tabs: `%` and a space in front of the words in the palette do the same, and the palette finds open tabs among its other results too.
 
 ## Pinned tabs
 
@@ -57,7 +61,7 @@ A page that could not be loaded shows why in its own side; see [When a page does
 
 ## The menu of a tab
 
-A click with the secondary button on a tab opens its menu: a new tab next to it, [split view](#split-view), [groups](tab-groups.md#making-a-group), reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
+A click with the secondary button on a tab opens its menu: a new tab next to it, [split view](#split-view), [groups](tab-groups.md#making-a-group), [moving it to another workspace](workspaces.md#moving-tabs-between-workspaces), reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
 
 ## Keyboard
 

@@ -5,6 +5,7 @@ import { editGroups, groupsOf, type TabGroup } from '../domain/tabs/tab-groups.t
 import type { Tab } from '../domain/tabs/tab-service.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { Translator } from '../shared/i18n/i18n.ts';
+import type { Workspace } from '../shared/workspaces.ts';
 import { acceleratorOf, shortcutsOf } from '../shared/menu-shortcuts.ts';
 import type { WindowCommand } from '../shared/shortcuts.ts';
 import { translatorFor, type MessageKey } from './i18n/i18n.ts';
@@ -19,11 +20,18 @@ export type TabMenuWindow = Pick<
 export interface TabMenuOptions {
   /** Opens the popover of a group at its chip, such as of the group that the menu made. */
   readonly editGroup?: (groupId: string) => void;
+  /**
+   * The workspaces that the tab can move into, and whether it loads again in each of them, as
+   * its partition changes; none in private windows, popups and while workspaces are off.
+   */
+  readonly workspaces?: readonly { readonly workspace: Workspace; readonly reload: boolean }[];
+  /** Moves the tab into a workspace. */
+  readonly moveToWorkspace?: (workspaceId: string) => void;
 }
 
 /**
  * Shows the menu of a tab, at a point of the shell: a new tab next to it, split view, groups,
- * reload, duplicate, pin, mute, sleep and the ways to close tabs.
+ * workspaces, reload, duplicate, pin, mute, sleep and the ways to close tabs.
  * @param window - The window of the tab.
  * @param tabId - The tab whose menu opens.
  * @param position - Where the menu opens, in the window's coordinates.
@@ -89,6 +97,7 @@ export function tabMenuTemplate(
     },
     ...splitItems(window, tab, i18n, ofTab, whileOpen),
     ...groupItems(window, tab, i18n, whileOpen, options),
+    ...workspaceItems(i18n, whileOpen, options),
     { type: 'separator' },
     {
       label: i18n.t('tabMenu.reload'),
@@ -242,6 +251,36 @@ function groupItems(
             ),
           },
         ]),
+  ];
+}
+
+/**
+ * The item that moves a tab into another workspace, with a submenu of the workspaces, while the
+ * window has another one to move it into. A workspace whose partition differs says that the tab
+ * loads again there.
+ * @param i18n - The texts of the browser process.
+ * @param whileOpen - Runs an item only while the tab is open.
+ * @param options - The workspaces and the move.
+ */
+function workspaceItems(
+  i18n: Translator<MessageKey>,
+  whileOpen: (run: () => void) => () => void,
+  options: TabMenuOptions,
+): MenuItemConstructorOptions[] {
+  const targets = options.workspaces ?? [];
+  if (targets.length === 0) return [];
+  return [
+    {
+      label: i18n.t('tabMenu.moveToWorkspace'),
+      submenu: targets.map(({ workspace, reload }): MenuItemConstructorOptions => {
+        const name =
+          workspace.name === '' ? i18n.t('workspace.default') : menuLabel(workspace.name);
+        return {
+          label: reload ? i18n.t('tabMenu.workspaceReload', { name }) : name,
+          click: whileOpen(() => options.moveToWorkspace?.(workspace.id)),
+        };
+      }),
+    },
   ];
 }
 

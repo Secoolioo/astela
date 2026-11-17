@@ -528,8 +528,8 @@ describe('sessions and 0.1.0-beta.6', () => {
 
   it('keeps every tab and the active tab of a session with the fields of later versions', () => {
     expect(parseBeta6Session(later)).toEqual(kept);
-    // This version reads the histories, full screen, the split views and the groups of tabs,
-    // and the fields it does not know yet the same way as 0.1.0-beta.6.
+    // This version reads the histories, full screen, the split views, the groups of tabs and
+    // the workspaces, and writes no workspace for the tabs of the default one.
     expect(parseSession(later)).toEqual({
       version: 1,
       windows: [
@@ -537,13 +537,18 @@ describe('sessions and 0.1.0-beta.6', () => {
           ...kept.windows[0],
           tabs: [
             { ...tab('https://mail.example/'), pinned: true },
-            { ...tab('https://news.example/'), history: history('https://news.example/') },
-            { ...tab('https://a.example/'), group: work },
-            { ...tab('https://b.example/'), group: work },
-            tab('app://settings/'),
+            {
+              ...tab('https://news.example/'),
+              history: history('https://news.example/'),
+              current: true,
+            },
+            { ...tab('https://a.example/'), group: work, workspace: 'w1' },
+            { ...tab('https://b.example/'), group: work, workspace: 'w1', current: true },
+            { ...tab('app://settings/'), workspace: 'w1' },
           ],
           fullScreen: true,
           splits: [{ start: 2, ratio: 0.4 }],
+          workspace: 'w1',
         },
         {
           tabs: [{ ...tab('https://c.example/'), history: history('https://c.example/') }],
@@ -788,5 +793,85 @@ describe('groups of tabs in the session', () => {
     expect(
       session === undefined ? [] : restoredWindows(session)[0]?.tabs.map((one) => one.group),
     ).toEqual([undefined, news]);
+  });
+});
+
+describe('workspaces in the session', () => {
+  it('keeps the tabs strip by strip, with the workspace of each tab and its active tabs', () => {
+    const window = sessionWindow(
+      [
+        tab('https://a.example/'),
+        { ...tab('https://b.example/'), workspace: 'default', current: false },
+        { ...tab('https://c.example/'), workspace: 'w1' },
+        { ...tab('https://d.example/'), workspace: 'w1', current: true },
+        { ...tab('app://setup/'), workspace: 'w2', current: true },
+        { ...tab('https://e.example/'), workspace: 'w2' },
+      ],
+      2,
+      { workspace: 'w1' },
+    );
+    const written: unknown = JSON.parse(JSON.stringify({ version: 1, windows: [window] }));
+    // The default workspace writes nothing, so a session without workspaces stays as before.
+    expect(written).toEqual({
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            tab('https://a.example/'),
+            tab('https://b.example/'),
+            { ...tab('https://c.example/'), workspace: 'w1' },
+            { ...tab('https://d.example/'), workspace: 'w1', current: true },
+            { ...tab('https://e.example/'), workspace: 'w2' },
+          ],
+          active: 2,
+          workspace: 'w1',
+        },
+      ],
+    });
+    const session = parseSession(written);
+    expect(session).toEqual(written);
+    expect(parseBeta6Session(written)).toEqual({
+      version: 1,
+      windows: [
+        {
+          tabs: ['a', 'b', 'c', 'd', 'e'].map((name) => tab(`https://${name}.example/`)),
+          active: 2,
+        },
+      ],
+    });
+    const [restored] = session === undefined ? [] : restoredWindows(session);
+    expect(restored?.workspace).toBe('w1');
+    expect(restored?.tabs.map((one) => [one.workspace, one.current])).toEqual([
+      [undefined, undefined],
+      [undefined, undefined],
+      ['w1', undefined],
+      ['w1', true],
+      ['w2', undefined],
+    ]);
+  });
+
+  it('drops a workspace or a flag that cannot be read, and keeps the tab', () => {
+    const session = parseSession({
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            { ...tab('https://a.example/'), workspace: '../w1' },
+            { ...tab('https://b.example/'), workspace: 7, current: 'yes' },
+            { ...tab('https://c.example/'), workspace: 'w1', current: true },
+          ],
+          active: 0,
+          workspace: 'W1',
+        },
+      ],
+    });
+    expect(session?.windows[0]).toEqual({
+      tabs: [
+        tab('https://a.example/'),
+        tab('https://b.example/'),
+        { ...tab('https://c.example/'), workspace: 'w1', current: true },
+      ],
+      active: 0,
+    });
   });
 });

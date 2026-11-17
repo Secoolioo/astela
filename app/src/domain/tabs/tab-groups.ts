@@ -157,13 +157,12 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
     if (!options.activate) this.openedInBackground.add(tab.id);
   }
 
-  override close(id: string): ClosedTab<T> | undefined {
+  override close(id: string, keep = true): ClosedTab<T> | undefined {
     const index = this.indexOf(id);
-    const closed = super.close(id);
-    if (closed === undefined) return undefined;
     // The strip keeps the tab with its group instead of the address alone.
-    this.closed.pop();
-    this.remember({ kind: 'tab', url: closed.tab.url, group: closed.tab.group });
+    const closed = super.close(id, false);
+    if (closed === undefined) return undefined;
+    if (keep) this.remember({ kind: 'tab', url: closed.tab.url, group: closed.tab.group });
     // The other side of a split view shows; else the nearest tab that the strip shows.
     if (!closed.active || closed.pair !== undefined) return closed;
     return { ...closed, next: this.shownFrom(index, 1) ?? this.shownFrom(index - 1, -1) };
@@ -601,13 +600,18 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
   }
 }
 
-/** The strip of a window's tabs with groups, which takes over the plain strip the first time. */
+/**
+ * The strip of the tabs that a window shows, with groups, which takes over the plain strip the
+ * first time; with workspaces, the strip of the workspace that shows.
+ */
 function groupedStrip(tabs: TabService): GroupedTabStrip<Tab> {
   let grouped: GroupedTabStrip<Tab> | undefined;
-  tabs.useStrip((strip) => {
-    grouped = strip instanceof GroupedTabStrip ? strip : new GroupedTabStrip(strip);
-    return grouped;
-  });
+  tabs.useStrip((strip) =>
+    strip.withShown((shown) => {
+      grouped = shown instanceof GroupedTabStrip ? shown : new GroupedTabStrip(shown);
+      return grouped;
+    }),
+  );
   if (grouped === undefined) throw new Error('The strip of the tabs took no groups');
   return grouped;
 }

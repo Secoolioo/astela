@@ -1,4 +1,4 @@
-import type { Session, WebContents } from 'electron';
+import { session, type Session, type WebContents } from 'electron';
 import type { ShortcutOverrides, WindowCommand } from '../shared/shortcuts.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
@@ -12,6 +12,8 @@ import { connectDefaultBrowser } from './default-browser.ts';
 import { connectHistoryPage } from './history-page.ts';
 import { connectSettingsPage } from './settings-page.ts';
 import { connectSetupGuide } from './setup-guide.ts';
+import { WorkspacesSetting } from './core-settings.ts';
+import { workspacePartition } from '../shared/workspaces.ts';
 
 /** What the browser's own pages need from the browser process. */
 export interface PageDependencies {
@@ -32,8 +34,8 @@ export interface PageDependencies {
   readonly canBeDefaultBrowser: boolean;
   /** The values, as JSON, that the settings which need a restart had when the browser started. */
   readonly startValues: ReadonlyMap<string, string>;
-  /** The session of web pages in regular windows. */
-  readonly webSession: () => Session;
+  /** The partition of the web pages of regular windows that no workspace keeps apart. */
+  readonly webPartition: string;
   /**
    * Forgets the back and forward history of the tabs, of the session and of its backup, as
    * when the whole history is cleared.
@@ -68,7 +70,23 @@ export function connectPages(dependencies: PageDependencies): void {
     dependencies.startValues,
     {
       data,
-      web: dependencies.webSession,
+      // Clearing browsing data clears every workspace: the shared partition, and each one that
+      // a workspace keeps apart, also when no page of it loaded in this run.
+      web: () =>
+        [
+          ...new Set([
+            dependencies.webPartition,
+            ...dependencies.settings
+              .get(WorkspacesSetting)
+              .map(({ id }) =>
+                workspacePartition(
+                  dependencies.settings.get(WorkspacesSetting),
+                  id,
+                  dependencies.webPartition,
+                ),
+              ),
+          ]),
+        ].map((partition) => session.fromPartition(partition)),
       forgetTabHistories: dependencies.forgetTabHistories,
     },
     dependencies.shortcuts,

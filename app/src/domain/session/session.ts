@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { tabPageOf } from '../../shared/internal-pages.ts';
 import { TabGroupView } from '../../shared/ipc/shell-contracts.ts';
 import { clampRatio } from '../../shared/split-view.ts';
+import { defaultWorkspaceId, WorkspaceId } from '../../shared/workspaces.ts';
 import {
   currentEntry,
   currentOnly,
@@ -42,7 +43,9 @@ const SessionGroup = v.object(TabGroupView.entries);
 /**
  * A tab as the session keeps it: its address, at most 8,192 characters, its title, at most
  * 1,024, whether it is pinned, and since 0.1.0-beta.7 its back and forward history: its views
- * with their entries, within the limits of the session, and the group of tabs that it is in.
+ * with their entries, within the limits of the session, the group of tabs that it is in, the
+ * workspace that it is in when that is not the default one, and `current` for the active tab
+ * of a workspace that its window does not show.
  */
 export interface SessionTab {
   url: string;
@@ -50,13 +53,16 @@ export interface SessionTab {
   pinned?: boolean;
   history?: TabHistory;
   group?: TabGroup;
+  workspace?: string;
+  current?: boolean;
 }
 
 /**
- * A window of a session: its tabs, the index of its active tab, where it was, whether it was
- * maximized, whether people put it in full screen (`fullScreen`, since 0.1.0-beta.7), which a
- * page in full screen does not count as, and the pairs of tabs that it showed side by side
- * (`splits`).
+ * A window of a session: its tabs, workspace by workspace, the index of its active tab, which is
+ * that of the workspace that it shows, where it was, whether it was maximized, whether people
+ * put it in full screen (`fullScreen`, since 0.1.0-beta.7), which a page in full screen does not
+ * count as, the pairs of tabs that it showed side by side (`splits`), and the workspace that it
+ * shows when that is not the default one.
  */
 export interface SessionWindow {
   tabs: SessionTab[];
@@ -65,6 +71,7 @@ export interface SessionWindow {
   maximized?: boolean;
   fullScreen?: boolean;
   splits?: SessionSplit[];
+  workspace?: string;
 }
 
 /**
@@ -109,6 +116,10 @@ export interface KeptTab {
   readonly history?: TabHistory | undefined;
   /** The group of tabs that the tab is in, if any. */
   readonly group?: TabGroup | null | undefined;
+  /** The workspace that the tab is in; the default one when left out. */
+  readonly workspace?: string | undefined;
+  /** Whether the tab is the active tab of a workspace that its window does not show. */
+  readonly current?: boolean | undefined;
 }
 
 /**
@@ -202,6 +213,8 @@ export function sessionWindow(
       ...(tab.pinned === true ? { pinned: true } : {}),
       ...(history === undefined ? {} : { history }),
       ...(tab.group ? { group: tab.group } : {}),
+      ...ownWorkspace(tab.workspace),
+      ...(tab.current === true ? { current: true } : {}),
     });
   });
   if (kept.length === 0) return undefined;
@@ -215,7 +228,17 @@ export function sessionWindow(
     ...(extras.maximized === undefined ? {} : { maximized: extras.maximized }),
     ...(extras.fullScreen === undefined ? {} : { fullScreen: extras.fullScreen }),
     ...(splits.length === 0 ? {} : { splits }),
+    ...ownWorkspace(extras.workspace),
   };
+}
+
+/**
+ * The workspace of a tab or a window as the session writes it: none for the default workspace,
+ * so that a session without workspaces stays as it was.
+ * @param workspace - The workspace.
+ */
+function ownWorkspace(workspace: string | undefined): { workspace?: string } {
+  return workspace === undefined || workspace === defaultWorkspaceId ? {} : { workspace };
 }
 
 /**
@@ -276,6 +299,7 @@ const StoredWindow = v.object({
   maximized: v.optional(v.unknown()),
   fullScreen: v.optional(v.unknown()),
   splits: v.optional(v.unknown()),
+  workspace: v.optional(v.unknown()),
 });
 /** A tab as the session file holds it; its optional fields are read on their own. */
 const StoredTab = v.object({
@@ -284,6 +308,8 @@ const StoredTab = v.object({
   pinned: v.optional(v.unknown()),
   history: v.optional(v.unknown()),
   group: v.optional(v.unknown()),
+  workspace: v.optional(v.unknown()),
+  current: v.optional(v.unknown()),
 });
 
 /**
@@ -304,6 +330,8 @@ function storedTab(stored: unknown): KeptTab | undefined {
     ...(optionalField(Flag, pinned) === true ? { pinned: true } : {}),
     ...(history === undefined ? {} : { history }),
     group,
+    workspace: optionalField(WorkspaceId, tab.output.workspace),
+    current: optionalField(Flag, tab.output.current),
   };
 }
 
@@ -331,11 +359,13 @@ export function parseSession(data: unknown): SessionSnapshot | undefined {
     const splits = optionalField(v.array(v.unknown()), window.output.splits)?.flatMap(
       (pair) => optionalField(SessionSplit, pair) ?? [],
     );
+    const workspace = optionalField(WorkspaceId, window.output.workspace);
     const kept = sessionWindow(window.output.tabs.map(storedTab), window.output.active, {
       ...(bounds === undefined ? {} : { bounds }),
       ...(maximized === undefined ? {} : { maximized }),
       ...(fullScreen === undefined ? {} : { fullScreen }),
       ...(splits === undefined ? {} : { splits }),
+      ...(workspace === undefined ? {} : { workspace }),
     });
     return kept === undefined ? [] : [kept];
   });
@@ -355,6 +385,10 @@ export interface RestoredTab {
    * with a new id.
    */
   readonly group?: TabGroup | undefined;
+  /** The workspace that the tab was in; the default one when left out. */
+  readonly workspace?: string | undefined;
+  /** Whether the tab was the active tab of a workspace that its window did not show. */
+  readonly current?: boolean | undefined;
 }
 
 /**
@@ -383,6 +417,8 @@ export interface RestoredWindow {
    * one being the next, and the share of the width of the left one.
    */
   readonly splits?: readonly { readonly start: number; readonly ratio: number }[];
+  /** The workspace that the window showed; the default one when left out. */
+  readonly workspace?: string | undefined;
 }
 
 /**
@@ -390,20 +426,25 @@ export interface RestoredWindow {
  * @param session - The session, as {@link parseSession} read it.
  */
 export function restoredWindows(session: SessionSnapshot): RestoredWindow[] {
-  return session.windows.map(({ tabs, active, bounds, maximized, fullScreen, splits }) => ({
-    tabs: tabs.map(({ url, title, pinned, history, group }) => ({
-      url,
-      title,
-      pinned: pinned === true,
-      ...(history === undefined ? {} : { history }),
-      group,
-    })),
-    active,
-    place: {
-      ...(bounds === undefined ? {} : { bounds }),
-      ...(maximized === undefined ? {} : { maximized }),
-      ...(fullScreen === undefined ? {} : { fullScreen }),
-    },
-    ...(splits === undefined ? {} : { splits }),
-  }));
+  return session.windows.map(
+    ({ tabs, active, bounds, maximized, fullScreen, splits, workspace }) => ({
+      tabs: tabs.map(({ url, title, pinned, history, group, workspace: space, current }) => ({
+        url,
+        title,
+        pinned: pinned === true,
+        ...(history === undefined ? {} : { history }),
+        group,
+        workspace: space,
+        current,
+      })),
+      active,
+      workspace,
+      place: {
+        ...(bounds === undefined ? {} : { bounds }),
+        ...(maximized === undefined ? {} : { maximized }),
+        ...(fullScreen === undefined ? {} : { fullScreen }),
+      },
+      ...(splits === undefined ? {} : { splits }),
+    }),
+  );
 }

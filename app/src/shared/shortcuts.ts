@@ -29,6 +29,19 @@ export const windowCommands = [
   'tab.mute',
   'split.toggle',
   'split.swap',
+  'tab.newGroup',
+  'workspace.select1',
+  'workspace.select2',
+  'workspace.select3',
+  'workspace.select4',
+  'workspace.select5',
+  'workspace.select6',
+  'workspace.select7',
+  'workspace.select8',
+  'workspace.select9',
+  'workspace.next',
+  'workspace.previous',
+  'workspace.open',
   'page.back',
   'page.forward',
   'page.reload',
@@ -81,6 +94,17 @@ function selectShortcuts(modifier: 'Cmd' | 'Ctrl'): (readonly [string, WindowCom
 }
 
 /**
+ * The modifier and 1 to 9 for the workspaces at those places: the keys that carry the digits in
+ * the top row of the keyboard, also where a layout types other characters on them.
+ * @param modifier - `Ctrl` on macOS, where Option types characters, `Alt` elsewhere, as Windows
+ *   reports AltGr as Ctrl and Alt.
+ */
+function workspaceShortcuts(modifier: 'Ctrl' | 'Alt'): (readonly [string, WindowCommand])[] {
+  const places = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+  return places.map((place) => [`${modifier}+${place}`, `workspace.select${place}`] as const);
+}
+
+/**
  * macOS. Cmd+Left and Cmd+Right are left out on purpose: they move the caret to the start
  * and the end of a line. Cmd+Tab belongs to the app switcher of the system.
  */
@@ -97,6 +121,7 @@ const macShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Alt+Cmd+ArrowLeft', 'tab.previous'],
   ['Shift+Cmd+[', 'tab.previous'],
   ...selectShortcuts('Cmd'),
+  ...workspaceShortcuts('Ctrl'),
   ['Cmd+R', 'page.reload'],
   ['Shift+Cmd+H', 'page.home'],
   ['Shift+Cmd+R', 'page.reloadHard'],
@@ -148,6 +173,7 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+Shift+PageUp', 'tab.moveLeft'],
   ['Ctrl+Shift+PageDown', 'tab.moveRight'],
   ['Ctrl+Shift+S', 'split.toggle'],
+  ...workspaceShortcuts('Alt'),
   ['F5', 'page.reload'],
   ['Alt+Home', 'page.home'],
   ['Ctrl+R', 'page.reload'],
@@ -208,6 +234,11 @@ export const paletteCommands: readonly WindowCommand[] = ['palette.open', 'tabs.
 
 /** The commands of split view, which have no shortcut while split view is off. */
 export const splitCommands: readonly WindowCommand[] = ['split.toggle', 'split.swap'];
+
+/** The commands of the workspaces, which have no shortcut while workspaces are off. */
+export const workspaceCommands: readonly WindowCommand[] = windowCommands.filter((command) =>
+  command.startsWith('workspace.'),
+);
 
 /**
  * The shortcuts of the window: the defaults of the system, where a command has no shortcut

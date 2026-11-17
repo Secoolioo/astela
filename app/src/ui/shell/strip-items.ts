@@ -221,3 +221,78 @@ function spanOfUnit(unit: StripUnit, spans: ReadonlyMap<string, Span>): Span | u
   if (first === undefined || last === undefined || items.length !== unit.length) return undefined;
   return { start: first.start, size: last.start + last.size - first.start };
 }
+
+/** A point of the window, such as where the pointer is. */
+export interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A rectangle of the window, as `getBoundingClientRect` gives it. */
+export interface Box {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Whether a point lies inside a rectangle, its edges included.
+ * @param box - The rectangle.
+ * @param point - The point.
+ */
+export function inside(box: Box, point: Point): boolean {
+  return (
+    point.x >= box.left &&
+    point.x <= box.left + box.width &&
+    point.y >= box.top &&
+    point.y <= box.top + box.height
+  );
+}
+
+/** The target of a workspace that a dragged tab can be dropped on. */
+export interface WorkspaceDrop {
+  readonly workspace: NonNullable<ShellState['workspace']>;
+  /** Whether the tab loads again there, as its partition changes. */
+  readonly reload: boolean;
+}
+
+/**
+ * The workspaces that a dragged tab can move into, in their order: every one that the window
+ * does not show. The tab loads again when one of the two keeps its cookies apart, as each such
+ * workspace has a partition of its own.
+ * @param state - The state of the shell.
+ */
+export function workspaceDrops(
+  state: Pick<ShellState, 'workspace' | 'workspaces'>,
+): WorkspaceDrop[] {
+  const shown = state.workspace;
+  if (shown === null) return [];
+  return state.workspaces
+    .filter((workspace) => workspace.id !== shown.id)
+    .map((workspace) => ({ workspace, reload: shown.isolated || workspace.isolated }));
+}
+
+/**
+ * The workspace whose target a point lies over, found by the rectangles of the targets.
+ * @param targets - The rectangle of each target, by its workspace.
+ * @param point - Where the pointer is.
+ */
+export function workspaceTarget(
+  targets: ReadonlyMap<string, Box>,
+  point: Point,
+): string | undefined {
+  return [...targets].find(([, box]) => inside(box, point))?.[0];
+}
+
+/**
+ * The smallest rectangle that holds every one of some rectangles.
+ * @param boxes - The rectangles, at least one.
+ */
+export function spanning(boxes: readonly [Box, ...Box[]]): Box {
+  const left = Math.min(...boxes.map((box) => box.left));
+  const top = Math.min(...boxes.map((box) => box.top));
+  const right = Math.max(...boxes.map((box) => box.left + box.width));
+  const bottom = Math.max(...boxes.map((box) => box.top + box.height));
+  return { left, top, width: right - left, height: bottom - top };
+}

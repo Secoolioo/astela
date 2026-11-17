@@ -36,6 +36,11 @@ export interface CommandContext {
   readonly palette: boolean;
   /** Whether split view is on, which a setting or a policy can turn off. */
   readonly splitView: boolean;
+  /**
+   * How many workspaces the window can show, or 0 without workspaces: in private windows, in
+   * popups and while a setting or a policy turns them off.
+   */
+  readonly workspaces: number;
 }
 
 /**
@@ -135,6 +140,24 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
       return context.splitView && active !== undefined && (active.split !== null || !active.pinned);
     case 'split.swap':
       return context.splitView && active !== undefined && active.split !== null;
+    case 'tab.newGroup':
+      // Pinned tabs are never in a group.
+      return active !== undefined && !active.pinned;
+    case 'workspace.select1':
+    case 'workspace.select2':
+    case 'workspace.select3':
+    case 'workspace.select4':
+    case 'workspace.select5':
+    case 'workspace.select6':
+    case 'workspace.select7':
+    case 'workspace.select8':
+    case 'workspace.select9':
+      return context.workspaces >= Number(command.slice(-1));
+    case 'workspace.next':
+    case 'workspace.previous':
+      return context.workspaces >= 2;
+    case 'workspace.open':
+      return context.workspaces >= 1;
     case 'page.back':
       return active?.canGoBack === true;
     case 'page.forward':

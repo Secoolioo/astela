@@ -37,6 +37,7 @@ const context: CommandContext = {
   developerTools: true,
   palette: true,
   splitView: true,
+  workspaces: 1,
 };
 
 /** The browser menu and its submenu with more tools, in a language on a system. */

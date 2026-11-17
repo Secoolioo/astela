@@ -101,7 +101,7 @@ export function connectSettingsPage(
   startValues: ReadonlyMap<string, string>,
   browsingData: {
     readonly data: Pick<DataClient, 'call'>;
-    readonly web: () => Session;
+    readonly web: () => readonly Session[];
     readonly forgetTabHistories: () => Promise<void>;
   },
   shortcuts: {

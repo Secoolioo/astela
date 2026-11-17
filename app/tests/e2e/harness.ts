@@ -467,10 +467,31 @@ interface StartRecord {
 }
 
 /**
+ * A script for an overlay's page that lists its dialogs, lists, options and notes, also those
+ * inside shadow roots: their role, name, text and description, at most 80 of them.
+ */
+const overlayRows = `(() => {
+  const rows = [];
+  const walk = (root) => {
+    for (const element of root.querySelectorAll('*')) {
+      const role = element.getAttribute('role');
+      if (['dialog', 'listbox', 'option'].includes(role) || element.matches('p')) {
+        const text = (element.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+        rows.push([role || 'p', element.getAttribute('aria-label') || '', text,
+          element.getAttribute('aria-description') || '']);
+      }
+      if (element.shadowRoot) walk(element.shadowRoot);
+    }
+  };
+  walk(document);
+  return rows.slice(0, 80);
+})()`;
+
+/**
  * Records what the browser showed at the end of a test: the shell's state and address bar,
- * every web contents with its process, and the end of the browser's log; a view that has not
- * shown its first page by then adds what the browser did since its start (see
- * {@link waitingReport}). The record goes with the files of the test, which CI keeps when a
+ * every web contents with its process, what the overlays show, and the end of the browser's
+ * log; a view that has not shown its first page by then adds what the browser did since its
+ * start (see {@link waitingReport}). The record goes with the files of the test, which CI keeps when a
  * test fails: a failed expectation fails the test only after the test closed its browser. A
  * test that has failed by now, such as by its time limit, also prints the record to the job
  * log.
@@ -518,7 +539,23 @@ async function reportState(
       answerTime,
       'The browser process',
     );
-    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views })}\n`;
+    // What the overlays show, as their dialogs, lists and options name it, since a test often
+    // waits for one of them.
+    const overlays = await within(
+      main.evaluate(
+        ({ webContents }, script) =>
+          Promise.all(
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL().startsWith('app://overlay'))
+              .map((contents): Promise<unknown> => contents.executeJavaScript(script)),
+          ),
+        overlayRows,
+      ),
+      answerTime,
+      'The overlays',
+    );
+    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views, overlays })}\n`;
     // A view whose first navigation has not committed has no address yet, but loads.
     if (views.some((view) => view.url === '' && view.loading)) {
       report += await waitingReport(main, record);

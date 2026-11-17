@@ -8,6 +8,7 @@ import {
   splitCommands,
   shortcutTable,
   windowCommands,
+  workspaceCommands,
 } from '../shortcuts.ts';
 
 describe('shortcutTable', () => {
@@ -91,6 +92,49 @@ describe('the shortcuts of split view', () => {
       expect(table.size).toBe(shortcutTable(platform).size - 1);
     }
     expect(splitCommands).toEqual(['split.toggle', 'split.swap']);
+  });
+});
+
+describe('the shortcuts of the workspaces', () => {
+  it('choose a workspace with Alt and its digit, Control on macOS, and open the list with none', () => {
+    for (const platform of ['win32', 'linux']) {
+      const table = shortcutTable(platform);
+      expect(shortcutsOf(table, 'workspace.select1')).toEqual(['Alt+1']);
+      expect(shortcutsOf(table, 'workspace.select9')).toEqual(['Alt+9']);
+      expect(shortcutProblem('Alt+1', platform)).toBeUndefined();
+      // Ctrl and Alt together are AltGr on Windows, which types characters.
+      expect([...table.keys()].some((keys) => keys.startsWith('Ctrl+Alt+'))).toBe(false);
+    }
+    const mac = shortcutTable('darwin');
+    expect(shortcutsOf(mac, 'workspace.select1')).toEqual(['Ctrl+1']);
+    expect(shortcutsOf(mac, 'workspace.select9')).toEqual(['Ctrl+9']);
+    expect(mac.get('Cmd+1')).toBe('tab.select1');
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(platform);
+      for (const command of [
+        'workspace.next',
+        'workspace.previous',
+        'workspace.open',
+        'tab.newGroup',
+      ] as const) {
+        expect(shortcutsOf(table, command)).toEqual([]);
+      }
+    }
+    expect(workspaceCommands).toEqual([
+      ...Array.from({ length: 9 }, (_, at) => `workspace.select${String(at + 1)}`),
+      'workspace.next',
+      'workspace.previous',
+      'workspace.open',
+    ]);
+  });
+
+  it('leave out the commands of the workspaces while they are off, also those that people gave them', () => {
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(platform, { 'workspace.next': ['F9'] }, workspaceCommands);
+      expect(shortcutsOf(table, 'workspace.select1')).toEqual([]);
+      expect(table.get('F9')).toBeUndefined();
+      expect(table.size).toBe(shortcutTable(platform).size - 9);
+    }
   });
 });
 

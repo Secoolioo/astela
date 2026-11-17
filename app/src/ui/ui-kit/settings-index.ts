@@ -195,6 +195,10 @@ export const settingsIndex: readonly SettingsSection[] = [
         id: 'splitView.enabled',
         keys: ['settings.splitView', 'settings.splitViewNote', 'settings.splitView.keywords'],
       },
+      {
+        id: 'workspaces.enabled',
+        keys: ['settings.workspaces', 'settings.workspacesNote', 'settings.workspaces.keywords'],
+      },
     ],
   },
   {

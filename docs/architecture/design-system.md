@@ -173,6 +173,19 @@ Groups of tabs take one of six colors, the accent presets other than Astela's ow
 
 The line is a border, so forced colors keep it; there the dot and the swatches get a ring in `CanvasText`, and the chip that a dragged tab would join an outline in `Highlight`. A chip whose group a dragged tab would join lies on `--surface-hover`. The tabs of a group fade out when it collapses and grow in when it opens, with the motion of tabs that close and open, which reduced motion turns off.
 
+### Workspaces
+
+Workspaces take the same six colors, and one of 16 icons of Lucide's set, drawn with the stroke of the other icons (`app/src/ui/ui-kit/workspace-icons.ts`).
+
+| Part                      | Look                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Button of the workspaces  | the first item of the tab strip, an icon button of `--control-height` with the icon in the workspace's color; at a side a full row with the name after it                            |
+| List of the workspaces    | a popover of 320 px on `--surface-raised`, at the start of its button; rows of `--row-height`, the shown one on `--surface-2`, the details in `--text-2`                             |
+| Workspace of its own data | a badge with a line of `--line-1` and `--radius-1`, its text in `--font-size-small` and `--text-2`                                                                                   |
+| Targets of a dragged tab  | a row of targets of `--control-height` next to the button, a column at a side, on `--surface-raised` with `--shadow-popover`; the one under the pointer has `--accent` as its border |
+
+The targets fade in over `--motion-fast`, by their opacity alone; with forced colors, the target under the pointer gets an outline in `Highlight`.
+
 ### Layout presets
 
 Presets give users a good layout without having to assemble it from individual settings:
