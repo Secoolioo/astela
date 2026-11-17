@@ -22,6 +22,9 @@ import {
   CloseSuggestions,
   ResizeSplit,
   StopFinding,
+  ToggleGroup,
+  OpenGroupEditor,
+  EditGroupRequested,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type {
@@ -119,15 +122,54 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
     dismiss(window);
     return null;
   });
-  router.handle(OpenTabMenu, async ({ tabId, x, y }, { sender }) => {
+  router.handle(OpenTabMenu, async ({ tabId, x, y, keyboard }, { sender }) => {
     const window = windowOf(sender);
     const { popupTabMenu } = await import('./tab-menu.ts');
-    popupTabMenu(window, tabId, { x, y });
+    // The shell opens the popover of a new group at its chip, once the chip shows, as opened
+    // with the keyboard when the keyboard opened the menu.
+    popupTabMenu(
+      window,
+      tabId,
+      { x, y },
+      {
+        editGroup: (groupId) =>
+          router.publish(EditGroupRequested, window.shellContents, { groupId, keyboard }),
+      },
+    );
     return null;
   });
-  router.handle(MoveTab, ({ tabId, index }, { sender }) => {
+  router.handle(MoveTab, async ({ tabId, index, group }, { sender }) => {
     const { tabs } = windowOf(sender);
-    if (tabs.all.some((tab) => tab.id === tabId)) tabs.move(tabId, index);
+    if (!tabs.all.some((tab) => tab.id === tabId)) return null;
+    // The shell names a group only while the window has groups.
+    if (group === undefined) {
+      tabs.move(tabId, index);
+      return null;
+    }
+    const { editGroups } = await import('../domain/tabs/tab-groups.ts');
+    if (tabs.all.some((tab) => tab.id === tabId)) {
+      editGroups(tabs, (strip) => strip.move(tabId, index, group));
+    }
+    return null;
+  });
+  router.handle(ToggleGroup, async ({ groupId, keyboard }, { sender }) => {
+    const window = windowOf(sender);
+    const { tabs } = window;
+    const { editGroups } = await import('../domain/tabs/tab-groups.ts');
+    const group = tabs.all.find((tab) => tab.group?.id === groupId)?.group;
+    if (group === undefined || group === null) return null;
+    const toggle = (): void =>
+      void editGroups(tabs, (strip) => strip.setCollapsed(groupId, !group.collapsed));
+    // Enter or Space on the chip keep the focus there, also when the active tab changes, so
+    // that the next key shows the tabs again.
+    if (keyboard && window.shellContents.isFocused()) window.keepingFocus(toggle);
+    else toggle();
+    return null;
+  });
+  router.handle(OpenGroupEditor, async ({ groupId, ...anchor }, { sender }) => {
+    const window = windowOf(sender);
+    const { openGroupEditor } = await import('./tab-groups.ts');
+    openGroupEditor(window, groupId, anchor, { windows, router, overlay: dependencies.overlay });
     return null;
   });
   router.handle(ResizeSplit, ({ tabId, ratio, done }, { sender }) => {

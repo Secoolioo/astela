@@ -15,6 +15,7 @@ const page = (tab: Partial<CommandTab> = {}): CommandTab => ({
   canGoForward: false,
   muted: false,
   split: null,
+  group: null,
   ...tab,
 });
 
@@ -31,6 +32,12 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   splitView: true,
   ...change,
 });
+
+/** Which of the two moves of the active tab can run, `-` for one that cannot. */
+const movesOf = (tabs: readonly CommandTab[], activeIndex: number): string =>
+  (['tab.moveLeft', 'tab.moveRight'] as const)
+    .map((command) => (canRun(command, context({ tabs, activeIndex })) ? command : '-'))
+    .join(' ');
 
 /** The commands of a list that cannot run in a window. */
 const missing = (commands: readonly WindowCommand[], window: CommandContext): WindowCommand[] =>
@@ -114,6 +121,51 @@ describe('availableCommands', () => {
     expect(canRun('tab.select4', three)).toBe(false);
     const eight = context({ tabs: Array.from({ length: 8 }, () => page()) });
     expect(canRun('tab.select8', eight)).toBe(true);
+  });
+
+  it('chooses tabs by their place and goes to the next one among the tabs that groups do not hide', () => {
+    const hidden = { collapsed: true };
+    // The active tab and a collapsed group of three tabs: only the active tab is listed.
+    const one = context({
+      tabs: [page(), page({ group: hidden }), page({ group: hidden }), page({ group: hidden })],
+    });
+    expect(canRun('tab.select1', one)).toBe(true);
+    expect(
+      missing(['tab.select2', 'tab.select4', 'tab.selectLast', 'tab.next', 'tab.previous'], one),
+    ).toEqual(['tab.select2', 'tab.select4', 'tab.selectLast', 'tab.next', 'tab.previous']);
+    // A group that shows its tabs counts them.
+    const shown = { collapsed: false };
+    const two = context({
+      tabs: [page(), page({ group: hidden }), page({ group: shown }), page({ group: hidden })],
+    });
+    expect(missing(['tab.select2', 'tab.selectLast', 'tab.next', 'tab.previous'], two)).toEqual([]);
+    expect(canRun('tab.select3', two)).toBe(false);
+  });
+
+  it('moves a tab of a group out of it at the ends of the strip, and passes collapsed groups', () => {
+    const shown = { collapsed: false };
+    const hidden = { collapsed: true };
+    // A grouped tab at an end of the strip first leaves its group there.
+    const grouped = [
+      page({ pinned: true }),
+      page({ group: shown }),
+      page(),
+      page({ group: shown }),
+    ];
+    expect(movesOf(grouped, 1)).toBe('tab.moveLeft tab.moveRight');
+    expect(movesOf(grouped, 3)).toBe('tab.moveLeft tab.moveRight');
+    // Both tabs of a split view in a group, at the end.
+    const pair = [
+      page(),
+      page({ split: 'start', group: shown }),
+      page({ split: 'end', group: shown }),
+    ];
+    expect(movesOf(pair, 2)).toBe('tab.moveLeft tab.moveRight');
+    // A tab outside groups moves past a collapsed group, and stops at the ends as before.
+    const past = [page({ group: hidden }), page({ group: hidden }), page()];
+    expect(movesOf(past, 2)).toBe('tab.moveLeft -');
+    // A pinned tab stays among the pinned tabs, whatever its group says.
+    expect(movesOf([page({ pinned: true, group: shown }), page({ group: shown })], 0)).toBe('- -');
   });
 
   it('moves a tab only within its pinned or unpinned tabs, and not past the ends', () => {

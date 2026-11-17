@@ -39,7 +39,8 @@ test('warns before a site without a secure connection and continues only when as
     const problem = browser.shell.getByRole('region', {
       name: 'This site has no secure connection',
     });
-    await expect(problem).toBeVisible();
+    // On Windows, the secure attempt can run until HTTPS-First gives it up after 10 seconds.
+    await expect(problem).toBeVisible({ timeout: 15_000 });
     await expect(problem).toContainText(
       'plain.astela-e2e.net does not support a secure connection',
     );

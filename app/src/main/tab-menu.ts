@@ -1,5 +1,8 @@
 import { Menu, type MenuItemConstructorOptions } from 'electron';
 import { uiLocale } from './ui-language.ts';
+import { labelLimit } from '../domain/menus/browser-menu.ts';
+import { editGroups, groupsOf, type TabGroup } from '../domain/tabs/tab-groups.ts';
+import type { Tab } from '../domain/tabs/tab-service.ts';
 import type { BrowserWindowController } from '../platform/electron/browser-window.ts';
 import type { Translator } from '../shared/i18n/i18n.ts';
 import { acceleratorOf, shortcutsOf } from '../shared/menu-shortcuts.ts';
@@ -12,19 +15,28 @@ export type TabMenuWindow = Pick<
   'tabs' | 'tabAction' | 'setMuted' | 'canSleep' | 'shortcuts' | 'tabStripPosition' | 'splitView'
 >;
 
+/** What the menu of a tab needs besides its window. */
+export interface TabMenuOptions {
+  /** Opens the popover of a group at its chip, such as of the group that the menu made. */
+  readonly editGroup?: (groupId: string) => void;
+}
+
 /**
- * Shows the menu of a tab, at a point of the shell: a new tab next to it, split view, reload,
- * duplicate, pin, mute, sleep and the ways to close tabs.
+ * Shows the menu of a tab, at a point of the shell: a new tab next to it, split view, groups,
+ * reload, duplicate, pin, mute, sleep and the ways to close tabs.
  * @param window - The window of the tab.
  * @param tabId - The tab whose menu opens.
  * @param position - Where the menu opens, in the window's coordinates.
+ * @param options - What the items of groups need.
  */
 export function popupTabMenu(
   window: BrowserWindowController,
   tabId: string,
   position: { readonly x: number; readonly y: number },
+  options: TabMenuOptions = {},
 ): void {
-  const template = tabMenuTemplate(window, tabId, translatorFor(uiLocale(), process.platform));
+  const i18n = translatorFor(uiLocale(), process.platform);
+  const template = tabMenuTemplate(window, tabId, i18n, options);
   if (template === undefined) return;
   Menu.buildFromTemplate(template).popup({ window: window.window, x: position.x, y: position.y });
 }
@@ -36,11 +48,13 @@ export function popupTabMenu(
  * @param window - The window of the tab.
  * @param tabId - The tab whose menu opens.
  * @param i18n - The texts of the browser process, in the language of its menus.
+ * @param options - What the items of groups need.
  */
 export function tabMenuTemplate(
   window: TabMenuWindow,
   tabId: string,
   i18n: Translator<MessageKey>,
+  options: TabMenuOptions = {},
 ): MenuItemConstructorOptions[] | undefined {
   const tab = window.tabs.all.find((candidate) => candidate.id === tabId);
   if (tab === undefined) return undefined;
@@ -74,6 +88,7 @@ export function tabMenuTemplate(
       click: () => window.tabAction(tabId, 'newTabRight'),
     },
     ...splitItems(window, tab, i18n, ofTab, whileOpen),
+    ...groupItems(window, tab, i18n, whileOpen, options),
     { type: 'separator' },
     {
       label: i18n.t('tabMenu.reload'),
@@ -171,4 +186,88 @@ function splitItems(
       click: whileOpen(() => window.tabAction(tab.id, 'split')),
     },
   ];
+}
+
+/**
+ * The items of groups in the menu of a tab that is not pinned: to put it in a new group, whose
+ * popover opens, or in another group of the window, and to take it out of its group.
+ * @param window - The window of the tab.
+ * @param tab - The tab whose menu opens.
+ * @param i18n - The texts of the browser process.
+ * @param whileOpen - Runs an item only while the tab is open.
+ * @param options - What the items of groups need.
+ */
+function groupItems(
+  window: TabMenuWindow,
+  tab: Tab,
+  i18n: Translator<MessageKey>,
+  whileOpen: (run: () => void) => () => void,
+  options: TabMenuOptions,
+): MenuItemConstructorOptions[] {
+  if (tab.pinned) return [];
+  const others = groupsOf(window.tabs.all).filter((group) => group.id !== tab.group?.id);
+  const create = whileOpen(() => {
+    const group = editGroups(window.tabs, (strip) => strip.createGroup(tab.id));
+    if (group !== undefined) options.editGroup?.(group.id);
+  });
+  const nameOf = (group: TabGroup): string => {
+    const first = window.tabs.all.find((other) => other.group?.id === group.id);
+    return group.name !== ''
+      ? menuLabel(group.name)
+      : i18n.t('tabMenu.groupWith', { title: menuLabel(first?.title || (first?.url ?? '')) });
+  };
+  return [
+    others.length === 0
+      ? { label: i18n.t('tabMenu.addToNewGroup'), click: create }
+      : {
+          label: i18n.t('tabMenu.addToGroup'),
+          submenu: [
+            { label: i18n.t('tabMenu.newGroup'), click: create },
+            { type: 'separator' },
+            ...others.map((group): MenuItemConstructorOptions => ({
+              label: nameOf(group),
+              click: whileOpen(
+                () => void editGroups(window.tabs, (strip) => strip.addToGroup(tab.id, group.id)),
+              ),
+            })),
+          ],
+        },
+    ...(tab.group === null
+      ? []
+      : [
+          {
+            label: i18n.t('tabMenu.removeFromGroup'),
+            click: whileOpen(
+              () => void editGroups(window.tabs, (strip) => strip.removeFromGroup(tab.id)),
+            ),
+          },
+        ]),
+  ];
+}
+
+/** Splits text into the characters that a person sees, made with the first long title. */
+let segmenter: Intl.Segmenter | undefined;
+
+/**
+ * A name of a group or a title of a page in the menu of a tab: no access key, as each `&` is
+ * doubled, also on macOS, whose menus hide an `&` and show `&&` as one; and a long title cut
+ * after {@link labelLimit} characters that a person sees, as in the menus of bookmarks. It
+ * reads no further than that, as a page without a title shows its address, which can be
+ * megabytes long.
+ * @param text - The name or the title.
+ */
+function menuLabel(text: string): string {
+  let shown = text;
+  if (text.length > labelLimit) {
+    segmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    let count = 0;
+    for (const { index } of segmenter.segment(text)) {
+      if (count === labelLimit) {
+        shown = `${text.slice(0, index).trimEnd()}…`;
+        break;
+      }
+      count += 1;
+    }
+  }
+  return shown.replaceAll('&', '&&');
 }

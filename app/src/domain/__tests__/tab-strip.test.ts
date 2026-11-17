@@ -115,8 +115,17 @@ describe('TabStrip', () => {
     }
     expect(strip.canReopen).toBe(true);
     const reopened: string[] = [];
-    for (let url = strip.reopen(); url !== undefined; url = strip.reopen()) reopened.push(url);
+    const places: unknown[] = [];
+    const open = (url: string, place: unknown): string => {
+      reopened.push(url);
+      places.push(place);
+      return `opened ${url}`;
+    };
+    expect(strip.reopenWith(open)).toBe('opened https://t29.example/');
+    while (strip.reopenWith(open) !== undefined);
     expect(reopened).toHaveLength(25);
+    // A strip without groups opens each tab in front, where a new tab goes.
+    expect(places.every((place) => JSON.stringify(place) === '{}')).toBe(true);
     expect(reopened[0]).toBe('https://t29.example/');
     expect(reopened.at(-1)).toBe('https://t5.example/');
     expect(strip.canReopen).toBe(false);

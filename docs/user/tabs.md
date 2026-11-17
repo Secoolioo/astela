@@ -1,6 +1,6 @@
 # Tabs
 
-> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search, sleeping tabs and split view from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.6; shortcuts of your own for more items of the menu of a tab, tab search, sleeping tabs, split view and tab groups from 0.1.0-beta.7.
 
 ## What a tab shows
 
@@ -11,7 +11,11 @@
 
 ## Moving tabs
 
-Drag a tab along the tab strip to move it; the other tabs make room for it, and it lands where you let go. Dragging a tab does not switch to it. The two tabs of a [split view](#split-view) move together: dragging either of them drags both, and the other tabs make room for both. Tabs open, close and move with a short animation, which the system's setting for reduced motion turns off. The surface of the active tab slides with it to its new place. On macOS, a Control-click on a tab opens its menu and does not drag the tab.
+Drag a tab along the tab strip to move it; the other tabs make room for it, and it lands where you let go. Dragging a tab does not switch to it. The two tabs of a [split view](#split-view) move together: dragging either of them drags both, and the other tabs make room for both. Tabs open, close and move with a short animation, which the system's setting for reduced motion turns off. The surface of the active tab slides with it to its new place. On macOS, a Control-click on a tab opens its menu and does not drag the tab. Dropped between two tabs of a group, a tab joins the group, and dragged more than half its width past the end of its group, it leaves it; see [tab groups](tab-groups.md#moving-tabs-into-and-out-of-groups).
+
+## Tab groups
+
+From 0.1.0-beta.7, tabs can stand together in named, colored groups, whose tabs you can hide behind the chip of the group. **Add to new group** in the menu of a tab starts one. See [Tab groups](tab-groups.md).
 
 ## Many tabs
 
@@ -53,8 +57,8 @@ A page that could not be loaded shows why in its own side; see [When a page does
 
 ## The menu of a tab
 
-A click with the secondary button on a tab opens its menu: a new tab next to it, [split view](#split-view), reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
+A click with the secondary button on a tab opens its menu: a new tab next to it, [split view](#split-view), [groups](tab-groups.md#making-a-group), reload, duplicate, pin or unpin, mute or unmute, [put to sleep](#sleeping-tabs), close, close the other tabs and close the tabs to the right, which leave pinned tabs open, and reopen the last closed tab. In a tab strip at a side, the menu opens the new tab below the tab and closes the tabs below it. The menu of the active tab shows the shortcuts of duplicating, pinning, muting and closing it, and of closing the other tabs and those to the right, also the shortcuts that you give them in the settings. On Windows and Linux, each item has an access key of its own.
 
 ## Keyboard
 
-`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab. They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab, together with the other side of its split view, past the tab or the split view next to it. The settings can give these commands shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md). They can also give shortcuts to duplicating, pinning and muting a tab, and to closing the other tabs and the tabs to the right (below, in a tab strip at a side), which have none at first; see [commands without a shortcut](keyboard-shortcuts.md#commands-without-a-shortcut).
+`Ctrl+1` to `Ctrl+8` (`Command+1` to `Command+8` on macOS) switch to the tab at that place, and `Ctrl+9` (`Command+9`) to the last tab; they count only the tabs that the tab strip shows, not those of a [hidden group](tab-groups.md#showing-and-hiding-the-tabs-of-a-group). They use the keys of the digits, also on layouts that type the digits with Shift, such as French, Belgian, Czech and Slovak ones; see [other layouts](keyboard-shortcuts.md#other-layouts-and-input-methods). On Windows and Linux, `Ctrl+Shift+Page Up` and `Ctrl+Shift+Page Down` move the active tab, together with the other side of its split view, past the tab or the split view next to it; at the edge of a group, the tab first leaves the group or joins it, and a hidden group is passed as a whole. The settings can give these commands shortcuts of your own; see [Keyboard shortcuts](keyboard-shortcuts.md). They can also give shortcuts to duplicating, pinning and muting a tab, and to closing the other tabs and the tabs to the right (below, in a tab strip at a side), which have none at first; see [commands without a shortcut](keyboard-shortcuts.md#commands-without-a-shortcut).

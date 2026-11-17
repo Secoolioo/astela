@@ -26,6 +26,7 @@ const context: CommandContext = {
       canGoForward: false,
       muted: false,
       split: null,
+      group: null,
     },
   ],
   activeIndex: 0,

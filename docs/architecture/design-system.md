@@ -158,6 +158,21 @@ A window can show two tabs side by side ([ADR 0054](../adr/0054-split-view-with-
 
 Hover, focus and a drag tint the grip with `--accent` and the divider with `--surface-hover`, over `--motion-instant`; the line changes its color over `--motion-fast`. With forced colors, the line is `Highlight` and the grip `CanvasText`. In the tab strip, the two tabs of a pair stand together without the gap between them, rounded at their outer corners, and the tab of the pair that does not have the surface of the active tab lies on `--surface-2`. The find bar ends where the side with the focus ends; a left side narrower than the bar's controls leaves them at the start of the window, and the bar is never wider than the window.
 
+### Tab groups
+
+Groups of tabs take one of six colors, the accent presets other than Astela's own, as the tokens `--swatch-blue`, `--swatch-teal`, `--swatch-green`, `--swatch-orange`, `--swatch-red` and `--swatch-graphite` of `tokens.css`, with the values of `presetAccentColors` for the light mode, and for the dark mode and private windows. Every theme keeps them; a unit test checks that they match the presets and stand out by 3:1 from every surface of every built-in theme in both modes ([ADR 0055](../adr/0055-tab-groups-and-workspaces-in-the-tab-model.md)).
+
+| Part                  | Look                                                                                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chip before the group | `--control-small` high, at most 120 px wide with an ellipsis, `--radius-1`, a dot of 8 px in the group's color and the name in `--font-size-small`, `--surface-hover` under the pointer |
+| Chip at a side        | a row of the list, `--control-height` high and as wide as a tab, with a chevron that turns over `--motion-fast` while the group hides its tabs                                          |
+| Line of a grouped tab | a border of 2 px in the group's color on the edge that faces the page: bottom with the strip at the top, top with the strip at the bottom, start at a side                              |
+| Grouped tab at a side | indented by `--space-3`, its start corners square                                                                                                                                       |
+| Collapsed chip        | the number of its tabs after the name, in `--text-2`                                                                                                                                    |
+| Popover of a group    | 288 px wide on `--surface-raised`, the color as round swatches of `--control-height` with a ring of 2 px around the one chosen                                                          |
+
+The line is a border, so forced colors keep it; there the dot and the swatches get a ring in `CanvasText`, and the chip that a dragged tab would join an outline in `Highlight`. A chip whose group a dragged tab would join lies on `--surface-hover`. The tabs of a group fade out when it collapses and grow in when it opens, with the motion of tabs that close and open, which reduced motion turns off.
+
 ### Layout presets
 
 Presets give users a good layout without having to assemble it from individual settings:

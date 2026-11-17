@@ -1,7 +1,7 @@
 import * as v from 'valibot';
-import { defineRequest, type RequestContract } from './contract.ts';
+import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 import { PopoverAnchor } from './overlay-anchor.ts';
-import { Done, Empty, FaviconKey, SplitRatio, TabId } from './shell-contracts.ts';
+import { Done, Empty, FaviconKey, GroupId, SplitRatio, TabId } from './shell-contracts.ts';
 
 // Requests of the shell that its first paint does not need. They load with the first of
 // them, so the browser does not read them at its start; `shellLaterChannels` names them.
@@ -134,14 +134,54 @@ export const SetTabMuted = defineRequest({
   capability: 'shell',
 });
 
-/** Moves a tab to another place among the tabs of its window. */
+/**
+ * Moves a tab to another place among the tabs of its window. While the window has groups of
+ * tabs, `group` names the group that the tab joins there, or `null` for none; without it, a
+ * place between two tabs of a group joins that group, and a tab keeps its group at its edges.
+ */
 export const MoveTab = defineRequest({
   channel: 'tabs.move',
   request: v.strictObject({
     tabId: TabId,
     index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000)),
+    group: v.optional(v.nullable(GroupId)),
   }),
   response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Hides the tabs of a group behind its chip, or shows them again, as a click on the chip does;
+ * `keyboard` when Enter or Space on the chip did it, which then keeps the focus, also when the
+ * active tab changes with it.
+ */
+export const ToggleGroup = defineRequest({
+  channel: 'groups.toggle',
+  request: v.strictObject({ groupId: GroupId, keyboard: v.boolean() }),
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Opens the popover of a group of tabs at its chip, in CSS pixels of the shell, where the
+ * group gets its name and color, or a new tab, or ends or closes.
+ */
+export const OpenGroupEditor = defineRequest({
+  channel: 'groups.openEditor',
+  request: v.strictObject({ groupId: GroupId, ...PopoverAnchor.entries }),
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Asks the shell to open the popover of a group at its chip, which only the shell knows, such
+ * as for the group that the menu of a tab just made. The shell opens it once the chip shows,
+ * as opened with the keyboard when the keyboard opened that menu, so that the focus goes back
+ * to the shell when the popover closes.
+ */
+export const EditGroupRequested = defineEvent({
+  channel: 'shell.editGroup',
+  payload: v.strictObject({ groupId: GroupId, keyboard: v.boolean() }),
   capability: 'shell',
 });
 
@@ -159,13 +199,17 @@ export const ResizeSplit = defineRequest({
   ratePerSecond: 240,
 });
 
-/** Opens the menu of a tab at a point of the shell in CSS pixels. */
+/**
+ * Opens the menu of a tab at a point of the shell in CSS pixels; `keyboard` when the context
+ * menu key or Shift+F10 opened it, which a popover that the menu opens takes over.
+ */
 export const OpenTabMenu = defineRequest({
   channel: 'tabs.openMenu',
   request: v.strictObject({
     tabId: TabId,
     x: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
     y: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20000)),
+    keyboard: v.boolean(),
   }),
   response: Done,
   capability: 'shell',
@@ -241,4 +285,6 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   AcceptSuggestion,
   CloseSuggestions,
   ResizeSplit,
+  ToggleGroup,
+  OpenGroupEditor,
 ];

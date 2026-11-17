@@ -553,7 +553,11 @@ test('writes the session for a page whose title changes all the time only now an
   try {
     await go(browser, home);
     const page = await waitForPage(browser, (url) => url === home);
-    await expect.poll(() => sessionFile(profile)?.windows[0]?.tabs[0]?.title).toBe('Fixture home');
+    // The title of the page can come after the write that its address started, on a slow
+    // machine; then it waits as a new title alone does.
+    await expect
+      .poll(() => sessionFile(profile)?.windows[0]?.tabs[0]?.title, { timeout: 35_000 })
+      .toBe('Fixture home');
     // A page that counts, as a timer does.
     await page.evaluate(() => {
       let count = 0;

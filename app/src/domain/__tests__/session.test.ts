@@ -476,6 +476,7 @@ describe('sessions and 0.1.0-beta.6', () => {
    * and the tabs of two workspaces, those of the hidden one with the mark of their active tab.
    * Whoever writes one of these fields for real makes it here what the browser writes.
    */
+  const work = { id: 'g1', name: 'Work', color: 'blue', collapsed: false } as const;
   const later = {
     version: 1,
     windows: [
@@ -488,8 +489,8 @@ describe('sessions and 0.1.0-beta.6', () => {
             current: true,
             history: history('https://news.example/'),
           },
-          { ...tab('https://a.example/'), group: 'g1', workspace: 'w1' },
-          { ...tab('https://b.example/'), group: 'g1', workspace: 'w1', current: true },
+          { ...tab('https://a.example/'), group: work, workspace: 'w1' },
+          { ...tab('https://b.example/'), group: work, workspace: 'w1', current: true },
           { ...tab('app://settings/'), workspace: 'w1' },
         ],
         active: 3,
@@ -497,7 +498,6 @@ describe('sessions and 0.1.0-beta.6', () => {
         maximized: false,
         fullScreen: true,
         splits: [{ start: 2, ratio: 0.4 }],
-        groups: [{ id: 'g1', name: 'Work', color: 'blue', collapsed: false }],
         workspace: 'w1',
       },
       {
@@ -528,8 +528,8 @@ describe('sessions and 0.1.0-beta.6', () => {
 
   it('keeps every tab and the active tab of a session with the fields of later versions', () => {
     expect(parseBeta6Session(later)).toEqual(kept);
-    // This version reads the histories, full screen and the split views, and the fields it
-    // does not know yet the same way as 0.1.0-beta.6.
+    // This version reads the histories, full screen, the split views and the groups of tabs,
+    // and the fields it does not know yet the same way as 0.1.0-beta.6.
     expect(parseSession(later)).toEqual({
       version: 1,
       windows: [
@@ -538,8 +538,8 @@ describe('sessions and 0.1.0-beta.6', () => {
           tabs: [
             { ...tab('https://mail.example/'), pinned: true },
             { ...tab('https://news.example/'), history: history('https://news.example/') },
-            tab('https://a.example/'),
-            tab('https://b.example/'),
+            { ...tab('https://a.example/'), group: work },
+            { ...tab('https://b.example/'), group: work },
             tab('app://settings/'),
           ],
           fullScreen: true,
@@ -563,8 +563,8 @@ describe('sessions and 0.1.0-beta.6', () => {
           history: history('https://mail.example/'),
         },
         tab('app://setup/'),
-        { url: 'https://a.example/', title: 'x'.repeat(2000) },
-        { ...tab('app://history/'), history: shown('app://history/') },
+        { url: 'https://a.example/', title: 'x'.repeat(2000), group: work },
+        { ...tab('app://history/'), history: shown('app://history/'), group: null },
       ],
       3,
       { bounds, maximized: true, fullScreen: true, splits: [{ start: 2, ratio: 0.35 }] },
@@ -580,7 +580,7 @@ describe('sessions and 0.1.0-beta.6', () => {
               pinned: true,
               history: history('https://mail.example/'),
             },
-            { url: 'https://a.example/', title: 'x'.repeat(1024) },
+            { url: 'https://a.example/', title: 'x'.repeat(1024), group: work },
             { ...tab('app://history/'), history: shown('app://history/') },
           ],
           active: 2,
@@ -591,8 +591,8 @@ describe('sessions and 0.1.0-beta.6', () => {
         },
       ],
     });
-    // 0.1.0-beta.6 reads every tab without its history, and the window without full screen and
-    // split views.
+    // 0.1.0-beta.6 reads every tab without its history and its group, and the window without
+    // full screen and split views.
     expect(parseBeta6Session(written)).toEqual({
       version: 1,
       windows: [
@@ -739,5 +739,54 @@ describe('split views in the session', () => {
     expect(
       session === undefined ? [] : restoredWindows(session).map((window) => window.splits),
     ).toEqual([[{ start: 1, ratio: 0.25 }], undefined]);
+  });
+});
+
+describe('groups of tabs in the session', () => {
+  const news = { id: 'g4', name: 'News', color: 'orange', collapsed: true } as const;
+
+  it('keeps the group of each tab, and drops a group that cannot be read on its own', () => {
+    const file = {
+      version: 1,
+      windows: [
+        {
+          tabs: [
+            { ...tab('https://a.example/'), group: news },
+            // A group of a later version may have more fields, which this one leaves out.
+            { ...tab('https://b.example/'), group: { ...news, icon: 'star' } },
+            { ...tab('https://c.example/'), group: { ...news, color: 'pink' } },
+            { ...tab('https://d.example/'), group: { ...news, name: 'x'.repeat(51) } },
+            { ...tab('https://e.example/'), group: { ...news, id: '../g4' } },
+            { ...tab('https://f.example/'), group: 'g4' },
+            { ...tab('https://g.example/'), group: { ...news, collapsed: 'yes' } },
+          ],
+          active: 1,
+        },
+      ],
+    };
+    const session = parseSession(file);
+    expect(session?.windows[0]?.tabs).toEqual([
+      { ...tab('https://a.example/'), group: news },
+      { ...tab('https://b.example/'), group: news },
+      ...['c', 'd', 'e', 'f', 'g'].map((name) => tab(`https://${name}.example/`)),
+    ]);
+    // What this version writes, it reads back as it was.
+    const written: unknown = JSON.parse(JSON.stringify(session));
+    expect(parseSession(written)).toEqual(session);
+  });
+
+  it('opens the tabs again with their groups', () => {
+    const session = parseSession({
+      version: 1,
+      windows: [
+        {
+          tabs: [tab('https://a.example/'), { ...tab('https://b.example/'), group: news }],
+          active: 0,
+        },
+      ],
+    });
+    expect(
+      session === undefined ? [] : restoredWindows(session)[0]?.tabs.map((one) => one.group),
+    ).toEqual([undefined, news]);
   });
 });

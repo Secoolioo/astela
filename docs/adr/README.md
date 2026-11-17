@@ -94,4 +94,5 @@ Each rejected option as a bullet point with a short reason.
 | [0052](0052-command-palette-and-tab-search-in-the-overlay.md)          | Command palette and tab search in the overlay           |
 | [0053](0053-sleeping-tabs-and-an-exact-session.md)                     | Sleeping tabs and an exact session                      |
 | [0054](0054-split-view-with-two-tabs-side-by-side.md)                  | Split view with two tabs side by side                   |
+| [0055](0055-tab-groups-and-workspaces-in-the-tab-model.md)             | Tab groups and workspaces in the tab model              |
 | [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment             |

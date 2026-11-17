@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { tabStripPositions, toolbarItems } from '../layout.ts';
 import { splitRatio } from '../split-view.ts';
+import { swatches } from '../swatches.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 /** The id of a tab. */
@@ -29,6 +30,21 @@ export type TabProblem = v.InferOutput<typeof TabProblem>;
 /** The key of a page icon that the browser keeps; the shell asks for the icon by it. */
 export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
 
+/** The id of a group of tabs, unique in its window. */
+export const GroupId = v.pipe(v.string(), v.regex(/^g[0-9a-z]{1,12}$/));
+
+/**
+ * A group of neighbouring tabs: its id, its name, which may be empty, its color and whether
+ * its tabs are hidden behind its chip. Each tab of the group carries it, and the session keeps
+ * it with each tab.
+ */
+export const TabGroupView = v.strictObject({
+  id: GroupId,
+  name: v.pipe(v.string(), v.maxLength(50)),
+  color: v.picklist(swatches),
+  collapsed: v.boolean(),
+});
+
 /**
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
  * blocked on the current page; `blocking` tells whether the blocker works on the page, with
@@ -39,8 +55,9 @@ export const FaviconKey = v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/));
  * `zoom` the zoom factor of the page, 1 for 100 %; `favicon` the key of the page's icon;
  * `audible` whether the page plays sound, `muted` whether its sound is muted, `pinned`
  * whether the tab is pinned, `sleeping` whether the tab has no page loaded, as a tab that
- * was put to sleep or a restored tab that was not shown yet, which loads once it is shown, and
- * `split` which side of a split view the tab is, or `null` for a tab that is in none.
+ * was put to sleep or a restored tab that was not shown yet, which loads once it is shown,
+ * `split` which side of a split view the tab is, or `null` for a tab that is in none, and
+ * `group` the group of tabs that the tab is in, or `null`.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -61,6 +78,7 @@ export const TabView = v.strictObject({
   pinned: v.boolean(),
   sleeping: v.boolean(),
   split: v.nullable(v.picklist(['start', 'end'])),
+  group: v.nullable(TabGroupView),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

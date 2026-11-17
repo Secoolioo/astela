@@ -251,9 +251,3 @@ export function parseTabHistory(data: unknown, url: string): TabHistory | undefi
   const kept = trimHistory({ views, view: history.output.view }, sessionLimits);
   return kept !== undefined && currentEntry(kept)?.url === url ? kept : undefined;
 }
-
-/** The form of a tab's history in a session, for the type of the session. */
-export const TabHistoryShape = v.custom<TabHistory>(
-  (input) => v.is(StoredHistory, input),
-  'A history of a tab',
-);

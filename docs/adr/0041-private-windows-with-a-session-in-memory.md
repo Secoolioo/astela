@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md): private windows have tab groups, which the session does not keep either, but no workspaces.
 
 ## Date
 

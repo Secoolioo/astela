@@ -315,13 +315,14 @@ function context(host: WindowHost): CommandContext {
   const { window, options } = host;
   const active = window.tabs.active;
   return {
-    tabs: window.tabs.all.map(({ id, url, pinned, canGoBack, canGoForward, muted }) => ({
+    tabs: window.tabs.all.map(({ id, url, pinned, canGoBack, canGoForward, muted, group }) => ({
       url,
       pinned,
       canGoBack,
       canGoForward,
       muted,
       split: host.sideOf(id),
+      group,
     })),
     activeIndex: active === undefined ? -1 : window.tabs.all.indexOf(active),
     canReopen: window.tabs.canReopen,

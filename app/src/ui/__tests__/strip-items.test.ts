@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { TabView } from '../../shared/ipc/shell-contracts.ts';
-import { dropPlace, spanOf, stripItems, unitsOf, type Span } from '../shell/strip-items.ts';
+import {
+  chipKey,
+  dropGroup,
+  dropPlace,
+  spanOf,
+  stripItems,
+  tabCounts,
+  unitsOf,
+  type Span,
+} from '../shell/strip-items.ts';
 
 const tab = (id: string): TabView => ({
   id,
@@ -21,6 +30,7 @@ const tab = (id: string): TabView => ({
   pinned: false,
   sleeping: false,
   split: null,
+  group: null,
 });
 
 /** Tabs of 100 pixels with 8 pixels between them, from 10 on. */
@@ -175,5 +185,101 @@ describe('strip items', () => {
     });
     expect(dropPlace([['a'], ['b']], ['x'], 10, places, 8)).toBeUndefined();
     expect(dropPlace([['a'], ['b', 'x']], ['b', 'x'], 10, places, 8)).toBeUndefined();
+  });
+});
+
+describe('strip items of groups of tabs', () => {
+  const work = { id: 'g1', name: 'Work', color: 'blue', collapsed: false } as const;
+  const hidden = { id: 'g2', name: '', color: 'red', collapsed: true } as const;
+  const grouped = (id: string, group: TabView['group']): TabView => ({ ...tab(id), group });
+
+  it('puts the chip of each group before its first tab, and leaves out the tabs that a group hides', () => {
+    const tabs = [
+      tab('a'),
+      grouped('b', work),
+      grouped('c', work),
+      grouped('d', hidden),
+      grouped('e', hidden),
+      tab('f'),
+    ];
+    const items = stripItems({ tabs });
+    expect(items.map((item) => item.key)).toEqual(['a', 'group:g1', 'b', 'c', 'group:g2', 'f']);
+    expect(items[1]).toEqual({
+      kind: 'group',
+      key: chipKey('g1'),
+      group: work,
+      tabs: tabs.slice(1, 3),
+    });
+    expect(items[4]).toMatchObject({ kind: 'group', tabs: tabs.slice(3, 5) });
+    // A chip moves on its own and stands for the tabs that its group hides.
+    expect(unitsOf(items)).toEqual([['a'], ['group:g1'], ['b'], ['c'], ['group:g2'], ['f']]);
+    expect(tabCounts(items)).toEqual(
+      new Map([
+        ['a', 1],
+        ['group:g1', 0],
+        ['b', 1],
+        ['c', 1],
+        ['group:g2', 2],
+        ['f', 1],
+      ]),
+    );
+  });
+
+  // a, the chip of b and c, b, c, the chip of the hidden d and e, f: 100 px each, 8 px apart.
+  const tabs = [
+    tab('a'),
+    grouped('b', work),
+    grouped('c', work),
+    grouped('d', hidden),
+    grouped('e', hidden),
+    tab('f'),
+  ];
+  const items = stripItems({ tabs });
+  const units = unitsOf(items);
+  const places = spans('a', 'group:g1', 'b', 'c', 'group:g2', 'f');
+  const counts = tabCounts(items);
+
+  it('counts the tabs of the strip in the place of a drop, also those that a group hides', () => {
+    // f passes the hidden group and c: two hidden tabs and c come after it.
+    expect(dropPlace(units, ['f'], -250, places, 8, counts)?.index).toBe(2);
+    // a passes the chip of the group and b: only b counts.
+    expect(dropPlace(units, ['a'], 250, places, 8, counts)?.index).toBe(1);
+    // Past everything, a lands after the five tabs of the others.
+    expect(dropPlace(units, ['a'], 1000, places, 8, counts)?.index).toBe(5);
+    // The chips make room like tabs.
+    expect(dropPlace(units, ['a'], 250, places, 8, counts)?.shifts.get('group:g1')).toBe(-108);
+  });
+
+  it('joins a group between two of its tabs or over its chip, and leaves it more than half a tab past its end', () => {
+    // a from 10-110, the chip from 118, b from 226, c from 334 to 434.
+    expect(dropGroup(items, ['a'], 280, places)).toBe('g1');
+    expect(dropGroup(items, ['a'], 110, places)).toBe('g1');
+    expect(dropGroup(items, ['a'], 50, places)).toBeNull();
+    // c leaves its group once its middle passes the end of the group, its own place included.
+    expect(dropGroup(items, ['c'], 40, places)).toBe('g1');
+    expect(dropGroup(items, ['c'], 60, places)).toBeNull();
+    // b leaves it past the start of the chip.
+    expect(dropGroup(items, ['b'], -150, places)).toBe('g1');
+    expect(dropGroup(items, ['b'], -170, places)).toBeNull();
+    // A hidden group takes no tab, also over its chip.
+    expect(dropGroup(items, ['f'], -108, places)).toBeNull();
+  });
+
+  it('joins no group with a pinned tab or a tab without a place, and works along a strip at a side', () => {
+    const pinned = { ...tab('p'), pinned: true };
+    const withPin = stripItems({ tabs: [pinned, grouped('b', work), grouped('c', work)] });
+    const pinPlaces = spans('p', 'group:g1', 'b', 'c');
+    expect(dropGroup(withPin, ['p'], 250, pinPlaces)).toBeNull();
+    expect(dropGroup(items, ['x'], 0, places)).toBeNull();
+    const vertical = new Map<string, Span>([
+      ['a', spanOf({ left: 0, top: 50, width: 200, height: 36 }, true)],
+      ['group:g1', spanOf({ left: 0, top: 90, width: 200, height: 28 }, true)],
+      ['b', spanOf({ left: 12, top: 122, width: 188, height: 36 }, true)],
+      ['c', spanOf({ left: 12, top: 162, width: 188, height: 36 }, true)],
+    ]);
+    const column = stripItems({ tabs: [tab('a'), grouped('b', work), grouped('c', work)] });
+    expect(dropGroup(column, ['a'], 90, vertical)).toBe('g1');
+    expect(dropGroup(column, ['c'], 27, vertical)).toBeNull();
+    expect(dropGroup(column, ['c'], 17, vertical)).toBe('g1');
   });
 });

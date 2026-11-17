@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) makes restored tabs and tabs that sleep one kind of tab without a view, which keeps its back and forward history and gets its view again when it shows. [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) attaches the views of two tabs while a window shows a split view, and no tab view takes the focus when its page loads.
+Accepted. [ADR 0053](0053-sleeping-tabs-and-an-exact-session.md) makes restored tabs and tabs that sleep one kind of tab without a view, which keeps its back and forward history and gets its view again when it shows. [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) attaches the views of two tabs while a window shows a split view, and no tab view takes the focus when its page loads. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) gives each isolated workspace a partition of its own, `persist:ws-<id>`, hardened like `persist:default`.
 
 ## Date
 

@@ -21,6 +21,8 @@ export const shellLaterChannels = [
   'omnibox.accept',
   'omnibox.close',
   'tabs.resizeSplit',
+  'groups.toggle',
+  'groups.openEditor',
 ] as const;
 
 /**
@@ -40,7 +42,11 @@ export const shellChannels = [
 ] as const;
 
 /** Event channels the shell listens to. */
-export const shellEventChannels = ['shell.stateChanged', 'shell.command'] as const;
+export const shellEventChannels = [
+  'shell.stateChanged',
+  'shell.command',
+  'shell.editGroup',
+] as const;
 
 /** A request channel of the shell. */
 export type ShellChannel = (typeof shellChannels)[number];

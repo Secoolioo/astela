@@ -218,7 +218,7 @@ export const folderLimit = 500;
 /** Submenus of folders open at most this deep below the menu itself. */
 export const folderDepth = 20;
 /** At most this many characters of a title show in a menu. */
-const labelLimit = 300;
+export const labelLimit = 300;
 
 /**
  * The text of a title in a menu: as it is on macOS, and elsewhere with each `&` doubled, so

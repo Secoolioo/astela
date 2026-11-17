@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amends [ADR 0013](0013-theme-system-and-design-tokens.md) on the built-in themes, the theme editor and theme files. [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md) changes the dark palettes of the built-in themes and mixes two more tokens from every palette; a theme keeps its seven tokens.
+Accepted. Amends [ADR 0013](0013-theme-system-and-design-tokens.md) on the built-in themes, the theme editor and theme files. [ADR 0051](0051-calmer-dark-mode-mixed-from-the-palette.md) changes the dark palettes of the built-in themes and mixes two more tokens from every palette; a theme keeps its seven tokens. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md) plans a theme and an accent of its own for each workspace, as settings with the scope `workspace`.
 
 ## Date
 

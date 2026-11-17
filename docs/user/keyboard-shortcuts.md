@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, and the shortcuts of the command palette, tab search and split view, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search and split view, and the moves of tabs into and out of groups, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -105,6 +105,10 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, such as German or French, press Command together with the keys that type the bracket.
 
 **Open or end split view** opens a new tab page beside the active tab in a [split view](tabs.md#split-view), or ends the split view of the active tab. `Command+Shift+S` stays free, as it means Save As on macOS. While split view is off in the settings, the shortcut reaches the page.
+
+## Tabs in groups
+
+The shortcuts that switch to the next or the previous tab, or to a tab by its place, skip the tabs that a [group](tab-groups.md) hides. Moving the active tab with the keyboard takes it out of its group at the edge of the group first, and into a group next to it; a hidden group is passed as a whole. On the chip of a group, Enter or Space hide or show its tabs, and the context menu key opens its popover.
 
 ## The browser menu
 

@@ -1,8 +1,9 @@
 import * as v from 'valibot';
 import { shortcutPattern, windowCommands } from '../shortcuts.ts';
+import { swatches } from '../swatches.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 import { OverlayAnchor } from './overlay-anchor.ts';
-import { FaviconKey } from './shell-contracts.ts';
+import { FaviconKey, GroupId } from './shell-contracts.ts';
 
 /**
  * The content blocker's popover for the active tab: the domain that an exception covers,
@@ -243,6 +244,25 @@ const BookmarkEditor = v.strictObject({
 /** The popover of the bookmark star. */
 export type BookmarkEditor = v.InferOutput<typeof BookmarkEditor>;
 
+/** The longest name of a group of tabs. */
+const GroupName = v.pipe(v.string(), v.maxLength(50));
+
+/**
+ * The popover of a group of tabs at its chip: the id, name and color of the group, which the
+ * popover changes at once, and the buttons for a new tab in the group, for ending the group
+ * and for closing its tabs.
+ */
+const GroupEditor = v.strictObject({
+  kind: v.literal('group'),
+  anchor: OverlayAnchor,
+  id: GroupId,
+  name: GroupName,
+  color: v.picklist(swatches),
+});
+
+/** The popover of a group of tabs. */
+export type GroupEditor = v.InferOutput<typeof GroupEditor>;
+
 /** A command of the window. */
 const PaletteCommandId = v.picklist(windowCommands);
 
@@ -295,6 +315,7 @@ export const OverlayContent = v.nullable(
     MenuPopover,
     BookmarkEditor,
     CommandPalette,
+    GroupEditor,
   ]),
 );
 
@@ -381,6 +402,28 @@ export const SaveBookmark = defineRequest({
 export const RemoveBookmark = defineRequest({
   channel: 'overlay.removeBookmark',
   request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Names or colors the group of the popover of a group, while people type or choose; the
+ * popover stays open, and the page keeps what it shows.
+ */
+export const EditGroup = defineRequest({
+  channel: 'overlay.editGroup',
+  request: v.strictObject({ name: v.optional(GroupName), color: v.optional(v.picklist(swatches)) }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Opens a new tab at the end of the group of the popover of a group, ends the group, whose tabs
+ * stay, or closes its tabs, which can open again as a group; the popover closes.
+ */
+export const GroupAction = defineRequest({
+  channel: 'overlay.groupAction',
+  request: v.strictObject({ action: v.picklist(['newTab', 'ungroup', 'close']) }),
   response: v.null(),
   capability: 'overlay',
 });

@@ -21,11 +21,15 @@ import {
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
 import {
+  chipKey,
+  dropGroup,
   dropPlace,
   spanOf,
   stripItems,
+  tabCounts,
   unitsOf,
   type Span,
+  type StripItem,
   type StripUnit,
 } from './strip-items.ts';
 import { TabIcons } from '../ui-kit/tab-icons.ts';
@@ -369,8 +373,9 @@ export class AppShell extends LitElement {
     [aria-orientation='vertical'] .indicator {
       border-radius: var(--radius-2);
     }
-    /* While a tab is dragged, the others make room for it, and it has its own surface. */
-    .tabs[data-dragging] .tab:not([data-dragged]) {
+    /* While a tab is dragged, the others and the chips make room for it, and it has its own
+       surface. */
+    .tabs[data-dragging] > :is(.tab, .group):not([data-dragged]) {
       transition: transform var(--motion-base) var(--ease-standard);
     }
     .tabs[data-dragging] .indicator {
@@ -382,14 +387,14 @@ export class AppShell extends LitElement {
     .tab[data-dragged] {
       z-index: 1;
     }
-    /* Tabs that closed, while they fade where they were. */
+    /* Tabs and chips that left, while they fade where they were. */
     .ghosts {
       position: absolute;
       top: 0;
       left: 0;
       pointer-events: none;
     }
-    .ghosts > .tab {
+    .ghosts > :is(.tab, .group) {
       position: absolute;
     }
     :host([data-tabs='bottom']) [role='tablist'] {
@@ -553,6 +558,109 @@ export class AppShell extends LitElement {
       border-start-start-radius: 0;
       border-start-end-radius: 0;
       border-end-start-radius: var(--radius-2);
+    }
+    /*
+     * Groups of tabs: a chip before the first tab of each group, with a dot in the group's
+     * color and its name, and a 2 px line in that color along the edge of each of its tabs that
+     * faces the page. The line is a border, which forced colors keep.
+     */
+    [data-color='blue'] {
+      --group-color: var(--swatch-blue);
+    }
+    [data-color='teal'] {
+      --group-color: var(--swatch-teal);
+    }
+    [data-color='green'] {
+      --group-color: var(--swatch-green);
+    }
+    [data-color='orange'] {
+      --group-color: var(--swatch-orange);
+    }
+    [data-color='red'] {
+      --group-color: var(--swatch-red);
+    }
+    [data-color='graphite'] {
+      --group-color: var(--swatch-graphite);
+    }
+    .group {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex: none;
+      align-self: center;
+      box-sizing: border-box;
+      max-width: 120px;
+      height: var(--control-small);
+      padding: 0 var(--space-2);
+      border: 0;
+      border-radius: var(--radius-1);
+      background: transparent;
+      color: var(--text-1);
+      font: inherit;
+      font-size: var(--font-size-small);
+      touch-action: none;
+      transition: background-color var(--motion-instant) var(--ease-standard);
+    }
+    .group:hover,
+    .group[data-joining] {
+      background: var(--surface-hover);
+    }
+    .group .dot {
+      flex: none;
+      width: 8px;
+      height: 8px;
+      border-radius: var(--radius-pill);
+      background: var(--group-color);
+    }
+    .group .name {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .group .count {
+      color: var(--text-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .tab[data-group] {
+      border-bottom: 2px solid var(--group-color);
+    }
+    :host([data-tabs='bottom']) .tab[data-group] {
+      border-bottom: 0;
+      border-top: 2px solid var(--group-color);
+    }
+    /* At a side, the chip is a row of the list, and the tabs of its group are indented. */
+    [aria-orientation='vertical'] .group {
+      align-self: stretch;
+      max-width: none;
+      height: var(--control-height);
+      padding-inline: var(--space-1) var(--space-2);
+    }
+    [aria-orientation='vertical'] .group .name {
+      flex: 1;
+      text-align: start;
+    }
+    .group .chevron {
+      display: grid;
+      transition: transform var(--motion-fast) var(--ease-standard);
+    }
+    .group[aria-expanded='false'] .chevron {
+      transform: rotate(-90deg);
+    }
+    [aria-orientation='vertical'] .tab[data-group] {
+      margin-inline-start: var(--space-3);
+      border-bottom: 0;
+      border-inline-start: 2px solid var(--group-color);
+      border-start-start-radius: 0;
+      border-end-start-radius: 0;
+    }
+    @media (forced-colors: active) {
+      .group .dot {
+        border: 1px solid CanvasText;
+      }
+      .group[data-joining] {
+        outline: 2px solid Highlight;
+      }
     }
     .favicon img {
       width: 16px;
@@ -851,6 +959,19 @@ export class AppShell extends LitElement {
   private findFocusPending = false;
   /** Whether the list of downloads opens at its button once the button is there. */
   private downloadsPending = false;
+  /**
+   * The group whose popover opens at its chip once the chip shows, such as a group that the
+   * menu of a tab just made, when the browser asked for it, and whether the keyboard opened
+   * that menu.
+   */
+  private groupEditorPending:
+    { readonly id: string; readonly at: number; readonly keyboard: boolean } | undefined;
+  /**
+   * The group whose chip the keyboard showed or hid, and whether the group was collapsed then,
+   * until the state that this brings: the chip keeps the focus, also when a new tab page
+   * becomes the active tab with it.
+   */
+  private toggledByKeys: { readonly id: string; readonly collapsed: boolean } | undefined;
   /** The insets last sent to the browser. */
   private reportedInsets = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
@@ -874,18 +995,27 @@ export class AppShell extends LitElement {
         readonly id: string;
         /** The dragged unit: the tab and the items that move with it. */
         readonly unit: StripUnit;
+        /** The items of the strip when the drag started, in their order. */
+        readonly items: readonly StripItem[];
         /** The units of the strip when the drag started, in their order. */
         readonly units: readonly StripUnit[];
+        /** How many tabs each item stands for, by key. */
+        readonly counts: ReadonlyMap<string, number>;
         readonly pointer: number;
         readonly start: number;
         /** Where each item of the strip was along the strip, by its key. */
         readonly spans: ReadonlyMap<string, Span>;
         /** The space between two items of the strip. */
         readonly gap: number;
-        /** How many items came before the dragged unit. */
+        /** How many tabs came before the dragged unit. */
         readonly index: number;
+        /** The group of the dragged tab, and whether the window has groups at all. */
+        readonly group: string | null;
+        readonly grouped: boolean;
         moved: boolean;
         target: number;
+        /** The group that the tab joins where it is now, or `null`. */
+        joins: string | null;
       }
     | undefined;
   /** Whether a drag just ended, so that its click does not activate the tab. */
@@ -980,6 +1110,10 @@ export class AppShell extends LitElement {
         else if (command === 'bookmark.edit') this.editBookmark();
         else this.focusAddress();
       }),
+      bridge.on('shell.editGroup', ({ groupId, keyboard }) => {
+        this.groupEditorPending = { id: groupId, at: performance.now(), keyboard };
+        this.takeGroupEditorOpening();
+      }),
     );
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
     this.resizeObserver = new ResizeObserver(() => {
@@ -1068,8 +1202,12 @@ export class AppShell extends LitElement {
       this.placeSplit();
       this.takeFindFocus();
       this.takeDownloadsOpening();
+      this.takeGroupEditorOpening();
     }
     if (changed.has('state')) this.dropStaleDrafts();
+    // Enter or Space on a chip leave the focus there, also when the change of the group makes
+    // a new tab page the active tab.
+    const keysOnChip = changed.has('state') && this.keysStayOnChip();
     // A tab that becomes active on the new tab page waits for input in the address bar,
     // unless the address bar took input for a tab that the New tab button opens: selecting
     // it would let the next key replace that input.
@@ -1092,12 +1230,27 @@ export class AppShell extends LitElement {
       if (
         active?.url === newTabUrl &&
         !keepsInput &&
+        !keysOnChip &&
         (this.state.split === null || document.hasFocus())
       ) {
         this.focusAddress();
       }
     }
     if (changed.has('state')) this.openedWithInput = undefined;
+  }
+
+  /**
+   * Whether the state brings the change of a group that Enter or Space on its chip asked for,
+   * while the chip has the focus, which it then keeps.
+   */
+  private keysStayOnChip(): boolean {
+    const toggled = this.toggledByKeys;
+    if (toggled === undefined) return false;
+    const group = this.state.tabs.find((tab) => tab.group?.id === toggled.id)?.group;
+    // Another change of the state can come before the one of the group.
+    if (group?.collapsed === toggled.collapsed) return false;
+    this.toggledByKeys = undefined;
+    return this.shadowRoot?.activeElement?.getAttribute('data-id') === chipKey(toggled.id);
   }
 
   protected override render(): TemplateResult {
@@ -1123,7 +1276,8 @@ export class AppShell extends LitElement {
           ${repeat(
             stripItems(this.state),
             (item) => item.key,
-            (item) => this.renderTab(item.tab, t),
+            (item) =>
+              item.kind === 'tab' ? this.renderTab(item.tab, t) : this.renderChip(item, t),
           )}
           <div class="ghosts" aria-hidden="true"></div>
         </div>
@@ -1507,6 +1661,8 @@ export class AppShell extends LitElement {
         ?data-pinned=${tab.pinned}
         ?data-sleeping=${tab.sleeping}
         data-split=${tab.split ?? nothing}
+        data-group=${tab.group?.id ?? nothing}
+        data-color=${tab.group?.color ?? nothing}
         tabindex=${selected ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
         aria-label=${title}
@@ -1546,20 +1702,113 @@ export class AppShell extends LitElement {
   }
 
   /**
-   * What a screen reader says of a tab besides its title: the side of a split view that it is,
-   * and that it sleeps.
+   * What a screen reader says of a tab besides its title: the group that it is in, the side of
+   * a split view that it is, and that it sleeps.
    */
   private tabDescription(
     tab: TabView,
     t: (key: Parameters<Translator['t']>[0]) => string,
   ): string | undefined {
+    const group = tab.group;
     const parts = [
+      group === null
+        ? undefined
+        : group.name === ''
+          ? t('shell.inUnnamedGroup')
+          : this.tp('shell.inGroup', { name: group.name }),
       tab.split === null
         ? undefined
         : t(tab.split === 'start' ? 'shell.splitStart' : 'shell.splitEnd'),
       tab.sleeping ? t('shell.tabSleeping') : undefined,
     ].filter((part) => part !== undefined);
     return parts.length === 0 ? undefined : parts.join(', ');
+  }
+
+  /**
+   * The chip of a group of tabs, before its first tab: a dot in the group's color and its
+   * name, and the number of its tabs while it hides them. A click, Enter or Space shows or
+   * hides the tabs; the context menu, from the pointer or the keyboard, opens the popover of
+   * the group. At a side of the window, the chip is a row of the list with a chevron.
+   */
+  private renderChip(
+    item: Extract<StripItem, { kind: 'group' }>,
+    t: (key: Parameters<Translator['t']>[0]) => string,
+  ): TemplateResult {
+    const { group, tabs } = item;
+    const name =
+      group.name === ''
+        ? t('shell.groupUnnamed')
+        : this.tp('shell.groupNamed', { name: group.name });
+    return html`<button
+      class="group"
+      data-id=${item.key}
+      data-color=${group.color}
+      aria-expanded=${group.collapsed ? 'false' : 'true'}
+      aria-label=${name}
+      aria-description=${
+        group.collapsed ? this.tp('shell.groupTabs', { count: String(tabs.length) }) : nothing
+      }
+      title=${t('shell.groupHint')}
+      @click=${(event: MouseEvent) => this.toggleGroup(group, event.detail === 0)}
+      @contextmenu=${(event: MouseEvent) => this.editGroup(event, group.id)}
+    >
+      ${this.vertical ? html`<span class="chevron">${icons.down}</span>` : nothing}
+      <span class="dot" aria-hidden="true"></span>
+      ${group.name === '' ? nothing : html`<span class="name">${group.name}</span>`}
+      ${
+        group.collapsed
+          ? html`<span class="count" aria-hidden="true">${tabs.length}</span>`
+          : nothing
+      }
+    </button>`;
+  }
+
+  /**
+   * Shows or hides the tabs of a group, unless the click ends a drag. Enter or Space on the
+   * chip keep the focus there, also when the active tab changes with it.
+   * @param group - The group, and whether it hides its tabs now.
+   * @param keyboard - Whether Enter or Space did it, rather than the pointer.
+   */
+  private toggleGroup(
+    group: { readonly id: string; readonly collapsed: boolean },
+    keyboard: boolean,
+  ): void {
+    if (this.dragEnded) {
+      this.dragEnded = false;
+      return;
+    }
+    this.toggledByKeys = keyboard ? { id: group.id, collapsed: group.collapsed } : undefined;
+    void this.bridge?.invoke('groups.toggle', { groupId: group.id, keyboard });
+  }
+
+  /** Opens the popover of a group at its chip, for its context menu. */
+  private editGroup(event: MouseEvent, groupId: string): void {
+    event.preventDefault();
+    this.cancelDrag();
+    // The popover gives the focus back here when the keyboard opened it.
+    if (event.currentTarget instanceof Element)
+      this.openGroupEditor(event.currentTarget, groupId, menuByKeyboard(event));
+  }
+
+  private openGroupEditor(chip: Element, groupId: string, keyboard: boolean): void {
+    void this.bridge?.invoke('groups.openEditor', { groupId, ...anchorOf(chip, keyboard) });
+  }
+
+  /**
+   * Opens the popover of the group that the browser asked for once its chip shows; a request
+   * whose group did not show within a second is dropped.
+   */
+  private takeGroupEditorOpening(): void {
+    const pending = this.groupEditorPending;
+    if (pending === undefined) return;
+    const chip = this.tabStrip?.querySelector(`:scope > [data-id="${chipKey(pending.id)}"]`);
+    if (chip === null || chip === undefined || !laidOut(chip)) {
+      if (performance.now() - pending.at > 1000) this.groupEditorPending = undefined;
+      return;
+    }
+    this.groupEditorPending = undefined;
+    chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    this.openGroupEditor(chip, pending.id, pending.keyboard);
   }
 
   private get tabStrip(): HTMLElement | null {
@@ -1767,12 +2016,16 @@ export class AppShell extends LitElement {
     }
     const vertical = this.vertical;
     const elements = this.stripElements();
-    const units = unitsOf(stripItems(this.state));
+    const items = stripItems(this.state);
+    const units = unitsOf(items);
     const unit = units.find((candidate) => candidate.includes(id)) ?? [id];
+    const group = this.state.tabs.find((tab) => tab.id === id)?.group ?? null;
     this.dragging = {
       id,
       unit,
+      items,
       units,
+      counts: tabCounts(items),
       pointer: event.pointerId,
       start: vertical ? event.clientY : event.clientX,
       spans: new Map(
@@ -1782,9 +2035,12 @@ export class AppShell extends LitElement {
         ]),
       ),
       gap: this.tabGap(),
-      index: elements.findIndex((element) => element.dataset['id'] === unit[0]),
+      index: this.state.tabs.findIndex((tab) => tab.id === unit[0]),
+      group: group?.id ?? null,
+      grouped: this.state.tabs.some((tab) => tab.group !== null),
       moved: false,
       target: -1,
+      joins: group?.id ?? null,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -1804,15 +2060,19 @@ export class AppShell extends LitElement {
     if (!drag.moved && Math.abs(offset) < 4) return;
     drag.moved = true;
     strip.toggleAttribute('data-dragging', true);
-    const place = dropPlace(drag.units, drag.unit, offset, drag.spans, drag.gap);
+    const place = dropPlace(drag.units, drag.unit, offset, drag.spans, drag.gap, drag.counts);
     if (place === undefined) return;
     drag.target = place.index;
+    // Over the span of a group, the tab joins it; the chip of a group that it would join shows.
+    drag.joins = drag.grouped ? dropGroup(drag.items, drag.unit, offset, drag.spans) : null;
+    const joining = drag.joins === null || drag.joins === drag.group ? '' : chipKey(drag.joins);
     for (const element of this.stripElements()) {
       const key = element.dataset['id'] ?? '';
       if (!drag.spans.has(key)) continue;
       const dragged = drag.unit.includes(key);
       const shift = dragged ? offset : (place.shifts.get(key) ?? 0);
       element.toggleAttribute('data-dragged', dragged);
+      element.toggleAttribute('data-joining', key === joining);
       element.style.transform = vertical ? `translateY(${shift}px)` : `translateX(${shift}px)`;
     }
   };
@@ -1826,9 +2086,15 @@ export class AppShell extends LitElement {
     this.dragEnded = true;
     // A drag that ends outside the tab sends no click that would clear this.
     setTimeout(() => (this.dragEnded = false));
-    if (event.type === 'pointerup' && drag.target !== -1 && drag.target !== drag.index) {
+    const moves = drag.target !== drag.index || drag.joins !== drag.group;
+    if (event.type === 'pointerup' && drag.target !== -1 && moves) {
       this.dropPending = true;
-      void this.bridge?.invoke('tabs.move', { tabId: drag.id, index: drag.target });
+      // A window with groups learns which group the tab joins, or that it joins none.
+      void this.bridge?.invoke('tabs.move', {
+        tabId: drag.id,
+        index: drag.target,
+        ...(drag.grouped ? { group: drag.joins } : {}),
+      });
       // Should the browser not move the tab, it goes back to its place.
       setTimeout(() => {
         if (!this.dropPending) return;
@@ -1870,6 +2136,7 @@ export class AppShell extends LitElement {
     this.tabStrip?.removeAttribute('data-dragging');
     for (const element of this.stripElements()) {
       element.removeAttribute('data-dragged');
+      element.removeAttribute('data-joining');
       element.style.transform = '';
     }
   }
@@ -2082,6 +2349,8 @@ export class AppShell extends LitElement {
       tabId,
       x: Math.max(0, Math.round(event.clientX)),
       y: Math.max(0, Math.round(event.clientY)),
+      // A popover that the menu opens, such as of a new group, gives the focus back here then.
+      keyboard: menuByKeyboard(event),
     });
   }
 
@@ -2911,6 +3180,15 @@ function anchorOf(element: Element, keyboard: boolean): PopoverAnchor {
     height: Math.max(0, Math.round(rect.height)),
     keyboard,
   };
+}
+
+/**
+ * Whether the keyboard opened a context menu, as the context menu key and Shift+F10 do.
+ * Chromium gives that event no button, but the pointer type `mouse`; the standard of pointer
+ * events gives it no pointer type.
+ */
+function menuByKeyboard(event: MouseEvent): boolean {
+  return event.button === -1 || (event instanceof PointerEvent && event.pointerType === '');
 }
 
 /** Whether an element has a place in the layout, which a hidden one has not. */

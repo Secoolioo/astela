@@ -17,7 +17,7 @@ While a site asks you something, such as for the camera, or asks you to sign in,
 
 ## What it shows
 
-While the field is empty, the palette lists the commands you ran from it since the browser started, under **Recently used**, and then every command that can run now. A command that cannot run, such as **Back** on a page without history or **View the source** on the browser's own pages, does not show.
+While the field is empty, the palette lists the commands you ran from it since the browser started, under **Recently used**, and then every command that can run now. A command that cannot run, such as **Back** on a page without history, **View the source** on the browser's own pages, or **Next tab** while the tab strip shows no other tab, also when a [hidden group](tab-groups.md#showing-and-hiding-the-tabs-of-a-group) has the others, does not show.
 
 As you type, the palette shows, in this order:
 
