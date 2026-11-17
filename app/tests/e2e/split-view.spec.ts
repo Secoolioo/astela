@@ -256,6 +256,8 @@ test('opens a new tab beside the page with the shortcut and ends the split with 
     // Both pages show: the left one at the start of the area, both below the line of the side
     // with the focus, with the divider between them.
     await expect.poll(async () => (await tabViews(browser)).length).toBe(2);
+    // The view of the new tab can show before its page has an address.
+    await expect.poll(async () => (await newTabView(browser))?.visible).toBe(true);
     const home1 = await viewOf(browser, home);
     const blank = await newTabView(browser);
     expect(home1?.visible && blank?.visible).toBe(true);
