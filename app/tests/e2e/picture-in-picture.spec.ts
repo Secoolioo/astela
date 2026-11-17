@@ -318,9 +318,8 @@ test('speaks German in its button and in the context menu of a video', async () 
     await expect(pipButton(browser, 'Bild im Bild')).toHaveAttribute('aria-pressed', 'false');
     await recordMenus(browser);
     await page.click('#clip', { button: 'right' });
-    expect((await recordedMenu(browser, 1)).items).toContain(
-      mac ? 'Bild im Bild' : '&Bild im Bild',
-    );
+    // German has no title case, so its item is the same on every system.
+    expect((await recordedMenu(browser, 1)).items).toContain('&Bild im Bild');
   } finally {
     await browser.close();
   }
