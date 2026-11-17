@@ -59,6 +59,7 @@ type ContentsTask =
   | 'mockPrint'
   | 'pageText'
   | 'devToolsOpened'
+  | 'devToolsLoaded'
   | 'pdfViewer'
   | 'loading'
   | 'failSave'
@@ -86,6 +87,9 @@ function withContents(browser: Browser, url: string, task: ContentsTask): Promis
         return contents.executeJavaScript('document.body.innerText');
       } else if (wanted === 'devToolsOpened') {
         return contents.isDevToolsOpened();
+      } else if (wanted === 'devToolsLoaded') {
+        const tools = contents.devToolsWebContents;
+        return tools !== null && tools.getURL() !== '' && !tools.isLoading();
       } else if (wanted === 'loading') {
         return contents.isLoading();
       } else if (wanted === 'failSave') {
@@ -522,6 +526,9 @@ test('opens and closes the developer tools of a page', async () => {
       mac ? pressInPage(browser, 'I', ['primary', 'alt']) : pressInPage(browser, 'F12');
     await toggle();
     await expect.poll(opened).toBe(true);
+    // As a person would, the test closes the tools once they show: on Windows, closing them
+    // in the first moments after they open can end the browser (Electron 45.2).
+    await expect.poll(() => withContents(browser, url, 'devToolsLoaded')).toBe(true);
     // The window of the developer tools can take the focus, as on Windows; the keys of the page
     // reach it once a person is back in the page.
     await focusPage(browser, page);
