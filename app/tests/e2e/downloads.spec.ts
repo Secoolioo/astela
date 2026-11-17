@@ -1,5 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -233,6 +241,34 @@ test('pauses, resumes and cancels a download, and downloads it again', async () 
     await expect(item.getByRole('button', { name: 'Show in folder: large.bin' })).toBeVisible({
       timeout: 20_000,
     });
+    expect(statSync(join(folder, 'large.bin')).size).toBe(part.length * parts);
+  } finally {
+    await browser.close();
+    removeAfterExit(folder);
+  }
+});
+
+test('saves a canceled download that is tried again under its name once its file is gone', async () => {
+  const browser = await launch();
+  const folder = mkdtempSync(join(tmpdir(), 'downloads-'));
+  try {
+    await useFolder(browser, folder);
+    const page = await openPage(browser);
+    await page.getByRole('link', { name: 'Large' }).click();
+    const downloads = await openList(browser);
+    const item = downloads.getByRole('listitem').first();
+    await item.getByRole('button', { name: 'Cancel: large.bin' }).click();
+    await expect(item).toContainText('Canceled');
+    await expect.poll(() => existsSync(join(folder, 'large.bin'))).toBe(false);
+    // On Windows, the file of a canceled download can go away only after a click on Try again.
+    writeFileSync(join(folder, 'large.bin'), part);
+    await item.getByRole('button', { name: 'Try again: large.bin' }).click();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    rmSync(join(folder, 'large.bin'));
+    await expect(item.getByRole('button', { name: 'Show in folder: large.bin' })).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(readdirSync(folder)).toEqual(['large.bin']);
     expect(statSync(join(folder, 'large.bin')).size).toBe(part.length * parts);
   } finally {
     await browser.close();
