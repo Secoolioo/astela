@@ -160,6 +160,60 @@ describe('the rerun step of merge.yml', () => {
     assert.ok(!reran);
   });
 
+  it('runs a job again that hung while it set up, before any test ran', () => {
+    // Job 134094795701 of run 44098400880: pnpm/action-setup waited until the time limit.
+    const { output, reran } = run([
+      {
+        id: 12,
+        name: 'smoke (windows-x64)',
+        conclusion: 'cancelled',
+        steps: [
+          { name: 'Set up job', status: 'completed', conclusion: 'success' },
+          { name: 'Run actions/checkout@v7', status: 'completed', conclusion: 'success' },
+          { name: 'Run pnpm/action-setup@v5', status: 'completed', conclusion: 'cancelled' },
+          {
+            name: 'Run pnpm install --frozen-lockfile',
+            status: 'completed',
+            conclusion: 'skipped',
+          },
+          {
+            name: 'Install, start and remove each package',
+            status: 'completed',
+            conclusion: 'skipped',
+          },
+        ],
+        annotations: [limit, 'The operation was canceled.'],
+      },
+    ]);
+    assert.match(output, /Hung while it set up, before any test: smoke \(windows-x64\)/);
+    assert.ok(reran);
+  });
+
+  it('keeps the failure of a job cancelled at its time limit while a test ran', () => {
+    const { output, reran } = run([
+      {
+        id: 13,
+        name: 'smoke (windows-x64)',
+        conclusion: 'cancelled',
+        steps: [
+          { name: 'Set up job', status: 'completed', conclusion: 'success' },
+          { name: 'Run pnpm/action-setup@v5', status: 'completed', conclusion: 'success' },
+          {
+            name: 'Install, start and remove each package',
+            status: 'completed',
+            conclusion: 'cancelled',
+          },
+        ],
+        annotations: [limit, 'The operation was canceled.'],
+      },
+    ]);
+    assert.match(
+      output,
+      /A job failed after it started: smoke \(windows-x64\); the failure stands\./,
+    );
+    assert.ok(!reran);
+  });
+
   it('runs a job again that never got a runner', () => {
     const { output, reran } = run([
       { id: 9, name: 'e2e (macos-15)', conclusion: 'failure', steps: [], annotations: [] },

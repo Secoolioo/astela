@@ -1,8 +1,8 @@
 # Squash-merges an owner pull request once its required checks have passed.
 # It runs after every `CI` and `PR title` run, merges with the owner token
 # through the REST API and needs no auto-merge setting on the pull request.
-# A CI run whose failed jobs never got a runner, lost it, or failed only in the artifact
-# service of GitHub is run once more first; jobs that never got a runner up to three times.
+# A CI run whose failed jobs never got a runner, lost it, hung while they set up, or
+# failed only in the artifact service of GitHub is run once more first; jobs that never got a runner up to three times.
 # Like auto-pr.yml it always runs in the version stored on main; it never
 # checks out or executes branch code.
 name: Merge pull request
@@ -24,6 +24,8 @@ jobs:
     # A job that GitHub never started on a runner tested nothing. Neither did
     # one whose runner stopped responding until GitHub cancelled the job at its
     # time limit: a test that hangs is ended by the step's own limit and fails.
+    # Nor did one that GitHub cancelled at its time limit in a step that sets up
+    # the job (checkout, pnpm, Node, install), before any test ran.
     # Nor did one that failed only while it stored or fetched an artifact because
     # the artifact service of GitHub did not answer; the jobs that need its
     # artifact never ran. The failed jobs run once more and the second result
@@ -58,12 +60,13 @@ jobs:
           failed=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$ATTEMPT/jobs?per_page=100" \
             --jq '.jobs[] | select(.name != "ci-gate")
               | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
-              | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("|"))"')
+              | "\(.id)\t\(.conclusion)\t\(.steps | length)\t\([.steps[] | select(.conclusion == null)] | length)\t\([.steps[] | select(.conclusion == "cancelled") | .name]
+                | if length > 0 and all(test("^Run (actions/checkout|pnpm/action-setup|actions/setup-node)@|^Run pnpm install ")) then 1 else 0 end)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("|"))"')
           if [[ -z "$failed" ]]; then
             echo "No job failed; nothing to run again."
             exit 0
           fi
-          while IFS=$'\t' read -r id conclusion steps unfinished name failing; do
+          while IFS=$'\t' read -r id conclusion steps unfinished setup name failing; do
             if [[ "$steps" == 0 ]]; then
               echo "Never got a runner: $name"
               continue
@@ -76,6 +79,13 @@ jobs:
               --jq '[.[] | select(.annotation_level == "failure") | .message] | join(" | ")')
             if [[ "$ATTEMPT" == 1 && "$conclusion" == cancelled && "$unfinished" -gt 0 && -z "$failing" && "$notes" == "The job has exceeded the maximum execution time"* && "$notes" != *" | "* ]]; then
               echo "Lost its runner: $name"
+              continue
+            fi
+            # Cancelled at the time limit in a step that sets up the job, so no test
+            # ran: pnpm/action-setup of job 134094795701 waited 20 minutes.
+            limit=${notes% | The operation was canceled.}
+            if [[ "$ATTEMPT" == 1 && "$conclusion" == cancelled && "$setup" == 1 && -z "$failing" && "$limit" == "The job has exceeded the maximum execution time"* && "$limit" != *" | "* ]]; then
+              echo "Hung while it set up, before any test: $name"
               continue
             fi
             # Failed only in steps that store or fetch artifacts, and only with the
