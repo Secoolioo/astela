@@ -48,6 +48,8 @@ interface Entry {
   dbId: number | undefined;
   readonly url: string;
   readonly path: string;
+  /** The file that the download writes while it runs, which is its path unless it asks. */
+  readonly file: string;
   total: number;
   received: number;
   state: DownloadState;
@@ -55,6 +57,12 @@ interface Entry {
   item: DownloadItem | undefined;
   /** Whether a private window downloaded it: such a download is not kept in the profile. */
   readonly privateWindow: boolean;
+}
+
+/** Waits until a file is gone, for at most five seconds. */
+async function gone(file: string): Promise<void> {
+  for (let waited = 0; existsSync(file) && waited < 5000; waited += 100)
+    await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
 /** Most downloads that the panel shows. */
@@ -179,6 +187,7 @@ export class Downloads {
       dbId: undefined,
       url: item.getURL(),
       path,
+      file: item.getSavePath(),
       total: item.getTotalBytes(),
       received: item.getReceivedBytes(),
       state,
@@ -284,6 +293,7 @@ export class Downloads {
           dbId: row.id,
           url: row.url,
           path: row.path,
+          file: row.path,
           total: row.total,
           received: row.received,
           state: row.state,
@@ -327,7 +337,12 @@ export class Downloads {
       case 'retry':
         if (entry.state === 'cancelled' || entry.state === 'interrupted') {
           this.remove(entry);
-          this.deps.webSession(entry.privateWindow).downloadURL(entry.url);
+          const session = this.deps.webSession(entry.privateWindow);
+          // The file of a canceled download goes away a moment after it ends, on Windows often
+          // only after a click on Try again; the download takes its name once it has.
+          void (entry.state === 'cancelled' ? gone(entry.file) : Promise.resolve()).then(() =>
+            session.downloadURL(entry.url),
+          );
         }
         break;
       case 'remove':
