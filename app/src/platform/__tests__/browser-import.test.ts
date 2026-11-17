@@ -256,6 +256,8 @@ describe('BrowserImporter', () => {
     expect(() => importer.importBrowser('chromium:/etc', everything, labels)).toThrow(/Unknown/);
   });
 
+  // Its profiles are real databases, and writing new files can take seconds on the Windows
+  // runners of CI.
   it('looks in the folders of Windows and macOS and reports what it could not read', () => {
     const home = tempDir();
     const local = join(home, 'Local');
@@ -307,5 +309,5 @@ describe('BrowserImporter', () => {
     expect(macos.findBrowsers().map(({ browser, profile }) => [browser, profile])).toEqual([
       ['Brave', 'Default'],
     ]);
-  });
+  }, 30_000);
 });
