@@ -37,6 +37,7 @@ import {
   type ToolbarItem,
 } from '../shared/layout.ts';
 import type { CustomSearchEngine } from '../shared/search-engines.ts';
+import { readerFonts, type ReaderFont } from '../shared/page-tools.ts';
 import { sleepAfterSeconds, type SleepAfter } from '../shared/tab-sleep.ts';
 import {
   defaultWorkspaces,
@@ -672,6 +673,29 @@ export const WorkspacesEnabledSetting = defineSetting<boolean>({
 });
 
 /**
+ * Whether the browser offers the reader view on pages with an article, which it finds in the
+ * page itself. Turned off, open reader views close, no page is checked, and the button, the
+ * items of the menus and the shortcut are gone. A policy can set or recommend it.
+ */
+export const ReaderEnabledSetting = defineSetting<boolean>({
+  key: 'reader.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'ReaderViewEnabled', recommended: true },
+  ui: { section: 'pageTools', control: 'toggle', order: 1 },
+});
+
+/** The font of the reader view: that of the browser, or the serif font of web pages. */
+export const ReaderFontSetting = defineSetting<ReaderFont>({
+  key: 'reader.font',
+  schema: v.picklist(readerFonts),
+  default: 'browser',
+  scope: 'global',
+  ui: { section: 'pageTools', control: 'select', order: 2 },
+});
+
+/**
  * The deleted workspaces with cookies and sign-ins of their own whose folder is still in the
  * profile, as Chromium holds its files while it runs; the folders go at the next start.
  */
@@ -750,5 +774,7 @@ export const coreSettings = [
   WorkspacesSetting,
   WorkspacesEnabledSetting,
   WorkspacesRemovedSetting,
+  ReaderEnabledSetting,
+  ReaderFontSetting,
   LanguageSetting,
 ];

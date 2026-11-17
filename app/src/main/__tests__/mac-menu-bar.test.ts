@@ -68,10 +68,12 @@ function view(
   palette: boolean,
   splitView?: boolean,
   table: ReturnType<typeof shortcutTable> = shortcutTable('darwin'),
+  reader?: boolean,
 ): unknown[] {
   const template = macMenuBar(() => undefined, table, {
     palette,
     ...(splitView === undefined ? {} : { splitView }),
+    ...(reader === undefined ? {} : { reader }),
   }) as unknown as MenuItemConstructorOptions[];
   const menu = template.find((item) => item.label?.replaceAll('&', '') === 'Darstellung');
   return (Array.isArray(menu?.submenu) ? menu.submenu : []).map((item) =>
@@ -97,6 +99,18 @@ describe('the View menu of macOS', () => {
     const changed = view(true, true, shortcutTable('darwin', { 'split.toggle': ['Alt+Cmd+S'] }));
     expect(changed).toContainEqual(['Geteilte Ansicht', 'Alt+Cmd+S']);
     expect(JSON.stringify(view(true, false))).not.toContain('Geteilte Ansicht');
+  });
+
+  it('shows or ends the reader view after split view, with its shortcut, while the reader view is on', () => {
+    const shown = view(true);
+    const split = shown.findIndex((item) => Array.isArray(item) && item[0] === 'Geteilte Ansicht');
+    expect(shown.slice(split + 1, split + 3)).toEqual([['Leseansicht', 'Alt+Cmd+R'], '-']);
+    expect(view(true, true, shortcutTable('darwin'), true)).toEqual(shown);
+    const changed = view(true, true, shortcutTable('darwin', { 'reader.toggle': ['Ctrl+Cmd+R'] }));
+    expect(changed).toContainEqual(['Leseansicht', 'Ctrl+Cmd+R']);
+    const off = view(true, true, shortcutTable('darwin'), false);
+    expect(JSON.stringify(off)).not.toContain('Leseansicht');
+    expect(off).toHaveLength(shown.length - 1);
   });
 
   it('has neither while the palette is off', () => {

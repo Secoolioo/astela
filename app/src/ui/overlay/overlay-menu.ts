@@ -358,9 +358,12 @@ export class OverlayMenu extends LitElement {
       </div>`;
     }
     const shortcut = entry.shortcut;
+    // An item that turns something on and off shows a check mark while it is on.
+    const checkable = entry.checked !== undefined;
     return html`<div
       class="item"
-      role="menuitem"
+      role=${checkable ? 'menuitemcheckbox' : 'menuitem'}
+      aria-checked=${checkable ? String(entry.checked) : nothing}
       aria-disabled=${entry.enabled ? nothing : 'true'}
       aria-keyshortcuts=${ariaShortcut(shortcut) ?? nothing}
       tabindex=${focused ? '0' : '-1'}
@@ -372,7 +375,7 @@ export class OverlayMenu extends LitElement {
       }}
       @mouseenter=${() => this.hover(depth, index)}
     >
-      <span class="icon" aria-hidden="true">${icon}</span>
+      <span class="icon" aria-hidden="true">${entry.checked === true ? icons.check : icon}</span>
       <span class="label">${this.renderLabel(parts)}</span>
       ${
         shortcut === null
@@ -641,6 +644,7 @@ const icons = {
     />
   </svg>`,
   more: html`<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>`,
+  check: html`<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>`,
   minus: html`<svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>`,
   plus: html`<svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14" /></svg>`,
   fullScreen: html`<svg viewBox="0 0 24 24">

@@ -27,6 +27,7 @@ import {
   EditGroupRequested,
   OpenWorkspaces,
   MoveTabToWorkspace,
+  ToggleReader,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type {
@@ -96,6 +97,11 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
+  // The button of the reader view runs its command, as the shortcut does.
+  router.handle(
+    ToggleReader,
+    (_request, { sender }) => (windowOf(sender).execute('reader.toggle'), null),
+  );
   router.handle(
     GetFavicon,
     async ({ key }, { sender }) => (await windowOf(sender).favicon(key)) ?? null,

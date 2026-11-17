@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { tabStripPositions, toolbarItems } from '../layout.ts';
+import { readerStates } from '../page-tools.ts';
 import { splitRatio } from '../split-view.ts';
 import { swatches } from '../swatches.ts';
 import { Workspace } from '../workspaces.ts';
@@ -57,8 +58,9 @@ export const TabGroupView = v.strictObject({
  * `audible` whether the page plays sound, `muted` whether its sound is muted, `pinned`
  * whether the tab is pinned, `sleeping` whether the tab has no page loaded, as a tab that
  * was put to sleep or a restored tab that was not shown yet, which loads once it is shown,
- * `split` which side of a split view the tab is, or `null` for a tab that is in none, and
- * `group` the group of tabs that the tab is in, or `null`.
+ * `split` which side of a split view the tab is, or `null` for a tab that is in none,
+ * `group` the group of tabs that the tab is in, or `null`, and `reader` whether its page has an
+ * article that the reader view shows, and whether the reader view shows it now.
  */
 export const TabView = v.strictObject({
   id: TabId,
@@ -80,6 +82,7 @@ export const TabView = v.strictObject({
   sleeping: v.boolean(),
   split: v.nullable(v.picklist(['start', 'end'])),
   group: v.nullable(TabGroupView),
+  reader: v.picklist(readerStates),
 });
 /** One tab as the shell displays it. */
 export type TabView = v.InferOutput<typeof TabView>;

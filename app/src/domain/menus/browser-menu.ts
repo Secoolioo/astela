@@ -46,6 +46,7 @@ export type BrowserMenuText =
   | 'commandPalette'
   | 'searchTabs'
   | 'find'
+  | 'readerView'
   | 'print'
   | 'savePage'
   | 'moreTools'
@@ -88,12 +89,16 @@ function shortcutFor(input: BrowserMenuInput, command: WindowCommand): string | 
   );
 }
 
-/** An item that runs a command, which can be chosen while the command can run. */
+/**
+ * An item that runs a command, which can be chosen while the command can run; an item that
+ * turns something on and off says whether it is on.
+ */
 function commandItem(
   input: BrowserMenuInput,
   text: (name: BrowserMenuText) => string,
   name: BrowserMenuText,
   run: WindowCommand,
+  checked?: boolean,
 ): ModelEntry {
   return {
     type: 'item',
@@ -101,6 +106,7 @@ function commandItem(
     shortcut: shortcutFor(input, run),
     enabled: canRun(run, input.context),
     icon: null,
+    ...(checked === undefined ? {} : { checked }),
     action: { run },
   };
 }
@@ -112,8 +118,9 @@ const separator: ModelEntry = { type: 'separator' };
  * bookmarks, the command palette and tab search, the tools of the page with a submenu for more
  * of them, the settings, About and Quit, which Windows calls Exit. Items whose command cannot
  * run now, such as the page tools on the browser's own pages, cannot be chosen; New private
- * window is missing when a policy forbids private windows, and the palette's items while the
- * palette is off.
+ * window is missing when a policy forbids private windows, the palette's items while the
+ * palette is off, and the reader view's item while the reader view is off. That item has a
+ * check mark while the reader view shows.
  * @param input - The window, its shortcuts and its zoom.
  * @param text - The texts of the items, in the language of the menus.
  */
@@ -125,6 +132,18 @@ export function browserMenu(
     commandItem(input, text, name, run);
   const { zoom, context } = input;
   const zooms = zoom !== null;
+  // The reader view's item has a check mark while the reader view shows.
+  const reader = context.reader
+    ? [
+        commandItem(
+          input,
+          text,
+          'readerView',
+          'reader.toggle',
+          context.tabs[context.activeIndex]?.reader === 'open',
+        ),
+      ]
+    : [];
   const smallest = zoomFactors[0] ?? 0.25;
   const largest = zoomFactors.at(-1) ?? 5;
   const zoomRow: ModelEntry = {
@@ -165,6 +184,7 @@ export function browserMenu(
         ? [item('commandPalette', 'palette.open'), item('searchTabs', 'tabs.search'), separator]
         : []),
       item('find', 'find.open'),
+      ...reader,
       item('print', 'page.print'),
       item('savePage', 'page.save'),
       {

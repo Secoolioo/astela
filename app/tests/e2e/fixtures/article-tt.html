@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="require-trusted-types-for 'script'; trusted-types 'none'"
+    />
+    <title>Fixture trusted types</title>
+  </head>
+  <body>
+    <article>
+      <h1>Fixture trusted types</h1>
+      <p>
+        This page lets no script write markup: it enforces Trusted Types and allows no policy, so
+        that code which parses HTML strings fails here, as it does on sites that protect themselves
+        this way. The reader view only reads the elements of the page.
+      </p>
+      <p>
+        The second paragraph is long enough for the check of the reader view, which needs a few
+        blocks of text of at least one hundred and forty characters before it offers its button next
+        to the address bar of the browser.
+      </p>
+      <p>
+        The third paragraph closes the page, with one more sentence of plain text that the reader
+        view shows in its own document, in the colors and the fonts of the browser.
+      </p>
+    </article>
+  </body>
+</html>

@@ -96,3 +96,4 @@ Each rejected option as a bullet point with a short reason.
 | [0054](0054-split-view-with-two-tabs-side-by-side.md)                  | Split view with two tabs side by side                   |
 | [0055](0055-tab-groups-and-workspaces-in-the-tab-model.md)             | Tab groups and workspaces in the tab model              |
 | [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment             |
+| [0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)  | Reader view and picture in picture in isolated worlds   |

@@ -678,6 +678,7 @@ describe('groups of tabs', () => {
       developerTools: true,
       palette: true,
       splitView: true,
+      reader: false,
       workspaces: 1,
     });
     for (let round = 0; round < 400; round += 1) {

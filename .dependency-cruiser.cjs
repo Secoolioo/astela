@@ -13,10 +13,12 @@ const allowed = {
   platform: ['domain', 'kernel', 'shared'],
   'modules-main': ['domain', 'kernel', 'shared'],
   preload: ['shared'],
+  // The scripts that the browser runs in web pages, in an isolated world of their own.
+  'page-scripts': ['domain', 'shared'],
   ui: ['shared'],
   main: ['modules', 'platform', 'domain', 'kernel', 'shared'],
 };
-const layers = ['shared', 'kernel', 'domain', 'platform', 'preload', 'ui', 'main'];
+const layers = ['shared', 'kernel', 'domain', 'platform', 'preload', 'page-scripts', 'ui', 'main'];
 
 module.exports = {
   forbidden: [
@@ -69,8 +71,8 @@ module.exports = {
     {
       name: 'no-node-in-pure-layers',
       severity: 'error',
-      comment: 'shared/, kernel/, domain/ and ui/ must not use Node built-ins.',
-      from: { path: '^app/src/(shared|kernel|domain|ui)/', pathNot: '/__tests__/' },
+      comment: 'shared/, kernel/, domain/, page-scripts/ and ui/ must not use Node built-ins.',
+      from: { path: '^app/src/(shared|kernel|domain|page-scripts|ui)/', pathNot: '/__tests__/' },
       to: { dependencyTypes: ['core'] },
     },
     {

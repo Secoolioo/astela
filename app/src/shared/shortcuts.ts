@@ -58,6 +58,7 @@ export const windowCommands = [
   'zoom.out',
   'zoom.reset',
   'window.fullscreen',
+  'reader.toggle',
   'bookmark.toggle',
   'bookmarks.open',
   'bookmarks.toggleBar',
@@ -145,6 +146,7 @@ const macShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Cmd+-', 'zoom.out'],
   ['Cmd+0', 'zoom.reset'],
   ['Ctrl+Cmd+F', 'window.fullscreen'],
+  ['Alt+Cmd+R', 'reader.toggle'],
   // Shift+Cmd+S stays free: it means Save As.
   ['Ctrl+Cmd+S', 'split.toggle'],
   ['Cmd+P', 'page.print'],
@@ -207,6 +209,7 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['Ctrl+-', 'zoom.out'],
   ['Ctrl+0', 'zoom.reset'],
   ['F11', 'window.fullscreen'],
+  ['F9', 'reader.toggle'],
   ['Ctrl+P', 'page.print'],
   ['Ctrl+S', 'page.save'],
   ['Ctrl+U', 'page.source'],
@@ -231,6 +234,9 @@ export const shortcutPattern = /^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Cmd\+)?[^\s
 
 /** The commands of the command palette, which have no shortcut while the palette is off. */
 export const paletteCommands: readonly WindowCommand[] = ['palette.open', 'tabs.search'];
+
+/** The command of the reader view, which has no shortcut while the reader view is off. */
+export const readerCommands: readonly WindowCommand[] = ['reader.toggle'];
 
 /** The commands of split view, which have no shortcut while split view is off. */
 export const splitCommands: readonly WindowCommand[] = ['split.toggle', 'split.swap'];

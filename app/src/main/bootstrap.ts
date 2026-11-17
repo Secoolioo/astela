@@ -6,6 +6,7 @@ import {
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import {
   paletteCommands,
+  readerCommands,
   shortcutTable,
   splitCommands,
   workspaceCommands,
@@ -100,6 +101,7 @@ import {
   AltOpensMenuSetting,
   CommandPaletteSetting,
   SplitViewSetting,
+  ReaderEnabledSetting,
   BlockThirdPartyCookiesSetting,
   NewTabClockSetting,
   NewTabSearchSetting,
@@ -131,6 +133,7 @@ import { AppearanceController } from './appearance.ts';
 import { chooseLanguage } from './ui-language.ts';
 import type { Bookmarks } from './bookmarks.ts';
 import type { Workspaces } from './workspaces.ts';
+import type { ReaderController } from './reader.ts';
 import {
   canBeDefaultBrowser,
   DefaultBrowserSettingEnabled,
@@ -159,6 +162,8 @@ export interface BundleLayout {
   readonly blockerDir: string;
   /** Path of the content blocker's preload for the frames of web pages. */
   readonly framePreload: string;
+  /** Folder of the scripts that the browser runs in web pages, such as the reader view's. */
+  readonly pageScripts: string;
   /** Path of the data service's entry. */
   readonly dataService: string;
   /** Dev server URL of the shell, only during development. */
@@ -369,6 +374,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       ...(settings.get(CommandPaletteSetting) ? [] : paletteCommands),
       ...(settings.get(SplitViewSetting) ? [] : splitCommands),
       ...(settings.get(WorkspacesEnabledSetting) ? [] : workspaceCommands),
+      ...(settings.get(ReaderEnabledSetting) ? [] : readerCommands),
     ]);
   let shortcuts = shortcutsNow();
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
@@ -404,6 +410,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           activity: () => activity,
           webSessions,
           framePreload: layout.framePreload,
+          readerPageOf: (contents) => reader?.pageOf(contents),
           logger,
         })),
       (error: unknown) => {
@@ -618,6 +625,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         logger.error('The command palette failed', error);
       });
   };
+  // The reader view loads with the first web page that has loaded in the active tab while it is
+  // on, or with its command.
+  let reader: ReaderController | undefined;
+  let readerLoaded: Promise<ReaderController> | undefined;
+  const loadReader = (): Promise<ReaderController> =>
+    (readerLoaded ??= import('./reader.ts').then(
+      ({ ReaderController: Controller }) =>
+        (reader = new Controller({ windows, settings, scripts: layout.pageScripts, logger })),
+    ));
   // The workspaces of the profile while windows have them; their code loads with its first use.
   const workspacesNow = (): readonly Workspace[] | undefined =>
     settings.get(WorkspacesEnabledSetting) ? settings.get(WorkspacesSetting) : undefined;
@@ -692,6 +708,21 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       workspacePartition(settings.get(WorkspacesSetting), workspace, webPartition),
     onLaterCommand: (window, command) =>
       void loadWorkspaces().then((code) => code.run(window, command)),
+    reader: () => settings.get(ReaderEnabledSetting),
+    onPageEvent: (window, tabId, contents, event) => {
+      if (!settings.get(ReaderEnabledSetting)) return;
+      // The reader view's code loads once a web page has loaded in the active tab: a page that
+      // shows while it still loads, as at the start, tells once it has, and one in the
+      // background once its tab shows. Until then, there is nothing to check.
+      const ready =
+        window.tabs.active?.id === tabId &&
+        (event === 'loaded' ||
+          (!contents.isLoadingMainFrame() && /^https?:/i.test(contents.getURL())));
+      const code = ready ? loadReader() : readerLoaded;
+      void code?.then((controller) => controller.page(window, tabId, contents, event));
+    },
+    onReaderCommand: (window, tabId) =>
+      void loadReader().then((code) => code.toggle(window, tabId)),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
@@ -1119,6 +1150,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts, {
             palette: settings.get(CommandPaletteSetting),
             splitView: settings.get(SplitViewSetting),
+            reader: settings.get(ReaderEnabledSetting),
           }),
         ),
       )
@@ -1132,11 +1164,16 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     CommandPaletteSetting.key,
     SplitViewSetting.key,
     WorkspacesEnabledSetting.key,
+    ReaderEnabledSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (!keys.some((key) => keyedSettings.has(key))) return;
     if (keys.includes(SplitViewSetting.key) && !settings.get(SplitViewSetting)) {
       windows.endSplits();
+    }
+    // The reader view checks the pages that show once it is on; it turns itself off.
+    if (keys.includes(ReaderEnabledSetting.key) && settings.get(ReaderEnabledSetting)) {
+      void loadReader();
     }
     shortcuts = shortcutsNow();
     showMenuBar();

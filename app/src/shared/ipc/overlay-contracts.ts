@@ -131,13 +131,17 @@ const MenuShortcut = v.nullable(v.pipe(v.string(), v.maxLength(40), v.regex(shor
 /** The icon of an item: bookmarks and folders of the bookmarks bar have one. */
 const MenuIcon = v.nullable(v.picklist(['bookmark', 'folder']));
 
-/** An item of a menu that runs something, and whether it can run now. */
+/**
+ * An item of a menu that runs something, and whether it can run now; an item that turns
+ * something on and off, such as the reader view, tells whether it is on.
+ */
 const MenuItem = v.strictObject({
   type: v.literal('item'),
   label: MenuLabel,
   shortcut: MenuShortcut,
   enabled: v.boolean(),
   icon: MenuIcon,
+  checked: v.exactOptional(v.boolean()),
 });
 
 /** An item of a menu that opens a submenu next to it. */

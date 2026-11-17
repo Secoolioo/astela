@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture article title | Fixture site</title>
+    <meta name="author" content="Ada Example" />
+    <meta property="article:published_time" content="2024-03-05" />
+    <style>
+      body {
+        margin: 0 auto;
+        max-width: 40rem;
+        font-family: sans-serif;
+      }
+      .invisible {
+        opacity: 0;
+      }
+      .room {
+        height: 3000px;
+      }
+    </style>
+    <script>
+      // What the page itself could see of the browser reading it: calls of the functions that
+      // read and copy the DOM in the page's own world, and changes of its DOM after it loaded.
+      window.__observed = [];
+      const note = (name) => window.__observed.push(name);
+      for (const [target, name] of [
+        [Document.prototype, 'querySelectorAll'],
+        [Element.prototype, 'querySelectorAll'],
+        [Element.prototype, 'getBoundingClientRect'],
+        [Element.prototype, 'checkVisibility'],
+        [Node.prototype, 'cloneNode'],
+        [Document.prototype, 'createTreeWalker'],
+      ]) {
+        const original = target[name];
+        target[name] = function (...args) {
+          note(name);
+          return original.apply(this, args);
+        };
+      }
+      addEventListener('load', () => {
+        new MutationObserver((records) => {
+          for (const record of records) note(`mutation ${record.type}`);
+        }).observe(document, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true,
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <header>
+      <nav><a href="/index.html">Fixture navigation link</a></nav>
+    </header>
+    <div class="cookie-notice">Fixture cookie notice: this site keeps a cookie.</div>
+    <main>
+      <article>
+        <h1>Fixture article title</h1>
+        <p class="byline">Ada Example</p>
+        <p>
+          The first paragraph of the fixture article tells a short story about a quiet harbor, where
+          the boats come back each evening with <strong>bold words</strong>, a few
+          <em>italic words</em>, <a href="/second.html">a link</a> to the second page and a little
+          <code>inline code</code> for the people who read it.
+        </p>
+        <figure>
+          <img src="/image.png" width="64" height="48" alt="Fixture picture" />
+          <figcaption>Fixture caption</figcaption>
+        </figure>
+        <p>
+          The second paragraph goes on with the story: the harbor master counts the boats, the gulls
+          sit on the old wall, and the lights of the town come on one after the other, until the
+          whole bay shines in the dark and the water is calm again.
+        </p>
+        <ul>
+          <li>Fixture first item of the list</li>
+          <li>Fixture second item of the list</li>
+        </ul>
+        <blockquote><p>Fixture quote of a sailor who knew the harbor well.</p></blockquote>
+        <pre><code>const fixture = 'block of code';</code></pre>
+        <p>
+          The third paragraph ends the story, when the last boat is tied to the pier, the harbor
+          master closes his book, and the town sleeps until the boats leave again in the first light
+          of the next morning, as they did on every day of the year.
+        </p>
+        <p hidden>Fixture hidden text</p>
+        <p class="invisible">Fixture invisible text</p>
+      </article>
+      <aside class="related">
+        <h2>Fixture related</h2>
+        <p><a href="/second.html">Another story</a></p>
+      </aside>
+      <section class="comments">
+        <h2>Comments</h2>
+        <p>Fixture comment: what a nice story about the harbor and its boats.</p>
+      </section>
+    </main>
+    <footer>Fixture footer</footer>
+    <div class="room"></div>
+  </body>
+</html>

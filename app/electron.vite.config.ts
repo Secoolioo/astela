@@ -74,6 +74,8 @@ export default defineConfig({
           shell: 'src/preload/shell.ts',
           page: 'src/preload/page.ts',
           frame: 'src/preload/frame.ts',
+          // The scripts that the browser runs in web pages, in its isolated world (ADR 0057).
+          'page-scripts/reader': 'src/page-scripts/reader.ts',
         },
         output: { format: 'cjs', entryFileNames: '[name].cjs', comments },
       },

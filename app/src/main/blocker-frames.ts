@@ -1,4 +1,4 @@
-import type { IpcMainEvent, IpcMainInvokeEvent, Session } from 'electron';
+import type { IpcMainEvent, IpcMainInvokeEvent, Session, WebContents } from 'electron';
 import * as v from 'valibot';
 import type { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 
@@ -36,14 +36,21 @@ export interface BlockerFrames {
  * @param isWebSession - Tells whether a session holds web content.
  * @param blocksCookies - Whether an embedded frame of another site than its page gets no
  *   cookies, by the origins of the frame and the page.
+ * @param isReaderView - Whether a page is a reader view: its document has no script and no
+ *   element of the page, so no rule may touch it, and its frames get none.
  */
 export function blockerFrames(
   blocker: ContentBlocker,
   isWebSession: (session: Session) => boolean,
   blocksCookies: (origin: string, topOrigin: string, session: Session) => Promise<boolean>,
+  isReaderView: (contents: WebContents) => boolean,
 ): BlockerFrames {
   return {
     frame(event) {
+      if (isReaderView(event.sender)) {
+        event.returnValue = { styles: '', scripts: [], extended: [], elements: false };
+        return;
+      }
       const frame = isWebSession(event.sender.session) ? event.senderFrame : null;
       const url = frame?.url ?? '';
       const top = topUrl(frame);
@@ -72,7 +79,7 @@ export function blockerFrames(
     },
     async elements(event, payload) {
       const elements = v.safeParse(FrameElements, payload);
-      if (!elements.success || !isWebSession(event.sender.session)) {
+      if (!elements.success || !isWebSession(event.sender.session) || isReaderView(event.sender)) {
         return '';
       }
       const url = event.senderFrame?.url ?? '';

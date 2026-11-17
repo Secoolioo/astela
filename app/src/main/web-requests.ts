@@ -62,6 +62,12 @@ export interface WebRequestOptions {
   readonly isPrivate: (session: Session) => boolean;
   /** Whether a session holds web content. */
   readonly isWebSession: (session: Session) => boolean;
+  /**
+   * The address of the page under a reader view, or `undefined` for a page that is none: the
+   * frames of a reader view get no rules of the content blocker, and its pictures load by the
+   * rules of that page.
+   */
+  readonly readerPageOf: (contents: WebContents) => string | undefined;
   /** Whether the content blocker works on a page, as the settings and the exceptions say. */
   readonly blocking: (url: string) => Blocking;
   /** Counts a request that the content blocker blocked for the page that made it. */
@@ -154,6 +160,7 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     enabled: (page) => settings.get(ContentBlockerSetting) && options.blocking(page) !== 'off',
     onBlocked: options.onBlocked,
     onStatus: options.onStatus,
+    pageOf: options.readerPageOf,
     extras: () => [
       ...(settings.get(BlockerCookieNoticesSetting) ? (['cookies'] as const) : []),
       ...(settings.get(BlockerAnnoyancesSetting) ? (['annoyances'] as const) : []),
@@ -165,8 +172,12 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   // come from requests, which wait for this code, so none comes before it.
   const certificates = new CertificateExceptions(options.certificateOverride);
   certificates.attach(options.app);
-  const frames = blockerFrames(blocker, options.isWebSession, (origin, topOrigin, frameSession) =>
-    thirdPartyCookies.blocksFrame(origin, topOrigin, frameSession),
+  const frames = blockerFrames(
+    blocker,
+    options.isWebSession,
+    (origin, topOrigin, frameSession) =>
+      thirdPartyCookies.blocksFrame(origin, topOrigin, frameSession),
+    (contents) => options.readerPageOf(contents) !== undefined,
   );
   // The frames of web pages ask for their rules as they start, which they can only once this
   // code has loaded, before the first web page.

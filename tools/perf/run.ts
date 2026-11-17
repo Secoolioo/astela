@@ -77,6 +77,8 @@ const budgets = {
   startChunkBytes: 300 * kib,
   uiTotalBytes: 1024 * kib,
   preloadBytes: 20 * kib,
+  // Each script that the browser runs in web pages (ADR 0057).
+  pageScriptBytes: 20 * kib,
   mainStartBytes: 150 * kib,
   unpackedExtraBytes: 25 * mib,
 } as const;
@@ -465,10 +467,17 @@ function bundleChecks(): Check[] {
   const uiTotal = readdirSync(join(renderer, 'assets'))
     .filter((name) => name.endsWith('.js'))
     .reduce((sum, name) => sum + sizeOf(join(renderer, 'assets', name)), 0);
-  const preloads = readdirSync(join(out, 'preload')).map((name) => ({
-    name,
-    size: sizeOf(join(out, 'preload', name)),
-  }));
+  // The preloads are the files of out/preload; the scripts of pages are in a folder of their own.
+  const preloads = readdirSync(join(out, 'preload'), { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map(({ name }) => ({ name, size: sizeOf(join(out, 'preload', name)) }));
+  const pageScriptsDir = join(out, 'preload', 'page-scripts');
+  const pageScripts = existsSync(pageScriptsDir)
+    ? readdirSync(pageScriptsDir).map((name) => ({
+        name,
+        size: sizeOf(join(pageScriptsDir, name)),
+      }))
+    : [];
   const mainStart = [...staticImports(join(out, 'main/index.js'))].reduce(
     (sum, file) => sum + sizeOf(file),
     0,
@@ -491,6 +500,12 @@ function bundleChecks(): Check[] {
       value: kb(preload.size),
       budget: `≤ ${kb(budgets.preloadBytes)}`,
       pass: preload.size <= budgets.preloadBytes,
+    })),
+    ...pageScripts.map((script) => ({
+      metric: `Page script ${script.name}`,
+      value: kb(script.size),
+      budget: `≤ ${kb(budgets.pageScriptBytes)}`,
+      pass: script.size <= budgets.pageScriptBytes,
     })),
     {
       metric: 'Main process start-up path',

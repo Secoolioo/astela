@@ -13,6 +13,7 @@ bootstrap({
   shellPreload: join(here, '../preload/shell.cjs'),
   pagePreload: join(here, '../preload/page.cjs'),
   framePreload: join(here, '../preload/frame.cjs'),
+  pageScripts: join(here, '../preload/page-scripts'),
   dataService: join(here, 'data-service.js'),
   blockerDir: app.isPackaged
     ? join(process.resourcesPath, 'blocker')

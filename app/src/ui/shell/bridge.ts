@@ -37,6 +37,7 @@ import type {
   EditGroupRequested,
   OpenWorkspaces,
   MoveTabToWorkspace,
+  ToggleReader,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
@@ -72,6 +73,7 @@ interface Requests {
   'groups.openEditor': typeof OpenGroupEditor;
   'workspaces.open': typeof OpenWorkspaces;
   'workspaces.moveTab': typeof MoveTabToWorkspace;
+  'shell.toggleReader': typeof ToggleReader;
 }
 
 interface Events {

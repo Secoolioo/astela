@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture cases of articles</title>
+  </head>
+  <body>
+    <article>
+      <h1>Fixture cases of articles</h1>
+      <p>
+        The first paragraph of the cases tells of a small town by the sea, where the fishing boats
+        leave before the sun comes up, and where the market opens once they are back, with the catch
+        of the day on long tables and the gulls waiting on the roofs around the square.
+      </p>
+      <p>
+        The second paragraph goes on with the day: the nets dry in the wind, the children run to
+        school along the harbor wall, and the old men sit on the bench by the church, where they
+        talk about the weather of tomorrow and the weather of the years that have gone by.
+      </p>
+      <div id="case"></div>
+    </article>
+    <script>
+      // Each query is one case of the reader view's tests:
+      // ?lines   a post whose lines a <br> separates, longer than a run of text of the reader;
+      // ?items   a list with more items than the reader keeps blocks;
+      // ?picture a picture that the filter lists of the tests block, on a site without blocking;
+      // ?frame   a frame that a script adds after the load, and that keeps loading.
+      const place = document.getElementById('case');
+      const sentence = 'The harbor master counts the boats, and the lights of the town come on. ';
+      if (location.search === '?lines') {
+        const lines = Array.from({ length: 30 }, (_, index) => {
+          const line = `Fixture line ${index + 1}. ${sentence.repeat(8)}`;
+          return index === 29 ? `${line}Fixture last line of the post.` : line;
+        });
+        const post = document.createElement('div');
+        post.className = 'post-body';
+        lines.forEach((line, index) => {
+          if (index > 0) post.append(document.createElement('br'), document.createElement('br'));
+          post.append(line);
+        });
+        place.append(post);
+      } else if (location.search === '?items') {
+        const list = document.createElement('ul');
+        for (let index = 1; index <= 6000; index += 1) {
+          const item = document.createElement('li');
+          item.textContent = `Fixture item ${index} of the long list`;
+          list.append(item);
+        }
+        place.append(list);
+      } else if (location.search === '?picture') {
+        const figure = document.createElement('figure');
+        const picture = document.createElement('img');
+        picture.src = '/fixture-tracker.gif';
+        picture.width = 64;
+        picture.height = 48;
+        picture.alt = 'Fixture blocked picture';
+        figure.append(picture);
+        place.append(figure);
+      } else if (location.search === '?frame') {
+        addEventListener('load', () =>
+          setTimeout(() => {
+            const frame = document.createElement('iframe');
+            frame.src = '/held-frame.html';
+            document.body.append(frame);
+          }, 300),
+        );
+      }
+    </script>
+  </body>
+</html>

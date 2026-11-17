@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ReaderState } from '../../shared/page-tools.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
 import type { CommandContext } from '../commands/availability.ts';
 import {
@@ -23,6 +24,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
       muted: false,
       split: null,
       group: null,
+      reader: 'none',
     },
   ],
   activeIndex: 0,
@@ -33,6 +35,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   developerTools: true,
   palette: true,
   splitView: true,
+  reader: false,
   workspaces: 1,
   ...change,
 });
@@ -144,6 +147,7 @@ describe('browserMenu', () => {
             muted: false,
             split: null,
             group: null,
+            reader: 'none',
           },
         ],
         webPage: false,
@@ -163,6 +167,72 @@ describe('browserMenu', () => {
       canZoomIn: false,
       canZoomOut: false,
     });
+  });
+
+  it('offers the reader view after Find while it is on, which pages with an article can show, with a check mark while it shows', () => {
+    const page = (reader: ReaderState, change: Partial<BrowserMenuInput> = {}): BrowserMenuInput =>
+      input({
+        context: context({
+          reader: true,
+          tabs: [
+            {
+              url: 'https://example.com/',
+              pinned: false,
+              canGoBack: false,
+              canGoForward: false,
+              muted: false,
+              split: null,
+              group: null,
+              reader,
+            },
+          ],
+        }),
+        ...change,
+      });
+    const items = browserMenu(page('available'), text).items;
+    const all = texts(items);
+    expect(all.slice(all.indexOf('find'), all.indexOf('find') + 3)).toEqual([
+      'find',
+      'readerView',
+      'print',
+    ]);
+    expect(entryOf(items, 'readerView')).toEqual({
+      type: 'item',
+      label: 'readerView',
+      shortcut: 'F9',
+      enabled: true,
+      icon: null,
+      checked: false,
+      action: { run: 'reader.toggle' },
+    });
+    expect(entryOf(browserMenu(page('open'), text).items, 'readerView')).toMatchObject({
+      enabled: true,
+      checked: true,
+    });
+    // A page without an article cannot show it.
+    expect(entryOf(browserMenu(page('none'), text).items, 'readerView')).toMatchObject({
+      enabled: false,
+      checked: false,
+    });
+    const mac = page('available', { platform: 'darwin', table: shortcutTable('darwin') });
+    expect(entryOf(browserMenu(mac, text).items, 'readerView')).toMatchObject({
+      shortcut: 'Alt+Cmd+R',
+    });
+    // The overlay learns about the check mark, not what the item does.
+    expect(
+      toContent([browserMenu(page('open'), text)])[0]?.items[all.indexOf('readerView')],
+    ).toEqual({
+      type: 'item',
+      label: 'readerView',
+      shortcut: 'F9',
+      enabled: true,
+      icon: null,
+      checked: true,
+    });
+    // While the reader view is off, the menu has no item for it, and no other item has a mark.
+    const off = browserMenu(input(), text).items;
+    expect(texts(off)).not.toContain('readerView');
+    expect(off.filter((entry) => 'checked' in entry)).toEqual([]);
   });
 
   it('shows the zoom of the page in its row, and stops zooming at 25 and 500 %', () => {

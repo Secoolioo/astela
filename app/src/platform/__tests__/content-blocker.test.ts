@@ -109,6 +109,44 @@ describe('ContentBlocker', () => {
     expect(await blocker.beforeRequest(noReferrer)).toBe(undefined);
   });
 
+  it('judges the requests of a view that shows another page, such as a reader view, by that page', async () => {
+    const reader = { getURL: () => 'data:text/html;base64,PHA+', id: 7 };
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('/ads/$image\n'),
+      // The blocker is off on the site of the article, and on for everything else.
+      enabled: (page) => !page.startsWith('https://news.example/'),
+      pageOf: (contents) => (contents === reader ? 'https://news.example/story' : undefined),
+      logger: logger(),
+    });
+    // A reader view of a page without a script, an origin or a referrer of its own: its frame
+    // has the long address of its document, which is never read.
+    const fromReader = (url: string): OnBeforeRequestListenerDetails =>
+      ({
+        url,
+        resourceType: 'image',
+        webContentsId: 7,
+        webContents: reader,
+        referrer: '',
+        initiatorOrigin: 'null',
+        get frame(): never {
+          throw new Error('The frame of a reader view was read');
+        },
+      }) as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(fromReader('https://news.example/ads/photo.jpg'))).toBe(
+      undefined,
+    );
+    // On a site where the blocker works, the rules of that site hold, also its $domain rules.
+    const on = new ContentBlocker({
+      dataDir: dataDir('||news.example/pixel.gif$domain=news.example\n'),
+      enabled: () => true,
+      pageOf: (contents) => (contents === reader ? 'https://news.example/story' : undefined),
+      logger: logger(),
+    });
+    expect(await on.beforeRequest(fromReader('https://news.example/pixel.gif'))).toEqual({
+      cancel: true,
+    });
+  });
+
   it('loads the engine with the first web page, not before', async () => {
     const blocker = new ContentBlocker({
       dataDir: dataDir('||ads.example^\n'),

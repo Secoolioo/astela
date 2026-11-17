@@ -871,6 +871,12 @@ export class SettingsPage extends LitElement {
       render: () =>
         page.renderToggle('downloads.ask', 'settings.downloadAsk', 'settings.downloadAskNote'),
     }),
+    'reader.enabled': (page) => ({
+      render: () => page.renderToggle('reader.enabled', 'settings.reader', 'settings.readerNote'),
+    }),
+    'reader.font': (page) => ({
+      render: () => page.renderChoice('reader.font', 'settings.readerFont'),
+    }),
     'tabs.sleep': (page) => ({
       render: () => page.renderToggle('tabs.sleep', 'settings.tabSleep', 'settings.tabSleepNote'),
     }),

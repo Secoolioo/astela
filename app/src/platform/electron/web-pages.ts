@@ -2,7 +2,7 @@ import type { Input, WebContents, WebContentsView } from 'electron';
 import type { TabId, TabProblem } from '../../domain/tabs/tab-service.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
 import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
-import type { WindowHost, WebPages } from './browser-window.ts';
+import type { CoverEnd, TabCover, WindowHost, WebPages } from './browser-window.ts';
 import { typesText } from './tab-activity.ts';
 
 /**
@@ -20,6 +20,8 @@ export const webPages: WebPages = {
   find,
   proceedUnsafely,
   proceedInsecurely,
+  cover: coverPage,
+  uncover: uncoverPage,
 };
 
 /**
@@ -63,7 +65,22 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
     visit(address);
   });
   contents.on('did-navigate-in-page', (_event, address, isMainFrame) => {
-    if (isMainFrame) visit(address);
+    if (!isMainFrame) return;
+    // A page that shows another path, as web apps do, may show another article; a jump to an
+    // anchor of the same page does not.
+    const before = visited;
+    visit(address);
+    if (withoutHash(address) !== withoutHash(before) && host.entries.get(id)?.view === view) {
+      window.uncover(id, 'navigated');
+      window.tabs.update(id, { reader: 'none' });
+      options.onPageEvent?.(window, id, contents, 'changed');
+    }
+  });
+  // The reader view checks the page once its main frame has loaded.
+  contents.on('did-frame-finish-load', (_event, isMainFrame) => {
+    if (isMainFrame && host.entries.get(id)?.view === view) {
+      options.onPageEvent?.(window, id, contents, 'loaded');
+    }
   });
   contents.on('page-title-updated', (_event, title) => {
     const address = contents.getURL();
@@ -123,6 +140,12 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   });
   contents.on('did-navigate', (_event, address) => {
     setProblem(host, id, null);
+    // Another document ends a cover over the page, and needs a check of its own; the cover tells
+    // the same address loaded again from another one.
+    if (host.entries.get(id)?.view === view) {
+      window.uncover(id, 'navigated');
+      window.tabs.update(id, { reader: 'none' });
+    }
     // A site keeps the zoom it was left at, also after the browser restarts, and other
     // sites get the default zoom. Chromium gives a page the zoom that its site had in this
     // session, or else the default zoom that the tab was made with, which may be old.
@@ -181,9 +204,13 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
 function setProblem(host: WindowHost, id: TabId, problem: TabProblem | null): void {
   const { window } = host;
   if (problem === null && problemOf(host, id) === null) return;
-  // In place of its page, the tab shows no icon of a page.
-  if (problem !== null) host.dropFavicon(id);
-  window.tabs.update(id, { problem });
+  // In place of its page, the tab shows no icon of a page, no cover and no article; the page
+  // gets a check of its own once it has loaded again.
+  if (problem !== null) {
+    host.dropFavicon(id);
+    window.uncover(id, 'gone');
+  }
+  window.tabs.update(id, problem === null ? { problem } : { problem, reader: 'none' });
   if (window.isShown(id) && !window.window.isDestroyed()) {
     host.layout();
     // Focusing a view raises its window: a window in the background stays there. A problem
@@ -203,6 +230,13 @@ function zoom(host: WindowHost, id: TabId, direction: 1 | -1 | 0): void {
   const { window, options } = host;
   const contents = host.webContentsOf(id);
   if (contents === undefined) return;
+  // A cover, such as the reader view, zooms by itself; the site keeps its zoom.
+  const cover = host.entries.get(id)?.cover;
+  if (cover !== undefined) {
+    cover.zoomBy(direction);
+    window.tabs.update(id, { zoom: cover.zoom });
+    return;
+  }
   const current = contents.getZoomFactor();
   const factor =
     direction === 0
@@ -293,7 +327,8 @@ function typed(host: WindowHost, contents: WebContents, input: Input): void {
  * @param next - Whether to go on from the current match.
  */
 function find(host: WindowHost, id: TabId, query: string, forward: boolean, next: boolean): void {
-  const contents = host.webContentsOf(id);
+  // A cover, such as the reader view, is searched in place of the page.
+  const contents = host.entries.get(id)?.cover?.view.webContents ?? host.webContentsOf(id);
   const finding = host.findState();
   // Only an open find bar looks; a late request after Escape does not open it again.
   if (contents === undefined || id !== host.window.tabs.active?.id || finding === null) return;
@@ -339,6 +374,102 @@ function proceedInsecurely(
   if (problem?.kind !== 'insecure' || contents === undefined) return;
   allow(contents, problem.url);
   contents.loadURL(problem.url).catch(() => undefined);
+}
+
+/**
+ * Covers the web page of a tab with a view, such as the reader view: while the tab shows, the
+ * page's view leaves the window and the cover takes its place, with the keys, the context menu,
+ * the mouse's back and forward buttons, find and zoom. It takes the focus that the page had, and
+ * that of the window when a person asked for it. The page stays alive; a cover whose renderer is
+ * gone ends.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param cover - The view and what it does when it ends.
+ * @returns Whether the cover shows; not over a page with a problem or one that is covered.
+ */
+function coverPage(host: WindowHost, id: TabId, cover: TabCover): boolean {
+  const { window } = host;
+  const entry = host.entries.get(id);
+  if (
+    entry === undefined ||
+    entry.page !== undefined ||
+    entry.cover !== undefined ||
+    entry.view.webContents.isDestroyed() ||
+    problemOf(host, id) !== null
+  ) {
+    return false;
+  }
+  const contents = cover.view.webContents;
+  host.follow(id, cover.view);
+  contents.on('found-in-page', (_event, result) => {
+    const finding = host.findState();
+    if (finding === null || id !== window.tabs.active?.id || entry.cover !== cover) return;
+    host.setFindState({ ...finding, active: result.activeMatchOrdinal, matches: result.matches });
+  });
+  contents.on('zoom-changed', (_event, direction) => zoom(host, id, direction === 'in' ? 1 : -1));
+  // A cover whose own renderer is gone ends; the page under it is as it was.
+  contents.on('render-process-gone', () => {
+    if (entry.cover === cover) window.uncover(id, 'closed');
+  });
+  // Over a page, Chromium follows the mouse's back and forward buttons in the page's history;
+  // the cover has none, so they go back and forward in the tab, which ends the cover.
+  contents.on('before-mouse-event', (event, mouse) => {
+    // Electron names these buttons too, although its types know only three.
+    const button: string | undefined = mouse.button;
+    if (mouse.type !== 'mouseUp' || entry.cover !== cover) return;
+    const action =
+      button === 'back'
+        ? 'back'
+        : button === 'forward' && window.tabs.get(id)?.canGoForward === true
+          ? 'forward'
+          : undefined;
+    if (action === undefined) return;
+    event.preventDefault();
+    // The cover ends once the event is over, not inside it.
+    setImmediate(() => window.run(id, action));
+  });
+  const focused = entry.view.webContents.isFocused();
+  entry.cover = cover;
+  // A cover that a person asked for closes a popover over the page, as a page that loads does;
+  // one that comes back by itself leaves it, such as the suggestions of an address being typed.
+  host.swap(entry.view, cover.view, cover.asked ? 'close' : 'keep');
+  // Focusing a view raises its window: a window in the background stays there.
+  const asked = cover.asked && window.isShown(id) && id === window.tabs.active?.id;
+  if ((focused || asked) && window.window.isFocused()) host.focusView(contents);
+  window.tabs.update(id, { zoom: cover.zoom, canGoBack: true });
+  findAgain(host, id);
+  return true;
+}
+
+/**
+ * Ends the cover of a tab's page: the page shows again where it was, unchanged, and takes the
+ * focus that the cover had.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param end - Why the cover ends.
+ */
+function uncoverPage(host: WindowHost, id: TabId, end: CoverEnd): void {
+  const entry = host.entries.get(id);
+  const cover = entry?.cover;
+  if (entry === undefined || cover === undefined) return;
+  const contents = cover.view.webContents;
+  const focused = !contents.isDestroyed() && contents.isFocused();
+  entry.cover = undefined;
+  host.swap(cover.view, entry.view);
+  if (!contents.isDestroyed()) contents.stopFindInPage('clearSelection');
+  cover.ended(end);
+  const page = entry.view.webContents;
+  if (!page.isDestroyed()) {
+    if (focused) host.focusView(page);
+    host.sync(id, page);
+    findAgain(host, id);
+  }
+}
+
+/** Looks for the text of an open find bar again, in what the tab shows now. */
+function findAgain(host: WindowHost, id: TabId): void {
+  const finding = host.findState();
+  if (finding !== null && finding.query !== '') find(host, id, finding.query, true, false);
 }
 
 /** Why a tab of any workspace of the window shows no page, or `null` when it shows one. */

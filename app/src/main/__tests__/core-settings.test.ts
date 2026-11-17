@@ -11,6 +11,8 @@ import {
   CommandPaletteSetting,
   coreSettings,
   DownloadFolderSetting,
+  ReaderEnabledSetting,
+  ReaderFontSetting,
   ShortcutsSetting,
   SplitViewSetting,
   StartupSetting,
@@ -259,6 +261,56 @@ async function settingsWith(
   await settings.load();
   return settings;
 }
+
+describe('ReaderEnabledSetting and ReaderFontSetting', () => {
+  it('offer the reader view in the font of the browser by default, in the section of page tools', () => {
+    expect(ReaderEnabledSetting).toMatchObject({
+      key: 'reader.enabled',
+      default: true,
+      scope: 'global',
+      policy: { name: 'ReaderViewEnabled', recommended: true },
+      ui: { section: 'pageTools', control: 'toggle', order: 1 },
+    });
+    expect(ReaderFontSetting).toMatchObject({
+      key: 'reader.font',
+      default: 'browser',
+      scope: 'global',
+      ui: { section: 'pageTools', control: 'select', order: 2 },
+    });
+    // No policy sets the font: it is a matter of taste.
+    expect(ReaderFontSetting.policy).toBeUndefined();
+    expect(coreSettings).toEqual(expect.arrayContaining([ReaderEnabledSetting, ReaderFontSetting]));
+    expect(settingPolicies(coreSettings)).toContainEqual(
+      expect.objectContaining({ name: 'ReaderViewEnabled', recommended: true }),
+    );
+    for (const font of ['browser', 'serif']) {
+      expect(v.safeParse(ReaderFontSetting.schema, font).success).toBe(true);
+    }
+    for (const other of ['sans', 'Georgia', 1]) {
+      expect(v.safeParse(ReaderFontSetting.schema, other).success).toBe(false);
+    }
+    expect(v.safeParse(ReaderEnabledSetting.schema, 'off').success).toBe(false);
+  });
+
+  it('follow a mandatory policy, and a recommended one only until people chose', async () => {
+    const managed = await settingsWith([
+      { name: 'ReaderViewEnabled', value: false, level: 'mandatory' },
+    ]);
+    expect(managed.get(ReaderEnabledSetting)).toBe(false);
+    expect(managed.inspect(ReaderEnabledSetting).locked).toBe(true);
+    const suggested = await settingsWith(
+      [{ name: 'ReaderViewEnabled', value: false, level: 'recommended' }],
+      { 'reader.enabled': true },
+    );
+    expect(suggested.get(ReaderEnabledSetting)).toBe(true);
+    expect(suggested.inspect(ReaderEnabledSetting).locked).toBe(false);
+    expect(
+      (await settingsWith([{ name: 'ReaderViewEnabled', value: false, level: 'recommended' }])).get(
+        ReaderEnabledSetting,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe('TabSleepSetting and TabSleepAfterSetting', () => {
   it('put tabs to sleep after an hour by default, in the section of performance', () => {

@@ -107,7 +107,7 @@ Medium is the default. The line heights belong to the UI, Large, Larger, Title a
 | `--radius-field` | 10 px | The address bar and search fields                      |
 | `--radius-pill`  | round | Switches, badges and progress bars only                |
 
-Menus and popovers that float above the page have the one shadow, `--shadow-popover`, which is darker in dark mode. Focus rings of 1 or 2 px are no shadows of depth. Every popover of the overlay takes its radius, shadow, surface and line from `app/src/ui/ui-kit/popover-styles.ts`, and one module places it at its button (`app/src/ui/overlay/placement.ts`): below the button, lined up with the end of a button in the right half of the window and with its start otherwise, while the menus of the folders of the bookmarks bar line up with the start of their button; above it without room below, and scrolling inside when it fits on neither side.
+Menus and popovers that float above the page have the one shadow, `--shadow-popover`, which is darker in dark mode. Focus rings of 1 or 2 px are no shadows of depth. An item of a menu of the overlay that turns something on and off, such as the reader view in the browser menu, shows Lucide's check in the place of its icon while it is on, and is a `menuitemcheckbox` for screen readers. Every popover of the overlay takes its radius, shadow, surface and line from `app/src/ui/ui-kit/popover-styles.ts`, and one module places it at its button (`app/src/ui/overlay/placement.ts`): below the button, lined up with the end of a button in the right half of the window and with its start otherwise, while the menus of the folders of the bookmarks bar line up with the start of their button; above it without room below, and scrolling inside when it fits on neither side.
 
 ## Motion
 
@@ -123,6 +123,7 @@ Menus and popovers that float above the page have the one shadow, `--shadow-popo
 
 - Things that enter use `--ease-out`, things that leave `--ease-in`, and movements `--ease-standard`. A loading indicator repeats one turn of `--motion-loop`; one that turns at an even speed, such as the loading ring of a tab, uses `--ease-linear`.
 - Animations use only `transform`, `opacity` and colors, so they never trigger layout.
+- The button of the reader view fades in over `--motion-fast` with `--ease-out` once the page turns out to have an article, by its opacity alone; the reader view itself has no motion.
 - Popovers of the overlay fade in and move the last 4 px away from their button over `--motion-enter` with `--ease-out`, and fade out and move 2 px towards it over `--motion-exit` with `--ease-in`; questions in the middle of the window only fade. The overlay leaves the window once the popover has left (`app/src/ui/overlay/popover-motion.ts`, [ADR 0050](../adr/0050-browser-menus-and-popovers-in-the-overlay.md)).
 - When the system requests reduced motion (`prefers-reduced-motion`), every duration is 0, so nothing moves. `tools/design/check-tokens.ts` checks that the block for reduced motion of `tokens.css` sets every motion token to 0.
 - Code that animates from JavaScript reads its duration and easing from the tokens with `motionOf` and `easingOf` (`app/src/ui/ui-kit/motion.ts`), so it stops with reduced motion as well.
@@ -186,6 +187,22 @@ Workspaces take the same six colors, and one of 16 icons of Lucide's set, drawn 
 
 The targets fade in over `--motion-fast`, by their opacity alone; with forced colors, the target under the pointer gets an outline in `Highlight`.
 
+### Reader view
+
+The [reader view](../user/page-tools.md#reader-view) shows an article in a document of its own, which loads nothing of the browser: `app/src/domain/reader/document.ts` writes the tokens that it needs into it as values ([ADR 0057](../adr/0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)).
+
+| Part     | Look                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Column   | at most 42 em wide in the middle, with 3 rem of room above it, 4 rem below it and 1.5 rem at its sides                                                           |
+| Text     | 1.125 rem with a line height of 1.6, in the font of the browser or the serif font of web pages (setting `reader.font`), at the text size of web pages            |
+| Header   | the name of the site above the title in 2.25 rem, and who wrote it, the date and the reading time below it, in 0.875 rem and `--text-2`                          |
+| Headings | 1.5, 1.25 and 1.125 rem, with more room above than below                                                                                                         |
+| Colors   | `--surface-1` and `--text-1`, `--text-2` for captions and quotes, `--surface-2` under code and the heads of tables, `--accent` for links                         |
+| Lines    | rules, the cells of tables and the bar at the start of a quote in `--line-1`, which the document mixes from `--border-1` with `lineOpacity` as `tokens.css` does |
+| Corners  | `--radius-1` for code, `--radius-2` for pictures                                                                                                                 |
+
+The palette is that of the theme in light and dark mode, and only the dark one in a private window. The sizes and the spacing are in `rem` and `em`, outside the 4 px grid of the browser's own views: the zoom of the reader view sets the size of its root font, in the steps of page zoom, and the whole document grows with it. The document has no motion, prints black text on white with gray lines, and with forced colors takes the colors of the system, as web pages do. Unit tests compare its palette, its line, its radii and its font with the tokens.
+
 ### Layout presets
 
 Presets give users a good layout without having to assemble it from individual settings:
@@ -218,7 +235,7 @@ How these checks fit into the overall test strategy is described in [Testing](te
 
 ## Implementation status
 
-Switches are tracks whose knob slides when they change, segmented controls change their colors softly, buttons of the toolbar give way while they are pressed, and the bookmark star pops when a page becomes a bookmark (`app/src/ui/ui-kit/choice-styles.ts`). The popovers of the overlay, the browser menu among them, enter and leave with `--motion-enter` and `--motion-exit`, and a button of the toolbar looks pressed while its popover is open. The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, the line and the raised surface mixed from them, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The logo and the application icon exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
+Switches are tracks whose knob slides when they change, segmented controls change their colors softly, buttons of the toolbar give way while they are pressed, and the bookmark star pops when a page becomes a bookmark (`app/src/ui/ui-kit/choice-styles.ts`). The popovers of the overlay, the browser menu among them, enter and leave with `--motion-enter` and `--motion-exit`, and a button of the toolbar looks pressed while its popover is open. The tokens exist in `app/src/ui/ui-kit/tokens.css`: OKLCH colors for light and dark mode, the line and the raised surface mixed from them, spacing, the radii, the shadow of popovers, font weights and the motion durations and easings, with every duration 0 for `prefers-reduced-motion`. The browser's own views in a private window use the dark colors in both modes. The shell uses them, with inline Lucide-style icons. The reader view's document takes the palette, the line, the radii and the font of the tokens as values (see [Reader view](#reader-view)). The logo and the application icon exist in `assets/brand/` and are described in its README. The website applies the same rules to its documentation theme in `website/src/styles/theme.css`. The default [keyboard shortcuts](../user/keyboard-shortcuts.md) follow the conventions of each operating system; on Windows and Linux, F6 moves the focus to the address bar.
 
 The three density levels, the text size, the font of the UI and the accent color are settings; components take every size, space and font from the tokens; the accent presets are Astela, the violet of the logo with its blue for progress and the default, and blue, teal, green, orange, red and graphite, and a custom color keeps its hue at a contrast of at least 4.5:1 (see [settings, policies and themes](settings-policy-theme.md#implementation-status)).
 
