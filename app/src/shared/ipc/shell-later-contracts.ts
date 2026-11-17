@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 import { PopoverAnchor } from './overlay-anchor.ts';
 import { Done, Empty, FaviconKey, GroupId, SplitRatio, TabId } from './shell-contracts.ts';
+import { WorkspaceId } from '../workspaces.ts';
 
 // Requests of the shell that its first paint does not need. They load with the first of
 // them, so the browser does not read them at its start; `shellLaterChannels` names them.
@@ -185,6 +186,25 @@ export const EditGroupRequested = defineEvent({
   capability: 'shell',
 });
 
+/** Opens the list of the workspaces at the button of the workspaces, in CSS pixels of the shell. */
+export const OpenWorkspaces = defineRequest({
+  channel: 'workspaces.open',
+  request: PopoverAnchor,
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Moves a tab of the window into another workspace, as a drop of the tab on the workspace's
+ * target does; a tab that changes its partition loads again there.
+ */
+export const MoveTabToWorkspace = defineRequest({
+  channel: 'workspaces.moveTab',
+  request: v.strictObject({ tabId: TabId, workspaceId: WorkspaceId }),
+  response: Done,
+  capability: 'shell',
+});
+
 /**
  * Moves the divider of the split view of a tab: while it moves, only the pages follow; once
  * it is let go, or moved by a key (`done`), the share counts for the state and the session.
@@ -287,4 +307,6 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   ResizeSplit,
   ToggleGroup,
   OpenGroupEditor,
+  OpenWorkspaces,
+  MoveTabToWorkspace,
 ];

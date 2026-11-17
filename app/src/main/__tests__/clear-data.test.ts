@@ -3,8 +3,28 @@ import { describe, expect, it } from 'vitest';
 import type { DataClient } from '../../platform/electron/data-service-client.ts';
 import { clearBrowsingData } from '../clear-data.ts';
 
+/** A session that records what was cleared in it, with its name after the first one's. */
+function sessionOf(cleared: unknown[][], name = ''): Session {
+  const named = (what: string): string => (name === '' ? what : `${what} ${name}`);
+  return {
+    clearStorageData: (options: unknown) => {
+      cleared.push([named('storage'), options]);
+      return Promise.resolve();
+    },
+    clearCache: () => {
+      cleared.push([named('cache')]);
+      return Promise.resolve();
+    },
+    clearAuthCache: () => {
+      cleared.push([named('sign-ins')]);
+      return Promise.resolve();
+    },
+    cookies: { flushStore: () => Promise.resolve() },
+  } as unknown as Session;
+}
+
 /** A data service and a session that record what was cleared. */
-function fakes(): { data: DataClient; web: Session; cleared: unknown[][] } {
+function fakes(): { data: DataClient; web: Session[]; cleared: unknown[][] } {
   const cleared: unknown[][] = [];
   const data = {
     call: (method: string, ...params: unknown[]) => {
@@ -12,22 +32,7 @@ function fakes(): { data: DataClient; web: Session; cleared: unknown[][] } {
       return Promise.resolve();
     },
   } as unknown as DataClient;
-  const web = {
-    clearStorageData: (options: unknown) => {
-      cleared.push(['storage', options]);
-      return Promise.resolve();
-    },
-    clearCache: () => {
-      cleared.push(['cache']);
-      return Promise.resolve();
-    },
-    clearAuthCache: () => {
-      cleared.push(['sign-ins']);
-      return Promise.resolve();
-    },
-    cookies: { flushStore: () => Promise.resolve() },
-  } as unknown as Session;
-  return { data, web, cleared };
+  return { data, web: [sessionOf(cleared)], cleared };
 }
 
 describe('clearBrowsingData', () => {
@@ -75,5 +80,24 @@ describe('clearBrowsingData', () => {
       5,
     );
     expect(cache.cleared).toEqual([['cache']]);
+  });
+
+  it('clears the cookies, site data, sign-ins and the cache of every session it is given, such as those of workspaces', async () => {
+    const { data, cleared } = fakes();
+    const web = [sessionOf(cleared, 'shared'), sessionOf(cleared, 'bank')];
+    await clearBrowsingData(
+      { range: 'all', history: false, cookies: true, cache: true },
+      data,
+      web,
+      5,
+    );
+    expect(cleared.map(([what]) => what)).toEqual([
+      'storage shared',
+      'sign-ins shared',
+      'cache shared',
+      'storage bank',
+      'sign-ins bank',
+      'cache bank',
+    ]);
   });
 });

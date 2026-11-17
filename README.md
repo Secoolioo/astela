@@ -36,11 +36,12 @@ On `main` now, and in the next beta, 0.1.0-beta.7:
 - **Sleeping tabs:** tabs go to sleep from their menu or after a time, and wake when they are shown.
 - **Split view:** two tabs side by side, with a divider to move.
 - **Tab groups:** named, colored groups of tabs that collapse and come back after a restart.
+- **Workspaces:** named sets of tabs in each window, switched with a list and shortcuts.
 
 ## Planned for 0.1.0
 
 - Layout presets such as a compact and a zen layout, and site information in the address bar.
-- Workspaces, a reader view and picture-in-picture.
+- A reader view and picture-in-picture.
 - Saved passwords and autofill.
 
 ## Documentation

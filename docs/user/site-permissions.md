@@ -23,3 +23,4 @@ The settings page lists every site that you answered under **Privacy**, **Site p
 
 - Until you answer, a site that only checks whether it may show notifications sees that it may not, because the browser cannot report that the question is still open. Such sites usually offer a button that asks.
 - On Linux, a site may still not learn your location after you allowed it, if the system has no location service that the browser can use.
+- From 0.1.0-beta.7, your answers count in every [workspace](workspaces.md), also in one that keeps its cookies and sign-ins apart.

@@ -28,7 +28,7 @@ import {
   type TextSize,
   type WebFonts,
 } from '../domain/appearance/appearance.ts';
-import { maxSites, type SitePermissions } from '../domain/permissions/site-permissions.ts';
+import type { SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { defineSetting } from '../domain/settings/setting.ts';
 import {
   tabStripPositions,
@@ -38,6 +38,12 @@ import {
 } from '../shared/layout.ts';
 import type { CustomSearchEngine } from '../shared/search-engines.ts';
 import { sleepAfterSeconds, type SleepAfter } from '../shared/tab-sleep.ts';
+import {
+  defaultWorkspaces,
+  WorkspaceId,
+  WorkspaceList,
+  type Workspace,
+} from '../shared/workspaces.ts';
 import { zoomFactors } from '../shared/zoom.ts';
 
 /** The search address of an engine: https, with `%s` for the query. */
@@ -293,6 +299,12 @@ export const SiteZoomSetting = defineSetting<Record<string, number>>({
 });
 
 const PermissionDecision = v.exactOptional(v.picklist(['allow', 'block']));
+
+/**
+ * Most sites with decisions, the `maxSites` of the site permissions. The setting checks it
+ * without their code, which loads with the first web page.
+ */
+const maxSites = 10_000;
 
 /**
  * What sites may use after the user answered their question, by origin, such as
@@ -633,6 +645,44 @@ export const SplitViewSetting = defineSetting<boolean>({
 });
 
 /**
+ * The workspaces of the profile, each with its name, icon and color, and whether it keeps its
+ * cookies and sign-ins apart. Profile data like the zoom of sites, which the list of workspaces
+ * writes: the settings page neither shows nor exports nor imports it, so that an import never
+ * takes a workspace with tabs away.
+ */
+export const WorkspacesSetting = defineSetting<Workspace[]>({
+  key: 'workspaces.list',
+  schema: WorkspaceList,
+  default: [...defaultWorkspaces],
+  scope: 'global',
+});
+
+/**
+ * Whether windows keep sets of tabs in workspaces. Turned off, the button of the workspaces and
+ * their shortcuts are gone, and every window shows the tabs of all its workspaces together. A
+ * policy can set or recommend it.
+ */
+export const WorkspacesEnabledSetting = defineSetting<boolean>({
+  key: 'workspaces.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'WorkspacesEnabled', recommended: true },
+  ui: { section: 'appearance', control: 'toggle', order: 7 },
+});
+
+/**
+ * The deleted workspaces with cookies and sign-ins of their own whose folder is still in the
+ * profile, as Chromium holds its files while it runs; the folders go at the next start.
+ */
+export const WorkspacesRemovedSetting = defineSetting<string[]>({
+  key: 'workspaces.removed',
+  schema: v.pipe(v.array(WorkspaceId), v.maxLength(100)),
+  default: [],
+  scope: 'global',
+});
+
+/**
  * The language of the browser's menus, dialogs and own pages: `system` follows the language
  * of the system, a language code such as `de` sets one. It takes effect after a restart.
  */
@@ -697,5 +747,8 @@ export const coreSettings = [
   SetupShownSetting,
   BookmarksBarSetting,
   SplitViewSetting,
+  WorkspacesSetting,
+  WorkspacesEnabledSetting,
+  WorkspacesRemovedSetting,
   LanguageSetting,
 ];

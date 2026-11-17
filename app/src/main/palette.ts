@@ -29,6 +29,8 @@ import {
 } from '../shared/ipc/overlay-contracts.ts';
 import { shortcutsOf } from '../shared/menu-shortcuts.ts';
 import type { WindowCommand } from '../shared/shortcuts.ts';
+import type { Workspace } from '../shared/workspaces.ts';
+import { showTab } from '../domain/tabs/show-tab.ts';
 import { overlayBySender, overlayOf, track, windowOfOverlay } from './overlays.ts';
 
 /** What the command palette needs from the browser process. */
@@ -46,6 +48,8 @@ export interface PaletteDependencies {
   readonly bookmarks: () => Promise<readonly PalettePage[]>;
   /** The keys of the settings that the settings page does not offer on this system. */
   readonly absent: readonly string[];
+  /** The workspaces of the profile while windows have them, or `undefined` while they are off. */
+  readonly workspaces: () => readonly Workspace[] | undefined;
 }
 
 /** A palette that an overlay shows, with the answers that its page may choose from. */
@@ -198,10 +202,15 @@ function remember(command: WindowCommand): void {
 /**
  * The open tabs of the windows of the same kind as a window's, private or not: those of the
  * window first, in the order of its tab strip, then those of the other windows, the window
- * used last first. The tabs of private windows never show in a regular one, and the other way
- * round.
+ * used last first, each window workspace by workspace. The tabs of private windows never show in
+ * a regular one, and the other way round. Each tab names its group, and its workspace while
+ * windows have workspaces and the profile has more than one.
  */
-function tabsOf(window: BrowserWindowController, windows: WindowManager): PaletteTab[] {
+function tabsOf(
+  window: BrowserWindowController,
+  windows: WindowManager,
+  workspaces: readonly Workspace[] | undefined,
+): PaletteTab[] {
   const active = window.tabs.active?.id;
   const others = windows.byFocus.filter(
     (other) =>
@@ -210,16 +219,29 @@ function tabsOf(window: BrowserWindowController, windows: WindowManager): Palett
       !other.closing &&
       !other.window.isDestroyed(),
   );
+  // The workspace of a tab says something only while the profile has more than one.
+  const named = workspaces !== undefined && workspaces.length > 1 ? workspaces : [];
   return [window, ...others].flatMap((owner) =>
-    owner.tabs.all.map((tab): PaletteTab => ({
-      windowId: owner.window.id,
-      tabId: tab.id,
-      title: tab.title,
-      url: tab.url,
-      favicon: tab.favicon,
-      place: owner !== window ? 'other' : tab.id === active ? 'current' : 'window',
-      sleeping: tab.sleeping,
-    })),
+    owner.tabs.strips.flatMap((strip) => {
+      const workspace =
+        owner.isPrivate || owner.popup
+          ? undefined
+          : named.find((candidate) => candidate.id === strip.workspace);
+      return strip.all.map((tab): PaletteTab => ({
+        windowId: owner.window.id,
+        tabId: tab.id,
+        title: tab.title,
+        url: tab.url,
+        favicon: tab.favicon,
+        place: owner !== window ? 'other' : tab.id === active ? 'current' : 'window',
+        sleeping: tab.sleeping,
+        group: tab.group === null ? null : { name: tab.group.name, color: tab.group.color },
+        workspace:
+          workspace === undefined
+            ? null
+            : { name: workspace.name, icon: workspace.icon, color: workspace.color },
+      }));
+    }),
   );
 }
 
@@ -244,7 +266,8 @@ async function sourcesOf(
       : [],
     pages ? deps.target(text).catch(() => undefined) : undefined,
   ]);
-  const tabs = scope === 'all' || scope === 'tabs' ? tabsOf(window, deps.windows) : [];
+  const tabs =
+    scope === 'all' || scope === 'tabs' ? tabsOf(window, deps.windows, deps.workspaces()) : [];
   return { tabs, bookmarks, history, target };
 }
 
@@ -258,6 +281,8 @@ function view(result: PaletteResult): PaletteItem {
       favicon: result.tab.favicon,
       place: result.tab.place,
       sleeping: result.tab.sleeping,
+      group: result.tab.group,
+      workspace: result.tab.workspace,
     };
   }
   if (result.kind === 'search') {
@@ -278,9 +303,9 @@ function hostOf(url: string): string {
 
 /**
  * Shows an open tab: in its window, which comes to the front, out of the dock or the task bar
- * if need be, and whose page gets the focus. A tab that closed meanwhile shows nothing. Every
- * choice of a tab takes this way, so that a tab of another workspace or of a collapsed group
- * can show first once there are such.
+ * if need be, and shows the workspace of the tab, whose group shows its tabs, and whose page
+ * gets the focus. A tab that closed meanwhile shows nothing. Every choice of a tab takes this
+ * way.
  */
 function revealTab(from: BrowserWindowController, tab: PaletteTab, windows: WindowManager): void {
   const target = windows.all.find(
@@ -289,13 +314,15 @@ function revealTab(from: BrowserWindowController, tab: PaletteTab, windows: Wind
       window.isPrivate === from.isPrivate &&
       !window.window.isDestroyed(),
   );
-  if (target === undefined || !target.tabs.all.some((open) => open.id === tab.tabId)) return;
-  target.tabs.activate(tab.tabId);
-  if (target !== from) {
-    if (target.window.isMinimized()) target.window.restore();
-    target.window.focus();
-  }
-  target.focusContent();
+  if (target === undefined || target.tabs.get(tab.tabId) === undefined) return;
+  void showTab(target.tabs, tab.tabId).then(() => {
+    if (target.window.isDestroyed()) return;
+    if (target !== from) {
+      if (target.window.isMinimized()) target.window.restore();
+      target.window.focus();
+    }
+    target.focusContent();
+  });
 }
 
 /**

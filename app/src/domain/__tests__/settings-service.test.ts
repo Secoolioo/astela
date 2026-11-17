@@ -360,6 +360,34 @@ describe('SettingsService', () => {
     expect(settings.get(Density, { workspaceId: 'w1' })).toBe('normal');
   });
 
+  it('forgets every value of a deleted workspace, also those that this version does not know', async () => {
+    const { settings, store } = setup();
+    store.stored = {
+      user: { 'tabs.position': 'bottom' },
+      workspaces: {
+        w1: { 'tabs.position': 'right', 'future.ws': 1 },
+        w2: { 'tabs.position': 'left' },
+        w3: { 'future.ws': 2 },
+      },
+    };
+    await settings.load();
+    const listener = vi.fn();
+    settings.onDidChange(listener);
+    store.save.mockClear();
+    settings.clearWorkspace('w1');
+    settings.clearWorkspace('w3');
+    settings.clearWorkspace('w1');
+    settings.clearWorkspace('w9');
+    expect(settings.get(TabPosition, { workspaceId: 'w1' })).toBe('bottom');
+    expect(settings.get(TabPosition, { workspaceId: 'w2' })).toBe('left');
+    expect(listener.mock.calls).toEqual([[{ keys: ['tabs.position'] }], [{ keys: [] }]]);
+    expect(store.save).toHaveBeenCalledTimes(2);
+    expect(store.saved?.settings).toEqual({
+      user: { 'tabs.position': 'bottom' },
+      workspaces: { w2: { 'tabs.position': 'left' } },
+    });
+  });
+
   it('loads stored values, keeps unknown keys and sets invalid values aside', async () => {
     const { settings, store } = setup();
     store.stored = {

@@ -1,7 +1,6 @@
 import {
   BaseWindow,
   screen,
-  session as sessions,
   WebContentsView,
   type ContextMenuParams,
   type Input,
@@ -36,12 +35,7 @@ import { splitPanes } from '../../shared/split-view.ts';
 import type { OverlayAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { ViewHistory, type TabHistory, type ViewSnapshot } from '../../domain/tabs/view-history.ts';
-import {
-  currentEntry,
-  historyMoves,
-  memoryLimits,
-  trimHistory,
-} from '../../domain/tabs/tab-history.ts';
+import { currentEntry, memoryLimits, trimHistory } from '../../domain/tabs/tab-history.ts';
 import {
   sessionWindow,
   type RestoredWindow,
@@ -69,6 +63,7 @@ import type { TabActivity } from './tab-activity.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
 import type { ShortcutRecorder } from './shortcut-recorder.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
+import type { Workspace } from '../../shared/workspaces.ts';
 
 /** Space the shell occupies at the window edges. */
 export interface Insets {
@@ -145,8 +140,8 @@ export interface BrowserWindowOptions {
   readonly downloads?: (privateWindow: boolean) => ShellState['downloads'];
   /** Shows the list of downloads of a window, at its button. */
   readonly showDownloads?: (window: BrowserWindowController) => void;
-  /** Opens a new window. */
-  readonly openWindow?: () => void;
+  /** Opens a new window, which shows the workspace of the window that it comes from. */
+  readonly openWindow?: (from: BrowserWindowController) => void;
   /** Opens a new private window, if people may. */
   readonly openPrivateWindow?: () => void;
   /** Whether people may open private windows; they may when left out. */
@@ -167,6 +162,21 @@ export interface BrowserWindowOptions {
    * it may when left out.
    */
   readonly splitView?: () => boolean;
+  /**
+   * The workspaces of the profile while windows have them, or `undefined` while a setting or a
+   * policy turns them off; private windows and popups never have them.
+   */
+  readonly workspaces?: () => readonly Workspace[] | undefined;
+  /**
+   * The partition of the web pages of a workspace: one of its own for a workspace that keeps its
+   * cookies and sign-ins apart, or else that of the other web pages, `webPartition`.
+   */
+  readonly partitionFor?: (workspace: string | undefined) => string;
+  /**
+   * Runs the commands of the workspaces and the command that puts the active tab in a new group,
+   * whose code loads with the first of them.
+   */
+  readonly onLaterCommand?: (window: BrowserWindowController, command: LaterCommand) => void;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
   /** Called when a window gets the focus. */
@@ -280,8 +290,8 @@ export interface WindowHost {
   shownViewOf(entry: TabEntry): WebContentsView;
   /** When the browser last tried to put each tab to sleep by itself. */
   readonly triedAt: Map<TabId, number>;
-  /** Closes the view of a tab, which keeps its history until it wakes. */
-  putToSleep(id: TabId, entry: TabEntry, dormant: DormantTab): void;
+  /** Closes the view of a tab and forgets it, as when the tab closes or goes to sleep. */
+  dropView(id: TabId, entry: TabEntry): void;
   /** The time of the wall clock, in milliseconds. */
   now(): number;
   /** What the find bar shows, or `null` while it is closed. */
@@ -306,6 +316,8 @@ export interface WindowHost {
   sideOf(id: TabId): 'start' | 'end' | null;
   /** Opens a new tab page beside a tab in a split view, whose address bar takes the focus. */
   splitWithNewTab(id: TabId): void;
+  /** The workspaces of the profile while the window has them. */
+  workspaceList(): readonly Workspace[] | undefined;
 }
 
 /** The code of the windows for their web pages, which loads with the first of them. */
@@ -354,7 +366,7 @@ const commandsNow = [
 type CommandNow = (typeof commandsNow)[number];
 
 /** A window command whose code loads later, with the first of them (`window-commands.ts`). */
-export type LaterWindowCommand = Exclude<WindowCommand, CommandNow>;
+export type LaterWindowCommand = Exclude<WindowCommand, CommandNow | LaterCommand>;
 
 /** Whether a command runs at once. */
 function runsNow(command: WindowCommand): command is CommandNow {
@@ -389,6 +401,8 @@ export interface WindowCommands {
   resizeSplit(host: WindowHost, tabId: TabId, ratio: number, done: boolean): void;
   /** Where the page of a tab lies while the content area shows a split view. */
   paneOf(host: WindowHost, contents: WebContents): OverlayAnchor | undefined;
+  /** Closes the view of a tab that the window does not show, which gets a new one once it shows. */
+  renewView(host: WindowHost, id: TabId, history: TabHistory | undefined): void;
 }
 
 /** An item of the menu of a tab that the window runs. */
@@ -434,6 +448,18 @@ export type AppCommand = 'app.about' | 'app.quit';
 /** What the command palette searches when it opens: everything, or the open tabs. */
 export type PaletteOpening = 'all' | 'tabs';
 
+/** The commands of the workspaces, and the one that puts the active tab in a new group. */
+export type LaterCommand = Extract<WindowCommand, `workspace.${string}` | 'tab.newGroup'>;
+
+/**
+ * Whether a command is one of the workspaces, or the one that puts the active tab in a new
+ * group, whose code loads with the first of them.
+ * @param command - The command.
+ */
+function isLaterCommand(command: WindowCommand): command is LaterCommand {
+  return command === 'tab.newGroup' || command.startsWith('workspace.');
+}
+
 /** What a window needs of its overlay. */
 export interface OverlayHandle {
   /** Whether the overlay covers the whole window, rather than a list below the address bar. */
@@ -464,6 +490,11 @@ export interface WindowPlace {
   readonly popup?: boolean;
   /** A private window keeps no history and no session, and its pages' data only in memory. */
   readonly private?: boolean;
+  /**
+   * The workspace that the window shows first; a popup keeps the workspace of the page that
+   * opened it, whose partition its pages use.
+   */
+  readonly workspace?: string | undefined;
 }
 
 /** Where a window is outside full screen, and whether it is maximized there. */
@@ -587,6 +618,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private host: WindowHost | undefined;
   /** Tabs without a view, with what they show once they wake. */
   private readonly dormant = new Map<TabId, DormantTab>();
+  /** The sessions of the views of the window, which keep the icons of their pages. */
+  private readonly viewSessions = new Set<Electron.Session>();
   /** When each tab was last used: opened, shown, left or quiet again, by the wall clock. */
   private readonly usedAt = new Map<TabId, number>();
   /**
@@ -689,6 +722,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this,
       options.newTabUrl,
       this.popup ? () => this.window.close() : undefined,
+      place.workspace,
     );
     this.subscriptions.add(this.tabs.onDidChange(() => this.schedulePublish()));
     this.subscriptions.add(this.tabs);
@@ -830,6 +864,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   state(): ShellState {
     const active = this.tabs.active;
     const split = active === undefined ? undefined : this.tabs.splitOf(active.id);
+    const workspaces = this.workspaceList();
     return {
       tabs: this.tabs.all.map(
         ({ id, title, url, loading, canGoBack, canGoForward, blocked, problem, zoom, ...tab }) => ({
@@ -868,7 +903,17 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       popover: this.popover,
       split:
         split === undefined ? null : { start: split.start, end: split.end, ratio: split.ratio },
+      workspace: workspaces?.find(({ id }) => id === this.tabs.workspace) ?? null,
+      workspaces: [...(workspaces ?? [])],
     };
+  }
+
+  /**
+   * The workspaces of the profile while the window has them: not in private windows and popups,
+   * and not while they are off.
+   */
+  private workspaceList(): readonly Workspace[] | undefined {
+    return this.isPrivate || this.popup ? undefined : this.options.workspaces?.();
   }
 
   /** Which side of a split view a tab is, or `null` for a tab that is in none. */
@@ -965,8 +1010,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   countBlocked(contentsId: number): boolean {
     for (const [id, entry] of this.entries) {
       if (entry.view.webContents.id === contentsId) {
-        const tab = this.tabs.all.find((candidate) => candidate.id === id);
-        this.tabs.update(id, { blocked: (tab?.blocked ?? 0) + 1 });
+        this.tabs.update(id, { blocked: (this.tabs.get(id)?.blocked ?? 0) + 1 });
         return true;
       }
     }
@@ -1215,7 +1259,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /** Why a tab shows no page, or `null` when it shows one. */
   private problemOf(id: TabId): TabProblem | null {
-    return this.tabs.all.find((tab) => tab.id === id)?.problem ?? null;
+    return this.tabs.get(id)?.problem ?? null;
   }
 
   /**
@@ -1266,10 +1310,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // The find bar looks in the page of the active tab and closes with it, as when another tab
     // becomes active; the change of the tabs that follows tells the shell.
     if (id === this.shownActive) this.finding = null;
-    this.entries.delete(id);
-    entry.iconLoad?.abort();
-    this.close(entry.view, entry.registration);
-    this.endPageFullScreen(id);
+    this.dropView(id, entry);
   }
 
   /**
@@ -1343,8 +1384,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   execute(command: WindowCommand): void {
     const later = laterCodeOf(this.options).commands;
-    if (runsNow(command)) later.runInTurn(() => this.executeNow(command));
-    else later.run((commands) => commands.run(this.windowHost(), command));
+    // The commands of the workspaces, and the one that puts the active tab in a new group, load
+    // their own code with the first of them.
+    if (isLaterCommand(command)) {
+      later.runInTurn(() => this.options.onLaterCommand?.(this, command));
+    } else if (runsNow(command)) {
+      later.runInTurn(() => this.executeNow(command));
+    } else {
+      later.run((commands) => commands.run(this.windowHost(), command));
+    }
   }
 
   /** Runs a command that moves the focus, or changes the state of the window itself. */
@@ -1600,7 +1648,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       return true;
     }
     const command = commandForInput(input, process.platform, this.shortcuts());
-    if (command !== undefined) {
+    // A window without workspaces, such as a private window or a popup, leaves their keys to
+    // the page.
+    if (
+      command !== undefined &&
+      !(command.startsWith('workspace.') && this.workspaceList() === undefined)
+    ) {
       event.preventDefault();
       // Alt+Left and the like are no Alt alone.
       this.altTap.reset();
@@ -1710,29 +1763,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   }
 
   /**
-   * Closes the view of a tab, which keeps its history until it wakes, and shows the tab as a
-   * tab that sleeps, with its title and icon.
+   * Closes the view of a tab and forgets it, as when the tab closes or goes to sleep. A page in
+   * the background may still show an element in full screen; it ends with the page.
    */
-  private putToSleep(id: TabId, entry: TabEntry, dormant: DormantTab): void {
+  private dropView(id: TabId, entry: TabEntry): void {
     this.entries.delete(id);
     entry.iconLoad?.abort();
     entry.iconLoad = undefined;
     this.close(entry.view, entry.registration);
-    // A page in the background may still show an element in full screen; it ends with the page.
     this.endPageFullScreen(id);
-    this.dormant.set(id, dormant);
-    const moves =
-      dormant.history === undefined
-        ? { back: false, forward: false }
-        : historyMoves(dormant.history);
-    this.tabs.update(id, {
-      sleeping: true,
-      loading: false,
-      audible: false,
-      problem: null,
-      canGoBack: moves.back,
-      canGoForward: moves.forward,
-    });
   }
 
   /** The time of the wall clock, in milliseconds. */
@@ -1781,8 +1820,34 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.withCommands((code, host) => code.forgetHistories(host));
   }
 
-  /** How the view of a tab is made: for a web page, or for one of the browser's own pages. */
-  private viewOptions(page: TabPage | undefined): Electron.WebContentsViewConstructorOptions {
+  /**
+   * The partition of the web pages of a workspace.
+   * @param workspace - The workspace.
+   */
+  private partitionOf(workspace: string | undefined): string {
+    return this.options.partitionFor?.(workspace) ?? this.options.webPartition;
+  }
+
+  /**
+   * Closes the view of a tab that the window does not show, which gets a new one once it shows,
+   * such as in the partition of the workspace that it moved into: it keeps the entries of its
+   * back and forward history, without the states of their pages, which belong to the partition
+   * that it leaves.
+   * @param id - The tab.
+   * @param history - The history of the tab, whose entries the new view loads.
+   */
+  renewView(id: TabId, history: TabHistory | undefined): void {
+    this.withCommands((code, host) => code.renewView(host, id, history));
+  }
+
+  /**
+   * How the view of a tab is made: for a web page, in the partition of the tab's workspace, or
+   * for one of the browser's own pages.
+   */
+  private viewOptions(
+    page: TabPage | undefined,
+    id: TabId,
+  ): Electron.WebContentsViewConstructorOptions {
     return {
       webPreferences:
         page === undefined
@@ -1793,7 +1858,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               // A private window's pages keep their data in memory.
               ...(this.isPrivate
                 ? { session: this.options.privateSession() }
-                : { partition: this.options.webPartition }),
+                : { partition: this.partitionOf(this.tabs.workspaceOf(id)) }),
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
@@ -1844,10 +1909,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // Electron would put the window in full screen before it reports the page's.
     const view = new WebContentsView(
       adopted === undefined
-        ? this.viewOptions(page)
+        ? this.viewOptions(page, id)
         : { webContents: adopted, webPreferences: { disableHtmlFullscreenWindowResize: true } },
     );
     const contents = view.webContents;
+    this.viewSessions.add(contents.session);
     if (page === undefined) this.madeZoom.set(contents, this.options.defaultZoom?.() ?? 1);
     let registration: Disposable | undefined;
     if (page !== undefined) {
@@ -1886,7 +1952,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       }
     });
     // A tab keeps its sound muted when it changes between web pages and the browser's own.
-    contents.setAudioMuted(this.tabs.all.find((tab) => tab.id === id)?.muted ?? false);
+    contents.setAudioMuted(this.tabs.get(id)?.muted ?? false);
     contents.on('did-start-loading', sync);
     contents.on('did-stop-loading', sync);
     contents.on('did-navigate', sync);
@@ -2024,24 +2090,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * The icon of a page of the window by its key, as a `data:` address. The icons of each
-   * session are apart, so the window looks among those of the sessions of its tabs.
+   * session are apart, so the window looks among those of the sessions that its views used,
+   * which keep the icons of the tabs that sleep too. It opens no other session, such as that of
+   * a workspace whose tabs did not load yet.
    * @param key - The key of the icon in the state of a tab.
    */
   async favicon(key: string): Promise<string | undefined> {
     const { favicons } = await import('./favicons.ts');
-    const iconSessions = new Set<Electron.Session>();
-    for (const { view } of this.entries.values()) {
-      // A page that closed itself left its view without contents.
-      const contents: WebContents | undefined = view.webContents;
-      if (contents !== undefined && !contents.isDestroyed()) iconSessions.add(contents.session);
-    }
-    // A tab that sleeps has no view; the icon of its page stays with the window's web pages.
-    iconSessions.add(
-      this.isPrivate
-        ? this.options.privateSession()
-        : sessions.fromPartition(this.options.webPartition),
-    );
-    for (const iconSession of iconSessions) {
+    for (const iconSession of this.viewSessions) {
       const icon = favicons.get(iconSession, key);
       if (icon !== undefined) return icon;
     }
@@ -2270,7 +2326,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       coveringTab: () => this.coveringTab(),
       shownViewOf: (entry) => this.shownViewOf(entry),
       triedAt: this.triedAt,
-      putToSleep: (id, entry, dormant) => this.putToSleep(id, entry, dormant),
+      dropView: (id, entry) => this.dropView(id, entry),
       now: () => this.now(),
       findState: () => this.finding,
       setFindState: (state) => {
@@ -2288,6 +2344,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       restore: (id, entry, snapshot) => this.restore(id, entry, snapshot),
       sideOf: (id) => this.sideOf(id),
       splitWithNewTab: (id) => this.splitWithNewTab(id),
+      workspaceList: () => this.workspaceList(),
     };
     return this.host;
   }
@@ -2428,25 +2485,34 @@ export class WindowManager implements Disposable {
    * @param windows - The windows, with their tabs and where they were.
    * @param regroup - Forms the groups of a window's tabs again; the session only has groups
    *   when the browser loaded the code of groups for it.
+   * @param respace - Opens the tabs of a window in their workspaces, which the code of workspaces
+   *   does for a session that has workspaces.
    * @returns The first window, or a new window with a new tab page when there is none.
    */
   restore(
     windows: readonly RestoredWindow[],
-    regroup?: (
+    regroup?: Regroup,
+    respace?: (
       tabs: TabService,
-      ids: readonly TabId[],
-      groups: readonly (TabGroup | undefined)[],
+      window: RestoredWindow,
+      splitView: boolean,
+      regroup?: Regroup,
     ) => void,
   ): BrowserWindowController {
     const areas = workAreas();
     const splitView = this.options.splitView?.() ?? true;
     // The window used last opens last, so that it ends up in front.
-    const controllers = windows.map(({ tabs, active, place, splits }) => {
+    const controllers = windows.map((window) => {
+      const { tabs, active, place, splits } = window;
       const controller = this.add({
         bounds: place.bounds === undefined ? undefined : visibleBounds(place.bounds, areas),
         maximized: place.maximized,
         fullScreen: place.fullScreen,
       });
+      if (respace !== undefined) {
+        respace(controller.tabs, window, splitView, regroup);
+        return controller;
+      }
       const ids = tabs.map((tab, index) =>
         controller.tabs.open(tab.url, {
           activate: false,
@@ -2488,25 +2554,30 @@ export class WindowManager implements Disposable {
       windows: this.keptByFocus()
         .toReversed()
         .flatMap((controller) => {
-          const tabs = controller.tabs.all;
-          const active = controller.tabs.active;
+          // The tabs of each workspace come strip by strip, and each workspace that does not
+          // show marks its active tab.
+          const { strips, workspace, active, allTabs: tabs } = controller.tabs;
           const index = (id: TabId): number => tabs.findIndex((tab) => tab.id === id);
           const window = sessionWindow(
-            tabs.map(({ id, url, title, pinned, group }) => ({
-              url,
-              title,
-              pinned,
-              group,
-              history: controller.historyOf(id, fresh),
-            })),
+            strips.flatMap((strip) =>
+              strip.all.map(({ id, url, title, pinned, group }) => ({
+                url,
+                title,
+                pinned,
+                group,
+                history: controller.historyOf(id, fresh),
+                workspace: strip.workspace,
+                current: strip.workspace !== workspace && strip.active?.id === id,
+              })),
+            ),
             active === undefined ? -1 : tabs.indexOf(active),
             {
               ...controller.normalPlace,
               fullScreen: controller.fullScreen,
-              splits: controller.tabs.splits.map((pair) => ({
-                start: index(pair.start),
-                ratio: pair.ratio,
-              })),
+              splits: strips
+                .flatMap((strip) => strip.splits)
+                .map((pair) => ({ start: index(pair.start), ratio: pair.ratio })),
+              workspace,
             },
           );
           return window === undefined ? [] : [window];
@@ -2526,10 +2597,12 @@ export class WindowManager implements Disposable {
     this.keptEmitter.fire(keptChange);
   }
 
-  /** Ends every split view of every window, as when they are turned off. */
+  /** Ends every split view of every window, in every workspace, as when they are turned off. */
   endSplits(): void {
     for (const window of this.windows) {
-      for (const pair of window.tabs.splits) window.tabs.unsplit(pair.start);
+      for (const pair of window.tabs.strips.flatMap((strip) => strip.splits)) {
+        window.tabs.unsplit(pair.start);
+      }
     }
   }
 
@@ -2688,6 +2761,13 @@ export class WindowManager implements Disposable {
     return toDisposable(() => this.dispose());
   }
 }
+
+/** Forms the groups of a restored window's tabs again, as `restoreGroups` of `tab-groups.ts`. */
+type Regroup = (
+  tabs: TabService,
+  ids: readonly TabId[],
+  groups: readonly (TabGroup | undefined)[],
+) => void;
 
 /** Whether the session keeps a window: popups and private windows are not kept. */
 function inSession(window: BrowserWindowController): boolean {

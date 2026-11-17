@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { tabStripPositions, toolbarItems } from '../layout.ts';
 import { splitRatio } from '../split-view.ts';
 import { swatches } from '../swatches.ts';
+import { Workspace } from '../workspaces.ts';
 import { defineEvent, defineRequest, type RequestContract } from './contract.ts';
 
 /** The id of a tab. */
@@ -132,11 +133,11 @@ const DownloadsSummary = v.strictObject({
 /**
  * The popover of a button of the shell that the overlay shows, so that the button shows it as
  * open: the browser menu, the menu of a folder of the bookmarks bar with the folder's id (that
- * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's
- * and the list of downloads. `folder` is `null` for all but folders.
+ * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's,
+ * the list of downloads and the list of the workspaces. `folder` is `null` for all but folders.
  */
 export const ShellPopover = v.strictObject({
-  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads']),
+  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads', 'workspaces']),
   folder: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 /** The popover of a button of the shell that the overlay shows. */
@@ -151,8 +152,11 @@ export type ShellPopover = v.InferOutput<typeof ShellPopover>;
  * to the address bar in their order, and `covered` whether the overlay covers the window, as a
  * popover or a question does, so that a click next to it reaches the overlay instead of moving
  * the window, `popover` the popover of a button of the shell that the overlay shows, or
- * `null`, and `split` the split view of the active tab, with its left and right tab and the
- * share of the left one, or `null` while the active tab shows alone.
+ * `null`, `split` the split view of the active tab, with its left and right tab and the
+ * share of the left one, or `null` while the active tab shows alone, `workspace` the workspace
+ * that the window shows, or `null` in private windows, in popups and while workspaces are off,
+ * which have no button of workspaces, and `workspaces` every workspace of the profile then, for
+ * the targets of a dragged tab.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -169,6 +173,8 @@ export const ShellState = v.strictObject({
   covered: v.boolean(),
   popover: v.nullable(ShellPopover),
   split: v.nullable(v.strictObject({ start: TabId, end: TabId, ratio: SplitRatio })),
+  workspace: v.nullable(Workspace),
+  workspaces: v.array(Workspace),
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;
@@ -264,6 +270,7 @@ export const ShellCommand = defineEvent({
     'downloads.open',
     'menu.open',
     'bookmark.edit',
+    'workspaces.open',
   ]),
   capability: 'shell',
 });

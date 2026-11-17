@@ -22,7 +22,7 @@ While the field is empty, the palette lists the commands you ran from it since t
 As you type, the palette shows, in this order:
 
 - **Commands**, with their shortcut, at most 6;
-- **Open tabs** of every window, apart from the active tab, at most 5;
+- **Open tabs** of every window, apart from the active tab, at most 5; from 0.1.0-beta.7, the tabs of this window come from every [workspace](workspaces.md), each with its group and, while you have more than one workspace, its workspace, and choosing a tab of another workspace shows that workspace;
 - **Settings**, with the section they are in, at most 3;
 - **Bookmarks**, at most 3;
 - **History**, the pages you visited, at most 5;

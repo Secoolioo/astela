@@ -17,10 +17,13 @@ async function shutDownInstalls(): Promise<boolean> {
     settings: { flush: () => Promise.resolve() },
     sessions: { schedule: () => undefined, flush: () => Promise.resolve() },
     windows: { snapshot: () => ({ windows: [] }), dispose: () => undefined },
-    web: {
-      flushStorageData: () => undefined,
-      cookies: { flushStore: () => Promise.resolve() },
-    } as unknown as Session,
+    web: [
+      {
+        isPersistent: () => true,
+        flushStorageData: () => undefined,
+        cookies: { flushStore: () => Promise.resolve() },
+      } as unknown as Session,
+    ],
     data: { dispose: () => undefined },
     updates: { installOnExit, dispose: () => undefined },
   } as unknown as Parameters<typeof shutDown>[0]);

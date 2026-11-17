@@ -2,8 +2,10 @@ import type { WebContents } from 'electron';
 import { is } from 'valibot';
 import {
   onlyShown,
+  type DormantTab,
   type LaterWindowCommand,
   type TabAction,
+  type TabEntry,
   type WindowCommands,
   type WindowHost,
 } from './browser-window.ts';
@@ -13,11 +15,13 @@ import type { OverlayAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import {
   currentEntry,
   currentOnly,
+  historyMoves,
   memoryLimits,
   trimHistory,
 } from '../../domain/tabs/tab-history.ts';
 import { stepHistory } from '../../domain/tabs/history-steps.ts';
 import type { SleepMode, TabId } from '../../domain/tabs/tab-service.ts';
+import type { TabHistory } from '../../domain/tabs/view-history.ts';
 import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { ShellCommand } from '../../shared/ipc/shell-contracts.ts';
@@ -35,6 +39,7 @@ export const windowCommands: WindowCommands = {
   run,
   resizeSplit,
   paneOf,
+  renewView,
   canSleep,
   sleep,
   sleepCandidates,
@@ -134,7 +139,7 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       options.showDownloads?.(window);
       break;
     case 'window.new':
-      options.openWindow?.();
+      options.openWindow?.(window);
       break;
     case 'window.newPrivate':
       options.openPrivateWindow?.();
@@ -184,7 +189,7 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
 function canSleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
   const { window } = host;
   const entry = host.entries.get(id);
-  const tab = window.tabs.all.find((candidate) => candidate.id === id);
+  const tab = window.tabs.get(id);
   // A page that closed itself left its view without contents.
   const contents: WebContents | undefined = entry?.view.webContents;
   if (entry === undefined || tab === undefined) return false;
@@ -205,7 +210,7 @@ function canSleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
 function sleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
   const { window } = host;
   const entry = host.entries.get(id);
-  const tab = window.tabs.all.find((candidate) => candidate.id === id);
+  const tab = window.tabs.get(id);
   // The browser tries a tab that stays awake again only after another while.
   if (mode === 'auto') host.triedAt.set(id, host.now());
   if (entry === undefined || tab === undefined || !canSleep(host, id, mode)) return false;
@@ -213,7 +218,7 @@ function sleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
   const kept = history === undefined ? undefined : trimHistory(history, memoryLimits);
   // The page is not asked whether it may close: Electron would give it a user gesture to ask
   // (ADR 0053). A page with changes that people typed stays awake by itself instead.
-  host.putToSleep(id, entry, {
+  putToSleep(host, id, entry, {
     url: (kept === undefined ? undefined : currentEntry(kept)?.url) ?? tab.url,
     history: kept,
   });
@@ -228,7 +233,7 @@ function sleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
 function sleepCandidates(host: WindowHost): SleepCandidate[] {
   const { window } = host;
   const activity = host.options.activity?.();
-  return window.tabs.all.map((tab) => {
+  return window.tabs.allTabs.map((tab) => {
     // A page that closed itself left its view without contents.
     const contents: WebContents | undefined = host.entries.get(tab.id)?.view.webContents;
     const live = contents !== undefined && !contents.isDestroyed();
@@ -332,6 +337,7 @@ function context(host: WindowHost): CommandContext {
     developerTools: options.developerTools?.() ?? true,
     palette: options.openPalette !== undefined && (options.commandPalette?.() ?? true),
     splitView: window.splitView(),
+    workspaces: host.workspaceList()?.length ?? 0,
   };
 }
 
@@ -428,7 +434,7 @@ function forgetHistories(host: WindowHost): void {
  */
 function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
   const { tabs } = host.window;
-  const tab = tabs.all.find((candidate) => candidate.id === id);
+  const tab = tabs.get(id);
   if (tab === undefined) return;
   switch (action) {
     case 'newTabRight':
@@ -520,4 +526,47 @@ function paneOf(host: WindowHost, contents: WebContents): OverlayAnchor | undefi
     width: Math.max(0, width),
     height: Math.max(0, height),
   };
+}
+
+/**
+ * Closes the view of a tab that the window does not show, which gets a new one once it shows,
+ * such as in the partition of the workspace that it moved into: it keeps the entries of its
+ * back and forward history, without the states of their pages, which belong to the partition
+ * that it leaves.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param history - The history of the tab, whose entries the new view loads.
+ */
+function renewView(host: WindowHost, id: TabId, history: TabHistory | undefined): void {
+  const { tabs } = host.window;
+  const tab = tabs.get(id);
+  if (tab === undefined || tabs.shown.includes(id)) return;
+  const plain = history && trimHistory(history, { ...memoryLimits, pageState: 0, tabPageState: 0 });
+  const dormant = { url: (plain && currentEntry(plain)?.url) ?? tab.url, history: plain };
+  const entry = host.entries.get(id);
+  if (entry === undefined) host.dormant.set(id, dormant);
+  else putToSleep(host, id, entry, dormant);
+}
+
+/**
+ * Closes the view of a tab, which keeps its history until it wakes, and shows the tab as a tab
+ * that sleeps, with its title and icon.
+ * @param host - The window.
+ * @param id - The tab.
+ * @param entry - The view of the tab.
+ * @param dormant - What the tab keeps until it wakes.
+ */
+function putToSleep(host: WindowHost, id: TabId, entry: TabEntry, dormant: DormantTab): void {
+  host.dropView(id, entry);
+  host.dormant.set(id, dormant);
+  const moves =
+    dormant.history === undefined ? { back: false, forward: false } : historyMoves(dormant.history);
+  host.window.tabs.update(id, {
+    sleeping: true,
+    loading: false,
+    audible: false,
+    problem: null,
+    canGoBack: moves.back,
+    canGoForward: moves.forward,
+  });
 }

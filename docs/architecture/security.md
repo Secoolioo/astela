@@ -72,7 +72,7 @@ Electron fuses will be set through electron-builder's `electronFuses` option and
 
 - Site isolation stays on.
 - Web content runs in sandboxed tab views; the browser UI runs in separate shell and overlay views (see [overview](overview.md)).
-- Isolated workspaces get their own partition (`persist:ws-<id>`); private windows use an in-memory partition (see [data](data.md)).
+- Isolated workspaces get their own partition (`persist:ws-<id>`), which gets every protection of the web sessions, such as the content blocker, the permission handler and the refusal of `app://`, as each session that Electron makes passes `protectWebSession`; what a page opens stays in its partition. Private windows use an in-memory partition (see [data](data.md)).
 - Data access and hashing run in a `utilityProcess`, not in the browser process.
 - Every IPC message will be checked for its sender, the sender's capability, its schema and a rate limit (see [IPC](ipc.md)).
 

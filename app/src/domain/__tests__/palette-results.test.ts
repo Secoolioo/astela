@@ -22,6 +22,8 @@ const tab = (
   favicon: null,
   place,
   sleeping: false,
+  group: null,
+  workspace: null,
 });
 
 /** A page of the bookmarks or the history. */

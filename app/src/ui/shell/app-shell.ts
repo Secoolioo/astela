@@ -24,6 +24,10 @@ import {
   chipKey,
   dropGroup,
   dropPlace,
+  inside,
+  spanning,
+  workspaceDrops,
+  workspaceTarget,
   spanOf,
   stripItems,
   tabCounts,
@@ -33,6 +37,7 @@ import {
   type StripUnit,
 } from './strip-items.ts';
 import { TabIcons } from '../ui-kit/tab-icons.ts';
+import { workspaceIconSvg } from '../ui-kit/workspace-icons.ts';
 
 /**
  * The browser shell: tab strip, navigation buttons and the address bar. It renders the
@@ -44,6 +49,7 @@ export class AppShell extends LitElement {
     state: { state: true },
     drafts: { state: true },
     addressFocused: { state: true },
+    drops: { state: true },
   };
 
   /** Styles of the shell, scoped to its shadow root. */
@@ -333,6 +339,7 @@ export class AppShell extends LitElement {
       color: var(--text-2);
     }
     [role='tablist'] {
+      position: relative;
       grid-area: tabs;
       display: flex;
       gap: var(--space-1);
@@ -654,6 +661,91 @@ export class AppShell extends LitElement {
       border-start-start-radius: 0;
       border-end-start-radius: 0;
     }
+    /* While a dragged tab points at the button of the workspaces, the targets of the other
+       workspaces lie over the tabs next to the button, and fade in. */
+    .drops {
+      position: absolute;
+      z-index: 2;
+      display: flex;
+      gap: var(--space-1);
+      margin-inline-start: var(--space-1);
+      animation: drops-in var(--motion-fast) var(--ease-out);
+    }
+    [aria-orientation='vertical'] .drops {
+      flex-direction: column;
+      margin-inline-start: 0;
+      margin-block-start: var(--space-1);
+    }
+    @keyframes drops-in {
+      from {
+        opacity: 0;
+      }
+    }
+    .drop {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      box-sizing: border-box;
+      max-width: 240px;
+      height: var(--control-height);
+      padding: 0 var(--space-2);
+      border: 1px solid var(--line-1);
+      border-radius: var(--radius-2);
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-popover);
+      color: var(--text-1);
+      font-size: var(--font-size-small);
+      white-space: nowrap;
+    }
+    .drop span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .drop svg {
+      flex: none;
+      color: var(--group-color);
+    }
+    .drop[data-over] {
+      border-color: var(--accent);
+      background: var(--surface-hover);
+    }
+    @media (forced-colors: active) {
+      .drop[data-over] {
+        outline: 2px solid Highlight;
+      }
+    }
+    /* The button of the workspaces shows the icon of the workspace in its color, and its name
+       at a side of the window. */
+    .workspace {
+      align-self: center;
+    }
+    .workspace svg {
+      color: var(--group-color);
+    }
+    .workspace .name {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-1);
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    [aria-orientation='vertical'] .workspace {
+      display: flex;
+      align-self: stretch;
+      justify-content: flex-start;
+      gap: var(--space-2);
+      width: auto;
+      padding-inline: var(--space-2);
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
     @media (forced-colors: active) {
       .group .dot {
         border: 1px solid CanvasText;
@@ -935,6 +1027,11 @@ export class AppShell extends LitElement {
   declare drafts: ReadonlyMap<string, string>;
   /** The address of each tab's page at the last update, to notice when a page moves on. */
   private readonly addresses = new Map<string, string>();
+  /**
+   * The tabs that left the tab strip with a switch of the workspace, by their workspace: their
+   * drafts and addresses wait for them until they show again or their workspace is gone.
+   */
+  private readonly away = new Map<string, string>();
   /** Whether suggestions for what was typed may be showing. */
   private suggesting = false;
   /** The suggestion that the arrow keys marked, or -1. */
@@ -948,6 +1045,13 @@ export class AppShell extends LitElement {
    */
   private chosenFor: AddressOwner | undefined;
   declare addressFocused: boolean;
+  /**
+   * The targets of the workspaces while a dragged tab points at the button of the workspaces:
+   * the workspace that the pointer is over, or `null` for none yet, and where the targets start
+   * in the tab strip, next to the button; `undefined` while they hide.
+   */
+  declare drops:
+    { readonly over: string | null; readonly x: number; readonly y: number } | undefined;
   /** Whether the focused address bar had all of its text selected before an update. */
   private addressSelected = false;
   bridge: ShellBridge | undefined;
@@ -974,6 +1078,8 @@ export class AppShell extends LitElement {
   private toggledByKeys: { readonly id: string; readonly collapsed: boolean } | undefined;
   /** The insets last sent to the browser. */
   private reportedInsets = '';
+  /** What the hidden status says after the window showed another workspace. */
+  private workspaceShown = '';
   /** Index of the first bookmark of the bookmarks bar that does not fit. */
   private barOverflow = 0;
   /** The icons of the pages of the tabs. */
@@ -1086,9 +1192,12 @@ export class AppShell extends LitElement {
       covered: false,
       popover: null,
       split: null,
+      workspace: null,
+      workspaces: [],
     };
     this.drafts = new Map();
     this.addressFocused = false;
+    this.drops = undefined;
   }
 
   override connectedCallback(): void {
@@ -1108,6 +1217,7 @@ export class AppShell extends LitElement {
         else if (command === 'omnibox.done') this.leaveAddress();
         else if (command === 'menu.open') this.openMenuAtButton();
         else if (command === 'bookmark.edit') this.editBookmark();
+        else if (command === 'workspaces.open') this.openWorkspacesAtButton();
         else this.focusAddress();
       }),
       bridge.on('shell.editGroup', ({ groupId, keyboard }) => {
@@ -1165,14 +1275,24 @@ export class AppShell extends LitElement {
       this.favicons.keep(this.state.tabs.flatMap((tab) => tab.favicon ?? []));
       this.toggleAttribute('data-covered', this.state.covered);
       this.placeTitleBar();
-      // Tabs move from where they were, unless the whole strip moved to another side.
+      // Tabs move from where they were, unless the whole strip moved to another side or the
+      // window shows the tabs of another workspace.
       const before = changed.get('state');
+      const switched = before !== undefined && before.workspace?.id !== this.state.workspace?.id;
       if (
         this.hasUpdated &&
         this.dragging?.moved !== true &&
-        before?.tabStrip === this.state.tabStrip
+        before?.tabStrip === this.state.tabStrip &&
+        !switched
       ) {
         this.measureTabs();
+      }
+      // A screen reader hears which workspace shows after a switch.
+      const workspace = this.state.workspace;
+      if (switched && before.workspace !== null && workspace !== null) {
+        this.workspaceShown = this.tp('shell.workspaceShown', {
+          name: this.workspaceName(workspace),
+        });
       }
     }
     // Typing replaces an address that is selected as a whole, also when the page changes its
@@ -1204,7 +1324,8 @@ export class AppShell extends LitElement {
       this.takeDownloadsOpening();
       this.takeGroupEditorOpening();
     }
-    if (changed.has('state')) this.dropStaleDrafts();
+    if (changed.has('state')) this.dropStaleDrafts(changed.get('state'));
+    if (changed.has('drops')) this.placeDrops();
     // Enter or Space on a chip leave the focus there, also when the change of the group makes
     // a new tab page the active tab.
     const keysOnChip = changed.has('state') && this.keysStayOnChip();
@@ -1264,6 +1385,7 @@ export class AppShell extends LitElement {
         aria-label=${t('shell.tabs')}
         aria-orientation=${vertical ? 'vertical' : 'horizontal'}
       >
+        ${this.renderWorkspaceButton()} ${this.renderDrops()}
         <div
           class="tabs"
           @scroll=${this.markHiddenTabs}
@@ -1389,6 +1511,7 @@ export class AppShell extends LitElement {
         ${active?.loading === true ? html`<div class="progress" aria-hidden="true"></div>` : nothing}
       </nav>
       ${this.renderBookmarksBar(t)} ${this.renderFind()}
+      <div class="visually-hidden" role="status">${this.workspaceShown}</div>
       <div class="content">
         ${
           this.state.split === null
@@ -1764,6 +1887,132 @@ export class AppShell extends LitElement {
   }
 
   /**
+   * The button of the workspaces at the start of the tab strip, with the icon of the workspace
+   * that shows in its color, and its name at a side of the window; a click opens the list of
+   * the workspaces. Private windows, popups and windows while workspaces are off have none.
+   */
+  private renderWorkspaceButton(): TemplateResult | typeof nothing {
+    const workspace = this.state.workspace;
+    if (workspace === null) return nothing;
+    const name = this.workspaceName(workspace);
+    const label = this.tp('shell.workspace', { name });
+    return html`<button
+      class="icon workspace"
+      data-color=${workspace.color}
+      title=${label}
+      aria-label=${label}
+      aria-haspopup="dialog"
+      aria-expanded=${this.state.popover?.kind === 'workspaces' ? 'true' : 'false'}
+      @click=${this.openWorkspaces}
+      @pointerenter=${this.prepareOverlay}
+      @focus=${this.prepareOverlay}
+    >
+      ${workspaceIconSvg[workspace.icon]}
+      ${this.vertical ? html`<span class="name">${name}</span>` : nothing}
+    </button>`;
+  }
+
+  /**
+   * The targets of the other workspaces, while a dragged tab points at the button of the
+   * workspaces: a tab dropped on one of them moves into that workspace, and loads again there
+   * when its partition changes. Only the pointer uses them; the menu of a tab does the same.
+   */
+  private renderDrops(): TemplateResult | typeof nothing {
+    const drops = this.drops;
+    if (drops === undefined) return nothing;
+    return html`<div class="drops" aria-hidden="true">
+      ${workspaceDrops(this.state).map(({ workspace, reload }) => {
+        const name = this.workspaceName(workspace);
+        return html`<div
+          class="drop"
+          data-id=${workspace.id}
+          data-color=${workspace.color}
+          ?data-over=${drops.over === workspace.id}
+        >
+          ${workspaceIconSvg[workspace.icon]}
+          <span
+            >${this.tp(reload ? 'shell.moveToWorkspaceReload' : 'shell.moveToWorkspace', { name })}</span
+          >
+        </div>`;
+      })}
+    </div>`;
+  }
+
+  /**
+   * Shows the targets of the workspaces while a dragged tab points at their button or at them,
+   * marks the target under the pointer, and hides them once the pointer leaves both.
+   * @param point - Where the pointer is.
+   */
+  private followDrops(point: { readonly x: number; readonly y: number }): void {
+    const button = this.renderRoot.querySelector('.workspace');
+    const strip = button === null ? null : button.parentElement;
+    if (button === null || strip === null || workspaceDrops(this.state).length === 0) {
+      this.drops = undefined;
+      return;
+    }
+    // The button and the targets count as one area, so the gap between them hides nothing.
+    const box = button.getBoundingClientRect();
+    const container = this.renderRoot.querySelector('.drops');
+    const area = container === null ? box : spanning([box, container.getBoundingClientRect()]);
+    if (!inside(area, point)) {
+      this.drops = undefined;
+      return;
+    }
+    const targets = new Map(
+      [...this.renderRoot.querySelectorAll<HTMLElement>('.drop')].map((element) => [
+        element.dataset['id'] ?? '',
+        element.getBoundingClientRect(),
+      ]),
+    );
+    const over = workspaceTarget(targets, point) ?? null;
+    const origin = strip.getBoundingClientRect();
+    const vertical = this.vertical;
+    const x = (vertical ? box.left : box.right) - origin.left;
+    const y = (vertical ? box.bottom : box.top) - origin.top;
+    const drops = this.drops;
+    if (drops?.over !== over || drops.x !== x || drops.y !== y) this.drops = { over, x, y };
+  }
+
+  /** Puts the targets of the workspaces next to the button of the workspaces. */
+  private placeDrops(): void {
+    const drops = this.drops;
+    const container = this.renderRoot.querySelector<HTMLElement>('.drops');
+    if (drops === undefined || container === null) return;
+    container.style.setProperty('left', `${String(drops.x)}px`);
+    container.style.setProperty('top', `${String(drops.y)}px`);
+  }
+
+  /** The name of a workspace; the default one is called Default until it is renamed. */
+  private workspaceName(workspace: { readonly name: string }): string {
+    return workspace.name === '' ? (this.i18n?.t('shell.workspaceDefault') ?? '') : workspace.name;
+  }
+
+  /** Opens the list of the workspaces at its button; Enter or Space give a click without a count. */
+  private readonly openWorkspaces = (event: MouseEvent): void => {
+    if (event.currentTarget instanceof Element) {
+      void this.bridge?.invoke(
+        'workspaces.open',
+        this.anchorAt(event.currentTarget, event.detail === 0),
+      );
+    }
+  };
+
+  /**
+   * Opens the list of the workspaces for its shortcut: at its button, or at the menu button
+   * while the tab strip shows no button, or at a corner of the window without either.
+   */
+  private openWorkspacesAtButton(): void {
+    const button = this.renderRoot.querySelector('.workspace');
+    void this.bridge?.invoke(
+      'workspaces.open',
+      this.anchorAt(
+        button !== null && laidOut(button) ? button : this.renderRoot.querySelector('.menu-button'),
+        true,
+      ),
+    );
+  }
+
+  /**
    * Shows or hides the tabs of a group, unless the click ends a drag. Enter or Space on the
    * chip keep the focus there, also when the active tab changes with it.
    * @param group - The group, and whether it hides its tabs now.
@@ -2060,6 +2309,8 @@ export class AppShell extends LitElement {
     if (!drag.moved && Math.abs(offset) < 4) return;
     drag.moved = true;
     strip.toggleAttribute('data-dragging', true);
+    // Pointing at the button of the workspaces shows the targets of the other workspaces.
+    this.followDrops({ x: event.clientX, y: event.clientY });
     const place = dropPlace(drag.units, drag.unit, offset, drag.spans, drag.gap, drag.counts);
     if (place === undefined) return;
     drag.target = place.index;
@@ -2086,6 +2337,15 @@ export class AppShell extends LitElement {
     this.dragEnded = true;
     // A drag that ends outside the tab sends no click that would clear this.
     setTimeout(() => (this.dragEnded = false));
+    // A tab dropped on the target of a workspace moves into it, and keeps its place here until
+    // the browser takes it away.
+    const into = event.type === 'pointerup' ? this.drops?.over : undefined;
+    this.drops = undefined;
+    if (into !== undefined && into !== null) {
+      void this.bridge?.invoke('workspaces.moveTab', { tabId: drag.id, workspaceId: into });
+      this.putTabsBack();
+      return;
+    }
     const moves = drag.target !== drag.index || drag.joins !== drag.group;
     if (event.type === 'pointerup' && drag.target !== -1 && moves) {
       this.dropPending = true;
@@ -2114,6 +2374,7 @@ export class AppShell extends LitElement {
   private cancelDrag(): void {
     const drag = this.dragging;
     this.dragging = undefined;
+    this.drops = undefined;
     if (drag?.moved === true) this.putTabsBack();
   }
 
@@ -2231,23 +2492,37 @@ export class AppShell extends LitElement {
 
   /**
    * Drops the drafts of tabs that closed, and of tabs whose page moved to another address while
-   * their address bar did not have the focus.
+   * their address bar did not have the focus. The tabs of a workspace that the window stops
+   * showing keep theirs, for when it shows again.
+   * @param before - The state before the update.
    */
-  private dropStaleDrafts(): void {
+  private dropStaleDrafts(before: ShellState | undefined): void {
+    const left = before?.workspace;
+    if (before !== undefined && left !== null && left !== undefined) {
+      if (left.id !== this.state.workspace?.id) {
+        for (const tab of before.tabs) if (!this.hasTab(tab.id)) this.away.set(tab.id, left.id);
+      }
+    }
+    for (const [id, workspace] of this.away) {
+      if (this.hasTab(id) || !this.state.workspaces.some((each) => each.id === workspace)) {
+        this.away.delete(id);
+      }
+    }
+    const kept = (id: string): boolean => this.hasTab(id) || this.away.has(id);
     const moved = new Set<string>();
     for (const tab of this.state.tabs) {
-      const before = this.addresses.get(tab.id);
-      if (before !== undefined && before !== tab.url) moved.add(tab.id);
+      const address = this.addresses.get(tab.id);
+      if (address !== undefined && address !== tab.url) moved.add(tab.id);
       this.addresses.set(tab.id, tab.url);
     }
     for (const id of this.addresses.keys()) {
-      if (!this.hasTab(id)) this.addresses.delete(id);
+      if (!kept(id)) this.addresses.delete(id);
     }
     // While a new tab opens, the address bar edits what is typed for that tab.
     const editing =
       this.addressFocused && this.opening === undefined ? this.state.activeTabId : null;
     const stale = [...this.drafts.keys()].filter(
-      (id) => !this.hasTab(id) || (moved.has(id) && id !== editing),
+      (id) => !kept(id) || (moved.has(id) && id !== editing),
     );
     if (stale.length > 0) {
       this.drafts = new Map([...this.drafts].filter(([id]) => !stale.includes(id)));

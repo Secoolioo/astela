@@ -47,8 +47,7 @@ export function shortcutOf(input: Input, mac: boolean): string {
     // letters on the keys of the digits too, where Ctrl+0 is the key that carries the 0.
     key = input.code.slice(-1);
   } else if (
-    (input.control || input.meta) &&
-    !alt &&
+    (alt ? !mac && !input.control && !input.meta : input.control || input.meta) &&
     /^Digit\d$/.test(input.code) &&
     key !== '-' &&
     (!shift || key === input.code.slice(-1))
@@ -58,9 +57,16 @@ export function shortcutOf(input: Input, mac: boolean): string {
     // of Ctrl+1 and Command+1 is the key that carries the 1, also with the Shift that types
     // the 1 there. So Ctrl+1 chooses the first tab on Czech, where the 1 key types +; Czech
     // zooms in with Ctrl+= as well. A minus sign stays one: French types it on the 6 key only,
-    // so Ctrl+- zooms out there, and Ctrl+Shift+6 chooses the sixth tab.
+    // so Ctrl+- zooms out there, and Ctrl+Shift+6 chooses the sixth tab. The same holds for
+    // Alt alone off macOS, as for Alt+1 to the first workspace; Ctrl with Alt is AltGr on
+    // Windows, and Option types characters on macOS.
     key = input.code.slice(-1);
     shift = false;
+  } else if (alt && /^Numpad\d$/.test(input.code) && /^\d$/.test(key)) {
+    // Alt with the digits of the number pad types the Alt codes of Windows, so these keys are
+    // not those of the digits. Without Num Lock, the pad sends arrows and the like, which keep
+    // their names, as for Alt+Left.
+    key = input.code;
   } else if (mac && letter && !/\p{Script=Latin}/u.test(key) && input.code.startsWith('Bracket')) {
     // The same for Cmd+[ and Cmd+] where a layout for another script, such as Russian or
     // Arabic, types letters on these keys. Latin layouts type brackets, with Option if need

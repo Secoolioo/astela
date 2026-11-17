@@ -4,10 +4,14 @@ import {
   chipKey,
   dropGroup,
   dropPlace,
+  inside,
+  spanning,
   spanOf,
   stripItems,
   tabCounts,
   unitsOf,
+  workspaceDrops,
+  workspaceTarget,
   type Span,
 } from '../shell/strip-items.ts';
 
@@ -281,5 +285,54 @@ describe('strip items of groups of tabs', () => {
     expect(dropGroup(column, ['a'], 90, vertical)).toBe('g1');
     expect(dropGroup(column, ['c'], 27, vertical)).toBeNull();
     expect(dropGroup(column, ['c'], 17, vertical)).toBe('g1');
+  });
+});
+
+describe('drop targets of the workspaces', () => {
+  const home = { id: 'default', name: '', icon: 'home', color: 'blue', isolated: false } as const;
+  const work = {
+    id: 'w1',
+    name: 'Work',
+    icon: 'briefcase',
+    color: 'teal',
+    isolated: false,
+  } as const;
+  const bank = { id: 'w2', name: 'Bank', icon: 'heart', color: 'red', isolated: true } as const;
+
+  it('offers every workspace but the one that shows, and tells where the tab loads again', () => {
+    const workspaces = [home, work, bank];
+    expect(workspaceDrops({ workspace: home, workspaces })).toEqual([
+      { workspace: work, reload: false },
+      { workspace: bank, reload: true },
+    ]);
+    expect(workspaceDrops({ workspace: bank, workspaces })).toEqual([
+      { workspace: home, reload: true },
+      { workspace: work, reload: true },
+    ]);
+    expect(workspaceDrops({ workspace: home, workspaces: [home] })).toEqual([]);
+    // A private window, a popup or a window while workspaces are off has none.
+    expect(workspaceDrops({ workspace: null, workspaces })).toEqual([]);
+  });
+
+  it('finds the target under the pointer by the rectangles, edges included', () => {
+    const targets = new Map([
+      ['w1', { left: 40, top: 4, width: 100, height: 28 }],
+      ['w2', { left: 144, top: 4, width: 100, height: 28 }],
+    ]);
+    expect(workspaceTarget(targets, { x: 40, y: 4 })).toBe('w1');
+    expect(workspaceTarget(targets, { x: 140, y: 32 })).toBe('w1');
+    expect(workspaceTarget(targets, { x: 200, y: 20 })).toBe('w2');
+    expect(workspaceTarget(targets, { x: 142, y: 20 })).toBeUndefined();
+    expect(workspaceTarget(targets, { x: 100, y: 33 })).toBeUndefined();
+    expect(inside({ left: 0, top: 0, width: 10, height: 10 }, { x: 10, y: 10 })).toBe(true);
+    expect(inside({ left: 0, top: 0, width: 10, height: 10 }, { x: -1, y: 5 })).toBe(false);
+  });
+
+  it('spans the button and the targets, so the gap between them counts as theirs', () => {
+    const button = { left: 8, top: 6, width: 28, height: 28 };
+    const targets = { left: 40, top: 4, width: 204, height: 32 };
+    expect(spanning([button, targets])).toEqual({ left: 8, top: 4, width: 236, height: 32 });
+    expect(spanning([button])).toEqual(button);
+    expect(inside(spanning([button, targets]), { x: 38, y: 20 })).toBe(true);
   });
 });

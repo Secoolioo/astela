@@ -57,6 +57,11 @@ interface Entry {
   item: DownloadItem | undefined;
   /** Whether a private window downloaded it: such a download is not kept in the profile. */
   readonly privateWindow: boolean;
+  /**
+   * The session of the page that started it, such as that of a workspace that keeps its cookies
+   * apart, which a retry uses; unknown for a download of an earlier run.
+   */
+  readonly session?: Session | undefined;
 }
 
 /** Waits until a file is gone, for at most five seconds. */
@@ -132,8 +137,14 @@ export class Downloads {
    * @param item - Electron's download, saved under its working name.
    * @param privateWindow - Whether a page of a private window started it.
    * @param suggested - Where the question suggests to save it.
+   * @param session - The session of the page that started it.
    */
-  async ask(item: DownloadItem, privateWindow: boolean, suggested: string): Promise<void> {
+  async ask(
+    item: DownloadItem,
+    privateWindow: boolean,
+    suggested: string,
+    session?: Session,
+  ): Promise<void> {
     const working = item.getSavePath();
     const window = BaseWindow.getFocusedWindow() ?? undefined;
     const options = { defaultPath: suggested };
@@ -154,7 +165,7 @@ export class Downloads {
         if (state === 'completed') this.move(working, chosen);
       });
     }
-    this.track(item, privateWindow, chosen);
+    this.track(item, privateWindow, chosen, session);
   }
 
   /**
@@ -178,8 +189,14 @@ export class Downloads {
    * @param item - Electron's download.
    * @param privateWindow - Whether a page of a private window started it.
    * @param path - Where the file is, once it finished; the download's own path by default.
+   * @param session - The session of the page that started it.
    */
-  track(item: DownloadItem, privateWindow: boolean, path = item.getSavePath()): void {
+  track(
+    item: DownloadItem,
+    privateWindow: boolean,
+    path = item.getSavePath(),
+    session?: Session,
+  ): void {
     // A small download can finish while the list loads; it sends no events any more.
     const state = item.getState();
     const entry: Entry = {
@@ -194,6 +211,7 @@ export class Downloads {
       paused: state === 'progressing' && item.isPaused(),
       item: state === 'progressing' ? item : undefined,
       privateWindow,
+      session,
     };
     this.nextId += 1;
     this.entries.unshift(entry);
@@ -337,7 +355,8 @@ export class Downloads {
       case 'retry':
         if (entry.state === 'cancelled' || entry.state === 'interrupted') {
           this.remove(entry);
-          const session = this.deps.webSession(entry.privateWindow);
+          // The download starts again in its own session, such as that of its workspace.
+          const session = entry.session ?? this.deps.webSession(entry.privateWindow);
           // The file of a canceled download goes away a moment after it ends, on Windows often
           // only after a click on Try again; the download takes its name once it has.
           void (entry.state === 'cancelled' ? gone(entry.file) : Promise.resolve()).then(() =>

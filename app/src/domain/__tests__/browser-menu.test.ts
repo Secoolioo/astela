@@ -33,6 +33,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   developerTools: true,
   palette: true,
   splitView: true,
+  workspaces: 1,
   ...change,
 });
 

@@ -23,6 +23,8 @@ export const shellLaterChannels = [
   'tabs.resizeSplit',
   'groups.toggle',
   'groups.openEditor',
+  'workspaces.open',
+  'workspaces.moveTab',
 ] as const;
 
 /**

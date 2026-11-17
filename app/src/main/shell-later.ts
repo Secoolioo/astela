@@ -25,6 +25,8 @@ import {
   ToggleGroup,
   OpenGroupEditor,
   EditGroupRequested,
+  OpenWorkspaces,
+  MoveTabToWorkspace,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type {
@@ -36,6 +38,7 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions } from '../platform/electron/overlay.ts';
 import type { Bookmarks } from './bookmarks.ts';
 import type { SuggestionDependencies } from './suggestions.ts';
+import type { Workspaces } from './workspaces.ts';
 
 /** What the later requests of the shell need from the composition root. */
 export interface LaterShellDependencies {
@@ -54,6 +57,8 @@ export interface LaterShellDependencies {
   readonly folderContents: (folder: number) => readonly FolderEntry[];
   /** The bookmarks of the browser process, which load with the first of their users. */
   readonly bookmarks: () => Promise<Bookmarks>;
+  /** The code of the workspaces, which loads with its first use. */
+  readonly workspaces: () => Promise<Workspaces>;
   /** Where the suggestions of the address bar come from. */
   readonly suggestions: Omit<SuggestionDependencies, 'router' | 'windows'>;
   /** Opens the content blocker's popover of a window at its button. */
@@ -124,7 +129,11 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(OpenTabMenu, async ({ tabId, x, y, keyboard }, { sender }) => {
     const window = windowOf(sender);
-    const { popupTabMenu } = await import('./tab-menu.ts');
+    // Only a window with another workspace to move the tab into loads the code of workspaces.
+    const [{ popupTabMenu }, workspaces] = await Promise.all([
+      import('./tab-menu.ts'),
+      window.commandContext().workspaces > 1 ? dependencies.workspaces() : undefined,
+    ]);
     // The shell opens the popover of a new group at its chip, once the chip shows, as opened
     // with the keyboard when the keyboard opened the menu.
     popupTabMenu(
@@ -134,8 +143,20 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
       {
         editGroup: (groupId) =>
           router.publish(EditGroupRequested, window.shellContents, { groupId, keyboard }),
+        workspaces: workspaces?.targets(window, tabId) ?? [],
+        moveToWorkspace: (workspaceId) => workspaces?.moveTab(window, tabId, workspaceId),
       },
     );
+    return null;
+  });
+  router.handle(OpenWorkspaces, async (anchor, { sender }) => {
+    const window = windowOf(sender);
+    (await dependencies.workspaces()).open(window, anchor);
+    return null;
+  });
+  router.handle(MoveTabToWorkspace, async ({ tabId, workspaceId }, { sender }) => {
+    const window = windowOf(sender);
+    (await dependencies.workspaces()).moveTab(window, tabId, workspaceId);
     return null;
   });
   router.handle(MoveTab, async ({ tabId, index, group }, { sender }) => {

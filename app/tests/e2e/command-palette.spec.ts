@@ -1168,3 +1168,61 @@ test.describe('with the menu bar of macOS', () => {
     }
   });
 });
+
+test('shows the group and workspace of a tab in another workspace and switches to it from tab search', async () => {
+  const browser = await launch();
+  try {
+    await recordMenus(browser);
+    await open(browser, 'index.html');
+    // The tab joins a group named Shop.
+    await browser.shell.getByRole('tab', { name: 'Fixture home' }).click({ button: 'right' });
+    await chooseMenuItem(browser, [mac ? 'Add to New Group' : 'Add to new group']);
+    let overlay = await overlayPage(browser);
+    const group = overlay.getByRole('dialog', { name: 'Tab group' });
+    await expect(group.getByRole('textbox', { name: 'Name' })).toBeFocused();
+    await group.getByRole('textbox', { name: 'Name' }).pressSequentially('Shop');
+    await expect(browser.shell.getByRole('button', { name: 'Group Shop' })).toBeVisible();
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // The window shows a new workspace.
+    const button = browser.shell.getByRole('button', { name: 'Workspace Default', exact: true });
+    await expect(button).toBeVisible();
+    await button.click();
+    overlay = await overlayPage(browser);
+    const list = overlay.getByRole('dialog', { name: 'Workspaces' });
+    await list.getByRole('button', { name: 'New workspace' }).click();
+    await list.getByRole('textbox', { name: 'Name' }).fill('Work');
+    await list.getByRole('button', { name: 'Create' }).click();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Workspace Work', exact: true }),
+    ).toBeVisible();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'New tab',
+    );
+    // Tab search lists the tabs of every workspace of the window, with their group and workspace.
+    const search = await openPalette(browser, 'app://shell', true);
+    const current = search.dialog.getByRole('option', { name: /^New tab/ });
+    await expect(current).toHaveAttribute('aria-description', 'Workspace Work');
+    await expect(current.locator('.place')).toHaveText(['Work']);
+    await search.field.fill('fixture home');
+    const option = search.dialog.getByRole('option', { name: /^Fixture home/ });
+    await expect(option).toHaveAttribute('aria-description', 'In group Shop, Workspace Default');
+    await expect(option.locator('.place')).toHaveText(['Shop', 'Default']);
+    await expect(option).toHaveAttribute('aria-selected', 'true');
+    // Chosen, the tab shows in its workspace, which the window shows now.
+    await search.field.press('Enter');
+    await expect(search.dialog).toBeHidden();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Workspace Default', exact: true }),
+    ).toBeVisible();
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'Fixture home',
+    );
+    await expect.poll(() => tabsOf(browser)).toEqual([[fixture('index.html')], 0]);
+  } finally {
+    await browser.close();
+  }
+});

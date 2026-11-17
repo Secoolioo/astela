@@ -7,6 +7,7 @@ import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
 import type { PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import { EditGroup, GroupAction } from '../shared/ipc/overlay-contracts.ts';
+import { EditGroupRequested } from '../shared/ipc/shell-later-contracts.ts';
 import { focusBackOf, overlayBySender, overlayOf, rectOf, track } from './overlays.ts';
 
 /** What the popover of a group of tabs needs from the browser process. */
@@ -65,6 +66,23 @@ export function openGroupEditor(
   );
   editing.set(overlay, state);
   track(window, overlay);
+}
+
+/**
+ * Puts the active tab of a window, with the other tab of its split view, in a new group, whose
+ * popover then opens at its chip, as the command `tab.newGroup` does from its shortcut or from
+ * the command palette. Pinned tabs are never in a group.
+ * @param window - The window.
+ * @param router - IPC router, which asks the shell to open the popover.
+ */
+export function newGroup(window: BrowserWindowController, router: IpcRouter): void {
+  const active = window.tabs.active;
+  if (active === undefined || active.pinned) return;
+  const group = editGroups(window.tabs, (strip) => strip.createGroup(active.id));
+  if (group !== undefined) {
+    // The keyboard asked for it, so the focus goes back to the shell when the popover closes.
+    router.publish(EditGroupRequested, window.shellContents, { groupId: group.id, keyboard: true });
+  }
 }
 
 /**

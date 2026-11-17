@@ -106,9 +106,9 @@ export interface WebRequests {
    * Saves a download in the downloads folder without a question, under a name that is free
    * there, also from downloads that still run; the list and its panel load with the first one.
    * @param item - The download, which gets its path at once.
-   * @param privateWindow - Whether a page of a private window started it.
+   * @param from - The session of the page that started it.
    */
-  saveDownload(item: DownloadItem, privateWindow: boolean): void;
+  saveDownload(item: DownloadItem, from: Session): void;
   /**
    * Takes the page that a script opened into a window: a popup with a size or position gets a
    * window of its own, anything else a tab, in the background when the user asked for that.
@@ -188,7 +188,8 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     );
   });
   const reservedPaths = new Set<string>();
-  const saveDownload = (item: DownloadItem, privateWindow: boolean): void => {
+  const saveDownload = (item: DownloadItem, from: Session): void => {
+    const privateWindow = options.isPrivate(from);
     const folder = options.downloadFolder();
     const ask = settings.get(AskDownloadSetting);
     // While the browser asks where to save a download, it goes on under a name of its own.
@@ -211,7 +212,10 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     item.once('done', () => reservedPaths.delete(reserved));
     item.setSavePath(path);
     options.downloads().then(
-      (list) => (ask ? list.ask(item, privateWindow, suggested) : list.track(item, privateWindow)),
+      (list) =>
+        ask
+          ? list.ask(item, privateWindow, suggested, from)
+          : list.track(item, privateWindow, undefined, from),
       (error: unknown) => options.logger.error('The list of downloads failed', error),
     );
   };
@@ -221,7 +225,11 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     { url, disposition, features }: WindowOpening,
   ): void => {
     const window = windows.forTab(opener);
-    const privateWindow = options.isPrivate(opener.session);
+    // What a page opens stays in the page's workspace, whose partition it uses.
+    const place = {
+      private: options.isPrivate(opener.session),
+      workspace: window?.tabs.workspaceOf(window.tabIdOf(opener) ?? ''),
+    };
     // A popup opens where and as large as the page asked.
     if (disposition === 'new-window' && features !== '') {
       const bounds = popupBounds(
@@ -229,12 +237,12 @@ export function webRequests(options: WebRequestOptions): WebRequests {
         window?.window.getBounds() ?? { x: 100, y: 100, width: 1280, height: 820 },
         screen.getAllDisplays().map((display) => display.workArea),
       );
-      windows.openWith(contents, url, { bounds, popup: true, private: privateWindow });
+      windows.openWith(contents, url, { ...place, bounds, popup: true });
       return;
     }
     const target =
-      disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(privateWindow));
-    if (target === undefined) windows.openWith(contents, url, { private: privateWindow });
+      disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(place.private));
+    if (target === undefined) windows.openWith(contents, url, place);
     else target.adopt(contents, url, disposition !== 'background-tab', opener);
   };
   const blocksPopup = (url: string, opener: WebContents): boolean => {

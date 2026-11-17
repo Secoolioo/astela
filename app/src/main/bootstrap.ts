@@ -8,8 +8,10 @@ import {
   paletteCommands,
   shortcutTable,
   splitCommands,
+  workspaceCommands,
   type WindowCommand,
 } from '../shared/shortcuts.ts';
+import { defaultWorkspaceId, workspacePartition, type Workspace } from '../shared/workspaces.ts';
 import type { ShortcutRecorder } from '../platform/electron/shortcut-recorder.ts';
 import { hostResolverOptions } from '../shared/secure-dns.ts';
 import { app, Menu, session, webContents, type Session } from 'electron';
@@ -45,7 +47,7 @@ import {
 } from '../kernel/logging/logger.ts';
 import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import type { OmniboxTarget, SearchShortcuts } from '../domain/navigation/omnibox.ts';
-import { engineForSearchUrl, type CustomSearchEngine } from '../shared/search-engines.ts';
+import type { CustomSearchEngine } from '../shared/search-engines.ts';
 import { linksFromArguments, restoreSessionSwitch } from '../domain/navigation/links.ts';
 import { blockingFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
 import { webFontPreferences } from '../domain/appearance/appearance.ts';
@@ -87,6 +89,9 @@ import { createPolicyProviders } from '../platform/policy/platform-providers.ts'
 import {
   BookmarksBarSetting,
   DownloadFolderSetting,
+  WorkspacesEnabledSetting,
+  WorkspacesRemovedSetting,
+  WorkspacesSetting,
   HomeButtonSetting,
   HomePageSetting,
   SecureDnsSetting,
@@ -125,6 +130,7 @@ import {
 import { AppearanceController } from './appearance.ts';
 import { chooseLanguage } from './ui-language.ts';
 import type { Bookmarks } from './bookmarks.ts';
+import type { Workspaces } from './workspaces.ts';
 import {
   canBeDefaultBrowser,
   DefaultBrowserSettingEnabled,
@@ -357,11 +363,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     dispose: () => startedClient?.dispose(),
   };
   // The keyboard shortcuts of the windows, made again when people change them. While the
-  // command palette or split view is off, their shortcuts reach the pages.
+  // command palette, split view or the workspaces are off, their shortcuts reach the pages.
   const shortcutsNow = (): Map<string, WindowCommand> =>
     shortcutTable(process.platform, settings.get(ShortcutsSetting), [
       ...(settings.get(CommandPaletteSetting) ? [] : paletteCommands),
       ...(settings.get(SplitViewSetting) ? [] : splitCommands),
+      ...(settings.get(WorkspacesEnabledSetting) ? [] : workspaceCommands),
     ]);
   let shortcuts = shortcutsNow();
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
@@ -467,7 +474,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       // A page that downloads stays awake; a download that the list started again has none.
       // Downloads come from requests of web pages, after their code loaded.
       s.on('will-download', (_event, item, contents: Electron.WebContents | null) => {
-        web?.saveDownload(item, privateSessions.has(s));
+        web?.saveDownload(item, s);
         activity?.downloading(contents, item);
       });
       attachLater(s, () => loadWeb().then((loaded) => loaded.pipeline));
@@ -599,6 +606,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           router,
           overlay: overlayOptions,
           newTabUrl,
+          workspaces: workspacesNow,
           ...pageSources,
           absent: coreSettings.flatMap((definition) =>
             definition.ui === undefined ? [definition.key] : [],
@@ -610,6 +618,13 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         logger.error('The command palette failed', error);
       });
   };
+  // The workspaces of the profile while windows have them; their code loads with its first use.
+  const workspacesNow = (): readonly Workspace[] | undefined =>
+    settings.get(WorkspacesEnabledSetting) ? settings.get(WorkspacesSetting) : undefined;
+  const loadWorkspaces = (): Promise<Workspaces> =>
+    import('./workspaces.ts').then(({ workspaces: code }) =>
+      code({ windows, router, overlay: overlayOptions, settings, logger, webPartition, userData }),
+    );
   const appearance = await AppearanceController.create(settings, router, internal, () =>
     windows.repaintBackgrounds(),
   );
@@ -664,13 +679,19 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     toggleBookmarksBar: () =>
       void settings.set(BookmarksBarSetting, !settings.get(BookmarksBarSetting)),
     downloads: (privateWindow) => downloads?.summary(privateWindow) ?? null,
-    openWindow: () => void windows.open(),
+    // A new window shows the workspace of the window that it comes from.
+    openWindow: (from) => void windows.open(undefined, { workspace: from.tabs.workspace }),
     openPrivateWindow,
     privateWindows: privateWindowsAllowed,
     developerTools,
     openPalette,
     commandPalette: () => settings.get(CommandPaletteSetting),
     splitView: () => settings.get(SplitViewSetting),
+    workspaces: workspacesNow,
+    partitionFor: (workspace) =>
+      workspacePartition(settings.get(WorkspacesSetting), workspace, webPartition),
+    onLaterCommand: (window, command) =>
+      void loadWorkspaces().then((code) => code.run(window, command)),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
@@ -778,7 +799,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             policies.mandatoryValue(DefaultBrowserSettingEnabled) !== false,
           canBeDefaultBrowser: canBeDefaultBrowser(boot.installType),
           startValues,
-          webSession: () => session.fromPartition(webPartition),
+          webPartition,
           // Clearing the whole history also clears the lists that the session files keep.
           forgetTabHistories: async () => {
             windows.forgetTabHistories();
@@ -836,6 +857,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           allowInsecure: (contents, address) => web?.httpsFirst.allow(contents, address),
           folderContents: (folder) => bookmarks?.contents(folder) ?? [],
           bookmarks: loadBookmarks,
+          workspaces: loadWorkspaces,
           suggestions: {
             overlay: overlayOptions,
             target: pageSources.target,
@@ -874,6 +896,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
             .slice(0, 8)
             .map((site) => ({ title: site.title.slice(0, 64), url: site.url }))
         : [];
+    // The names of the built-in engines load with the first new tab page.
+    const { engineForSearchUrl } = await import('../shared/search-engines.ts');
     return {
       engine: engineForSearchUrl(template)?.name ?? custom?.name ?? null,
       search: settings.get(NewTabSearchSetting),
@@ -943,12 +967,25 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     DensitySetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
+    WorkspacesSetting.key,
+    WorkspacesEnabledSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (keys.includes(DefaultZoomSetting.key)) {
       windows.applyDefaultZoom(settings.get(DefaultZoomSetting));
     }
     if (keys.some((key) => shellSettings.has(key))) windows.refreshShells();
+    // The code of the workspaces follows their changes from its first use on and applies what
+    // changed before as it loads, so a window with tabs in another workspace loads it at once,
+    // as when a policy turns the workspaces off.
+    if (
+      (keys.includes(WorkspacesSetting.key) || keys.includes(WorkspacesEnabledSetting.key)) &&
+      windows.all.some(
+        ({ tabs }) => tabs.strips.length > 1 || tabs.workspace !== defaultWorkspaceId,
+      )
+    ) {
+      void loadWorkspaces();
+    }
     // Optional lists that were turned on load at once, so the next page has them.
     if (
       web?.blocker.status === 'ready' &&
@@ -1006,14 +1043,22 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       : restoredWindows(lastSession);
   // Links from other apps open in tabs; a start without a session or the guide shows only them.
   const startLinks = [...linksFromArguments(process.argv.slice(1)), ...pendingLinks.splice(0)];
-  // The code of groups of tabs loads only for a session that has groups.
+  // The code of groups of tabs loads only for a session that has groups, and that of workspaces
+  // only for a session that has workspaces.
   const regroup = lastSession?.windows.some((window) => window.tabs.some((tab) => tab.group))
     ? (await import('../domain/tabs/tab-groups.ts')).restoreGroups
+    : undefined;
+  const respace = lastSession?.windows.some(
+    (window) => window.workspace !== undefined || window.tabs.some((tab) => tab.workspace),
+  )
+    ? (await import('../domain/tabs/workspace-strips.ts')).workspaceRestore(
+        (workspacesNow() ?? []).map(({ id }) => id),
+      )
     : undefined;
   const first =
     startWindows === undefined
       ? windows.open(showSetup ? pageUrl('setup') : startLinks.shift())
-      : windows.restore(startWindows, regroup);
+      : windows.restore(startWindows, regroup, respace);
   // Later links open in the window used last, which comes to the front, also without links;
   // without a window, the first link opens one.
   openLinks = (links) => {
@@ -1086,6 +1131,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     ShortcutsSetting.key,
     CommandPaletteSetting.key,
     SplitViewSetting.key,
+    WorkspacesEnabledSetting.key,
   ]);
   settings.onDidChange(({ keys }) => {
     if (!keys.some((key) => keyedSettings.has(key))) return;
@@ -1118,6 +1164,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         }),
       )
       .catch((error: unknown) => logger.error('Tabs do not go to sleep by themselves', error));
+    // The folders of deleted workspaces go once Chromium of the last run let go of them.
+    if (settings.get(WorkspacesRemovedSetting).length > 0) {
+      void loadWorkspaces().then((code) => code.removeDeletedPartitions());
+    }
   });
 
   const timer = setInterval(() => void policies.refresh(), 15 * 60 * 1000);
@@ -1145,7 +1195,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           settings: store,
           sessions: sessionStore,
           windows,
-          web: session.fromPartition(webPartition),
+          web: webSessions,
           data,
           updates,
         }),

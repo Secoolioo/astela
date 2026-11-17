@@ -30,6 +30,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   developerTools: true,
   palette: true,
   splitView: true,
+  workspaces: 1,
   ...change,
 });
 
@@ -207,6 +208,29 @@ describe('availableCommands', () => {
     expect(split(-1)).toBe('- -');
     expect(split(2, false)).toBe('- -');
     expect(split(3, false)).toBe('- -');
+  });
+
+  it('chooses workspaces that the profile has, and starts a group on a tab that is not pinned', () => {
+    const able = (workspaces: number): WindowCommand[] =>
+      windowCommands.filter(
+        (command) => command.startsWith('workspace.') && canRun(command, context({ workspaces })),
+      );
+    // A private window, a popup and a window while workspaces are off count none.
+    expect(able(0)).toEqual([]);
+    expect(able(1)).toEqual(['workspace.select1', 'workspace.open']);
+    expect(able(3)).toEqual([
+      'workspace.select1',
+      'workspace.select2',
+      'workspace.select3',
+      'workspace.next',
+      'workspace.previous',
+      'workspace.open',
+    ]);
+    expect(able(20)).toHaveLength(12);
+    const tabs = [page({ pinned: true }), page()];
+    expect(canRun('tab.newGroup', context({ tabs, activeIndex: 1 }))).toBe(true);
+    expect(canRun('tab.newGroup', context({ tabs, activeIndex: 0 }))).toBe(false);
+    expect(canRun('tab.newGroup', context({ tabs, activeIndex: -1 }))).toBe(false);
   });
 
   it('moves and closes around the two tabs of a split view as one', () => {

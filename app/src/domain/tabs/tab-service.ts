@@ -2,7 +2,7 @@ import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { historyMoves } from './tab-history.ts';
-import { TabStrip, type SplitPair, type TabGroup } from './tab-strip.ts';
+import { TabStrip, type SplitPair, type TabGroup, type WorkspaceTabs } from './tab-strip.ts';
 import type { TabHistory } from './view-history.ts';
 
 export type { SplitPair, TabGroup } from './tab-strip.ts';
@@ -173,12 +173,16 @@ const titleChange: KeptChange = { titleOnly: true };
 /**
  * Owns the tabs of one window and tells its views what changed. A {@link TabStrip} keeps the
  * order of the tabs, the active tab and the tabs that closed lately; a strip that knows groups
- * of tabs takes its place with the first group (`tab-groups.ts`). A window always keeps at
- * least one tab.
+ * of tabs takes its place with the first group (`tab-groups.ts`), and one that keeps a strip
+ * for each workspace with the window's second workspace (`workspace-strips.ts`). Then `all`,
+ * `active` and the other reads without a tab are those of the workspace that the window shows,
+ * the operations on a tab reach it in any workspace, and only the shown workspace's tabs show.
+ * A window always keeps at least one tab in the workspace that it shows. Tab ids are unique
+ * across the workspaces of a window.
  */
 export class TabService implements Disposable {
   /** The tabs of the window. */
-  private tabStrip = new TabStrip<Tab>();
+  private tabStrip: TabStrip<Tab>;
   private nextId = 1;
   private readonly changeEmitter = new Emitter<void>();
   private readonly views: TabViewPort;
@@ -199,16 +203,53 @@ export class TabService implements Disposable {
    * @param views - Creates and controls the web views.
    * @param blankUrl - URL of a new, empty tab.
    * @param onLastClosed - Called instead of opening a new tab when the last tab closes.
+   * @param workspace - The workspace that the window shows first.
    */
-  constructor(views: TabViewPort, blankUrl: string, onLastClosed?: () => void) {
+  constructor(views: TabViewPort, blankUrl: string, onLastClosed?: () => void, workspace?: string) {
     this.views = views;
     this.blankUrl = blankUrl;
     this.onLastClosed = onLastClosed;
+    this.tabStrip = new TabStrip(workspace);
   }
 
-  /** All tabs in display order. */
+  /** The tabs of the workspace that the window shows, in display order. */
   get all(): readonly Tab[] {
     return this.strip.all;
+  }
+
+  /**
+   * The tabs of each workspace of the window, in the order of the workspaces: the workspace, its
+   * tabs, its active tab and its split views.
+   */
+  get strips(): readonly WorkspaceTabs<Tab>[] {
+    return this.strip.strips;
+  }
+
+  /** The tabs of every workspace of the window, workspace by workspace. */
+  get allTabs(): readonly Tab[] {
+    return this.strips.flatMap((strip) => strip.all);
+  }
+
+  /** The workspace that the window shows. */
+  get workspace(): string {
+    return this.strip.workspace;
+  }
+
+  /**
+   * The workspace of a tab of the window.
+   * @param id - The tab.
+   * @returns The workspace, or `undefined` for a tab that the window does not have.
+   */
+  workspaceOf(id: TabId): string | undefined {
+    return this.strips.find((strip) => strip.has(id))?.workspace;
+  }
+
+  /**
+   * A tab of the window, in any of its workspaces.
+   * @param id - The tab.
+   */
+  get(id: TabId): Tab | undefined {
+    return this.strip.get(id);
   }
 
   /** The active tab, if any. */

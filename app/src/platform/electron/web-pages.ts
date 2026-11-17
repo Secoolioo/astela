@@ -341,9 +341,9 @@ function proceedInsecurely(
   contents.loadURL(problem.url).catch(() => undefined);
 }
 
-/** Why a tab shows no page, or `null` when it shows one. */
+/** Why a tab of any workspace of the window shows no page, or `null` when it shows one. */
 function problemOf(host: WindowHost, id: TabId): TabProblem | null {
-  return host.window.tabs.all.find((tab) => tab.id === id)?.problem ?? null;
+  return host.window.tabs.get(id)?.problem ?? null;
 }
 
 /** An address without its fragment, which names a place on the page. */

@@ -6,6 +6,7 @@ import type {
   CommandPalette as PaletteContent,
   GroupEditor,
   MenuPopover,
+  WorkspaceList as WorkspaceListContent,
 } from '../../shared/ipc/overlay-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import { popoverStyles } from '../ui-kit/popover-styles.ts';
@@ -14,6 +15,7 @@ import type { CommandPalette } from './command-palette.ts';
 import type { GroupPopover } from './group-popover.ts';
 import type { OverlayBookmark } from './overlay-bookmark.ts';
 import type { OverlayMenu } from './overlay-menu.ts';
+import type { WorkspaceList } from './workspace-list.ts';
 import { placePopover } from './placement.ts';
 import { enter, leave } from './popover-motion.ts';
 
@@ -114,7 +116,8 @@ type Content =
   | MenuPopover
   | BookmarkEditor
   | PaletteContent
-  | GroupEditor;
+  | GroupEditor
+  | WorkspaceListContent;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -144,13 +147,14 @@ const isContent = (value: unknown): value is Content =>
     'bookmark',
     'palette',
     'group',
+    'workspaces',
   ].includes(String(value.kind));
 
 /**
  * The kinds of content with an element of their own, which gives the focus to its first item
  * or field and handles Escape itself, such as a menu that closes its submenu first.
  */
-const ownElement = new Set<Content['kind']>(['menu', 'bookmark', 'palette', 'group']);
+const ownElement = new Set<Content['kind']>(['menu', 'bookmark', 'palette', 'group', 'workspaces']);
 
 /** What the buttons of a download do. */
 type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'folder' | 'retry' | 'remove';
@@ -611,7 +615,9 @@ export class OverlayPage extends LitElement {
           ? this.t(next.scope === 'tabs' ? 'palette.titleTabs' : 'palette.title')
           : next.kind === 'group'
             ? this.t('overlay.group')
-            : (nameOf(next) ?? this.pageTitle);
+            : next.kind === 'workspaces'
+              ? this.t('overlay.workspaces')
+              : (nameOf(next) ?? this.pageTitle);
     if (next === null) return;
     if (next.kind === 'screen') this.chosen = undefined;
     if (next.kind === 'permission') this.arm(next.id);
@@ -671,8 +677,8 @@ export class OverlayPage extends LitElement {
     const container = this.renderRoot.querySelector('.leaving');
     const nested = [
       ...(container?.querySelectorAll<
-        OverlayMenu | OverlayBookmark | CommandPalette | GroupPopover
-      >('overlay-menu, overlay-bookmark, command-palette, group-popover') ?? []),
+        OverlayMenu | OverlayBookmark | CommandPalette | GroupPopover | WorkspaceList
+      >('overlay-menu, overlay-bookmark, command-palette, group-popover, workspace-list') ?? []),
     ];
     await Promise.all(nested.map((element) => element.updateComplete));
     const surfaces = [
@@ -793,6 +799,15 @@ export class OverlayPage extends LitElement {
           .i18n=${this.i18n}
           .leaving=${leaving}
         ></group-popover>`;
+    }
+    if (content.kind === 'workspaces') {
+      return html`<div class="backdrop" @click=${this.close}></div>
+        <workspace-list
+          .content=${content}
+          .bridge=${this.bridge}
+          .i18n=${this.i18n}
+          .leaving=${leaving}
+        ></workspace-list>`;
     }
     if (content.kind === 'bookmark') {
       // A click next to the popover saves the bookmark, as Done does.
