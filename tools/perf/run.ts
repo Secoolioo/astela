@@ -27,7 +27,7 @@ import { cpus, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { FuseV1Options, FuseVersion, flipFuses } from '@electron/fuses';
 import { updateServiceStates } from './browser-log.ts';
-import { mannWhitneyGreater, median } from './stats.ts';
+import { idleCpuLimit, mannWhitneyGreater, median } from './stats.ts';
 import { memoryMetric, sampleTree, startTree, stopTree, type TreeSample } from './system.ts';
 import { staticImports } from './start-path.ts';
 
@@ -434,12 +434,21 @@ function memoryChecks(m: Measurements): Check[] {
 function cpuChecks(m: Measurements): Check[] {
   const browser = Math.min(...m.cpuPercent.browser);
   const bare = Math.min(...m.cpuPercent.bare);
-  const limit = Math.min(budgets.cpuIdlePercent, bare + budgets.cpuExtraPoints);
+  const limit = idleCpuLimit(
+    bare,
+    budgets.cpuIdlePercent,
+    budgets.cpuExtraPoints,
+    process.platform,
+  );
+  const ceiling = budgets.cpuIdlePercent;
   return [
     {
       metric: `CPU, idle for ${options.cpuSeconds} s (all processes)`,
       value: `${browser.toFixed(2)} % (bare ${bare.toFixed(2)} %)`,
-      budget: `≤ ${limit.toFixed(2)} % of one core`,
+      budget:
+        process.platform === 'darwin'
+          ? `≤ ${limit.toFixed(2)} % of one core (target ≤ ${ceiling.toFixed(2)} % ${browser <= ceiling ? 'met' : 'missed'})`
+          : `≤ ${limit.toFixed(2)} % of one core`,
       pass: browser <= limit,
     },
   ];

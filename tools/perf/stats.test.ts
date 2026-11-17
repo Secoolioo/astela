@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { mannWhitneyGreater, median, normalCdf } from './stats.ts';
+import { idleCpuLimit, mannWhitneyGreater, median, normalCdf } from './stats.ts';
 
 describe('median', () => {
   it('handles odd, even and empty lists', () => {
@@ -46,5 +46,19 @@ describe('mannWhitneyGreater', () => {
   it('treats ties and empty groups safely', () => {
     assert.equal(mannWhitneyGreater([1, 1, 1], [1, 1, 1]), 1);
     assert.equal(mannWhitneyGreater([], [1]), 1);
+  });
+});
+
+describe('idleCpuLimit', () => {
+  it('gates on the ceiling and on the reference on Linux and Windows', () => {
+    assert.equal(idleCpuLimit(0.41, 0.5, 0.2, 'linux'), 0.5);
+    assert.ok(Math.abs(idleCpuLimit(0.2, 0.5, 0.2, 'win32') - 0.4) < 1e-9);
+  });
+
+  it('gates only on the reference on macOS, whose runners alone use up to the ceiling', () => {
+    // A macOS job of the same build as one at 0.27 % (bare 0.20 %) measured 0.55 % with the
+    // bare reference at 0.41 %.
+    assert.ok(0.55 <= idleCpuLimit(0.41, 0.5, 0.2, 'darwin'));
+    assert.ok(0.65 > idleCpuLimit(0.41, 0.5, 0.2, 'darwin'));
   });
 });
