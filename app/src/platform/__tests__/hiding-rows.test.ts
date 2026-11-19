@@ -167,12 +167,17 @@ function windowOf(change: Partial<FakeState> = {}): {
 const names = (stack: readonly FakeView[]): string[] => stack.map((view) => view.name);
 
 describe('hidingRows', () => {
+  // On macOS only an edge of the rows stays (see below); these are the rows of Windows and Linux.
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+
   beforeEach(() => {
     vi.useFakeTimers();
+    Object.defineProperty(process, 'platform', { value: 'linux' });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    if (platform !== undefined) Object.defineProperty(process, 'platform', platform);
   });
 
   it('shows the rows of a new window for a moment, then lets them hide', () => {
