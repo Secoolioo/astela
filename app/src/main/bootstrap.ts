@@ -359,7 +359,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // The data service, and the code that talks to it, start with the first call.
   let dataClient: Promise<DataServiceClient> | undefined;
   let startedClient: DataServiceClient | undefined;
-  const data: DataClient = {
+  const data: DataClient & { settled(): Promise<void> } = {
     call: (method, ...params) => {
       dataClient ??= import('../platform/electron/data-service-client.ts').then(
         ({ DataServiceClient: Client }) =>
@@ -372,6 +372,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       return dataClient.then((client) => client.call(method, ...params));
     },
     dispose: () => startedClient?.dispose(),
+    settled: () => dataClient?.then((client) => client.settled()) ?? Promise.resolve(),
   };
   // The keyboard shortcuts of the windows, made again when people change them. While the
   // command palette, split view, the workspaces, the reader view or picture in picture are off,
