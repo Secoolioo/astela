@@ -57,14 +57,20 @@ fi
 # runner images list their mirrors in apt-mirrors.txt instead of the sources. When the runner
 # had to leave the Ubuntu mirrors (tools/ci/apt-install.sh), the containers use the mirror it
 # chose, over plain HTTP since the images carry no certificates; apt checks the signatures.
+# Only the mirror of an Azure runner is taken over: the regional mirror of an EC2 runner answers
+# the many downloads of the containers with 503 Service Unavailable, so they keep the archive.
 if [ -n "${UBUNTU_MIRROR:-}" ]; then
   ubuntu_mirror=${UBUNTU_MIRROR/#https:/http:}
 else
-  ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
+  ubuntu_mirror=$(grep -rhoE 'https?://azure\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
   [ -z "$ubuntu_mirror" ] || ubuntu_mirror="$ubuntu_mirror/ubuntu"
 fi
 
+# Each part says when it starts: a runner whose network is slow shows in where the time goes.
+part() { echo "$(date -u +%T) $*"; }
+
 for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
+  part "$image: pull"
   "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
@@ -75,11 +81,13 @@ for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13; do
     docker exec -e DEBIAN_FRONTEND=noninteractive repo-test bash -c \
       "refresh() { for _ in 1 2; do apt-get update -qq >/dev/null 2>&1 && return; sleep 20; done; apt-get update -qq >/dev/null; }; retry() { for _ in 1 2; do \"\$@\" && return; sleep 30; refresh; done; \"\$@\"; }; $1"
   }
-  inside "echo 'Acquire::Retries \"5\";' >/etc/apt/apt.conf.d/80-retries"
+  # A download that stalls ends after 30 seconds instead of 120 and is tried again.
+  inside "echo 'Acquire::Retries \"5\"; Acquire::http::Timeout \"30\"; Acquire::https::Timeout \"30\";' >/etc/apt/apt.conf.d/80-retries"
   if [ -n "$ubuntu_mirror" ]; then
     inside "sed -i -E 's#https?://(archive|security)\.ubuntu\.com/ubuntu#$ubuntu_mirror#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true"
   fi
   publish 0
+  part "$image: install beta.1"
   inside "refresh && retry env ${env_prefix}_REPO_URL=$base apt-get install -y -qq /packages/*.deb >/dev/null"
   check "$image installs beta.1 from its file" "0.0.1~beta.1" "$(inside "dpkg-query -W -f='\${Version}' $slug")"
   check "$image registers the beta repository" "Suites: beta" "$(inside "grep Suites /etc/apt/sources.list.d/$slug.sources")"
@@ -97,6 +105,7 @@ done
 "$root/tools/ci/pull-images.sh" fedora:latest
 latest=$(docker run --rm fedora:latest bash -c '. /etc/os-release; echo "$VERSION_ID"')
 for image in "fedora:$latest" "fedora:$((latest - 1))"; do
+  part "$image: pull"
   "$root/tools/ci/pull-images.sh" "$image"
   docker rm -f repo-test >/dev/null 2>&1 || true
   docker run -d --name repo-test --network host -v "$work:$work:ro" -v "${dirs[0]}:/packages:ro" "$image" sleep 3600 >/dev/null
