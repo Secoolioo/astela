@@ -693,6 +693,9 @@ export interface PageJob {
 /** How long a window that just opened takes to set itself up on Linux, in milliseconds. */
 const settleTime = 1000;
 
+/** How long in ms macOS has to start the full screen of a window that opened in it, before the browser asks again. */
+const fullScreenAgainMs = 1000;
+
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
  * tab. Tab views are created when a tab opens and destroyed when it closes; only the views
@@ -867,6 +870,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (place.fullScreen === true) {
       this.userFullScreen = true;
       this.setFullScreen(true, place.maximized === true);
+      if (process.platform === 'darwin') this.askFullScreenAgain();
     }
     // A popup closes with its last tab, as the page that closes itself expects.
     this.tabs = new TabService(
@@ -2250,6 +2254,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private setFullScreen(on: boolean, maximized?: boolean): void {
     if (on) this.notePlace(maximized);
     this.window.setFullScreen(on);
+  }
+
+  /**
+   * Asks macOS once more for the full screen of a window that opened in it, should macOS not
+   * have started to move the window there: right after a browser quit while its window moved
+   * into full screen, macOS can drop the request of the window of the next start.
+   */
+  private askFullScreenAgain(): void {
+    setTimeout(() => {
+      const window = this.window;
+      if (window.isDestroyed() || !this.userFullScreen || this.fullScreenEntered) return;
+      if (!window.isFullScreen()) window.setFullScreen(true);
+    }, fullScreenAgainMs);
   }
 
   /**
