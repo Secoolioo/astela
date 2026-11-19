@@ -1,6 +1,6 @@
 # Site permissions
 
-> **Status:** available from 0.1.0-beta.4.
+> **Status:** available from 0.1.0-beta.4; changing the answers of a site in site information from 0.1.0-beta.7.
 
 Some sites want more than to show a page: the camera and the microphone for a call, your location for a map, notifications, or the text that you copied. Astela asks you first, in a small window above the page that names the site and what it wants.
 
@@ -18,6 +18,12 @@ When a site wants to see your screen, for example to share it in a call, Astela 
 ## Change your answers
 
 The settings page lists every site that you answered under **Privacy**, **Site permissions**, with what it may use. There you can change an answer from allowed to blocked or back, or remove it; the site then asks again the next time.
+
+## In site information
+
+From 0.1.0-beta.7, a click on the connection in the [address bar](address-bar.md#site-information) shows the permissions that you answered for the site, each with a switch: on allows it, off blocks it. A site that asked for nothing yet shows none. **Reset permissions** forgets every answer of the site, which then asks again. A change counts at once for what the site asks next; what it uses already, such as a camera that runs, changes once the page loads again, and **Reload** does that.
+
+In a private window, site information shows and changes the answers of the private windows, which never reach the settings and which they forget when the last private window closes.
 
 ## Good to know
 

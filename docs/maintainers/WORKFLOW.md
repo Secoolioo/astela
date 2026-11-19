@@ -99,6 +99,7 @@ Some checks need people. Maintainers other than the release author do them once 
 - Design review of the generated screenshot gallery (all tab bar positions, light and dark).
 - Google account sign-in after every Electron major upgrade.
 - The Zen and Compact layouts on GNOME and KDE with Wayland, and with a real pointer on Windows and macOS: the rows that hide show from the edge or the title row, stay while the pointer rests on their free room, hide once it is over the page, and the window moves from that free room ([ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md)).
+- Site information on a page whose certificate chains to a root that was added to the system store, such as the authority of an organization, on Windows, macOS and Linux (NSS): it says that the certificate authority was added to this computer. No automated test has such a root ([ADR 0059](../adr/0059-site-information-with-checked-certificates.md)).
 
 ## Security
 

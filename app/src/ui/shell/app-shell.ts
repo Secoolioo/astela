@@ -4,6 +4,7 @@ import { easingOf, motionOf } from '../ui-kit/motion.ts';
 import { percent } from '../ui-kit/percent.ts';
 import { sameZoom } from '../../shared/zoom.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
+import { connectionKind, type ConnectionKind } from '../../shared/connection.ts';
 import { newTabUrl } from '../../shared/internal-pages.ts';
 import type { PopoverAnchor } from '../../shared/ipc/overlay-anchor.ts';
 import type { BarItem, ShellState, TabView } from '../../shared/ipc/shell-contracts.ts';
@@ -1009,15 +1010,36 @@ export class AppShell extends LitElement {
       height: var(--control-small);
       margin-inline-start: var(--space-1);
       padding: 0 var(--space-1);
+      border: 0;
       border-radius: var(--radius-pill);
+      background: transparent;
       color: var(--text-2);
+      font: inherit;
       font-size: var(--font-size-small);
       white-space: nowrap;
+    }
+    /* The chip of a web page opens site information; it is a button with the corners of the
+       chips of the address bar, not a pill. */
+    button.security {
+      border-radius: var(--radius-1);
+      cursor: default;
+    }
+    button.security:hover,
+    button.security[aria-expanded='true'] {
+      background: var(--surface-hover);
+    }
+    button.security:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: -2px;
     }
     .security[data-kind='insecure'] {
       padding-inline-end: var(--space-2);
       background: var(--surface-1);
       color: var(--danger);
+    }
+    button.security[data-kind='insecure']:hover,
+    button.security[data-kind='insecure'][aria-expanded='true'] {
+      background: var(--surface-hover);
     }
     /* The loading of the active tab, along the bottom of the toolbar. */
     .progress {
@@ -2807,16 +2829,29 @@ export class AppShell extends LitElement {
       ${
         security === 'none'
           ? nothing
-          : html`<span
-              class="security"
-              data-kind=${security}
-              role="img"
-              aria-label=${t(securityLabels[security])}
-              title=${t(securityLabels[security])}
-              >${securityIcons[security]}${
-                security === 'insecure' ? html`<span>${t('shell.notSecure')}</span>` : nothing
-              }</span
-            >`
+          : security === 'internal'
+            ? html`<span
+                class="security"
+                data-kind=${security}
+                role="img"
+                aria-label=${t(securityLabels[security])}
+                title=${t(securityLabels[security])}
+                >${securityIcons[security]}</span
+              >`
+            : html`<button
+                type="button"
+                class="security"
+                data-kind=${security}
+                aria-label=${t(securityLabels[security])}
+                title=${t('shell.siteInfo')}
+                aria-haspopup="dialog"
+                aria-expanded=${this.state.popover?.kind === 'site' ? 'true' : 'false'}
+                @click=${this.openSiteInfo}
+              >
+                ${securityIcons[security]}${
+                  security === 'insecure' ? html`<span>${t('shell.notSecure')}</span>` : nothing
+                }
+              </button>`
       }
       <div class="field">
         <input
@@ -3001,6 +3036,14 @@ export class AppShell extends LitElement {
           : 'shell.blockerOff';
     return this.i18n?.t(key, params) ?? 'shell.blocker';
   }
+
+  /** Opens site information for the page of the active tab at the chip of its connection. */
+  private readonly openSiteInfo = (event: MouseEvent): void => {
+    const chip = event.currentTarget;
+    if (chip instanceof HTMLElement) {
+      void this.bridge?.invoke('shell.openSiteInfo', anchorOf(chip, event.detail === 0));
+    }
+  };
 
   /** Opens the content blocker's popover at its button. */
   private readonly openBlockerPopover = (event: MouseEvent): void => {
@@ -3896,33 +3939,24 @@ function isWindowControls(value: unknown): value is WindowControls {
 }
 
 /** How a page's connection is shown in the address bar. */
-type Security = 'secure' | 'insecure' | 'internal' | 'none';
+type Security = ConnectionKind;
 
 const securityLabels = {
   secure: 'shell.secure',
   insecure: 'shell.notSecure',
+  local: 'shell.localPage',
   internal: 'shell.internalPage',
 } as const;
 
 /**
  * How secure the connection of a tab's page is: secure over HTTPS with a trusted
  * certificate; not secure without encryption to another computer, or with a certificate that
- * is not trusted, also after the user accepted it; or one of the browser's own pages. Local
- * addresses, pages without one and pages that could not be loaded or crashed show nothing.
+ * is not trusted, also after the user accepted it; a page on this computer; or one of the
+ * browser's own pages. Pages without an address and pages that could not be loaded or crashed
+ * show nothing.
  */
 function securityOf(tab: TabView): Security {
-  const problem = tab.problem?.kind;
-  if (problem === 'insecure' || problem === 'certificate') return 'insecure';
-  if (problem !== undefined) return 'none';
-  const url = tab.url;
-  if (url === newTabUrl || url === 'about:blank') return 'none';
-  if (url.startsWith('app://')) return 'internal';
-  if (/^https:/i.test(url)) return tab.certificateException ? 'insecure' : 'secure';
-  if (!/^http:/i.test(url)) return 'none';
-  const host = hostOf(url).replace(/:\d+$/, '');
-  return host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host)
-    ? 'none'
-    : 'insecure';
+  return connectionKind(tab);
 }
 
 /**
@@ -4033,6 +4067,9 @@ const securityIcons = {
   get insecure(): TemplateResult {
     return icons.warning;
   },
+  get local(): TemplateResult {
+    return icons.info;
+  },
   get internal(): TemplateResult {
     return icons.browser;
   },
@@ -4060,6 +4097,10 @@ const icons = {
   browser: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <rect width="20" height="16" x="2" y="4" rx="2" />
     <path d="M2 9h20" />
+  </svg>`,
+  info: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4M12 8h.01" />
   </svg>`,
   globe: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="10" />

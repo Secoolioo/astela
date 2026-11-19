@@ -28,6 +28,7 @@ export const shellLaterChannels = [
   'shell.toggleReader',
   'shell.togglePictureInPicture',
   'shell.holdTopRows',
+  'shell.openSiteInfo',
 ] as const;
 
 /**

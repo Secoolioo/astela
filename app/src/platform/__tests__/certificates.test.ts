@@ -103,4 +103,91 @@ describe('CertificateExceptions', () => {
     expect(refuse(app, page, 'https://device.example/', 'sha256/one')).toBe(false);
     expect(exceptions.allow(page)).toBe(false);
   });
+
+  it('keeps the certificate that a page was refused and those that people accepted, with the error', () => {
+    const app = new EventEmitter();
+    const exceptions = new CertificateExceptions(() => true);
+    exceptions.attach(app as unknown as App);
+    const session = {};
+    const page = { id: 20, session } as unknown as WebContents;
+    const otherTab = { id: 21, session } as unknown as WebContents;
+    expect(exceptions.refusedOf(page)).toBeUndefined();
+    refuse(app, page, 'https://device.example:8443/a', 'sha256/one');
+    expect(exceptions.refusedOf(page)).toMatchObject({
+      host: 'device.example:8443',
+      error: 'ERR_CERT_AUTHORITY_INVALID',
+      certificate: { fingerprint: 'sha256/one' },
+    });
+    expect(exceptions.refusedOf(otherTab)).toBeUndefined();
+    expect(exceptions.acceptedOf(page, 'https://device.example:8443/')).toBeUndefined();
+    expect(exceptions.allow(page)).toBe(true);
+    // Every tab of the session sees the accepted certificate of the host, and it holds.
+    expect(exceptions.acceptedOf(otherTab, 'https://device.example:8443/b')).toMatchObject({
+      host: 'device.example:8443',
+      error: 'ERR_CERT_AUTHORITY_INVALID',
+      certificate: { fingerprint: 'sha256/one' },
+      live: true,
+    });
+    expect(exceptions.acceptedOf(page, 'http://device.example:8443/')).toBeUndefined();
+    expect(exceptions.acceptedOf(page, 'https://device.example/')).toBeUndefined();
+  });
+
+  it('turns the warning back on for one host in one session', () => {
+    const app = new EventEmitter();
+    const exceptions = new CertificateExceptions(() => true);
+    exceptions.attach(app as unknown as App);
+    const page = { id: 30, session: {} } as unknown as WebContents;
+    const privatePage = { id: 31, session: {} } as unknown as WebContents;
+    for (const [contents, url] of [
+      [page, 'https://device.example/'],
+      [page, 'https://router.example/'],
+      [privatePage, 'https://device.example/'],
+    ] as const) {
+      refuse(app, contents, url, 'sha256/one');
+      expect(exceptions.allow(contents)).toBe(true);
+    }
+    expect(exceptions.revoke(page, 'device.example')).toBe(true);
+    expect(exceptions.revoke(page, 'device.example')).toBe(false);
+    // The certificate is refused again, and the host's pages still count as covered, as one
+    // that came with it may still show.
+    expect(refuse(app, page, 'https://device.example/', 'sha256/one')).toBe(false);
+    expect(exceptions.covers(page, 'https://device.example/')).toBe(true);
+    expect(exceptions.acceptedOf(page, 'https://device.example/')).toMatchObject({ live: false });
+    // Other hosts and other sessions keep their exceptions.
+    expect(refuse(app, page, 'https://router.example/', 'sha256/one')).toBe(true);
+    expect(refuse(app, privatePage, 'https://device.example/', 'sha256/one')).toBe(true);
+    expect(exceptions.acceptedOf(privatePage, 'https://device.example/')).toMatchObject({
+      live: true,
+    });
+  });
+
+  it('tells that an exception no longer holds once a policy does not allow continuing', () => {
+    const app = new EventEmitter();
+    let allowed = true;
+    const exceptions = new CertificateExceptions(() => allowed);
+    exceptions.attach(app as unknown as App);
+    const page = { id: 40, session: {} } as unknown as WebContents;
+    refuse(app, page, 'https://device.example/', 'sha256/one');
+    expect(exceptions.allow(page)).toBe(true);
+    allowed = false;
+    expect(exceptions.acceptedOf(page, 'https://device.example/')).toMatchObject({ live: false });
+  });
+
+  it('forgets the exceptions and accepted certificates of a session that ended', () => {
+    const app = new EventEmitter();
+    const exceptions = new CertificateExceptions(() => true);
+    exceptions.attach(app as unknown as App);
+    const privatePage = { id: 50, session: {} } as unknown as WebContents;
+    const page = { id: 51, session: {} } as unknown as WebContents;
+    for (const contents of [privatePage, page]) {
+      refuse(app, contents, 'https://device.example/', 'sha256/one');
+      expect(exceptions.allow(contents)).toBe(true);
+    }
+    exceptions.forget(privatePage.session);
+    expect(exceptions.acceptedOf(privatePage, 'https://device.example/')).toBeUndefined();
+    expect(exceptions.covers(privatePage, 'https://device.example/')).toBe(false);
+    expect(refuse(app, privatePage, 'https://device.example/', 'sha256/one')).toBe(false);
+    // Another session keeps its own.
+    expect(refuse(app, page, 'https://device.example/', 'sha256/one')).toBe(true);
+  });
 });

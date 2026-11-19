@@ -40,6 +40,7 @@ import type {
   ToggleReader,
   TogglePictureInPicture,
   HoldTopRows,
+  OpenSiteInfo,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
@@ -78,6 +79,7 @@ interface Requests {
   'shell.toggleReader': typeof ToggleReader;
   'shell.togglePictureInPicture': typeof TogglePictureInPicture;
   'shell.holdTopRows': typeof HoldTopRows;
+  'shell.openSiteInfo': typeof OpenSiteInfo;
 }
 
 interface Events {

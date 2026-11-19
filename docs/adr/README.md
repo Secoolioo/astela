@@ -98,3 +98,4 @@ Each rejected option as a bullet point with a short reason.
 | [0056](0056-live-update-proof-after-a-failed-deployment.md)            | Live update proof after a failed deployment                               |
 | [0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)  | Reader view and picture in picture in isolated worlds                     |
 | [0058](0058-layout-presets-and-top-rows-that-hide.md)                  | Layout presets, the toolbar in the row of the tabs and top rows that hide |
+| [0059](0059-site-information-with-checked-certificates.md)             | Site information with the certificates that Chromium checked              |
