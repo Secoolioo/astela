@@ -848,10 +848,12 @@ test('shows a tab that sleeps in tab search with the icon of its page, says that
   const browser = await launch();
   try {
     await open(browser, 'icon.html');
+    const tab = browser.shell.getByRole('tab', { name: 'Page with an icon' });
+    // A tab that goes to sleep keeps the icon that its page had by then.
+    await expect(tab.locator('.favicon img')).toHaveAttribute('src', /^data:image\/png;base64,/);
     await pressNative(browser, 'T', ['primary']);
     await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     await recordMenus(browser);
-    const tab = browser.shell.getByRole('tab', { name: 'Page with an icon' });
     await tab.click({ button: 'right' });
     await chooseMenuItem(browser, [mac ? 'Put Tab to Sleep' : 'Put tab to sleep']);
     await expect(tab).toHaveAttribute('data-sleeping', '');
