@@ -379,29 +379,14 @@ test('hides the top rows and shows them over the page when the pointer reaches t
       const content = BaseWindow.getAllWindows()[0]?.contentView;
       if (content === undefined) return;
       const add = content.addChildView.bind(content);
-      // Diagnosis of the macOS order of the views: every change with where it came from.
-      const log: string[] = [];
-      Object.assign(globalThis, { viewLog: log });
-      // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the main process
-      const name = (child: Electron.View): string =>
-        'webContents' in child ? (child as Electron.WebContentsView).webContents.getURL() : 'view';
       content.addChildView = (child, index) => {
         if ('webContents' in child) {
           const url = (child as Electron.WebContentsView).webContents.getURL();
           if (url.endsWith('/rows.html')) Object.assign(globalThis, { pageAbove: Date.now() });
         }
-        log.push(
-          `${Date.now()} add ${name(child)} ${String(index)} @ ${(new Error().stack ?? '').split('\n').slice(1, 8).join(' | ')}`,
-        );
-        add(child, index);
-        log.push(`  children ${content.children.map(name).join(', ')}`);
-      };
-      const remove = content.removeChildView.bind(content);
-      content.removeChildView = (child) => {
-        log.push(
-          `${Date.now()} remove ${name(child)} @ ${(new Error().stack ?? '').split('\n').slice(1, 8).join(' | ')}`,
-        );
-        remove(child);
+        // On macOS Electron reads an index of undefined as 0, the bottom: pass only a given one.
+        if (index === undefined) add(child);
+        else add(child, index);
       };
     });
     // The pointer at the top edge of the window shows the rows over the page.
@@ -413,23 +398,9 @@ test('hides the top rows and shows them over the page when the pointer reaches t
     const top = await contentTop(browser.shell);
     // The rows with the bookmarks bar are higher than what stays of them.
     expect(top).toBeGreaterThan(hidden.height);
-    try {
-      await expect
-        .poll(() => shellPlace(browser))
-        .toEqual({ place: 'last', bounds: { x: 0, y: 0, width: size.width, height: top } });
-    } catch (error) {
-      const log = await browser.main.evaluate(
-        () => (globalThis as unknown as { viewLog: string[] }).viewLog,
-      );
-      throw new Error(`${String(error)}\nVIEWLOG\n${log.join('\n')}`, { cause: error });
-    }
-    // Temporary: the log of macOS also when the rows show, so this diagnosis never merges.
-    if (mac) {
-      const log = await browser.main.evaluate(
-        () => (globalThis as unknown as { viewLog: string[] }).viewLog,
-      );
-      throw new Error(`VIEWLOG\n${log.join('\n')}`);
-    }
+    await expect
+      .poll(() => shellPlace(browser))
+      .toEqual({ place: 'last', bounds: { x: 0, y: 0, width: size.width, height: top } });
     if (mac) await expect.poll(buttonsShown).toEqual([true]);
     // The page neither moved nor changed its size.
     expect(await view()).toEqual(before);
