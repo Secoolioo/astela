@@ -85,13 +85,13 @@ export function runFromMenuBar(
 
 /**
  * The menu bar of macOS, with the browser's settings in the application menu and the command
- * palette, tab search, split view, the reader view and the tools of the page in the View menu.
- * Its items run the commands of the window, as the keys do, so they act on the page and not on
- * the browser's own views, and the policies apply.
+ * palette, tab search, split view, the reader view, picture in picture and the tools of the
+ * page in the View menu. Its items run the commands of the window, as the keys do, so they act
+ * on the page and not on the browser's own views, and the policies apply.
  * @param run - Runs a command in the frontmost window.
  * @param table - The keyboard shortcuts of the windows, which the items show.
- * @param options - Whether the command palette, split view and the reader view are on; their
- *   items are missing while they are off.
+ * @param options - Whether the command palette, split view, the reader view and picture in
+ *   picture are on; their items are missing while they are off.
  */
 export function macMenuBar(
   run: (command: WindowCommand) => void,
@@ -100,6 +100,7 @@ export function macMenuBar(
     readonly palette: boolean;
     readonly splitView?: boolean;
     readonly reader?: boolean;
+    readonly pictureInPicture?: boolean;
   } = { palette: true },
 ): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
@@ -179,6 +180,9 @@ export function macMenuBar(
         command('menu.fullScreen', 'window.fullscreen'),
         ...(options.splitView === false ? [] : [command('menu.splitView', 'split.toggle')]),
         ...(options.reader === false ? [] : [command('menu.readerView', 'reader.toggle')]),
+        ...(options.pictureInPicture === false
+          ? []
+          : [command('menu.pictureInPicture', 'media.pictureInPicture')]),
         { type: 'separator' },
         command('menu.viewSource', 'page.source'),
         command('menu.developerTools', 'devtools.toggle'),

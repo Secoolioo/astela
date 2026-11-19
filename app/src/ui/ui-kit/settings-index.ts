@@ -170,6 +170,8 @@ export const settingsIndex: readonly SettingsSection[] = [
           'settings.toolbar',
           'settings.toolbarNote',
           'settings.toolbar.keywords',
+          'settings.toolbar.reader',
+          'settings.toolbar.pictureInPicture',
           'settings.toolbar.bookmark',
           'settings.toolbar.shield',
           'settings.toolbar.downloads',
@@ -283,6 +285,14 @@ export const settingsIndex: readonly SettingsSection[] = [
           'settings.readerFont',
           'settings.reader.keywords',
           ...optionKeys('reader.font', 'settings.readerFont'),
+        ],
+      },
+      {
+        id: 'pictureInPicture.enabled',
+        keys: [
+          'settings.pictureInPicture',
+          'settings.pictureInPictureNote',
+          'settings.pictureInPicture.keywords',
         ],
       },
     ],

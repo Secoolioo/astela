@@ -9,9 +9,9 @@ export interface SleepCandidate {
   readonly shown: boolean;
   readonly pinned: boolean;
   /**
-   * Whether the page is busy: it plays sound or a video, uses a camera, a microphone or the
-   * screen, downloads a file, has the developer tools open, or people typed into it since it
-   * loaded.
+   * Whether the page is busy: it plays sound or a video, shows a video in picture in picture,
+   * uses a camera, a microphone or the screen, downloads a file, has the developer tools open,
+   * or people typed into it since it loaded.
    */
   readonly busy: boolean;
   /** Since when the tab was not used, in milliseconds of the wall clock. */

@@ -160,6 +160,7 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
           '-',
           'Find…',
           'Reader View',
+          'Picture in Picture',
           'Print…',
           'Save Page As…',
           'More Tools',
@@ -184,6 +185,7 @@ test('opens the settings from the browser menu in place of a new tab page', asyn
           '-',
           'Find…',
           'Reader view',
+          'Picture in picture',
           'Print…',
           'Save page as…',
           'More tools',
@@ -691,7 +693,7 @@ test('shows, hides and moves the buttons of the toolbar', async () => {
     browser.shell.evaluate(() =>
       [...(document.querySelector('app-shell')?.shadowRoot?.querySelectorAll('nav .icon') ?? [])]
         .map((button) => [...button.classList].find((name) => name !== 'icon') ?? '')
-        .filter((name) => ['reader', 'bookmark', 'blocker', 'downloads'].includes(name)),
+        .filter((name) => ['reader', 'pip', 'bookmark', 'blocker', 'downloads'].includes(name)),
     );
   const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
   await pressNative(browser, 'T', ['primary']);
@@ -709,7 +711,7 @@ test('shows, hides and moves the buttons of the toolbar', async () => {
       settings: expect.arrayContaining([
         expect.objectContaining({
           key: 'toolbar.items',
-          value: ['reader', 'shield', 'downloads'],
+          value: ['reader', 'pictureInPicture', 'shield', 'downloads'],
         }),
       ]),
     });
@@ -745,17 +747,35 @@ test('keeps the focus on a toolbar button while it moves', async () => {
       );
     });
   await page.evaluate(() => window.bridge.invoke('settings.reset', { keys: ['toolbar.items'] }));
-  await expect.poll(items).toMatchObject({ value: ['reader', 'bookmark', 'shield', 'downloads'] });
+  await expect.poll(items).toMatchObject({
+    value: ['reader', 'pictureInPicture', 'bookmark', 'shield', 'downloads'],
+  });
   const rows = page.getByRole('list', { name: 'Toolbar' }).getByRole('listitem');
   const right = page.getByRole('button', { name: 'Move Bookmark star to the right' });
   await right.focus();
   await page.keyboard.press('Enter');
-  await expect.poll(items).toMatchObject({ value: ['reader', 'shield', 'bookmark', 'downloads'] });
-  await expect(rows).toHaveText([/Reader view/, /Content blocker/, /Bookmark star/, /Downloads/]);
+  await expect.poll(items).toMatchObject({
+    value: ['reader', 'pictureInPicture', 'shield', 'bookmark', 'downloads'],
+  });
+  await expect(rows).toHaveText([
+    /Reader view/,
+    /Picture in picture/,
+    /Content blocker/,
+    /Bookmark star/,
+    /Downloads/,
+  ]);
   await expect(right).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect.poll(items).toMatchObject({ value: ['reader', 'shield', 'downloads', 'bookmark'] });
-  await expect(rows).toHaveText([/Reader view/, /Content blocker/, /Downloads/, /Bookmark star/]);
+  await expect.poll(items).toMatchObject({
+    value: ['reader', 'pictureInPicture', 'shield', 'downloads', 'bookmark'],
+  });
+  await expect(rows).toHaveText([
+    /Reader view/,
+    /Picture in picture/,
+    /Content blocker/,
+    /Downloads/,
+    /Bookmark star/,
+  ]);
   // At the end of the list, the focus moves to the other button of the same item.
   await expect(right).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Move Bookmark star to the left' })).toBeFocused();
@@ -1177,6 +1197,40 @@ test('lists the page tools and turns the reader view off and on', async () => {
     await offer.uncheck();
     await browser.shell.getByRole('tab').first().click();
     await expect(address).toHaveValue(article);
+    await expect(button).toHaveCount(0);
+    await browser.shell.getByRole('tab', { name: 'Settings' }).click();
+    await offer.check();
+    await browser.shell.getByRole('tab').first().click();
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('lists picture in picture among the page tools and turns its button off and on', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  try {
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    const video = `${server.origin}/video.html`;
+    await address.fill(video);
+    await address.press('Enter');
+    const button = browser.shell.getByRole('button', { name: 'Picture in picture', exact: true });
+    await expect(button).toBeVisible();
+    await pressNative(browser, 'T', ['primary']);
+    // What is typed goes to the active tab, so the typing waits until the new tab shows.
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await address.fill('app://settings/#pictureInPicture.enabled');
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+    await expect(page.getByRole('heading', { name: 'Page tools' })).toBeVisible();
+    const offer = page.getByRole('switch', { name: /Offer picture in picture/ });
+    await expect(offer).toBeChecked();
+    await expect(offer).toBeFocused();
+    // The button goes from the tab of the video at once, and comes back once it is on.
+    await offer.uncheck();
+    await browser.shell.getByRole('tab').first().click();
+    await expect(address).toHaveValue(video);
     await expect(button).toHaveCount(0);
     await browser.shell.getByRole('tab', { name: 'Settings' }).click();
     await offer.check();

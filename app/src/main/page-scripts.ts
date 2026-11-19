@@ -3,8 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pageToolsWorld } from '../shared/isolated-worlds.ts';
 
-/** The scripts that the browser runs in web pages, built into `out/preload/page-scripts`. */
-export type PageScriptName = 'reader';
+/**
+ * The scripts that the browser runs in web pages, built into `out/preload/page-scripts`: that of
+ * the reader view, and that of picture in picture.
+ */
+export type PageScriptName = 'reader' | 'media';
 
 /** How a page script runs. */
 export interface PageScriptCall {
@@ -15,6 +18,13 @@ export interface PageScriptCall {
   readonly gesture?: boolean;
   /** How long the call may take, in milliseconds; a later answer is dropped. */
   readonly timeoutMs: number;
+  /**
+   * The address of the document that the call is for. With it, the call runs at once or not at
+   * all: it is refused (`PageScriptRefused`) when the frame shows another address, or while the
+   * main frame loads, as Electron would hold a call back until every frame of the page has
+   * loaded and then run it in whatever page has loaded by then.
+   */
+  readonly page?: string;
 }
 
 /**
@@ -40,13 +50,22 @@ export class PageScriptTimeout extends Error {
   }
 }
 
+/** Thrown when a page script that must run at once would wait, or run in another document. */
+export class PageScriptRefused extends Error {
+  constructor(name: string) {
+    super(`The page script ${name} did not run, as its page loads or shows another address`);
+    this.name = 'PageScriptRefused';
+  }
+}
+
 /**
  * Runs the browser's scripts in web pages: in the main frame in the browser's isolated world
  * 1002, which the page's scripts cannot reach, or in a frame of another site in that frame's
  * own world, as Electron gives frames no isolated worlds. It reads each script once. A call
  * that waits for a page that keeps loading ends after its time; its answer, should one still
- * come, is dropped. Every answer is untrusted, as a page may have changed the DOM it read, and
- * the caller checks it against a schema.
+ * come, is dropped. A call for the document at an address runs at once or not at all. Every
+ * answer is untrusted, as a page may have changed the DOM it read, and the caller checks it
+ * against a schema.
  */
 export class PageScripts {
   private readonly folder: string;
@@ -72,6 +91,17 @@ export class PageScripts {
     call: PageScriptCall,
   ): Promise<unknown> {
     const code = wrap(await this.source(name), request);
+    // Electron's own test, right before the call: it waits while nothing has loaded yet or the
+    // main frame loads.
+    if (
+      call.page !== undefined &&
+      (contents.isDestroyed() ||
+        contents.getURL() === '' ||
+        contents.isLoadingMainFrame() ||
+        contents.getURL() !== call.page)
+    ) {
+      throw new PageScriptRefused(name);
+    }
     return within(
       contents.executeJavaScriptInIsolatedWorld(pageToolsWorld, [{ code }], call.gesture === true),
       call.timeoutMs,
@@ -94,6 +124,12 @@ export class PageScripts {
     call: PageScriptCall,
   ): Promise<unknown> {
     const code = wrap(await this.source(name), request);
+    if (
+      call.page !== undefined &&
+      (frame.isDestroyed() || frame.detached || frame.url !== call.page)
+    ) {
+      throw new PageScriptRefused(name);
+    }
     return within(frame.executeJavaScript(code, call.gesture === true), call.timeoutMs, name);
   }
 

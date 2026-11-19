@@ -4,6 +4,7 @@ import {
   defaultShortcuts,
   displayShortcut,
   paletteCommands,
+  pictureInPictureCommands,
   readerCommands,
   shortcutProblem,
   splitCommands,
@@ -118,6 +119,37 @@ describe('the shortcut of the reader view', () => {
       expect(table.size).toBe(shortcutTable(platform).size - 1);
     }
     expect(readerCommands).toEqual(['reader.toggle']);
+  });
+});
+
+describe('the command of picture in picture', () => {
+  it('comes after the reader view and has no default shortcut, as people give it one', () => {
+    expect(windowCommands.at(windowCommands.indexOf('reader.toggle') + 1)).toBe(
+      'media.pictureInPicture',
+    );
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      expect(shortcutsOf(shortcutTable(platform), 'media.pictureInPicture')).toEqual([]);
+      expect(
+        defaultShortcuts(platform).some(([, command]) => command === 'media.pictureInPicture'),
+      ).toBe(false);
+      const given = shortcutTable(platform, { 'media.pictureInPicture': ['F7'] });
+      expect(shortcutsOf(given, 'media.pictureInPicture')).toEqual(['F7']);
+      expect(given.size).toBe(shortcutTable(platform).size + 1);
+    }
+  });
+
+  it('leaves out the keys that people gave it while picture in picture is off', () => {
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const table = shortcutTable(
+        platform,
+        { 'media.pictureInPicture': ['F7'] },
+        pictureInPictureCommands,
+      );
+      expect(shortcutsOf(table, 'media.pictureInPicture')).toEqual([]);
+      expect(table.get('F7')).toBeUndefined();
+      expect(table.size).toBe(shortcutTable(platform).size);
+    }
+    expect(pictureInPictureCommands).toEqual(['media.pictureInPicture']);
   });
 });
 

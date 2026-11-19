@@ -11,6 +11,7 @@ import {
   CommandPaletteSetting,
   coreSettings,
   DownloadFolderSetting,
+  PictureInPictureEnabledSetting,
   ReaderEnabledSetting,
   ReaderFontSetting,
   ShortcutsSetting,
@@ -308,6 +309,44 @@ describe('ReaderEnabledSetting and ReaderFontSetting', () => {
       (await settingsWith([{ name: 'ReaderViewEnabled', value: false, level: 'recommended' }])).get(
         ReaderEnabledSetting,
       ),
+    ).toBe(false);
+  });
+});
+
+describe('PictureInPictureEnabledSetting', () => {
+  it('offers picture in picture by default after the font of the reader view, in the section of page tools', () => {
+    expect(PictureInPictureEnabledSetting).toMatchObject({
+      key: 'pictureInPicture.enabled',
+      default: true,
+      scope: 'global',
+      policy: { name: 'PictureInPictureEnabled', recommended: true },
+      ui: { section: 'pageTools', control: 'toggle', order: 3 },
+    });
+    expect(coreSettings).toContain(PictureInPictureEnabledSetting);
+    expect(settingPolicies(coreSettings)).toContainEqual(
+      expect.objectContaining({ name: 'PictureInPictureEnabled', recommended: true }),
+    );
+    expect(v.safeParse(PictureInPictureEnabledSetting.schema, 'off').success).toBe(false);
+  });
+
+  it('follows a mandatory policy, and a recommended one only until people chose', async () => {
+    const managed = await settingsWith([
+      { name: 'PictureInPictureEnabled', value: false, level: 'mandatory' },
+    ]);
+    expect(managed.get(PictureInPictureEnabledSetting)).toBe(false);
+    expect(managed.inspect(PictureInPictureEnabledSetting).locked).toBe(true);
+    const suggested = await settingsWith(
+      [{ name: 'PictureInPictureEnabled', value: false, level: 'recommended' }],
+      { 'pictureInPicture.enabled': true },
+    );
+    expect(suggested.get(PictureInPictureEnabledSetting)).toBe(true);
+    expect(suggested.inspect(PictureInPictureEnabledSetting).locked).toBe(false);
+    expect(
+      (
+        await settingsWith([
+          { name: 'PictureInPictureEnabled', value: false, level: 'recommended' },
+        ])
+      ).get(PictureInPictureEnabledSetting),
     ).toBe(false);
   });
 });

@@ -110,6 +110,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             '-',
             'Find… ⌘F',
             'Reader View ⌥⌘R',
+            'Picture in Picture',
             'Print… ⌘P',
             'Save Page As… ⌘S',
             'More Tools',
@@ -134,6 +135,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             '-',
             'Find… Ctrl+F',
             'Reader view F9',
+            'Picture in picture',
             'Print… Ctrl+P',
             'Save page as… Ctrl+S',
             'More tools',
@@ -159,6 +161,13 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
     });
     await expect(reader).toHaveAttribute('aria-disabled', 'true');
     await expect(reader).toHaveAttribute('aria-checked', 'false');
+    // Nor a video, so picture in picture cannot show one; its item is not checked either.
+    const pictureInPicture = menu.getByRole('menuitemcheckbox', {
+      name: mac ? 'Picture in Picture' : 'Picture in picture',
+      exact: true,
+    });
+    await expect(pictureInPicture).toHaveAttribute('aria-disabled', 'true');
+    await expect(pictureInPicture).toHaveAttribute('aria-checked', 'false');
     await expect(menu.getByRole('menuitem', { name: mac ? 'New Tab' : 'New tab' })).toHaveAttribute(
       'aria-keyshortcuts',
       mac ? 'Meta+T' : 'Control+T',

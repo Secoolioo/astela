@@ -846,11 +846,16 @@ export class AppShell extends LitElement {
       color: var(--accent);
       fill: currentColor;
     }
-    /* The reader view's button fades in once the page turns out to have an article. */
-    .reader {
+    /*
+     * The buttons of the reader view and of picture in picture fade in once the page turns out
+     * to have an article, or a video that plays.
+     */
+    .reader,
+    .pip {
       animation: appear var(--motion-fast) var(--ease-out);
     }
-    .reader[aria-pressed='true'] svg {
+    .reader[aria-pressed='true'] svg,
+    .pip[aria-pressed='true'] svg {
       color: var(--accent);
     }
     @keyframes appear {
@@ -1199,7 +1204,7 @@ export class AppShell extends LitElement {
       private: false,
       home: false,
       defaultZoom: 1,
-      toolbar: ['reader', 'bookmark', 'shield', 'downloads'],
+      toolbar: ['reader', 'pictureInPicture', 'bookmark', 'shield', 'downloads'],
       titleBar: null,
       covered: false,
       popover: null,
@@ -1496,11 +1501,13 @@ export class AppShell extends LitElement {
         ${this.state.toolbar.map((item) =>
           item === 'reader'
             ? this.renderReaderButton(active)
-            : item === 'bookmark'
-              ? this.renderBookmarkButton(active)
-              : item === 'shield'
-                ? this.renderShieldButton(active)
-                : this.renderDownloadsButton(),
+            : item === 'pictureInPicture'
+              ? this.renderPictureInPictureButton(active)
+              : item === 'bookmark'
+                ? this.renderBookmarkButton(active)
+                : item === 'shield'
+                  ? this.renderShieldButton(active)
+                  : this.renderDownloadsButton(),
         )}
         ${
           this.state.private
@@ -2784,6 +2791,30 @@ export class AppShell extends LitElement {
   }
 
   /**
+   * The button of picture in picture, while a video of a web page plays, pressed while a video
+   * of the page shows in picture in picture; it does what it shows: pressed, it ends picture in
+   * picture, otherwise it starts it. The browser's own pages and the problems of pages have none.
+   */
+  private renderPictureInPictureButton(
+    active: TabView | undefined,
+  ): TemplateResult | typeof nothing {
+    return active === undefined ||
+      active.pictureInPicture === 'none' ||
+      active.problem !== null ||
+      !/^https?:/i.test(active.url)
+      ? nothing
+      : html`<button
+          class="icon pip"
+          title=${this.tp('shell.pictureInPicture')}
+          aria-label=${this.tp('shell.pictureInPicture')}
+          aria-pressed=${active.pictureInPicture === 'open' ? 'true' : 'false'}
+          @click=${() => void this.bridge?.invoke('shell.togglePictureInPicture', {})}
+        >
+          ${icons.pictureInPicture}
+        </button>`;
+  }
+
+  /**
    * The star that bookmarks a web page and opens its popover, where the bookmark gets its name
    * and folder; the browser's own pages have none.
    */
@@ -3665,6 +3696,10 @@ const icons = {
     <path
       d="M9.3 3.5c.7-.4 1.3-.8 1.9-1.2a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1v7a8 8 0 0 1-.3 2.3"
     />
+  </svg>`,
+  pictureInPicture: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" />
+    <rect width="10" height="7" x="12" y="13" rx="2" />
   </svg>`,
   bookOpen: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 7v14" />

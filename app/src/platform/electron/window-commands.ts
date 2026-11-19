@@ -161,6 +161,9 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'reader.toggle':
       if (active !== undefined) options.onReaderCommand?.(window, active.id);
       break;
+    case 'media.pictureInPicture':
+      if (active !== undefined) options.onPictureInPictureCommand?.(window, active.id);
+      break;
     case 'page.reloadHard':
     case 'page.print':
     case 'page.save':
@@ -191,10 +194,10 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
 }
 
 /**
- * Whether a tab may go to sleep now: it has a view whose page is not shown, plays no sound
- * and is not busy otherwise, such as with a camera, a download or a page that it opened. The
- * browser leaves pinned tabs awake, and pages that people typed into since they loaded;
- * people may put them to sleep.
+ * Whether a tab may go to sleep now: it has a view whose page is not shown, plays no sound, has
+ * no video in picture in picture and is not busy otherwise, such as with a camera, a download
+ * or a page that it opened. The browser leaves pinned tabs awake, and pages that people typed
+ * into since they loaded; people may put them to sleep.
  * @param host - The window.
  * @param id - The tab.
  * @param mode - Whether people ask for it, or the browser does after the tab was not used.
@@ -208,6 +211,7 @@ function canSleep(host: WindowHost, id: TabId, mode: SleepMode): boolean {
   if (entry === undefined || tab === undefined) return false;
   if (contents === undefined || contents.isDestroyed()) return false;
   if (window.isShown(id) || window.tabs.shown.includes(id) || tab.audible) return false;
+  if (tab.pictureInPicture === 'open') return false;
   if (mode === 'auto' && tab.pinned) return false;
   return host.options.activity?.()?.awakeReason(contents, mode) === undefined;
 }
@@ -256,7 +260,10 @@ function sleepCandidates(host: WindowHost): SleepCandidate[] {
       live,
       shown: window.isShown(tab.id) || window.tabs.shown.includes(tab.id),
       pinned: tab.pinned,
-      busy: tab.audible || (live && activity?.busy(contents) === true),
+      busy:
+        tab.audible ||
+        tab.pictureInPicture === 'open' ||
+        (live && activity?.busy(contents) === true),
       idleSince: Math.max(host.usedAt.get(tab.id) ?? 0, busyAt ?? 0),
       triedAt: host.triedAt.get(tab.id),
     };
@@ -345,7 +352,7 @@ function context(host: WindowHost): CommandContext {
   const active = window.tabs.active;
   return {
     tabs: window.tabs.all.map(
-      ({ id, url, pinned, canGoBack, canGoForward, muted, group, reader }) => ({
+      ({ id, url, pinned, canGoBack, canGoForward, muted, group, reader, pictureInPicture }) => ({
         url,
         pinned,
         canGoBack,
@@ -354,6 +361,7 @@ function context(host: WindowHost): CommandContext {
         split: host.sideOf(id),
         group,
         reader,
+        pictureInPicture,
       }),
     ),
     activeIndex: active === undefined ? -1 : window.tabs.all.indexOf(active),
@@ -365,6 +373,7 @@ function context(host: WindowHost): CommandContext {
     palette: options.openPalette !== undefined && (options.commandPalette?.() ?? true),
     splitView: window.splitView(),
     reader: options.reader?.() ?? false,
+    pictureInPicture: options.pictureInPicture?.() ?? false,
     workspaces: host.workspaceList()?.length ?? 0,
   };
 }
@@ -578,14 +587,16 @@ function renewView(host: WindowHost, id: TabId, history: TabHistory | undefined)
 
 /**
  * Closes the view of a tab, which keeps its history until it wakes, and shows the tab as a tab
- * that sleeps, with its title and icon. It has no page, and so no article, until it has woken
- * and its page was checked.
+ * that sleeps, with its title and icon. It has no page, and so no article and no video, until
+ * it has woken and its page was checked. A reader view over its page ends as one that comes
+ * back once the tab has woken.
  * @param host - The window.
  * @param id - The tab.
  * @param entry - The view of the tab.
  * @param dormant - What the tab keeps until it wakes.
  */
 function putToSleep(host: WindowHost, id: TabId, entry: TabEntry, dormant: DormantTab): void {
+  host.window.uncover(id, 'slept');
   host.dropView(id, entry);
   host.dormant.set(id, dormant);
   const moves =
@@ -596,6 +607,7 @@ function putToSleep(host: WindowHost, id: TabId, entry: TabEntry, dormant: Dorma
     audible: false,
     problem: null,
     reader: 'none',
+    pictureInPicture: 'none',
     canGoBack: moves.back,
     canGoForward: moves.forward,
   });

@@ -5,10 +5,16 @@ export const tabStripPositions = ['top', 'bottom', 'left', 'right'] as const;
 export type TabStripPosition = (typeof tabStripPositions)[number];
 
 /**
- * The buttons of the toolbar that can be hidden and moved: the reader view, the star, the
- * shield and downloads.
+ * The buttons of the toolbar that can be hidden and moved: the reader view, picture in picture,
+ * the star, the shield and downloads.
  */
-export const toolbarItems = ['reader', 'bookmark', 'shield', 'downloads'] as const;
+export const toolbarItems = [
+  'reader',
+  'pictureInPicture',
+  'bookmark',
+  'shield',
+  'downloads',
+] as const;
 
 /** A button of the toolbar that can be hidden and moved. */
 export type ToolbarItem = (typeof toolbarItems)[number];

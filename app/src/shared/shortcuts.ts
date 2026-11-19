@@ -59,6 +59,7 @@ export const windowCommands = [
   'zoom.reset',
   'window.fullscreen',
   'reader.toggle',
+  'media.pictureInPicture',
   'bookmark.toggle',
   'bookmarks.open',
   'bookmarks.toggleBar',
@@ -237,6 +238,12 @@ export const paletteCommands: readonly WindowCommand[] = ['palette.open', 'tabs.
 
 /** The command of the reader view, which has no shortcut while the reader view is off. */
 export const readerCommands: readonly WindowCommand[] = ['reader.toggle'];
+
+/**
+ * The command of picture in picture, which has no shortcut of its own by default, and none that
+ * people gave it while picture in picture is off.
+ */
+export const pictureInPictureCommands: readonly WindowCommand[] = ['media.pictureInPicture'];
 
 /** The commands of split view, which have no shortcut while split view is off. */
 export const splitCommands: readonly WindowCommand[] = ['split.toggle', 'split.swap'];

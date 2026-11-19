@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture many frames</title>
+    <style>
+      .ad {
+        width: 40px;
+        height: 30px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Fixture many frames</h1>
+    <!--
+      Sixteen sandboxed frames, each of an opaque origin of its own, as blocked frames of ads are,
+      before the frame of a player of another site.
+    -->
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 1" srcdoc="Ad 1"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 2" srcdoc="Ad 2"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 3" srcdoc="Ad 3"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 4" srcdoc="Ad 4"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 5" srcdoc="Ad 5"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 6" srcdoc="Ad 6"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 7" srcdoc="Ad 7"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 8" srcdoc="Ad 8"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 9" srcdoc="Ad 9"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 10" srcdoc="Ad 10"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 11" srcdoc="Ad 11"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 12" srcdoc="Ad 12"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 13" srcdoc="Ad 13"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 14" srcdoc="Ad 14"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 15" srcdoc="Ad 15"></iframe>
+    <iframe class="ad" sandbox="allow-scripts" title="Ad 16" srcdoc="Ad 16"></iframe>
+    <iframe id="player" title="Player" width="360" height="220"></iframe>
+    <script>
+      // The address of the player comes with the address of the page.
+      const player = new URLSearchParams(location.search).get('player');
+      if (player !== null) document.getElementById('player').src = player;
+    </script>
+  </body>
+</html>

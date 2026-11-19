@@ -636,6 +636,39 @@ test('has no reader view for a tab that sleeps, and checks its page again once i
   }
 });
 
+test('shows the reader view again once a tab that went to sleep while it showed has woken', async () => {
+  const browser = await launch();
+  try {
+    await open(browser, `${server.origin}/article.html`);
+    await readerButton(browser).click();
+    await readerPage(browser);
+    await expect(readerButton(browser)).toHaveAttribute('aria-pressed', 'true');
+    await browser.shell.getByRole('button', { name: 'New tab' }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'New tab',
+    );
+    // The tab of the article goes to sleep from its menu, with its page and its reader view.
+    await recordMenus(browser);
+    const tab = browser.shell.getByRole('tab', { name: /Fixture article title/ });
+    await tab.click({ button: 'right' });
+    await chooseMenuItem(browser, [mac ? 'Put Tab to Sleep' : 'Put tab to sleep']);
+    await expect.poll(async () => (await shellState(browser.shell)).tabs[0]?.sleeping).toBe(true);
+    await expect.poll(() => readerViews(browser)).toBe(0);
+    expect(await readerStates(browser)).toEqual(['none', 'none']);
+    // It wakes as it shows, and shows the reader view again once its page has loaded.
+    await tab.click();
+    await expect(readerButton(browser)).toHaveAttribute('aria-pressed', 'true');
+    const reader = await readerPage(browser);
+    await expect(reader.getByRole('heading', { level: 1 })).toHaveText('Fixture article title');
+    expect(await readerStates(browser)).toEqual(['open', 'none']);
+    expect(await readerViews(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('checks a page whose frames go on loading after it, once its tab shows', async () => {
   const own = new FixtureServer();
   await own.start();

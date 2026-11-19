@@ -40,11 +40,32 @@ const textField: Partial<ContextMenuParams> = {
   selectionText: 'text',
 };
 
+/** Selected text in a link around a video: the items of a video with those of a link. */
+const video: Partial<ContextMenuParams> = {
+  linkURL: 'https://example.com/',
+  mediaType: 'video',
+  srcURL: 'https://example.com/clip.webm',
+  selectionText: 'text',
+  mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false },
+};
+
+/** The same video while it shows in picture in picture. */
+const shownVideo: Partial<ContextMenuParams> = {
+  ...video,
+  mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: true },
+};
+
 /**
  * Clicks whose menus show the most items together. A link inside a text field also shows
  * Open link in new tab next to Cut, which share T in English, as in Chromium and Firefox.
  */
-const clicks = { page, 'text field': textField, history: {} };
+const clicks = {
+  page,
+  'text field': textField,
+  history: {},
+  video,
+  'video in picture in picture': shownVideo,
+};
 
 /** The texts of the menu that a click opens on a page. */
 function texts(click: Partial<ContextMenuParams>, locale: string, platform: string): string[] {
@@ -58,6 +79,7 @@ function texts(click: Partial<ContextMenuParams>, locale: string, platform: stri
       searchTemplate: 'https://search.example/?q=%s',
       // With Inspect, whose access key must not clash with the others either.
       canInspect: true,
+      pictureInPicture: true,
     },
     contextMenuLabels(locale, platform),
     platform,
@@ -99,6 +121,22 @@ describe('contextMenuLabels', () => {
       'Inspect',
     ]);
     expect(texts({}, 'en-US', 'darwin')).toEqual(['Back', 'Forward', 'Reload', 'Inspect']);
+    expect(texts(video, 'en-US', 'darwin')).toEqual([
+      'Open Link in New Tab',
+      'Copy Link Address',
+      'Picture in Picture',
+      'Copy',
+      'Search search.example for “text”',
+      'Inspect',
+    ]);
+    expect(texts(shownVideo, 'en-US', 'darwin')).toContain('Exit Picture in Picture');
+  });
+
+  it('offers picture in picture for a video with the access keys of the plan', () => {
+    expect(texts(video, 'en-US', 'linux')).toContain('&Picture in picture');
+    expect(texts(shownVideo, 'en-US', 'linux')).toContain('E&xit picture in picture');
+    expect(texts(video, 'de', 'win32')).toContain('&Bild im Bild');
+    expect(texts(shownVideo, 'de', 'win32')).toContain('Bild im Bild &beenden');
   });
 
   it('keeps the German texts on macOS, which hides their access keys itself', () => {

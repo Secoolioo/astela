@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ReaderState } from '../../shared/page-tools.ts';
+import type { PictureInPictureState, ReaderState } from '../../shared/page-tools.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
 import type { CommandContext } from '../commands/availability.ts';
 import {
@@ -25,6 +25,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
       split: null,
       group: null,
       reader: 'none',
+      pictureInPicture: 'none',
     },
   ],
   activeIndex: 0,
@@ -36,6 +37,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   palette: true,
   splitView: true,
   reader: false,
+  pictureInPicture: false,
   workspaces: 1,
   ...change,
 });
@@ -148,6 +150,7 @@ describe('browserMenu', () => {
             split: null,
             group: null,
             reader: 'none',
+            pictureInPicture: 'none',
           },
         ],
         webPage: false,
@@ -184,6 +187,7 @@ describe('browserMenu', () => {
               split: null,
               group: null,
               reader,
+              pictureInPicture: 'none',
             },
           ],
         }),
@@ -233,6 +237,70 @@ describe('browserMenu', () => {
     const off = browserMenu(input(), text).items;
     expect(texts(off)).not.toContain('readerView');
     expect(off.filter((entry) => 'checked' in entry)).toEqual([]);
+  });
+
+  it('offers picture in picture after the reader view while it is on, for a video that plays, with a check mark while it shows', () => {
+    const page = (state: PictureInPictureState): BrowserMenuInput =>
+      input({
+        context: context({
+          reader: true,
+          pictureInPicture: true,
+          tabs: [
+            {
+              url: 'https://example.com/',
+              pinned: false,
+              canGoBack: false,
+              canGoForward: false,
+              muted: false,
+              split: null,
+              group: null,
+              reader: 'available',
+              pictureInPicture: state,
+            },
+          ],
+        }),
+      });
+    const items = browserMenu(page('available'), text).items;
+    const all = texts(items);
+    expect(all.slice(all.indexOf('find'), all.indexOf('find') + 4)).toEqual([
+      'find',
+      'readerView',
+      'pictureInPicture',
+      'print',
+    ]);
+    // It has no shortcut of its own, unless people give it one.
+    expect(entryOf(items, 'pictureInPicture')).toEqual({
+      type: 'item',
+      label: 'pictureInPicture',
+      shortcut: null,
+      enabled: true,
+      icon: null,
+      checked: false,
+      action: { run: 'media.pictureInPicture' },
+    });
+    const given = input({
+      ...page('available'),
+      table: shortcutTable('linux', { 'media.pictureInPicture': ['F7'] }),
+    });
+    expect(entryOf(browserMenu(given, text).items, 'pictureInPicture')).toMatchObject({
+      shortcut: 'F7',
+    });
+    expect(entryOf(browserMenu(page('open'), text).items, 'pictureInPicture')).toMatchObject({
+      enabled: true,
+      checked: true,
+    });
+    // A page without a video that plays has nothing to show in it.
+    expect(entryOf(browserMenu(page('none'), text).items, 'pictureInPicture')).toMatchObject({
+      enabled: false,
+      checked: false,
+    });
+    // While picture in picture is off, the menu has no item for it.
+    const off = browserMenu(
+      input({ context: context({ reader: true, pictureInPicture: false }) }),
+      text,
+    ).items;
+    expect(texts(off)).toContain('readerView');
+    expect(texts(off)).not.toContain('pictureInPicture');
   });
 
   it('shows the zoom of the page in its row, and stops zooming at 25 and 500 %', () => {

@@ -696,6 +696,23 @@ export const ReaderFontSetting = defineSetting<ReaderFont>({
 });
 
 /**
+ * Whether the browser offers picture in picture for a video that plays, with a button next to
+ * the address bar and items in the menus. Turned off, the button and the items are gone and the
+ * browser looks at the videos of a page only before its tab goes to sleep, and while it shows a
+ * video in picture in picture when a window gets the focus; a video that shows in picture in
+ * picture stays, and pages that offer picture in picture themselves keep it, with their tabs
+ * awake. A policy can set or recommend it.
+ */
+export const PictureInPictureEnabledSetting = defineSetting<boolean>({
+  key: 'pictureInPicture.enabled',
+  schema: v.boolean(),
+  default: true,
+  scope: 'global',
+  policy: { name: 'PictureInPictureEnabled', recommended: true },
+  ui: { section: 'pageTools', control: 'toggle', order: 3 },
+});
+
+/**
  * The deleted workspaces with cookies and sign-ins of their own whose folder is still in the
  * profile, as Chromium holds its files while it runs; the folders go at the next start.
  */
@@ -776,5 +793,6 @@ export const coreSettings = [
   WorkspacesRemovedSetting,
   ReaderEnabledSetting,
   ReaderFontSetting,
+  PictureInPictureEnabledSetting,
   LanguageSetting,
 ];

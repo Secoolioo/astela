@@ -6,6 +6,7 @@ import {
   type ContextMenuInput,
   type ContextMenuLabels,
   type ContextMenuParams,
+  type MediaFlags,
 } from '../context-menu/context-menu.ts';
 import { mayOpenInNewTab, mayOpenWindow } from '../navigation/new-tab.ts';
 
@@ -15,6 +16,8 @@ const labels: ContextMenuLabels = {
   openImageInNewTab: 'Open image in new tab',
   copyImage: 'Copy image',
   copyImageAddress: 'Copy image address',
+  pictureInPicture: 'Picture in picture',
+  exitPictureInPicture: 'Exit picture in picture',
   undo: 'Undo',
   redo: 'Redo',
   cut: 'Cut',
@@ -69,12 +72,18 @@ function menu(
       canCopyImage: true,
       searchTemplate: template,
       canInspect: false,
+      pictureInPicture: true,
       ...input,
       params: { ...nothing, ...params },
     },
     labels,
     platform,
   );
+}
+
+/** What Chromium tells of a clicked video about picture in picture. */
+function flags(canShow: boolean, showing: boolean): MediaFlags {
+  return { canShowPictureInPicture: canShow, isShowingPictureInPicture: showing };
 }
 
 /** The menu as text: disabled items are marked `[off]`, shortcuts are in angle brackets. */
@@ -197,6 +206,63 @@ describe('buildContextMenu', () => {
       'Back [off]',
       'Forward [off]',
       'Reload',
+    ]);
+  });
+
+  it('shows a video in picture in picture, and ends picture in picture where it shows', () => {
+    const src = 'https://example.com/v.webm';
+    const video = menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(true, false) });
+    expect(render(video)).toEqual(['Picture in picture']);
+    expect(actionOf(video, 'Picture in picture')).toEqual({
+      kind: 'pictureInPicture',
+      enter: true,
+    });
+    const shown = menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(true, true) });
+    expect(render(shown)).toEqual(['Exit picture in picture']);
+    expect(actionOf(shown, 'Exit picture in picture')).toEqual({
+      kind: 'pictureInPicture',
+      enter: false,
+    });
+    // A video that cannot show in it, audio, and picture in picture turned off get none.
+    const history = ['Back [off]', 'Forward [off]', 'Reload'];
+    expect(
+      render(menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(false, false) })),
+    ).toEqual(history);
+    expect(
+      render(menu({ mediaType: 'audio', srcURL: src, mediaFlags: flags(true, false) })),
+    ).toEqual(history);
+    expect(
+      render(
+        menu(
+          { mediaType: 'video', srcURL: src, mediaFlags: flags(true, true) },
+          { pictureInPicture: false },
+        ),
+      ),
+    ).toEqual(history);
+    // The groups keep their order: the link, the video, the selection and Inspect.
+    expect(
+      render(
+        menu(
+          {
+            linkURL: 'https://example.com/',
+            mediaType: 'video',
+            srcURL: src,
+            selectionText: 'x',
+            mediaFlags: flags(true, false),
+          },
+          { canInspect: true },
+        ),
+      ),
+    ).toEqual([
+      'Open link in new tab',
+      'Copy link address',
+      '---',
+      'Picture in picture',
+      '---',
+      'Copy [off] <Ctrl+C>',
+      'Search duckduckgo.com for “x”',
+      '---',
+      'Inspect',
     ]);
   });
 

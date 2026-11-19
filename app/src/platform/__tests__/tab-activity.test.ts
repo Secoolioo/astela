@@ -212,17 +212,51 @@ describe('TabActivity', () => {
     page.emit('media-started-playing');
     page.emit('media-started-playing');
     expect(activity.awakeReason(page.contents, 'manual')).toBe('media');
+    expect(activity.plays(page.contents)).toBe(true);
     page.emit('media-paused');
     expect(activity.awakeReason(page.contents, 'manual')).toBe('media');
     now = 4000;
     page.emit('media-paused');
     expect(activity.awakeReason(page.contents, 'manual')).toBeUndefined();
+    expect(activity.plays(page.contents)).toBe(false);
     expect(activity.lastBusyAt(page.contents)).toBe(4000);
     // A new document has none of the media of the one before.
     page.emit('media-started-playing');
     page.emit('did-navigate');
     expect(activity.busy(page.contents)).toBe(false);
+    expect(activity.plays(page.contents)).toBe(false);
     expect(changes).toBe(4);
+  });
+
+  it('keeps a page awake while its video shows in picture in picture, and counts it as busy until that stopped', () => {
+    const page = new FakePage();
+    activity.pictureInPicture(page.contents, false);
+    expect([activity.busy(page.contents), activity.lastBusyAt(page.contents), changes]).toEqual([
+      false,
+      undefined,
+      0,
+    ]);
+    activity.pictureInPicture(page.contents, true);
+    activity.pictureInPicture(page.contents, true);
+    expect([
+      activity.awakeReason(page.contents, 'manual'),
+      activity.busy(page.contents),
+      activity.showsPictureInPicture(page.contents),
+      changes,
+    ]).toEqual(['pictureInPicture', true, true, 1]);
+    // The window of picture in picture closed long after the video paused.
+    now = 60_000;
+    activity.pictureInPicture(page.contents, false);
+    expect(activity.awakeReason(page.contents, 'auto')).toBeUndefined();
+    expect(activity.showsPictureInPicture(page.contents)).toBe(false);
+    expect(activity.lastBusyAt(page.contents)).toBe(60_000);
+    expect(changes).toBe(2);
+    // A new document has none of the videos of the one before.
+    activity.pictureInPicture(page.contents, true);
+    now = 70_000;
+    page.emit('did-navigate');
+    expect(activity.busy(page.contents)).toBe(false);
+    expect(activity.lastBusyAt(page.contents)).toBe(70_000);
   });
 
   it('keeps a page awake while its developer tools are open', () => {

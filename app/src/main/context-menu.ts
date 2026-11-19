@@ -22,6 +22,13 @@ export interface ContextMenuDependencies {
   readonly developerTools: () => boolean;
   /** Whether a view shows one of the browser's own pages, which never get the developer tools. */
   readonly isInternal: (contents: Electron.WebContents) => boolean;
+  /** Whether picture in picture is on, which a setting or a policy can turn off. */
+  readonly pictureInPictureEnabled: () => boolean;
+  /**
+   * Shows the video that the menu was opened for in picture in picture, or ends picture in
+   * picture, once its code has loaded.
+   */
+  readonly pictureInPicture: (request: ContextMenuRequest, enter: boolean) => void;
   readonly logger: Logger;
 }
 
@@ -52,6 +59,7 @@ export async function popupContextMenu(
       canCopyImage: params.frame?.processId === contents.mainFrame.processId,
       searchTemplate,
       canInspect: tabId !== undefined && !deps.isInternal(contents) && deps.developerTools(),
+      pictureInPicture: deps.pictureInPictureEnabled(),
     },
     contextMenuLabels(uiLocale(), process.platform),
     process.platform,
@@ -122,6 +130,9 @@ function run(
       break;
     case 'copyImage':
       contents.copyImageAt(params.x, params.y);
+      break;
+    case 'pictureInPicture':
+      if (tabId !== undefined) deps.pictureInPicture(request, action.enter);
       break;
     case 'edit':
       contents[action.command]();

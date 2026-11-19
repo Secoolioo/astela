@@ -26,6 +26,7 @@ export const shellLaterChannels = [
   'workspaces.open',
   'workspaces.moveTab',
   'shell.toggleReader',
+  'shell.togglePictureInPicture',
 ] as const;
 
 /**

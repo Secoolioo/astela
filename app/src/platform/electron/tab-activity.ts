@@ -5,19 +5,20 @@ import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 /**
  * Why a page stays awake: it uses a camera, a microphone or the screen that it was granted
  * (`capture`), downloads a file (`download`), plays a video or other media, also without
- * sound (`media`), has the developer tools open (`devtools`), is linked to a live page as the
- * page that opened it or one that it opened (`opener`), or, only for the browser's own sleep,
- * people typed into it since it loaded (`input`). Sound itself is the tab's own `audible`
- * state.
+ * sound (`media`), shows a video in picture in picture (`pictureInPicture`), has the developer
+ * tools open (`devtools`), is linked to a live page as the page that opened it or one that it
+ * opened (`opener`), or, only for the browser's own sleep, people typed into it since it loaded
+ * (`input`). Sound itself is the tab's own `audible` state.
  */
-export type AwakeReason = 'capture' | 'download' | 'media' | 'devtools' | 'opener' | 'input';
+export type AwakeReason =
+  'capture' | 'download' | 'media' | 'pictureInPicture' | 'devtools' | 'opener' | 'input';
 
 /**
  * What the pages of tabs do that keeps them from sleeping, which only the browser process
  * sees: the cameras, microphones and screens that they were granted, their downloads that run,
- * their media that plays, their developer tools, the pages that they opened, and the keys that
- * people typed into them. It learns of grants and downloads from the start, before a tab could
- * sleep.
+ * their media that plays, their videos in picture in picture, their developer tools, the pages
+ * that they opened, and the keys that people typed into them. It learns of grants and
+ * downloads from the start, before a tab could sleep.
  */
 export class TabActivity {
   private readonly now: () => number;
@@ -34,6 +35,11 @@ export class TabActivity {
   private readonly playing = new WeakMap<WebContents, number>();
   /** Pages that people typed into, until they load another document. */
   private readonly typed = new WeakSet<WebContents>();
+  /**
+   * Pages that showed a video in picture in picture when the browser last looked, until they
+   * load another document.
+   */
+  private readonly pictured = new WeakSet<WebContents>();
   /** When each page last stopped being busy, in milliseconds of the wall clock. */
   private readonly ended = new WeakMap<WebContents, number>();
   private readonly watched = new WeakSet<WebContents>();
@@ -59,9 +65,10 @@ export class TabActivity {
     const reset = (): void => {
       const captured = this.capture.delete(contents);
       const typed = this.typed.delete(contents);
+      const pictured = this.pictured.delete(contents);
       const played = (this.playing.get(contents) ?? 0) > 0;
       this.playing.delete(contents);
-      if (captured || typed || played) this.end(contents);
+      if (captured || typed || pictured || played) this.end(contents);
     };
     contents.on('did-navigate', reset);
     contents.on('render-process-gone', reset);
@@ -103,6 +110,34 @@ export class TabActivity {
     if (this.typed.has(contents)) return;
     this.typed.add(contents);
     this.changeEmitter.fire();
+  }
+
+  /**
+   * Takes note of whether a page shows a video in picture in picture, as picture in picture saw
+   * when it last looked at the page, also while its button is off: a page that does stays
+   * awake, and one that stopped was busy until now. The note ends when the page loads another
+   * document, whose videos are not the ones before.
+   * @param contents - The page.
+   * @param shows - Whether it shows one.
+   */
+  pictureInPicture(contents: WebContents, shows: boolean): void {
+    this.watch(contents);
+    if (shows === this.pictured.has(contents)) return;
+    if (shows) {
+      this.pictured.add(contents);
+      this.changeEmitter.fire();
+    } else {
+      this.pictured.delete(contents);
+      this.end(contents);
+    }
+  }
+
+  /**
+   * Whether a page showed a video in picture in picture when picture in picture last looked.
+   * @param contents - The page.
+   */
+  showsPictureInPicture(contents: WebContents): boolean {
+    return this.pictured.has(contents);
   }
 
   /**
@@ -152,6 +187,14 @@ export class TabActivity {
   }
 
   /**
+   * Whether a video or other media of a page plays now, as Chromium reported it.
+   * @param contents - The page.
+   */
+  plays(contents: WebContents): boolean {
+    return (this.playing.get(contents) ?? 0) > 0;
+  }
+
+  /**
    * When a page last stopped being busy, in milliseconds of the wall clock.
    * @param contents - The page.
    * @returns The time, or `undefined` when it never was busy.
@@ -168,6 +211,7 @@ export class TabActivity {
     if (this.capture.has(contents)) return 'capture';
     if (this.downloadingPages.has(contents)) return 'download';
     if ((this.playing.get(contents) ?? 0) > 0) return 'media';
+    if (this.pictured.has(contents)) return 'pictureInPicture';
     if (contents.isDevToolsOpened()) return 'devtools';
     return mode === 'auto' && this.typed.has(contents) ? 'input' : undefined;
   }

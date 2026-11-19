@@ -102,7 +102,9 @@ export interface WebContentsGuardOptions {
  * Applies navigation and window guards to every `WebContents` that is created:
  * - `<webview>` is never attached.
  * - Pages cannot open free windows: what a script opens becomes a tab, or a popup window of
- *   the browser, and keeps its opener.
+ *   the browser, and keeps its opener. A window of Document Picture-in-Picture, which Electron
+ *   reports with the disposition `other`, is refused: the browser has no such windows yet, and
+ *   a tab in its place would break the page (ADR 0057).
  * - The browser's own views never leave their `app://` origin.
  * - Web content never navigates to `app://`.
  * @param app - The Electron app.
@@ -114,6 +116,7 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (
         options.isInternal(contents) ||
+        disposition === 'other' ||
         !mayOpenWindow(url) ||
         options.blocksPopup?.(url, contents) === true
       ) {

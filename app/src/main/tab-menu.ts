@@ -27,6 +27,11 @@ export interface TabMenuOptions {
   readonly workspaces?: readonly { readonly workspace: Workspace; readonly reload: boolean }[];
   /** Moves the tab into a workspace. */
   readonly moveToWorkspace?: (workspaceId: string) => void;
+  /**
+   * Asks the page of the tab what only it can tell before the tab goes to sleep, such as a video
+   * in picture in picture that the page started itself, which keeps the tab awake.
+   */
+  readonly beforeSleep?: () => Promise<void>;
 }
 
 /**
@@ -118,11 +123,22 @@ export function tabMenuTemplate(
       ...ofTab('tab.mute'),
       click: () => window.setMuted(tabId, !tab.muted),
     },
-    // A tab that shows, sleeps already or is busy, such as with sound or a camera, stays awake.
+    // A tab that shows, sleeps already or is busy, such as with sound, a camera or a video in
+    // picture in picture, stays awake; its page is asked first, as it may have started picture
+    // in picture itself. A page that cannot be asked keeps nothing awake.
     {
       label: i18n.t('tabMenu.sleep'),
       enabled: window.canSleep(tabId, 'manual'),
-      click: whileOpen(() => void window.tabs.sleep(tabId, 'manual')),
+      click: whileOpen(() => {
+        const { beforeSleep } = options;
+        if (beforeSleep === undefined) {
+          window.tabs.sleep(tabId, 'manual');
+          return;
+        }
+        void beforeSleep()
+          .catch(() => undefined)
+          .then(() => window.tabs.sleep(tabId, 'manual'));
+      }),
     },
     { type: 'separator' },
     {
