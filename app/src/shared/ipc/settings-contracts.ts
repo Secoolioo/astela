@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { layoutPresetIds } from '../layout-presets.ts';
 import { windowCommands } from '../shortcuts.ts';
 import { defineEvent, defineRequest } from './contract.ts';
 
@@ -44,6 +45,19 @@ export const SetSetting = defineRequest({
   ]),
   capability: 'page:settings',
   ratePerSecond: 20,
+});
+
+/**
+ * Applies a layout preset: its settings change in one step, with one change and one save, and
+ * those that a mandatory policy sets keep their values, which the answer names. The setup guide
+ * uses it too.
+ */
+export const ApplyLayoutPreset = defineRequest({
+  channel: 'settings.applyLayoutPreset',
+  request: v.strictObject({ preset: v.picklist(layoutPresetIds) }),
+  response: v.strictObject({ applied: v.array(SettingKey), locked: v.array(SettingKey) }),
+  capability: 'page:settings',
+  ratePerSecond: 5,
 });
 
 /** Sent to the settings page when settings changed, also in another window or by policy. */

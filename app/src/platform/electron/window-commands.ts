@@ -135,6 +135,9 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'bookmarks.toggleBar':
       options.toggleBookmarksBar?.();
       break;
+    case 'toolbar.toggleAutoHide':
+      options.toggleAutoHideToolbar?.();
+      break;
     case 'downloads.open':
       options.showDownloads?.(window);
       break;
@@ -375,6 +378,7 @@ function context(host: WindowHost): CommandContext {
     reader: options.reader?.() ?? false,
     pictureInPicture: options.pictureInPicture?.() ?? false,
     workspaces: host.workspaceList()?.length ?? 0,
+    autoHide: window.tabStripPosition() === 'top' && options.autoHideToolbar?.().locked === false,
   };
 }
 

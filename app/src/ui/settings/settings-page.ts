@@ -17,12 +17,20 @@ import {
 } from '../../shared/themes.ts';
 import { displayShortcut, windowCommands, type WindowCommand } from '../../shared/shortcuts.ts';
 import { toolbarItems, type ToolbarItem } from '../../shared/layout.ts';
+import {
+  layoutKeys,
+  layoutPresetIds,
+  lockedPresets,
+  presetOf,
+  type LayoutPresetId,
+} from '../../shared/layout-presets.ts';
 import { sleepAfterChoices } from '../../shared/tab-sleep.ts';
 import { webTextSizes } from '../../shared/web-text-sizes.ts';
 import { zoomFactors } from '../../shared/zoom.ts';
 import { catalogs, isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
 import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
 import { keyNamesOf } from '../ui-kit/key-names.ts';
+import { layoutPreview, layoutPreviewStyles } from '../ui-kit/layout-previews.ts';
 import {
   SettingsClient,
   paintSwatches,
@@ -82,6 +90,7 @@ export class SettingsPage extends LitElement {
   static override styles = [
     choiceStyles,
     switchStyles,
+    layoutPreviewStyles,
     css`
       :host {
         display: grid;
@@ -209,6 +218,33 @@ export class SettingsPage extends LitElement {
       }
       .engines li button {
         justify-self: end;
+      }
+      /* The layout presets: a card for each, with a small window and a line about it. */
+      .layout-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: var(--space-2);
+      }
+      .layout-card {
+        position: relative;
+        display: grid;
+        align-content: start;
+        gap: var(--space-1);
+        padding: var(--space-1);
+        border: 1px solid var(--border-1);
+        border-radius: var(--radius-2);
+        background: var(--surface-1);
+      }
+      .layout-card:has(input:checked) {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .layout-card:has(input:focus-visible) {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 1px;
+      }
+      .layout-card .note {
+        font-size: var(--font-size-small);
       }
       .theme-cards {
         display: grid;
@@ -810,6 +846,7 @@ export class SettingsPage extends LitElement {
     }),
     'appearance.theme': (page) => ({ render: () => page.renderTheme() }),
     'appearance.accent': (page) => ({ render: () => page.renderAccent() }),
+    layout: (page) => ({ render: () => page.renderLayout() }),
     'appearance.density': (page) => ({
       render: () => page.renderChoice('appearance.density', 'settings.density'),
     }),
@@ -823,6 +860,20 @@ export class SettingsPage extends LitElement {
     'toolbar.items': (page) => ({ render: () => page.renderToolbar() }),
     'tabs.position': (page) => ({
       render: () => page.renderChoice('tabs.position', 'settings.tabPosition'),
+    }),
+    // The toolbar joins the row of the tabs, and the rows hide, only with the tabs at the top.
+    'toolbar.placement': (page) => ({
+      render: () =>
+        page.renderChoice('toolbar.placement', 'settings.toolbarPlacement', page.tabsAtTop()),
+    }),
+    'toolbar.autoHide': (page) => ({
+      render: () =>
+        page.renderToggle(
+          'toolbar.autoHide',
+          'settings.autoHide',
+          'settings.autoHideNote',
+          page.tabsAtTop(),
+        ),
     }),
     'appearance.titleBar': (page) => ({
       render: () => page.renderChoice('appearance.titleBar', 'settings.titleBar'),
@@ -1161,10 +1212,24 @@ export class SettingsPage extends LitElement {
     </span>`;
   }
 
-  private renderChoice(key: ChoiceKey, label: MessageKey): TemplateResult {
+  /**
+   * A choice between a few values, as segments.
+   * @param key - The setting.
+   * @param label - The name of the setting, and the start of the names of its options.
+   * @param available - Whether the setting works with the other settings of now; otherwise
+   *   the row says why not, and its options are disabled.
+   */
+  private renderChoice(key: ChoiceKey, label: MessageKey, available = true): TemplateResult {
     const setting = this.client?.get(key);
     return html`<div class="row">
-      ${this.renderLabel(label, setting)}
+      ${
+        available
+          ? this.renderLabel(label, setting)
+          : html`<span class="label">
+              <span>${this.t(label)}</span>
+              <span class="note">${this.t('settings.needsTopTabs')}</span>
+            </span>`
+      }
       <div class="segments" role="radiogroup" aria-label=${this.t(label)}>
         ${choices[key].map(
           (option) =>
@@ -1173,13 +1238,71 @@ export class SettingsPage extends LitElement {
                 type="radio"
                 name=${key}
                 .checked=${setting?.value === option}
-                ?disabled=${setting?.locked !== false}
+                ?disabled=${setting?.locked !== false || !available}
                 @change=${() => void this.client?.set(key, option)}
               />${this.tk(`${label}.${option}`)}
             </label>`,
         )}
       </div>
     </div>`;
+  }
+
+  /** Whether the tab strip is at the top, where the toolbar can join its row and rows hide. */
+  private tabsAtTop(): boolean {
+    return this.client?.get('tabs.position')?.value === 'top';
+  }
+
+  /**
+   * The layout presets, as cards with a small window each: the one whose values the settings
+   * have is checked, and none with an arrangement of one's own. A card that would change a
+   * setting that the organization sets is disabled.
+   */
+  private renderLayout(): TemplateResult {
+    const t = this.t;
+    const values = Object.fromEntries(layoutKeys.map((key) => [key, this.client?.get(key)?.value]));
+    const loaded = layoutKeys.every((key) => this.client?.get(key) !== undefined);
+    const current = presetOf(values);
+    const locked = lockedPresets(values, (key) => this.client?.get(key)?.locked === true);
+    return html`<div class="row stack">
+      <span class="label">
+        <span id="layout-label">${t('settings.layout')}</span>
+        <span class="note">${t('settings.layoutNote')}</span>
+        ${
+          loaded && current === undefined
+            ? html`<span class="note" role="status">${t('settings.layout.custom')}</span>`
+            : nothing
+        }
+      </span>
+      <div class="layout-cards" role="radiogroup" aria-labelledby="layout-label">
+        ${layoutPresetIds.map(
+          (id) =>
+            html`<label class="layout-card">
+              <input
+                type="radio"
+                name="layout"
+                aria-labelledby=${`layout-${id}`}
+                aria-describedby=${`layout-${id}-note`}
+                .checked=${live(current === id)}
+                ?disabled=${!loaded || locked.includes(id)}
+                @change=${() => void this.applyPreset(id)}
+              />
+              ${layoutPreview(id)}
+              <span id=${`layout-${id}`}>${t(`settings.layout.${id}`)}</span>
+              <span class="note" id=${`layout-${id}-note`}>
+                ${locked.includes(id) ? t('settings.managed') : t(`settings.layout.${id}.note`)}
+              </span>
+            </label>`,
+        )}
+      </div>
+    </div>`;
+  }
+
+  /**
+   * Applies a layout preset. A click checks its card at once, and the change of the settings
+   * shows the preset; when the browser refused it, the cards show the settings as they are.
+   */
+  private async applyPreset(id: LayoutPresetId): Promise<void> {
+    if ((await this.client?.applyPreset(id)) !== true) this.requestUpdate();
   }
 
   /** The sites on which the content blocker is off, with a way to remove and to add them. */
@@ -1317,15 +1440,32 @@ export class SettingsPage extends LitElement {
     }
   }
 
-  private renderToggle(key: string, label: MessageKey, note: MessageKey): TemplateResult {
+  /**
+   * A switch for a setting.
+   * @param key - The setting.
+   * @param label - Its name.
+   * @param note - What it does.
+   * @param available - Whether the setting works with the other settings of now; otherwise
+   *   the row says why not, and the switch is disabled.
+   */
+  private renderToggle(
+    key: string,
+    label: MessageKey,
+    note: MessageKey,
+    available = true,
+  ): TemplateResult {
     const setting = this.client?.get(key);
     // A change that waits for a restart says so in place of the description.
-    const shown: MessageKey = setting?.restart === true ? 'settings.restartNote' : note;
+    const shown: MessageKey = !available
+      ? 'settings.needsTopTabs'
+      : setting?.restart === true
+        ? 'settings.restartNote'
+        : note;
     return html`<div class="row">
       <label class="label" for=${key}>
         <span>${this.t(label)}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          available && (setting?.locked === true || setting?.recommended === true)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t(shown)}</span>`
         }
@@ -1335,7 +1475,7 @@ export class SettingsPage extends LitElement {
         type="checkbox"
         role="switch"
         .checked=${setting?.value === true}
-        ?disabled=${setting?.locked !== false}
+        ?disabled=${setting?.locked !== false || !available}
         @change=${(event: Event) => {
           const input = event.target;
           if (input instanceof HTMLInputElement) void this.client?.set(key, input.checked);

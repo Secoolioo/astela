@@ -9,7 +9,12 @@ import {
 } from 'electron';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
-import { type TabStripPosition, type ToolbarItem, toolbarItems } from '../../shared/layout.ts';
+import {
+  type TabStripPosition,
+  type ToolbarItem,
+  type ToolbarPlacement,
+  toolbarItems,
+} from '../../shared/layout.ts';
 import {
   type BarItem,
   type FindState,
@@ -45,10 +50,13 @@ import {
   controlsOverlay,
   startInsets,
   titleBarArea,
+  toolbarRow,
+  windowButtonsAt,
   type ControlsOverlay,
   type Density,
   type TitleBarArea,
 } from '../../domain/windows/title-bar.ts';
+import type { RowsHiding } from '../../domain/windows/top-rows.ts';
 import { visibleBounds, type WindowBounds } from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
@@ -124,6 +132,20 @@ export interface BrowserWindowOptions {
   readonly webFonts?: () => Pick<Electron.WebPreferences, 'defaultFontFamily' | 'defaultFontSize'>;
   /** Where the shell shows the tab strip. */
   readonly tabStripPosition: () => TabStripPosition;
+  /** Where the toolbar is: in a row of its own, or in the row of the tabs at the top. */
+  readonly toolbarPlacement?: () => ToolbarPlacement;
+  /**
+   * Whether the tabs and the toolbar hide until they are needed, and whether a mandatory policy
+   * sets it, so that people cannot turn it on or off.
+   */
+  readonly autoHideToolbar?: () => { readonly value: boolean; readonly locked: boolean };
+  /** Turns the hiding of the tabs and the toolbar on or off. */
+  readonly toggleAutoHideToolbar?: () => void;
+  /**
+   * Loads the code of the rows that hide (`hiding-rows.ts`), once the setting hides them in a
+   * window that is no popup.
+   */
+  readonly hidingRows?: () => Promise<HidingRowsCode>;
   /** The buttons of the toolbar next to the address bar, in their order. */
   readonly toolbar?: () => readonly ToolbarItem[];
   /** Whether the content blocker works on a page: `none` for pages it never touches. */
@@ -300,6 +322,8 @@ export interface WindowHost {
   dropFavicon(id: TabId): void;
   /** Lays the shell and the pages out, the two sides of a split view beside each other. */
   layout(): void;
+  /** Sends the shell its state at once, instead of with the next frame. */
+  publish(): void;
   /** The views of the pages that the content area shows, from left to right. */
   readonly shown: readonly WebContentsView[];
   /** The split view that the content area shows, or `undefined` while it shows one tab. */
@@ -349,6 +373,49 @@ export interface WindowHost {
   swap(old: WebContentsView, view: WebContentsView, overlay?: 'close' | 'keep'): void;
   /** Gives a view the focus, once its page loads. */
   focusView(contents: WebContents): void;
+}
+
+/**
+ * What holds rows that hide open in the shell: the pointer over them, and the focus in one of
+ * their controls; and whether the shell drew them hidden, so that they move no window.
+ */
+export interface RowHoldsOfShell {
+  readonly pointer: boolean;
+  readonly focus: boolean;
+  readonly hidden: boolean;
+}
+
+/**
+ * The tabs and the toolbar of a window that hide until they are needed (ADR 0058), whose code
+ * loads while the setting hides them (`hiding-rows.ts`).
+ */
+export interface HidingRows {
+  /** The rows as the window last laid them out, or `null` while they always show. */
+  readonly hiding: RowsHiding | null;
+  /** Takes the rows of now; `true` when they changed, so the window lays itself out again. */
+  update(): boolean;
+  /** Where the pages start while rows hide, or `undefined` where the rows lie as always. */
+  pageTop(): number | undefined;
+  /**
+   * Lays the shell out: over the whole window below the pages, or, while the rows show over
+   * the pages, above them, cut to the height of its rows. A change of the rows reaches the shell.
+   * @param width - The width of the window's content.
+   * @param height - Its height.
+   * @param insets - Where the content area is, below the rows.
+   */
+  layout(width: number, height: number, insets: Insets): void;
+  /** Keeps a shell that lies above the pages above a page that was just attached. */
+  attached(): void;
+  /** Takes what holds the rows open in the shell. */
+  hold(holds: RowHoldsOfShell): void;
+  /** Holds the rows open while a native menu of the shell is open; the result lets them go. */
+  menu(): () => void;
+}
+
+/** The code of the rows that hide, as `hiding-rows.ts` exports it. */
+export interface HidingRowsCode {
+  /** Makes the rows that hide of a window. */
+  readonly hidingRows: (host: WindowHost) => HidingRows;
 }
 
 /** The code of the windows for their web pages, which loads with the first of them. */
@@ -626,6 +693,9 @@ export interface PageJob {
 /** How long a window that just opened takes to set itself up on Linux, in milliseconds. */
 const settleTime = 1000;
 
+/** How long in ms macOS has to start the full screen of a window that opened in it, before the browser asks again. */
+const fullScreenAgainMs = 1000;
+
 /**
  * One browser window: a `BaseWindow` with the shell view and one `WebContentsView` per
  * tab. Tab views are created when a tab opens and destroyed when it closes; only the views
@@ -732,6 +802,14 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private titleBarShown: TitleBarArea | null;
   /** The window controls of Windows and Linux as they were last set. */
   private overlayKey = '';
+  /**
+   * The tabs and the toolbar that hide until they are needed, once their code loaded: the
+   * shell tells what holds them, and the native menus of the shell hold them while they are
+   * open.
+   */
+  rows: HidingRows | undefined;
+  /** Whether the code of the rows that hide loads, or loaded. */
+  private rowsLoad = false;
   private readonly subscriptions = new DisposableStore();
   private publishTimer: NodeJS.Timeout | undefined;
   private hidesUntilClosed = false;
@@ -758,7 +836,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       ...(area === null || overlay === undefined ? {} : titleBarOptions(area, overlay)),
     });
     this.titleBarShown = area;
-    this.insets = startInsets(titleBar?.density ?? 'normal', options.tabStripPosition());
+    this.insets = startInsets(titleBar?.density ?? 'normal', {
+      side: options.tabStripPosition(),
+      toolbar: this.toolbarPlace(),
+    });
     this.shell = new WebContentsView({
       webPreferences: {
         preload: options.shellPreload,
@@ -789,6 +870,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (place.fullScreen === true) {
       this.userFullScreen = true;
       this.setFullScreen(true, place.maximized === true);
+      if (process.platform === 'darwin') this.askFullScreenAgain();
     }
     // A popup closes with its last tab, as the page that closes itself expects.
     this.tabs = new TabService(
@@ -865,6 +947,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
     void this.shell.webContents.loadURL(options.shellUrl);
     this.layout();
+    this.watchRows();
   }
 
   /** Whether the window closes: a window that closes right after it opened hides first. */
@@ -980,7 +1063,34 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         split === undefined ? null : { start: split.start, end: split.end, ratio: split.ratio },
       workspace: workspaces?.find(({ id }) => id === this.tabs.workspace) ?? null,
       workspaces: [...(workspaces ?? [])],
+      layout: { toolbar: this.toolbarPlace(), hiding: this.rows?.hiding ?? null },
     };
+  }
+
+  /** Where the toolbar is: in the row of the tabs only with the tab strip at the top. */
+  private toolbarPlace(): ToolbarPlacement {
+    return toolbarRow(
+      this.options.tabStripPosition(),
+      this.options.toolbarPlacement?.() ?? 'own-row',
+    );
+  }
+
+  /**
+   * Loads the code of the rows that hide once the setting hides them; popups never hide their
+   * rows. The rows show as always until it is there, a moment after the window opens.
+   */
+  private watchRows(): void {
+    if (this.rowsLoad || this.popup || this.options.autoHideToolbar?.().value !== true) return;
+    this.rowsLoad = true;
+    this.options.hidingRows?.().then(
+      ({ hidingRows }) => {
+        if (this.window.isDestroyed()) return;
+        this.rows = hidingRows(this.windowHost());
+        this.layout();
+        this.publishNow();
+      },
+      (error: unknown) => this.options.logger.error('The rows that hide did not load', error),
+    );
   }
 
   /**
@@ -1009,7 +1119,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /** The area of the window controls in the top row, or `null` with the system's title bar. */
   private titleBarArea(density: Density): TitleBarArea | null {
     return this.integrated
-      ? titleBarArea(process.platform, density, this.options.tabStripPosition())
+      ? titleBarArea(process.platform, density, {
+          side: this.options.tabStripPosition(),
+          toolbar: this.toolbarPlace(),
+        })
       : null;
   }
 
@@ -1032,7 +1145,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     this.titleBarShown = this.window.isFullScreen() ? null : area;
     if (this.titleBarShown === null) return;
     if (process.platform === 'darwin') {
-      if (before?.height !== area.height) this.window.setWindowButtonPosition(buttonPosition(area));
+      if (before?.height !== area.height)
+        this.window.setWindowButtonPosition(windowButtonsAt(area));
       return;
     }
     // The controls change only when their row or the colors of the theme change.
@@ -1073,6 +1187,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /** Sends the shell its state again, for example after the layout settings changed. */
   refreshShell(): void {
+    this.watchRows();
     this.schedulePublish();
   }
 
@@ -1239,9 +1354,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   pageArea(): Rectangle {
     if (this.window.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
     const { width, height } = this.window.getContentBounds();
-    // Only the tab whose page is in full screen covers the shell.
+    // Only the tab whose page is in full screen covers the shell. While rows hide, the pages
+    // start below what stays of them, and the rows show over the pages.
     const { top, right, bottom, left } =
-      this.coveringTab() === undefined ? this.insets : { top: 0, right: 0, bottom: 0, left: 0 };
+      this.coveringTab() === undefined
+        ? { ...this.insets, top: this.rows?.pageTop() ?? this.insets.top }
+        : { top: 0, right: 0, bottom: 0, left: 0 };
     return {
       x: left,
       y: top,
@@ -1309,7 +1427,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Attaches the view of a page to the window, where the content area shows it. The overlay
-   * stays above it, so that no page covers a popover or a question.
+   * stays above it, so that no page covers a popover or a question, and so does the shell while
+   * rows that hide show over the pages.
    * @param view - The view.
    * @param index - Its place among the views of the content area; the last without it.
    */
@@ -1317,6 +1436,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (this.shown.includes(view) || this.window.isDestroyed()) return;
     this.shown.splice(index, 0, view);
     this.window.contentView.addChildView(view);
+    this.rows?.attached();
     this.overlay?.raise();
   }
 
@@ -2119,6 +2239,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.setFullScreen(on);
       return;
     }
+    // Where the window is right now, in case the system moved it since it last said so.
+    if (on) this.notePlace();
     const before = this.placeBeforeFullScreen;
     this.window.setSimpleFullScreen(on);
     if (!on && before !== undefined) this.placeAgain(before);
@@ -2132,6 +2254,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private setFullScreen(on: boolean, maximized?: boolean): void {
     if (on) this.notePlace(maximized);
     this.window.setFullScreen(on);
+  }
+
+  /**
+   * Asks macOS once more for the full screen of a window that opened in it, should macOS not
+   * have started to move the window there: right after a browser quit while its window moved
+   * into full screen, macOS can drop the request of the window of the next start.
+   */
+  private askFullScreenAgain(): void {
+    setTimeout(() => {
+      const window = this.window;
+      if (window.isDestroyed() || !this.userFullScreen || this.fullScreenEntered) return;
+      if (!window.isFullScreen()) window.setFullScreen(true);
+    }, fullScreenAgainMs);
   }
 
   /**
@@ -2459,6 +2594,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       usedAt: this.usedAt,
       dropFavicon: (id) => this.dropFavicon(id),
       layout: () => this.layout(),
+      publish: () => this.publishNow(),
       shown: this.shown,
       shownSplit: () => this.shownSplit,
       setPreviewRatio: (ratio) => {
@@ -2521,14 +2657,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    * Lays the shell over the whole window and the shown pages out in the page area: one page in
    * the whole area, or the two sides of a split view with the divider between them. A page in
    * full screen covers the window, and the other side hides meanwhile; a page with a problem
-   * hides, and the shell shows the problem in its place.
+   * hides, and the shell shows the problem in its place. While rows that hide show over the
+   * pages, the shell lies above them, cut to the height of its rows.
    */
   private layout(): void {
     if (this.window.isDestroyed()) {
       return;
     }
     const { width, height } = this.window.getContentBounds();
-    this.shell.setBounds({ x: 0, y: 0, width, height });
+    if (this.rows === undefined) this.shell.setBounds({ x: 0, y: 0, width, height });
+    else this.rows.layout(width, height, this.insets);
     const area = this.pageArea();
     const covering = this.coveringTab();
     const split = this.shownSplit;
@@ -2555,6 +2693,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     clearTimeout(this.publishTimer);
     this.publishTimer = undefined;
     this.fitTitleBar();
+    // What changed since the window was laid out, such as the find bar, moves the rows first.
+    if (this.rows?.update() === true) this.layout();
     this.options.router.publish(ShellStateChanged, this.shell.webContents, this.state());
   }
 }
@@ -2954,13 +3094,8 @@ function titleBarOptions(
   'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition'
 > {
   return process.platform === 'darwin'
-    ? { titleBarStyle: 'hidden', trafficLightPosition: buttonPosition(area) }
+    ? { titleBarStyle: 'hidden', trafficLightPosition: windowButtonsAt(area) }
     : { titleBarStyle: 'hidden', titleBarOverlay: overlay };
-}
-
-/** Where the three buttons of a macOS window go: centered in the top row. */
-function buttonPosition(area: TitleBarArea): Electron.Point {
-  return { x: 14, y: Math.max(0, Math.round((area.height - 14) / 2)) };
 }
 
 /**

@@ -1231,6 +1231,19 @@ export async function recordMenus(browser: Browser): Promise<void> {
 }
 
 /**
+ * Closes the last native menu that the browser built while {@link recordMenus} records them,
+ * as a person does who chooses nothing: the browser hears that the menu closed.
+ * @param browser - The running browser.
+ */
+export async function closeRecordedMenu(browser: Browser): Promise<void> {
+  await browser.main.evaluate(() => {
+    (globalThis as unknown as { recordedMenus?: MenuRecord[] }).recordedMenus
+      ?.at(-1)
+      ?.options.callback?.();
+  });
+}
+
+/**
  * How many menus the browser built since {@link recordMenus}.
  * @param browser - The running browser.
  */

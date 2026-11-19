@@ -20,6 +20,7 @@ import {
 } from '../../shared/split-view.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import type { ShellBridge } from './bridge.ts';
+import { siteLabel } from './site-label.ts';
 import {
   chipKey,
   dropGroup,
@@ -82,6 +83,60 @@ export class AppShell extends LitElement {
       grid-template:
         'nav nav' auto 'bar bar' auto 'find find' auto 'content tabs' 1fr / 1fr
         var(--sidebar-width, 240px);
+    }
+    /*
+     * The toolbar in the row of the tabs: one row of the toolbar's height, the toolbar with the
+     * address bar first, which takes 42 % of the width but never less than its buttons and a
+     * narrow field, and the tabs after it as rounded chips, with the New tab and Menu buttons at
+     * their end. The tabs always keep their buttons, the free room that moves the window, the
+     * room of the window controls and two narrow tabs. The row is the title bar, in the window's
+     * color with a line below it; the bookmarks bar and the find bar stay below it. A window too
+     * narrow for both (data-narrow) puts the tabs in a row of their own above the toolbar, as
+     * high as the one row, where the window controls stay.
+     */
+    :host([data-toolbar='tab-row']:not([data-narrow])) {
+      grid-template:
+        'nav tabs' auto 'bar bar' auto 'find find' auto 'content content' 1fr / minmax(
+          min-content,
+          42%
+        )
+        minmax(
+          calc(
+            var(--titlebar-end, 0px) + 3 * var(--control-height) + 3 * var(--space-7) + 4 *
+              var(--space-1) + 2 * var(--space-2)
+          ),
+          1fr
+        );
+    }
+    :host([data-toolbar='tab-row']) :is([role='tablist'], nav) {
+      box-sizing: border-box;
+      height: var(--toolbar-height);
+      border-bottom: 1px solid var(--line-1);
+      background: var(--surface-0);
+    }
+    :host([data-toolbar='tab-row']) .address {
+      min-width: 96px;
+    }
+    /* The field gives way down to the narrow address bar: its text alone sets no width. */
+    :host([data-toolbar='tab-row']) .address input {
+      width: 0;
+    }
+    :host([data-toolbar='tab-row']) [role='tablist'] {
+      align-items: center;
+      padding-block: 0;
+    }
+    :host([data-toolbar='tab-row']) .tabs {
+      height: var(--control-large);
+    }
+    :host([data-toolbar='tab-row']) :is(.tab, .indicator) {
+      border-end-start-radius: var(--radius-2);
+      border-end-end-radius: var(--radius-2);
+    }
+    :host([data-toolbar='tab-row']) .tab[data-split='start'] {
+      border-end-end-radius: 0;
+    }
+    :host([data-toolbar='tab-row']) .tab[data-split='end'] {
+      border-end-start-radius: 0;
     }
     .content {
       position: relative;
@@ -1005,9 +1060,83 @@ export class AppShell extends LitElement {
     :host([data-titlebar]) .top-row :is(button, input, [role='tab'], .address) {
       -webkit-app-region: no-drag;
     }
+    /* In one row, the toolbar leaves room for the controls at the start, the tabs at the end. */
+    :host([data-titlebar][data-toolbar='tab-row']) nav.top-row {
+      padding-inline-end: var(--space-2);
+    }
+    :host([data-titlebar][data-toolbar='tab-row']) nav.top-row::after {
+      content: none;
+    }
+    :host([data-titlebar][data-toolbar='tab-row']:not([data-narrow])) [role='tablist'].top-row {
+      padding-inline-start: var(--space-2);
+    }
+    /* In a narrow window, the tabs above the toolbar leave the room of the controls, and the
+       toolbar below them moves no window, as in a row of its own. */
+    :host([data-titlebar][data-toolbar='tab-row'][data-narrow]) nav.top-row {
+      -webkit-app-region: no-drag;
+      padding-inline: var(--space-2);
+    }
     /* A click next to a popover of the overlay closes it instead of moving the window. */
     :host([data-titlebar][data-covered]) .top-row {
       -webkit-app-region: no-drag;
+    }
+    /*
+     * Rows that hide until they are needed. While they hide, the page covers them below what
+     * stays of them, an edge or a title row: they take no clicks, and they move no window, as
+     * the regions of a view below win over the views above it. The browser shows them over the
+     * page, which neither moves nor changes its size, and they fade in.
+     */
+    :host([data-rows='hidden']) :is([role='tablist'], nav, .bookmarks, .find) {
+      pointer-events: none;
+    }
+    :host([data-rows='hidden']) .top-row,
+    :host([data-rows='hidden']) .top-row :is(button, input, [role='tab'], .address) {
+      -webkit-app-region: no-drag;
+    }
+    :host([data-rows='revealed']) :is([role='tablist'], nav, .bookmarks, .find) {
+      animation: appear var(--motion-fast) var(--ease-out);
+    }
+    .reveal {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 3;
+      box-sizing: border-box;
+      height: var(--reveal-height);
+      background: var(--surface-0);
+      -webkit-app-region: no-drag;
+    }
+    /* What stays takes the pointer, which shows the rows: a region that moves the window would
+       get no events of the pointer. The title row keeps the room of the window controls and
+       shows the site. */
+    .reveal[data-rest='title'] {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding-inline: calc(var(--titlebar-start, 0px) + var(--space-3))
+        calc(var(--titlebar-end, 0px) + var(--space-3));
+      border-bottom: 1px solid var(--line-1);
+      color: var(--text-2);
+      font-size: var(--font-size-small);
+    }
+    .reveal .site {
+      flex: none;
+      max-width: 50%;
+      color: var(--text-1);
+    }
+    .reveal :is(.site, .page) {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .reveal svg {
+      flex: none;
+    }
+    /* A split view below rows that hide starts where its pages start, below what stays of them. */
+    :host([data-rows='hidden']) .split {
+      position: fixed;
+      inset: var(--reveal-height) 0 0;
+      background: var(--surface-0);
     }
     /* Free room after the last button moves the window also when the tabs fill the row or the
        address bar fills the toolbar. */
@@ -1170,6 +1299,27 @@ export class AppShell extends LitElement {
   private titleBarRoom = '';
   /** Whether the browser made the overlay ready for the menu, which it does once. */
   private overlayPrepared = false;
+  /** Whether the pointer holds rows that hide open: it reached them and did not leave them. */
+  private rowPointer = false;
+  /**
+   * Whether a control of the shell has its focus for the keys, which holds rows that hide open
+   * while the shell has the focus of the window; the browser knows that.
+   */
+  private rowFocus = false;
+  /** Whether the shell drew rows that hide hidden a frame ago, so that they move no window. */
+  private rowsDrawnHidden = false;
+  /** The frames that the shell waits for before it tells that it drew the rows hidden. */
+  private drawnFrame: number | undefined;
+  /** What holds rows that hide open, and how the shell drew them, as the browser last heard it. */
+  private sentHolds: {
+    readonly pointer: boolean;
+    readonly focus: boolean;
+    readonly hidden: boolean;
+  } = { pointer: false, focus: false, hidden: false };
+  /** Shows the rows once the pointer stayed on the title row, or hides them once it left. */
+  private rowsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether Escape brought back the address of the page in the address bar, until it changes. */
+  private escapedOnce = false;
   /**
    * The divider of the split view while the pointer drags it, or after a change of the
    * divider until the state brings it: the share of the left side and the pair it belongs to.
@@ -1211,6 +1361,7 @@ export class AppShell extends LitElement {
       split: null,
       workspace: null,
       workspaces: [],
+      layout: { toolbar: 'own-row', hiding: null },
     };
     this.drafts = new Map();
     this.addressFocused = false;
@@ -1220,8 +1371,12 @@ export class AppShell extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.addEventListener('mouseup', this.onMouseUp);
+    this.addEventListener('pointerenter', this.onShellEnter);
+    this.addEventListener('pointerleave', this.onShellLeave);
+    this.addEventListener('focusin', this.onFocusMove);
+    this.addEventListener('focusout', this.onFocusMove);
     this.windowControls = windowControls();
-    this.windowControls?.addEventListener('geometrychange', this.placeTitleBar);
+    this.windowControls?.addEventListener('geometrychange', this.onControlsMove);
     const bridge = this.bridge;
     if (bridge === undefined) {
       return;
@@ -1245,6 +1400,7 @@ export class AppShell extends LitElement {
     void bridge.invoke('shell.getState', {}).then((state) => (this.state = state));
     this.resizeObserver = new ResizeObserver(() => {
       this.placeTitleBar();
+      this.fitTopRow();
       this.reportInsets();
       this.layoutBookmarksBar();
       this.placeIndicator(false);
@@ -1263,7 +1419,13 @@ export class AppShell extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener('mouseup', this.onMouseUp);
-    this.windowControls?.removeEventListener('geometrychange', this.placeTitleBar);
+    this.removeEventListener('pointerenter', this.onShellEnter);
+    this.removeEventListener('pointerleave', this.onShellLeave);
+    this.removeEventListener('focusin', this.onFocusMove);
+    this.removeEventListener('focusout', this.onFocusMove);
+    clearTimeout(this.rowsTimer);
+    if (this.drawnFrame !== undefined) cancelAnimationFrame(this.drawnFrame);
+    this.windowControls?.removeEventListener('geometrychange', this.onControlsMove);
     this.resizeObserver?.disconnect();
     for (const unsubscribe of this.unsubscribers.splice(0)) {
       unsubscribe();
@@ -1288,6 +1450,7 @@ export class AppShell extends LitElement {
         this.dropSplitDrag();
       }
       this.dataset['tabs'] = this.state.tabStrip;
+      this.placeRows();
       // The shell keeps the icons of its tabs only.
       this.favicons.keep(this.state.tabs.flatMap((tab) => tab.favicon ?? []));
       this.toggleAttribute('data-covered', this.state.covered);
@@ -1328,6 +1491,8 @@ export class AppShell extends LitElement {
       this.renderRoot.querySelector('input')?.select();
     }
     if (changed.has('state')) {
+      // The buttons of the toolbar change with the page, and with them the room it needs.
+      this.fitTopRow();
       if (this.dragging?.moved !== true) {
         // The surface learns where the active tab goes before the tabs start to move there.
         this.placeIndicator(true);
@@ -1342,6 +1507,10 @@ export class AppShell extends LitElement {
       this.takeGroupEditorOpening();
     }
     if (changed.has('state')) this.dropStaleDrafts(changed.get('state'));
+    // An element that had the focus and left the page, such as the field of the find bar that
+    // closed, gave it up without an event.
+    if (this.rowFocus) this.noteFocus();
+    this.noteRowsDrawn();
     if (changed.has('drops')) this.placeDrops();
     // Enter or Space on a chip leave the focus there, also when the change of the group makes
     // a new tab page the active tab.
@@ -1393,7 +1562,36 @@ export class AppShell extends LitElement {
 
   protected override render(): TemplateResult {
     const t = (key: Parameters<Translator['t']>[0]): string => this.i18n?.t(key) ?? key;
-    const active = this.active;
+    const tabRow = this.state.layout.toolbar === 'tab-row';
+    const hiding = this.state.layout.hiding;
+    // In one row, the toolbar comes first, as it shows, and the keys reach it in that order.
+    const rows = tabRow
+      ? html`${this.renderToolbar(t, true)}${this.renderTabStrip(t, true)}`
+      : html`${this.renderTabStrip(t, false)}${this.renderToolbar(t, false)}`;
+    return html`
+      ${rows} ${this.renderBookmarksBar(t)} ${this.renderFind()}
+      <div class="visually-hidden" role="status">${this.workspaceShown}</div>
+      <div class="content">
+        ${
+          this.state.split === null
+            ? this.active?.problem
+              ? this.renderProblem(this.active)
+              : nothing
+            : this.renderSplit(this.state.split, t)
+        }
+      </div>
+      ${hiding === null || hiding.shown ? nothing : this.renderReveal(hiding.rest)}
+    `;
+  }
+
+  /**
+   * The tab strip, with the New tab button after the tabs, and the menu button after it when
+   * the toolbar shares the row of the tabs.
+   */
+  private renderTabStrip(
+    t: (key: Parameters<Translator['t']>[0]) => string,
+    tabRow: boolean,
+  ): TemplateResult {
     const vertical = this.state.tabStrip === 'left' || this.state.tabStrip === 'right';
     return html`
       <div
@@ -1428,8 +1626,25 @@ export class AppShell extends LitElement {
         >
           ${icons.plus}
         </button>
+        ${tabRow ? this.renderMenuButton(t) : nothing}
       </div>
-      <nav class=${this.state.tabStrip === 'top' ? '' : 'top-row'} aria-label=${t('shell.toolbar')}>
+    `;
+  }
+
+  /**
+   * The toolbar: the buttons of the history, the address bar and the buttons after it, with
+   * the menu button at its end unless the toolbar shares the row of the tabs.
+   */
+  private renderToolbar(
+    t: (key: Parameters<Translator['t']>[0]) => string,
+    tabRow: boolean,
+  ): TemplateResult {
+    const active = this.active;
+    return html`
+      <nav
+        class=${tabRow || this.state.tabStrip !== 'top' ? 'top-row' : ''}
+        aria-label=${t('shell.toolbar')}
+      >
         <button
           class="icon"
           title=${t('shell.back')}
@@ -1516,33 +1731,58 @@ export class AppShell extends LitElement {
               >`
             : nothing
         }
-        <button
-          class="icon menu-button"
-          title=${t('shell.menu')}
-          aria-label=${t('shell.menu')}
-          aria-haspopup="menu"
-          aria-expanded=${this.state.popover?.kind === 'menu' ? 'true' : 'false'}
-          @click=${this.openMenu}
-          @keydown=${this.onMenuKey}
-          @pointerenter=${this.prepareOverlay}
-          @focus=${this.prepareOverlay}
-        >
-          ${icons.menu}
-        </button>
+        ${tabRow ? nothing : this.renderMenuButton(t)}
         ${active?.loading === true ? html`<div class="progress" aria-hidden="true"></div>` : nothing}
       </nav>
-      ${this.renderBookmarksBar(t)} ${this.renderFind()}
-      <div class="visually-hidden" role="status">${this.workspaceShown}</div>
-      <div class="content">
-        ${
-          this.state.split === null
-            ? active?.problem
-              ? this.renderProblem(active)
-              : nothing
-            : this.renderSplit(this.state.split, t)
-        }
-      </div>
     `;
+  }
+
+  /** The button of the browser menu. */
+  private renderMenuButton(t: (key: Parameters<Translator['t']>[0]) => string): TemplateResult {
+    return html`<button
+      class="icon menu-button"
+      title=${t('shell.menu')}
+      aria-label=${t('shell.menu')}
+      aria-haspopup="menu"
+      aria-expanded=${this.state.popover?.kind === 'menu' ? 'true' : 'false'}
+      @click=${this.openMenu}
+      @keydown=${this.onMenuKey}
+      @pointerenter=${this.prepareOverlay}
+      @focus=${this.prepareOverlay}
+    >
+      ${icons.menu}
+    </button>`;
+  }
+
+  /**
+   * What stays of rows that hide, above the page: an edge, or a title row where the system
+   * draws the window controls into the top row, with the connection, the site and the title of
+   * the page. Every web page names its site there, also an empty page or one that a site made
+   * itself, with a globe where the connection has no icon. The pointer that reaches it shows
+   * the rows: at once on the edge, and after a moment on the title row, which the pointer
+   * crosses on its way to the window controls. It moves no window, as a region that moves the
+   * window gets no events of the pointer; the free room of the rows that it shows does.
+   */
+  private renderReveal(rest: 'edge' | 'title'): TemplateResult {
+    const tab = this.active;
+    const security = tab === undefined ? 'none' : securityOf(tab);
+    const site = tab === undefined ? '' : siteLabel(tab.url);
+    const icon =
+      security !== 'none' ? securityIcons[security] : site === '' ? nothing : icons.globe;
+    return html`<div
+      class="reveal"
+      data-rest=${rest}
+      aria-hidden="true"
+      @pointerenter=${this.onRevealEnter}
+      @pointerleave=${this.onRevealLeave}
+    >
+      ${
+        rest === 'title' && tab !== undefined
+          ? html`${icon} ${site === '' ? nothing : html`<span class="site">${site}</span>`}
+              <span class="page">${tab.title}</span>`
+          : nothing
+      }
+    </div>`;
   }
 
   /**
@@ -2588,9 +2828,11 @@ export class AppShell extends LitElement {
           .value=${draft ?? shown}
           @focus=${(e: FocusEvent) => {
             this.addressFocused = true;
+            this.escapedOnce = false;
             inputOf(e)?.select();
           }}
           @input=${(e: InputEvent) => {
+            this.escapedOnce = false;
             const text = inputOf(e)?.value;
             this.setDraft(text);
             this.suggest(text ?? '');
@@ -3242,9 +3484,23 @@ export class AppShell extends LitElement {
         this.closeSuggestions();
         return;
       }
+      // While rows hide, one more Escape leaves the address bar that shows its page's address:
+      // the page gets the keys, and the rows hide.
+      const address = displayUrl(this.addressTab?.url);
+      if (
+        this.escapedOnce &&
+        this.state.layout.hiding !== null &&
+        this.draft === undefined &&
+        input.value === address
+      ) {
+        this.escapedOnce = false;
+        input.blur();
+        return;
+      }
       this.setDraft(undefined);
-      input.value = displayUrl(this.addressTab?.url);
+      input.value = address;
       input.select();
+      this.escapedOnce = true;
     }
     if (event.key === 'Enter' && this.suggestion !== -1) {
       const typed = input.value;
@@ -3385,17 +3641,187 @@ export class AppShell extends LitElement {
     this.style.setProperty('--titlebar-end', `${String(room.end)}px`);
   };
 
-  /** Tells the browser where the content area is, so the page covers exactly that area. */
+  /** The window controls moved or changed their size: their room, and with it the one row. */
+  private readonly onControlsMove = (): void => {
+    this.placeTitleBar();
+    this.fitTopRow();
+  };
+
+  /**
+   * Puts the tabs of the one row in a row of their own above the toolbar while the window is
+   * too narrow for both. Neither gets less room than it needs, so the row is too narrow when
+   * the tabs end beyond the window: the shell lays the one row out, measures, and keeps it
+   * only when the tabs end within the window, all before the window draws.
+   */
+  private fitTopRow(): void {
+    this.removeAttribute('data-narrow');
+    if (this.state.layout.toolbar !== 'tab-row') return;
+    const strip = this.renderRoot.querySelector('[role="tablist"]');
+    const end = strip?.getBoundingClientRect().right ?? 0;
+    this.toggleAttribute('data-narrow', end > window.innerWidth + 0.5);
+  }
+
+  /**
+   * Takes the rows at the top from the state: where the toolbar is, and whether the rows hide,
+   * show over the page, or always show, with the height of what stays of them. Rows that no
+   * longer hide take nothing that held them along.
+   */
+  private placeRows(): void {
+    const { toolbar, hiding } = this.state.layout;
+    this.dataset['toolbar'] = toolbar;
+    this.dataset['rows'] = hiding === null ? 'shown' : hiding.shown ? 'revealed' : 'hidden';
+    if (hiding === null) {
+      clearTimeout(this.rowsTimer);
+      this.rowsTimer = undefined;
+      this.rowPointer = false;
+    } else {
+      this.style.setProperty('--reveal-height', `${String(hiding.height)}px`);
+    }
+    this.sendHolds();
+  }
+
+  /**
+   * The pointer reached what stays of rows that hide: they show at once from the edge, and
+   * after a moment on the title row, which the pointer crosses on its way to the window controls.
+   */
+  private readonly onRevealEnter = (): void => {
+    clearTimeout(this.rowsTimer);
+    if (this.state.layout.hiding?.rest === 'edge') {
+      this.rowsTimer = undefined;
+      this.holdRows({ pointer: true });
+      return;
+    }
+    this.rowsTimer = setTimeout(() => {
+      this.rowsTimer = undefined;
+      this.holdRows({ pointer: true });
+    }, titleRowDwell);
+  };
+
+  /** The pointer left the title row before the rows showed. */
+  private readonly onRevealLeave = (): void => {
+    if (this.rowPointer) return;
+    clearTimeout(this.rowsTimer);
+    this.rowsTimer = undefined;
+  };
+
+  /**
+   * The pointer reached the rows while they show: it holds them, also where something else
+   * showed them, such as the moment after another site, and keeps those that it held.
+   */
+  private readonly onShellEnter = (): void => {
+    if (this.state.layout.hiding?.shown !== true) return;
+    clearTimeout(this.rowsTimer);
+    this.rowsTimer = undefined;
+    this.holdRows({ pointer: true });
+  };
+
+  /**
+   * The pointer left the shell, which lies above the page cut to its rows while they show:
+   * they hide after a moment, unless the pointer comes back or drags a tab. Over a region of the
+   * rows that moves the window, the shell hears this too; the browser then asks the system where
+   * the pointer is.
+   */
+  private readonly onShellLeave = (): void => {
+    if (!this.rowPointer) return;
+    clearTimeout(this.rowsTimer);
+    const leave = (): void => {
+      if (this.dragging !== undefined) {
+        this.rowsTimer = setTimeout(leave, rowsLeaveDelay);
+        return;
+      }
+      this.rowsTimer = undefined;
+      this.holdRows({ pointer: false });
+    };
+    this.rowsTimer = setTimeout(leave, rowsLeaveDelay);
+  };
+
+  /**
+   * Notes whether a control of the shell has its focus for the keys, as a field does, or a
+   * control after Ctrl+L, F6 or Tab, which holds rows that hide open while the shell has the
+   * focus of the window. A button that a click focused holds nothing: the keys go to the page
+   * once the rows hide. The focus moves within the shell in two events; what has it after both
+   * counts.
+   */
+  private readonly onFocusMove = (): void => {
+    setTimeout(() => this.noteFocus(), 0);
+  };
+
+  /** Tells the browser when a control of the shell gets or loses the focus for the keys. */
+  private noteFocus(): void {
+    const active = this.shadowRoot?.activeElement ?? null;
+    const focused =
+      active !== null && (active instanceof HTMLInputElement || active.matches(':focus-visible'));
+    if (focused !== this.rowFocus) this.holdRows({ focus: focused });
+  }
+
+  /**
+   * Tells the browser that the shell drew rows that hide hidden, once it drew them: Chromium
+   * sends the regions that move the window with a frame, so the shell waits for the frame after
+   * the one that drew them. The browser lays the page above the shell only then, as the regions
+   * of the shell below the page would win over it (ADR 0048).
+   */
+  private noteRowsDrawn(): void {
+    if (this.dataset['rows'] !== 'hidden') {
+      if (this.drawnFrame !== undefined) cancelAnimationFrame(this.drawnFrame);
+      this.drawnFrame = undefined;
+      if (this.rowsDrawnHidden) this.holdRows({ hidden: false });
+      return;
+    }
+    if (this.rowsDrawnHidden || this.drawnFrame !== undefined) return;
+    this.drawnFrame = requestAnimationFrame(() => {
+      this.drawnFrame = requestAnimationFrame(() => {
+        this.drawnFrame = undefined;
+        this.holdRows({ hidden: true });
+      });
+    });
+  }
+
+  /** Changes what holds rows that hide open in the shell, and how the shell drew them. */
+  private holdRows(change: {
+    readonly pointer?: boolean;
+    readonly focus?: boolean;
+    readonly hidden?: boolean;
+  }): void {
+    this.rowPointer = change.pointer ?? this.rowPointer;
+    this.rowFocus = change.focus ?? this.rowFocus;
+    this.rowsDrawnHidden = change.hidden ?? this.rowsDrawnHidden;
+    this.sendHolds();
+  }
+
+  /** Tells the browser what holds rows that hide open, when it changed; nothing while none hide. */
+  private sendHolds(): void {
+    const hiding = this.state.layout.hiding !== null;
+    const holds = {
+      pointer: hiding && this.rowPointer,
+      focus: hiding && this.rowFocus,
+      hidden: hiding && this.rowsDrawnHidden,
+    };
+    const sent = this.sentHolds;
+    if (
+      holds.pointer === sent.pointer &&
+      holds.focus === sent.focus &&
+      holds.hidden === sent.hidden
+    )
+      return;
+    this.sentHolds = holds;
+    void this.bridge?.invoke('shell.holdTopRows', holds);
+  }
+
+  /**
+   * Tells the browser where the content area is, so the page covers exactly that area. While
+   * the shell lies above the page, cut to its rows, its rows can for a moment be higher than
+   * its view: nothing is below zero then.
+   */
   private reportInsets(): void {
     const content = this.renderRoot.querySelector('.content')?.getBoundingClientRect();
     if (content === undefined) {
       return;
     }
     const insets = {
-      top: Math.round(content.top),
-      right: Math.round(window.innerWidth - content.right),
-      bottom: Math.round(window.innerHeight - content.bottom),
-      left: Math.round(content.left),
+      top: Math.max(0, Math.round(content.top)),
+      right: Math.max(0, Math.round(window.innerWidth - content.right)),
+      bottom: Math.max(0, Math.round(window.innerHeight - content.bottom)),
+      left: Math.max(0, Math.round(content.left)),
     };
     const key = JSON.stringify(insets);
     if (key !== this.reportedInsets) {
@@ -3438,6 +3864,15 @@ function isOpening(owner: AddressOwner | undefined): owner is Opening {
  * key, while no state brings it.
  */
 const splitEchoWait = 1000;
+
+/**
+ * How long in ms the pointer stays on the title row of rows that hide before they show, so that
+ * a pointer on its way to the window controls, or out of the window, leaves them hidden.
+ */
+const titleRowDwell = 300;
+
+/** How long in ms rows that hide stay after the pointer left them, so that a slip keeps them. */
+const rowsLeaveDelay = 400;
 
 /**
  * The part of the Window Controls Overlay API that the shell reads, which the DOM types of

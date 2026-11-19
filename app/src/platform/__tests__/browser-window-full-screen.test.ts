@@ -254,6 +254,24 @@ describe('BrowserWindowController on macOS, in full screen', () => {
     expect(controller.normalPlace).toEqual({ bounds: original, maximized: true });
   });
 
+  it('asks macOS once more for the full screen of a window that opened in it, should macOS not start it', () => {
+    // Right after a browser quit while its window moved into full screen, macOS can drop the
+    // request of the window of the next start.
+    const controller = new BrowserWindowController(options, { bounds: original, fullScreen: true });
+    const window = windowOf(controller);
+    expect(window.calls).toEqual(['setFullScreen true']);
+    vi.advanceTimersByTime(1000);
+    expect(window.calls).toEqual(['setFullScreen true', 'setFullScreen true']);
+  });
+
+  it('asks once only, when macOS started to move the window into full screen', () => {
+    const controller = new BrowserWindowController(options, { bounds: original, fullScreen: true });
+    const window = windowOf(controller);
+    window.startEntering();
+    vi.advanceTimersByTime(1000);
+    expect(window.calls).toEqual(['setFullScreen true']);
+  });
+
   it('keeps the place from before full screen while the window leaves it, and maximizes it again there', () => {
     const controller = new BrowserWindowController(options, {
       bounds: original,

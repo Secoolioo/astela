@@ -5,6 +5,15 @@ export const tabStripPositions = ['top', 'bottom', 'left', 'right'] as const;
 export type TabStripPosition = (typeof tabStripPositions)[number];
 
 /**
+ * Where the toolbar with the address bar is: in a row of its own below the tabs, or in the
+ * row of the tabs, which works with the tab strip at the top only.
+ */
+export const toolbarPlacements = ['own-row', 'tab-row'] as const;
+
+/** A place of the toolbar. */
+export type ToolbarPlacement = (typeof toolbarPlacements)[number];
+
+/**
  * The buttons of the toolbar that can be hidden and moved: the reader view, picture in picture,
  * the star, the shield and downloads.
  */

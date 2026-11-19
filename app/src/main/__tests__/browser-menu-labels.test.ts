@@ -42,6 +42,7 @@ const context: CommandContext = {
   reader: false,
   pictureInPicture: false,
   workspaces: 1,
+  autoHide: true,
 };
 
 /**

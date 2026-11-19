@@ -49,6 +49,22 @@ describe('SettingsClient', () => {
     expect(client.get('appearance.accent')?.value).toBe('red');
   });
 
+  it('applies a layout preset in one request, and tells when the browser refused it', async () => {
+    const page = bridge();
+    const client = new SettingsClient(page, () => undefined);
+    const applied = {
+      ...page,
+      invoke: (channel: string, payload: unknown): Promise<unknown> => {
+        page.calls.push([channel, payload]);
+        return Promise.resolve({ applied: ['toolbar.placement'], locked: ['tabs.position'] });
+      },
+    };
+    expect(await new SettingsClient(applied, () => undefined).applyPreset('compact')).toBe(true);
+    expect(page.calls.at(-1)).toEqual(['settings.applyLayoutPreset', { preset: 'compact' }]);
+    // An answer without the applied settings, as for a refused request, is no success.
+    expect(await client.applyPreset('zen')).toBe(false);
+  });
+
   it('paints swatches through the style object of each element', () => {
     const style = { setProperty: vi.fn() };
     const root = { querySelectorAll: () => [{ style }] } as unknown as ParentNode;

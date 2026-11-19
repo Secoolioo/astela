@@ -81,6 +81,7 @@ The settings page (`app://settings`) is generated from the setting definitions:
 - **Modified** lists every setting whose value differs from its default.
 - **Export and import** use JSON with a version and schema check. Exports never contain secrets, and an export followed by an import is designed to be lossless.
 - **Locked settings** appear as described above.
+- **Layout presets** set four settings at once with `setMany`: the place of the tabs, the place of the toolbar, whether the rows at the top hide and the density. The page recognizes a preset by these values and stores no preset of its own, and a preset that would change a locked setting cannot be chosen ([ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md)).
 
 ### Storage
 

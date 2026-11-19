@@ -6,7 +6,9 @@ import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingInspection, SettingsService } from '../domain/settings/settings-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
+import { layoutKeys, layoutPresets } from '../shared/layout-presets.ts';
 import {
+  ApplyLayoutPreset,
   ChooseDownloadFolder,
   ClearBrowsingData,
   GetShortcuts,
@@ -138,6 +140,18 @@ export function connectSettingsPage(
       ok: false,
       error: result.error.kind === 'locked-by-policy' ? 'locked' : 'invalid',
     } as const;
+  });
+  // A layout preset sets its settings at once, apart from those that a policy sets; the setup
+  // guide applies presets too.
+  router.handle(ApplyLayoutPreset, ({ preset }) => {
+    const values = layoutPresets[preset];
+    const entries = layoutKeys.flatMap((key) => {
+      const definition = shown.get(key);
+      return definition === undefined ? [] : [[definition, values[key]] as const];
+    });
+    const written = settings.setMany(entries);
+    if (!written.ok) throw new Error(`The layout preset ${preset} is invalid`);
+    return { applied: [...written.value.applied], locked: [...written.value.locked] };
   });
   router.handle(ResetSettings, ({ keys }, { sender }) => {
     if (!fromSettingsPage(sender)) throw new Error('Only the settings page resets settings');

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. [ADR 0058](0058-layout-presets-and-top-rows-that-hide.md) adds the toolbar in the row of the tabs: that one row is then the top row, as high as the toolbar. Rows that hide keep an edge or, where Chromium draws the window controls, a title row of the shell, which takes the pointer and moves no window; while the rows show, their free room moves the window, and the browser asks the system where its pointer is while the shell lost it there.
 
 ## Date
 

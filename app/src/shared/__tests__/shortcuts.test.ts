@@ -153,6 +153,19 @@ describe('the command of picture in picture', () => {
   });
 });
 
+describe('the command that hides the toolbar', () => {
+  it('comes after the bookmarks bar and has no default shortcut, as people give it one', () => {
+    expect(windowCommands.at(windowCommands.indexOf('bookmarks.toggleBar') + 1)).toBe(
+      'toolbar.toggleAutoHide',
+    );
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      expect(shortcutsOf(shortcutTable(platform), 'toolbar.toggleAutoHide')).toEqual([]);
+      const given = shortcutTable(platform, { 'toolbar.toggleAutoHide': ['F8'] });
+      expect(shortcutsOf(given, 'toolbar.toggleAutoHide')).toEqual(['F8']);
+    }
+  });
+});
+
 describe('the shortcuts of the workspaces', () => {
   it('choose a workspace with Alt and its digit, Control on macOS, and open the list with none', () => {
     for (const platform of ['win32', 'linux']) {

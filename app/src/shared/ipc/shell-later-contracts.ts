@@ -257,6 +257,21 @@ export const TogglePictureInPicture = defineRequest({
   capability: 'shell',
 });
 
+/**
+ * Tells the browser what holds the rows that hide open in the shell: the pointer over them, and
+ * the focus in one of their controls; and whether the shell drew them hidden, a frame ago, so
+ * that their regions move no window. The shell sends it when one of them changes; the browser
+ * gives the page the keys when the focus leaves the rows and the shell keeps it, and lays the
+ * page above the shell once the shell drew the rows hidden.
+ */
+export const HoldTopRows = defineRequest({
+  channel: 'shell.holdTopRows',
+  request: v.strictObject({ pointer: v.boolean(), focus: v.boolean(), hidden: v.boolean() }),
+  response: Done,
+  capability: 'shell',
+  ratePerSecond: 30,
+});
+
 /** Shows the suggestions for text typed in the address bar, below the field. */
 export const SuggestAddresses = defineRequest({
   channel: 'omnibox.suggest',
@@ -333,4 +348,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   MoveTabToWorkspace,
   ToggleReader,
   TogglePictureInPicture,
+  HoldTopRows,
 ];

@@ -19,11 +19,16 @@ import {
   StartupSetting,
   TabSleepAfterSetting,
   TabSleepSetting,
+  TabStripPositionSetting,
+  DensitySetting,
+  ToolbarAutoHideSetting,
+  ToolbarPlacementSetting,
   WorkspacesEnabledSetting,
   WorkspacesRemovedSetting,
   WorkspacesSetting,
 } from '../core-settings.ts';
 import { sleepAfterSeconds } from '../../shared/tab-sleep.ts';
+import { layoutKeys, layoutPresetIds, layoutPresets } from '../../shared/layout-presets.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -406,5 +411,108 @@ describe('TabSleepSetting and TabSleepAfterSetting', () => {
       { name: 'SleepingTabsTimeout', value: 60, level: 'mandatory' },
     ]);
     expect(unknown.get(TabSleepAfterSetting)).toBe(3600);
+  });
+});
+
+describe('ToolbarPlacementSetting and ToolbarAutoHideSetting', () => {
+  it('keep the toolbar in its own row and showing by default, in the section of appearance', () => {
+    expect(ToolbarPlacementSetting).toMatchObject({
+      key: 'toolbar.placement',
+      default: 'own-row',
+      scope: 'global',
+      policy: { name: 'ToolbarPlacement', recommended: true },
+      ui: { section: 'appearance', control: 'select' },
+    });
+    expect(ToolbarAutoHideSetting).toMatchObject({
+      key: 'toolbar.autoHide',
+      default: false,
+      scope: 'global',
+      policy: { name: 'AutoHideToolbar', recommended: true },
+      ui: { section: 'appearance', control: 'toggle' },
+    });
+    // Neither waits for a restart.
+    for (const setting of [ToolbarPlacementSetting, ToolbarAutoHideSetting]) {
+      expect(coreSettings).toContain(setting);
+      expect(setting.restartRequired).toBeUndefined();
+    }
+    expect(settingPolicies(coreSettings)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'ToolbarPlacement', recommended: true }),
+        expect.objectContaining({ name: 'AutoHideToolbar', recommended: true }),
+      ]),
+    );
+    expect(v.safeParse(ToolbarPlacementSetting.schema, 'tab-row').success).toBe(true);
+    expect(v.safeParse(ToolbarPlacementSetting.schema, 'sidebar').success).toBe(false);
+    expect(v.safeParse(ToolbarAutoHideSetting.schema, 'on').success).toBe(false);
+  });
+
+  it('follow a mandatory policy, and a recommended one only until people chose', async () => {
+    const managed = await settingsWith([
+      { name: 'ToolbarPlacement', value: 'tab-row', level: 'mandatory' },
+      { name: 'AutoHideToolbar', value: true, level: 'mandatory' },
+    ]);
+    expect([managed.get(ToolbarPlacementSetting), managed.get(ToolbarAutoHideSetting)]).toEqual([
+      'tab-row',
+      true,
+    ]);
+    expect(managed.inspect(ToolbarPlacementSetting).locked).toBe(true);
+    expect(managed.inspect(ToolbarAutoHideSetting).locked).toBe(true);
+    const suggested = await settingsWith(
+      [{ name: 'AutoHideToolbar', value: true, level: 'recommended' }],
+      { 'toolbar.autoHide': false },
+    );
+    expect(suggested.get(ToolbarAutoHideSetting)).toBe(false);
+    expect(suggested.inspect(ToolbarAutoHideSetting).locked).toBe(false);
+    // A place that the setting does not know leaves the default.
+    const unknown = await settingsWith([
+      { name: 'ToolbarPlacement', value: 'sidebar', level: 'mandatory' },
+    ]);
+    expect(unknown.get(ToolbarPlacementSetting)).toBe('own-row');
+  });
+});
+
+describe('the layout presets', () => {
+  it('set only values that the schemas of their settings take', () => {
+    const settings = {
+      'tabs.position': TabStripPositionSetting,
+      'toolbar.placement': ToolbarPlacementSetting,
+      'toolbar.autoHide': ToolbarAutoHideSetting,
+      'appearance.density': DensitySetting,
+    } as const;
+    for (const key of layoutKeys) expect(settings[key].key).toBe(key);
+    const refused = layoutPresetIds.flatMap((id) =>
+      layoutKeys
+        .filter((key) => !v.safeParse(settings[key].schema, layoutPresets[id][key]).success)
+        .map((key) => `${id} ${key}`),
+    );
+    expect(refused).toEqual([]);
+  });
+
+  it('apply in one step, and leave the settings that a policy sets as they are', async () => {
+    const managed = await settingsWith([
+      { name: 'TabStripPosition', value: 'left', level: 'mandatory' },
+    ]);
+    const changes: string[][] = [];
+    managed.onDidChange(({ keys }) => changes.push([...keys].toSorted()));
+    const definitions = {
+      'tabs.position': TabStripPositionSetting,
+      'toolbar.placement': ToolbarPlacementSetting,
+      'toolbar.autoHide': ToolbarAutoHideSetting,
+      'appearance.density': DensitySetting,
+    } as const;
+    const written = managed.setMany(
+      layoutKeys.map((key) => [definitions[key], layoutPresets.compact[key]] as const),
+    );
+    expect(written).toEqual({
+      ok: true,
+      value: {
+        applied: ['toolbar.placement', 'toolbar.autoHide', 'appearance.density'],
+        locked: ['tabs.position'],
+      },
+    });
+    expect(changes).toEqual([['appearance.density', 'toolbar.autoHide', 'toolbar.placement']]);
+    expect(managed.get(TabStripPositionSetting)).toBe('left');
+    expect(managed.get(ToolbarPlacementSetting)).toBe('tab-row');
+    expect(managed.get(DensitySetting)).toBe('compact');
   });
 });

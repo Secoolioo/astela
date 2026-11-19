@@ -35,6 +35,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   reader: true,
   pictureInPicture: true,
   workspaces: 1,
+  autoHide: true,
   ...change,
 });
 
@@ -142,6 +143,16 @@ describe('availableCommands', () => {
         context({ tabs: [page({ url: 'app://newtab/', pictureInPicture: 'open' })] }),
       ),
     ).toBe(false);
+  });
+
+  it('turns hiding the toolbar on and off only with the tabs at the top, and no policy', () => {
+    expect(canRun('toolbar.toggleAutoHide', context())).toBe(true);
+    // The tabs at a side or at the bottom keep the toolbar showing, as does a mandatory policy.
+    expect(canRun('toolbar.toggleAutoHide', context({ autoHide: false }))).toBe(false);
+    // On the browser's own pages too, as it changes the window and no page.
+    expect(
+      canRun('toolbar.toggleAutoHide', context({ tabs: [page({ url: 'app://settings/' })] })),
+    ).toBe(true);
   });
 
   it('follows the policies for private windows and developer tools', () => {

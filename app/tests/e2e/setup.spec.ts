@@ -10,7 +10,7 @@ async function clickAway(page: Page, name: string): Promise<void> {
   });
 }
 
-test('guides a new profile through its look, tabs and search engine', async () => {
+test('guides a new profile through its look, layout and search engine', async () => {
   const browser: Browser = await launch([], { firstRun: true });
   try {
     const page = await waitForPage(browser, (url) => url.startsWith('app://setup'));
@@ -23,12 +23,38 @@ test('guides a new profile through its look, tabs and search engine', async () =
       .toBe('dark');
     await page.getByRole('radio', { name: 'Teal' }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByRole('radio', { name: 'Left' }).check();
+    // The layouts are four cards of presets, which set the tabs, the toolbar and the density.
+    await expect(page.getByRole('heading', { name: 'Choose a layout' })).toBeVisible();
+    const layouts = page.getByRole('radiogroup', { name: 'Layout' });
+    expect(
+      await layouts
+        .getByRole('radio')
+        .evaluateAll((radios) => radios.map((radio) => radio.getAttribute('aria-labelledby'))),
+    ).toEqual(['layout-classic', 'layout-compact', 'layout-zen', 'layout-vertical']);
+    await expect(layouts.getByRole('radio', { name: 'Classic' })).toBeChecked();
+    await layouts.getByRole('radio', { name: 'Vertical' }).check();
     await expect(browser.shell.getByRole('tablist')).toHaveAttribute(
       'aria-orientation',
       'vertical',
     );
-    await page.getByRole('radio', { name: 'Compact' }).check();
+    await expect(layouts.getByRole('radio', { name: 'Vertical' })).toBeChecked();
+    expect(
+      await page.evaluate(async () => {
+        const all = (await window.bridge.invoke('settings.getAll', {})) as {
+          settings: { key: string; value: unknown }[];
+        };
+        const value = (key: string): unknown =>
+          all.settings.find((setting) => setting.key === key)?.value;
+        return [
+          value('tabs.position'),
+          value('toolbar.placement'),
+          value('toolbar.autoHide'),
+          value('appearance.density'),
+        ];
+      }),
+    ).toEqual(['left', 'own-row', false, 'normal']);
+    // The guide stays a tab among the tabs, without a question that blocks the browser.
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('radio', { name: 'Custom' }).check();
     await expect(page.getByRole('textbox', { name: 'Search address' })).toHaveValue('');

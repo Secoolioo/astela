@@ -205,15 +205,19 @@ The palette is that of the theme in light and dark mode, and only the dark one i
 
 ### Layout presets
 
-Presets give users a good layout without having to assemble it from individual settings:
+Presets give users a good layout without having to assemble it from individual settings. From 0.1.0-beta.7, four presets set the place of the tabs, the place of the toolbar, whether the rows at the top hide and the density at once ([ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md)):
 
-- Classic
-- Vertical left
-- Vertical right
-- Bottom
-- Compact
+| Preset   | Tabs | Toolbar                | Rows that hide | Density |
+| -------- | ---- | ---------------------- | -------------- | ------- |
+| Classic  | Top  | In its own row         | No             | Normal  |
+| Compact  | Top  | In the row of the tabs | No             | Compact |
+| Zen      | Top  | In the row of the tabs | Yes            | Normal  |
+| Vertical | Left | In its own row         | No             | Normal  |
 
-On first start, the new tab page is designed to offer the choice of presets without a modal dialog; the settings offer it later as well. After choosing a preset, users can adjust every part of the layout freely. Each preset has a reference layout as well.
+The settings page offers them in the row **Layout**, before the density, and the setup guide in its layout step: a card for each, as a radio button with a small window drawn with the tokens (`app/src/ui/ui-kit/layout-previews.ts`), its name and a note. The window of each card shows the page and the address field in `--surface-2`, the bars in `--surface-1` and the tabs in `--accent`, so the cards follow the theme, the accent color and the color mode; Zen shows only the edge that stays. The card whose values the settings have is checked; with other values, none is, and the row says _Your own arrangement_. Bottom and Right are one choice away in **Tabs**.
+
+- **The one row:** with the toolbar in the row of the tabs, the toolbar comes first, the tabs follow, and the menu button follows **New tab**. The row is `--toolbar-height` high, its cells lie on `--surface-0` with a line of `--line-1` below, the toolbar takes 42 % of the row but never less than its buttons and an address field of 96 px, the tabs never less than their buttons, the free room, the room of the window controls and two tabs of `--space-7`, and the tabs keep `--control-large` with rounded corners at the bottom. In a window too narrow for both, the tabs take a row of their own above the toolbar, as high as the one row. The window controls of Windows and Linux take the row's height, and the buttons of macOS lie in its middle.
+- **Rows that hide:** what stays is an edge of 2 px at the compact density and 4 px otherwise, or the title row, as high as the one row, on `--surface-0` with a line of `--line-1`, which shows the icon of the connection, or a globe for an address without one, the site in `--text-1`, which every web page names, and the title in `--text-2` at `--font-size-small`, both cut with an ellipsis before the room of the window controls. Rows that show over the page fade in over `--motion-fast` with `--ease-out`, by their opacity alone; with reduced motion, they show at once. The page below neither moves nor changes its size.
 
 ## Logo
 
@@ -241,4 +245,6 @@ The three density levels, the text size, the font of the UI and the accent color
 
 The tab bar sits at the top, at the bottom, or as a 240 px wide vertical list on the left or the right (setting `tabs.position`, policy `TabStripPosition`); the shell lays out the toolbar, the tab bar and the content area in a grid and reports where the content area is, so the page fills exactly that area. By default, the top row of the shell is the title bar of the window, with the window controls of the system in its corner, on Linux at the ends where the desktop puts them, in the color of the row; the row keeps `--space-7` free after its last button, so that it can move the window when the tabs fill it ([ADR 0048](../adr/0048-title-bar-drawn-by-the-browser.md)). The setting `appearance.titleBar` brings back the title bar of the system after a restart.
 
-Not implemented yet: a single-color version of the logo, the social preview image, collapsing the vertical tab bar, layout presets, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.
+The four [layout presets](#layout-presets) Classic, Compact, Zen and Vertical exist from 0.1.0-beta.7, with the toolbar in the row of the tabs (`toolbar.placement`) and the rows at the top that hide until they are needed (`toolbar.autoHide`), on the settings page and in the setup guide ([ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md)).
+
+Not implemented yet: a single-color version of the logo, the social preview image, collapsing the vertical tab bar, the F6 cycle from the toolbar to the tabs to the content, and automated accessibility and screenshot checks.

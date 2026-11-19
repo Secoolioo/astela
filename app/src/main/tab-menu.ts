@@ -51,7 +51,14 @@ export function popupTabMenu(
   const i18n = translatorFor(uiLocale(), process.platform);
   const template = tabMenuTemplate(window, tabId, i18n, options);
   if (template === undefined) return;
-  Menu.buildFromTemplate(template).popup({ window: window.window, x: position.x, y: position.y });
+  // Rows that hide stay while the menu is open, as it belongs to a tab in them.
+  const close = window.rows?.menu();
+  Menu.buildFromTemplate(template).popup({
+    window: window.window,
+    x: position.x,
+    y: position.y,
+    callback: () => close?.(),
+  });
 }
 
 /**

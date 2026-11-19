@@ -71,12 +71,15 @@ export async function popupContextMenu(
   // A menu opened with the keyboard belongs next to the focused element, not at the pointer.
   const position =
     params.menuSourceType === 'keyboard' ? { x: bounds.x + params.x, y: bounds.y + params.y } : {};
+  // The menu of the shell, such as of the address bar, keeps rows that hide open while it is.
+  const close = tabId === undefined ? window.rows?.menu() : undefined;
   menu.popup({
     window: window.window,
     sourceType: params.menuSourceType,
     ...position,
     // Lets system features of macOS, such as Writing Tools, work on the clicked frame.
     ...(params.frame ? { frame: params.frame } : {}),
+    callback: () => close?.(),
   });
 }
 

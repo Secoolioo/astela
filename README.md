@@ -39,10 +39,11 @@ On `main` now, and in the next beta, 0.1.0-beta.7:
 - **Workspaces:** named sets of tabs in each window, switched with a list and shortcuts.
 - **Reader view:** a button by the address bar, `F9` (`Option+Command+R` on macOS) and the browser menu show the article of a page alone, in the colors and the font of the browser.
 - **Picture in picture:** a button by the address bar, the browser menu and the context menu of a video show a playing video in a small window above other windows.
+- **Layouts:** Classic, Compact with the address bar in the row of the tabs, Zen with the tabs and the toolbar hidden until they are needed, and Vertical, in the settings and the setup guide.
 
 ## Planned for 0.1.0
 
-- Layout presets such as a compact and a zen layout, and site information in the address bar.
+- Site information in the address bar.
 - Saved passwords and autofill.
 
 ## Documentation
