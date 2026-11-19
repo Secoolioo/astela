@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { idleCpuLimit, mannWhitneyGreater, median, normalCdf } from './stats.ts';
+import { idleCpuLimit, idleCpuRound, mannWhitneyGreater, median, normalCdf } from './stats.ts';
 
 describe('median', () => {
   it('handles odd, even and empty lists', () => {
@@ -60,5 +60,26 @@ describe('idleCpuLimit', () => {
     // bare reference at 0.41 %.
     assert.ok(0.55 <= idleCpuLimit(0.41, 0.5, 0.2, 'darwin'));
     assert.ok(0.65 > idleCpuLimit(0.41, 0.5, 0.2, 'darwin'));
+  });
+});
+
+describe('idleCpuRound', () => {
+  it('compares the browser with the reference of the same round', () => {
+    // A Windows job: the reference was quiet in the first round only, the browser in neither.
+    // Its quietest window against the reference's quietest window would fail at 0.23 > 0.20.
+    const round = idleCpuRound([0.258, 0.233], [0, 0.129], 0.5, 0.2, 'win32');
+    assert.equal(round.browser, 0.233);
+    assert.equal(round.bare, 0.129);
+    assert.ok(round.browser <= round.limit);
+  });
+
+  it('still fails a browser that is busier than allowed in every round', () => {
+    const round = idleCpuRound([0.45, 0.43], [0.1, 0.12], 0.5, 0.2, 'linux');
+    assert.ok(round.browser > round.limit);
+  });
+
+  it('keeps the ceiling, and needs a round with both variants', () => {
+    assert.equal(idleCpuRound([0.49], [0.4], 0.5, 0.2, 'linux').limit, 0.5);
+    assert.throws(() => idleCpuRound([0.1], [], 0.5, 0.2, 'linux'));
   });
 });

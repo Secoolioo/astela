@@ -27,7 +27,7 @@ import { cpus, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { FuseV1Options, FuseVersion, flipFuses } from '@electron/fuses';
 import { updateServiceStates } from './browser-log.ts';
-import { idleCpuLimit, mannWhitneyGreater, median } from './stats.ts';
+import { idleCpuRound, mannWhitneyGreater, median } from './stats.ts';
 import { memoryMetric, sampleTree, startTree, stopTree, type TreeSample } from './system.ts';
 import { staticImports } from './start-path.ts';
 
@@ -429,13 +429,13 @@ function memoryChecks(m: Measurements): Check[] {
 
 /**
  * The idle CPU checks. An idle browser does not get busier by itself, while background work
- * of the runner comes and goes, so the quietest window of each variant counts.
+ * of the runner comes and goes, so the quietest round counts: the one whose windows of the
+ * browser and of the reference, measured one after the other, leave the browser the most room.
  */
 function cpuChecks(m: Measurements): Check[] {
-  const browser = Math.min(...m.cpuPercent.browser);
-  const bare = Math.min(...m.cpuPercent.bare);
-  const limit = idleCpuLimit(
-    bare,
+  const { browser, bare, limit } = idleCpuRound(
+    m.cpuPercent.browser,
+    m.cpuPercent.bare,
     budgets.cpuIdlePercent,
     budgets.cpuExtraPoints,
     process.platform,
