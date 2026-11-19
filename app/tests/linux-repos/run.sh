@@ -57,10 +57,12 @@ fi
 # runner images list their mirrors in apt-mirrors.txt instead of the sources. When the runner
 # had to leave the Ubuntu mirrors (tools/ci/apt-install.sh), the containers use the mirror it
 # chose, over plain HTTP since the images carry no certificates; apt checks the signatures.
+# Only the mirror of an Azure runner is taken over: the regional mirror of an EC2 runner answers
+# the many downloads of the containers with 503 Service Unavailable, so they keep the archive.
 if [ -n "${UBUNTU_MIRROR:-}" ]; then
   ubuntu_mirror=${UBUNTU_MIRROR/#https:/http:}
 else
-  ubuntu_mirror=$(grep -rhoE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
+  ubuntu_mirror=$(grep -rhoE 'https?://azure\.archive\.ubuntu\.com' /etc/apt/sources.list /etc/apt/sources.list.d /etc/apt/apt-mirrors.txt 2>/dev/null | head -1 || true)
   [ -z "$ubuntu_mirror" ] || ubuntu_mirror="$ubuntu_mirror/ubuntu"
 fi
 
