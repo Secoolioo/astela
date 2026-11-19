@@ -681,6 +681,7 @@ describe('groups of tabs', () => {
       reader: false,
       pictureInPicture: false,
       workspaces: 1,
+      autoHide: true,
     });
     for (let round = 0; round < 400; round += 1) {
       const id = any();

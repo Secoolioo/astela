@@ -1,8 +1,16 @@
+import type { ToolbarPlacement } from '../../shared/layout.ts';
+
 /** The density of the interface, which sets the heights of its rows. */
 export type Density = 'compact' | 'normal' | 'comfortable';
 
 /** Where the tab strip is. */
 export type TabStripSide = 'top' | 'bottom' | 'left' | 'right';
+
+/** Where the tab strip is, and where the toolbar is. */
+export interface RowLayout {
+  readonly side: TabStripSide;
+  readonly toolbar: ToolbarPlacement;
+}
 
 /** The heights of the rows of the shell at each density, as the design tokens set them. */
 const rows: Readonly<Record<Density, { tab: number; toolbar: number; gap: number }>> = {
@@ -13,6 +21,16 @@ const rows: Readonly<Record<Density, { tab: number; toolbar: number; gap: number
 
 /** The width of a vertical tab strip. */
 const sidebarWidth = 240;
+
+/**
+ * Where the toolbar is: in the row of the tabs only with the tab strip at the top, and in a row
+ * of its own otherwise.
+ * @param side - Where the tab strip is.
+ * @param placement - Where the settings put the toolbar.
+ */
+export function toolbarRow(side: TabStripSide, placement: ToolbarPlacement): ToolbarPlacement {
+  return side === 'top' ? placement : 'own-row';
+}
 
 /**
  * Where the window controls lie in an integrated title bar, in CSS pixels: at the start of
@@ -29,18 +47,32 @@ export interface TitleBarArea {
 }
 
 /**
- * The area of the window controls in an integrated title bar: the top row is the tab strip
- * when it is at the top, and the toolbar otherwise.
+ * The area of the window controls in an integrated title bar: the top row is the row of the
+ * tabs when they are at the top, which holds the toolbar too when it is in that row, and the
+ * toolbar otherwise.
  * @param platform - The operating system, as `process.platform` names it.
  * @param density - The density of the interface.
- * @param side - Where the tab strip is.
+ * @param layout - Where the tab strip and the toolbar are.
  */
-export function titleBarArea(platform: string, density: Density, side: TabStripSide): TitleBarArea {
+export function titleBarArea(platform: string, density: Density, layout: RowLayout): TitleBarArea {
   const row = rows[density];
-  const height = side === 'top' ? row.tab + row.gap : row.toolbar;
+  const height =
+    layout.side !== 'top'
+      ? row.toolbar
+      : layout.toolbar === 'tab-row'
+        ? row.toolbar
+        : row.tab + row.gap;
   return platform === 'darwin'
     ? { side: 'start', size: 76, height }
     : { side: 'end', size: 138, height };
+}
+
+/**
+ * Where the three buttons of a macOS window go: centered in the top row.
+ * @param area - The area of the window controls.
+ */
+export function windowButtonsAt(area: TitleBarArea): { readonly x: number; readonly y: number } {
+  return { x: 14, y: Math.max(0, Math.round((area.height - 14) / 2)) };
 }
 
 /** The window controls that Chromium draws on Windows and Linux. */
@@ -55,8 +87,8 @@ export interface ControlsOverlay {
 
 /**
  * The window controls of Windows and Linux: in the color of the row that they sit on, the
- * background of the window behind a tab strip at the top and the toolbar's color otherwise,
- * with symbols that can be read on it, and as high as the row.
+ * background of the window behind a tab strip at the top, also with the toolbar in its row,
+ * and the toolbar's color otherwise, with symbols that can be read on it, and as high as the row.
  * @param area - Where the controls are.
  * @param colors - The background of the window and the color of the toolbar, as `#rrggbb`.
  * @param side - Where the tab strip is.
@@ -79,18 +111,23 @@ function isDark(color: string): boolean {
 }
 
 /**
- * Where the content area of a new window starts, until the shell reports where it is.
+ * Where the content area of a new window starts, until the shell reports where it is: below
+ * the row of the tabs and the toolbar, or below the one row that holds both.
  * @param density - The density of the interface.
- * @param side - Where the tab strip is.
+ * @param layout - Where the tab strip and the toolbar are.
  */
 export function startInsets(
   density: Density,
-  side: TabStripSide,
+  layout: RowLayout,
 ): { top: number; right: number; bottom: number; left: number } {
   const row = rows[density];
   const strip = row.tab + row.gap;
+  const { side } = layout;
   return {
-    top: row.toolbar + (side === 'top' ? strip : 0),
+    top:
+      side === 'top' && layout.toolbar === 'tab-row'
+        ? row.toolbar
+        : row.toolbar + (side === 'top' ? strip : 0),
     right: side === 'right' ? sidebarWidth : 0,
     bottom: side === 'bottom' ? strip : 0,
     left: side === 'left' ? sidebarWidth : 0,

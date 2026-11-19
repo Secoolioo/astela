@@ -166,3 +166,23 @@ For [ADR 0057](../adr/0057-reader-view-and-picture-in-picture-in-isolated-worlds
 - The activation flag of Electron counts for `requestPictureInPicture()` in the main frame and in frames of other sites, so the browser process can start picture in picture for a click on its own button.
 - A page's Document Picture-in-Picture arrives as a window of the disposition `other`, which the guard of the browser would show as a tab; picture in picture refuses it ([ADR 0057](../adr/0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)).
 - Not measured here: macOS 15, Windows 2025 and Wayland. The end-to-end tests of the reader view (`reader.spec.ts`), with world 1002, Trusted Types, the cover, find and print, run on the CI runners of macOS and Windows; so do those of picture in picture (`picture-in-picture.spec.ts`), which check the activation there, in the main frame and in a frame of another site. Whether the window of picture in picture stays above other windows, on macOS also over the simple full screen of a page, and where Wayland places it, needs a check by hand.
+
+## Layouts and rows that hide
+
+For [ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md), a probe with the packaged browser of the end-to-end tests, Electron 45.2.3 (Chromium 156.0.8078.80), on Linux x64 (X11 under Xvfb, software rendering, a container without the sandbox) moved the pointer of the X server with `xdotool mousemove` over the window, whose title bar the browser draws, and recorded the events of the pointer in the shell. A second run, with the one row that hides (`toolbar.placement` `tab-row`, `toolbar.autoHide` on) and a page of a local HTTP server, read whether the rows showed after each move. It ran on 2026-11-12.
+
+| Question                                                                                | Result on Linux x64 (X11)                                                |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| The pointer moves from a tab to the free room after **New tab**, which moves the window | The shell gets `pointerleave` where the free room starts.                |
+| The pointer moves on within the free room                                               | The shell gets no event.                                                 |
+| The pointer moves back onto a tab, then into the page                                   | `pointerenter` and `pointermove` on the tab, `pointerleave` at the page. |
+| Rows that hide: the pointer rests on the title row, which takes the pointer             | Hidden after 150 ms, shown after 650 ms.                                 |
+| Rows that show: the pointer rests on their free room for 1.5 s                          | Shown, as the browser asks where the pointer is.                         |
+| The pointer moves back onto a tab, then over the free room into the page                | Shown on the tab, and hidden 1 s after the pointer reached the page.     |
+
+**Results:**
+
+- A region that moves the window takes the pointer from the view: the document gets `pointerleave` there, as when the pointer leaves the view, and nothing while the pointer moves within the region. A title row that moved the window would never show the rows, and rows that show would hide under a pointer that rests on their free room.
+- So what stays of rows that hide takes the pointer and moves no window, and while the shell lost the pointer over rows that show, the browser asks the system where its pointer is, every 200 ms and for at most 10 s.
+- Input events that a test sends to a view, with `sendInputEvent` or Playwright, skip the hit test of the regions. The end-to-end tests put the system's pointer where they send their events, by replacing `screen.getCursorScreenPoint()` in the browser process.
+- Not measured here: macOS 15, Windows 2025 and Wayland. Whether a region that moves the window takes the pointer there in the same way, whether `getCursorScreenPoint()` and the content bounds share their coordinates, and how much of the title row the strip at the top of a window that is not maximized leaves on Windows, needs the CI runners or a check by hand; the end-to-end tests in `layouts.spec.ts` run on all three runners.

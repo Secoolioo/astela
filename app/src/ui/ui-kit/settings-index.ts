@@ -1,4 +1,5 @@
 import { bangs } from '../../shared/bangs.ts';
+import { layoutKeys, layoutPresetIds } from '../../shared/layout-presets.ts';
 import { searchEngines } from '../../shared/search-engines.ts';
 import { folded } from '../../shared/search-text.ts';
 import { secureDnsProviders } from '../../shared/secure-dns.ts';
@@ -12,6 +13,7 @@ export const choices = {
   'appearance.density': ['compact', 'normal', 'comfortable'],
   'appearance.textSize': ['small', 'medium', 'large', 'larger'],
   'tabs.position': ['top', 'bottom', 'left', 'right'],
+  'toolbar.placement': ['own-row', 'tab-row'],
   'appearance.titleBar': ['integrated', 'system'],
   'startup.page': ['restore', 'newtab', 'pages'],
   'reader.font': ['browser', 'serif'],
@@ -115,6 +117,20 @@ export const settingsIndex: readonly SettingsSection[] = [
         ],
       },
       { id: 'appearance.accent', keys: ['settings.accent'] },
+      // The layout presets set the tabs, the toolbar and the density at once. Its note names
+      // those settings, so it does not find the row, which would come before each of them.
+      {
+        id: 'layout',
+        settings: [...layoutKeys],
+        keys: [
+          'settings.layout',
+          'settings.layout.keywords',
+          ...layoutPresetIds.flatMap(
+            (id) => [`settings.layout.${id}`, `settings.layout.${id}.note`] as const,
+          ),
+          'settings.layout.custom',
+        ],
+      },
       {
         id: 'appearance.density',
         keys: [
@@ -184,6 +200,18 @@ export const settingsIndex: readonly SettingsSection[] = [
           'settings.tabPosition.keywords',
           ...optionKeys('tabs.position', 'settings.tabPosition'),
         ],
+      },
+      {
+        id: 'toolbar.placement',
+        keys: [
+          'settings.toolbarPlacement',
+          'settings.toolbarPlacement.keywords',
+          ...optionKeys('toolbar.placement', 'settings.toolbarPlacement'),
+        ],
+      },
+      {
+        id: 'toolbar.autoHide',
+        keys: ['settings.autoHide', 'settings.autoHideNote', 'settings.autoHide.keywords'],
       },
       {
         id: 'appearance.titleBar',

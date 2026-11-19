@@ -33,8 +33,10 @@ import { defineSetting } from '../domain/settings/setting.ts';
 import {
   tabStripPositions,
   toolbarItems,
+  toolbarPlacements,
   type TabStripPosition,
   type ToolbarItem,
+  type ToolbarPlacement,
 } from '../shared/layout.ts';
 import type { CustomSearchEngine } from '../shared/search-engines.ts';
 import { readerFonts, type ReaderFont } from '../shared/page-tools.ts';
@@ -214,6 +216,36 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   scope: 'global',
   policy: { name: 'TabStripPosition', recommended: true },
   ui: { section: 'appearance', control: 'select', order: 4 },
+});
+
+/**
+ * Where the toolbar with the address bar is: in a row of its own, or in the row of the tabs,
+ * which takes the place of the title bar. It works with the tabs at the top only; elsewhere
+ * the toolbar keeps its own row. A policy can set or recommend it.
+ */
+export const ToolbarPlacementSetting = defineSetting<ToolbarPlacement>({
+  key: 'toolbar.placement',
+  schema: v.picklist(toolbarPlacements),
+  default: 'own-row',
+  scope: 'global',
+  policy: { name: 'ToolbarPlacement', recommended: true },
+  ui: { section: 'appearance', control: 'select', order: 4 },
+});
+
+/**
+ * Whether the tabs and the toolbar hide until they are needed: the page then lies under an
+ * edge, or under a title row with the site where the system draws the window controls into the
+ * browser, and the rows show over the page for the pointer at the top edge, the focus, the find
+ * bar, the menus and popovers of the toolbar and a moment after a tab shows another site. It
+ * works with the tabs at the top only, and never in popups. A policy can set or recommend it.
+ */
+export const ToolbarAutoHideSetting = defineSetting<boolean>({
+  key: 'toolbar.autoHide',
+  schema: v.boolean(),
+  default: false,
+  scope: 'global',
+  policy: { name: 'AutoHideToolbar', recommended: true },
+  ui: { section: 'appearance', control: 'toggle', order: 4 },
 });
 
 /** Where the window controls are: in the row of the tabs, or in a title bar of the system. */
@@ -756,6 +788,8 @@ export const coreSettings = [
   WebFontsSetting,
   ToolbarItemsSetting,
   TabStripPositionSetting,
+  ToolbarPlacementSetting,
+  ToolbarAutoHideSetting,
   TitleBarSetting,
   ContentBlockerSetting,
   BlockerAllowedSitesSetting,

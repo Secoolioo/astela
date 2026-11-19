@@ -98,6 +98,7 @@ Some checks need people. Maintainers other than the release author do them once 
 - Import of the ADMX templates into a Microsoft Intune test tenant.
 - Design review of the generated screenshot gallery (all tab bar positions, light and dark).
 - Google account sign-in after every Electron major upgrade.
+- The Zen and Compact layouts on GNOME and KDE with Wayland, and with a real pointer on Windows and macOS: the rows that hide show from the edge or the title row, stay while the pointer rests on their free room, hide once it is over the page, and the window moves from that free room ([ADR 0058](../adr/0058-layout-presets-and-top-rows-that-hide.md)).
 
 ## Security
 

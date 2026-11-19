@@ -21,6 +21,10 @@ From 0.1.0-beta.7, tabs can stand together in named, colored groups, whose tabs 
 
 From 0.1.0-beta.7, each window can keep sets of tabs in workspaces and show one of them at a time; the others stay open in the background. The button at the start of the tab strip switches between them, and **Move to workspace** in the menu of a tab, or a drag onto that button, moves a tab into another workspace. See [Workspaces](workspaces.md).
 
+## The place of the tabs
+
+**Tabs** in the [settings](settings.md#appearance) puts the tab strip at the top, at the bottom, or as a list at the left or the right. From 0.1.0-beta.7, with the tabs at the top, the address bar can share their row, and the tabs and the toolbar can hide until you need them; four [layouts](layouts.md) set these at once.
+
 ## Many tabs
 
 Tabs get narrower as you open more of them. Narrow tabs show only the icon of their page, and the active tab shows its close button instead; a middle click closes any tab. When the tabs no longer fit, the tab strip scrolls, also with the mouse wheel, and a line marks each side behind which tabs are hidden.

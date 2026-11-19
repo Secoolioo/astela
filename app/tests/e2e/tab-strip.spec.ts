@@ -758,7 +758,10 @@ test('fits the window controls to the top row when the density, the colors or th
       );
     const settings = await openSetting(browser, 'appearance.density');
     // Compact: the tabs are 28 px high, with 2 px above them.
-    await settings.getByRole('radio', { name: 'Compact' }).check();
+    await settings
+      .getByRole('radiogroup', { name: 'Density' })
+      .getByRole('radio', { name: 'Compact' })
+      .check();
     if (mac) {
       await expect.poll(controls).toEqual({ x: 14, y: 8 });
     } else {

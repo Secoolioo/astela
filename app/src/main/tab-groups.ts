@@ -53,6 +53,8 @@ export function openGroupEditor(
   overlay.open(
     { kind: 'group', anchor: rectOf(anchor), id: group.id, name: group.name, color: group.color },
     {
+      // The popover belongs to the chip of the group, which rows that hide keep showing for it.
+      popover: { kind: 'group', folder: null },
       focusBack: focusBackOf(window, anchor),
       // Escape belongs to the page, which lets an input method finish the name first; what was
       // typed is kept from the questions of sites.

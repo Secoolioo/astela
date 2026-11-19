@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { tabStripPositions, toolbarItems } from '../layout.ts';
+import { tabStripPositions, toolbarItems, toolbarPlacements } from '../layout.ts';
 import { pictureInPictureStates, readerStates } from '../page-tools.ts';
 import { splitRatio } from '../split-view.ts';
 import { swatches } from '../swatches.ts';
@@ -140,14 +140,32 @@ const DownloadsSummary = v.strictObject({
  * The popover of a button of the shell that the overlay shows, so that the button shows it as
  * open: the browser menu, the menu of a folder of the bookmarks bar with the folder's id (that
  * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's,
- * the list of downloads and the list of the workspaces. `folder` is `null` for all but folders.
+ * the list of downloads, the list of the workspaces and the popover of a group of tabs at its
+ * chip. `folder` is `null` for all but folders. Rows that hide show while one is open.
  */
 export const ShellPopover = v.strictObject({
-  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads', 'workspaces']),
+  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads', 'workspaces', 'group']),
   folder: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 /** The popover of a button of the shell that the overlay shows. */
 export type ShellPopover = v.InferOutput<typeof ShellPopover>;
+
+/**
+ * The rows at the top of the window: where the toolbar is, in a row of its own or in the row
+ * of the tabs, and, while the tabs and the toolbar hide until they are needed, whether they
+ * show now, what stays of them while they hide, an `edge` or a `title` row with the site, and
+ * how high that is, where the page starts. `hiding` is `null` while the rows always show.
+ */
+export const TopRowsView = v.strictObject({
+  toolbar: v.picklist(toolbarPlacements),
+  hiding: v.nullable(
+    v.strictObject({
+      shown: v.boolean(),
+      rest: v.picklist(['edge', 'title']),
+      height: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(200)),
+    }),
+  ),
+});
 
 /**
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
@@ -162,7 +180,7 @@ export type ShellPopover = v.InferOutput<typeof ShellPopover>;
  * share of the left one, or `null` while the active tab shows alone, `workspace` the workspace
  * that the window shows, or `null` in private windows, in popups and while workspaces are off,
  * which have no button of workspaces, and `workspaces` every workspace of the profile then, for
- * the targets of a dragged tab.
+ * the targets of a dragged tab, and `layout` the rows at the top of the window.
  */
 export const ShellState = v.strictObject({
   tabs: v.array(TabView),
@@ -181,6 +199,7 @@ export const ShellState = v.strictObject({
   split: v.nullable(v.strictObject({ start: TabId, end: TabId, ratio: SplitRatio })),
   workspace: v.nullable(Workspace),
   workspaces: v.array(Workspace),
+  layout: TopRowsView,
 });
 /** Everything the shell renders. */
 export type ShellState = v.InferOutput<typeof ShellState>;

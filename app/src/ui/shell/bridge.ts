@@ -39,6 +39,7 @@ import type {
   MoveTabToWorkspace,
   ToggleReader,
   TogglePictureInPicture,
+  HoldTopRows,
 } from '../../shared/ipc/shell-later-contracts.ts';
 
 interface Requests {
@@ -76,6 +77,7 @@ interface Requests {
   'workspaces.moveTab': typeof MoveTabToWorkspace;
   'shell.toggleReader': typeof ToggleReader;
   'shell.togglePictureInPicture': typeof TogglePictureInPicture;
+  'shell.holdTopRows': typeof HoldTopRows;
 }
 
 interface Events {

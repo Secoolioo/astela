@@ -110,6 +110,16 @@ export class SettingsClient {
     return isRecord(result) && result['ok'] === true;
   }
 
+  /**
+   * Applies a layout preset: its settings change at once, apart from those that a policy sets.
+   * @param preset - The preset, such as `compact`.
+   * @returns Whether the browser applied it.
+   */
+  async applyPreset(preset: string): Promise<boolean> {
+    const result = await this.bridge.invoke('settings.applyLayoutPreset', { preset });
+    return isRecord(result) && Array.isArray(result['applied']);
+  }
+
   /** Stops following changes. */
   dispose(): void {
     this.unsubscribe();

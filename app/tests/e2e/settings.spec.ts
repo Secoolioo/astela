@@ -79,7 +79,11 @@ test('changes the appearance at once in every view', async () => {
   await expect
     .poll(() => browser.shell.evaluate(token, '--accent-light'))
     .toBe('oklch(54.8% 0.150 150.0)');
-  await page.getByRole('radio', { name: 'Compact' }).check();
+  // The density, not the layout of the same name, which sets more.
+  await page
+    .getByRole('radiogroup', { name: 'Density' })
+    .getByRole('radio', { name: 'Compact' })
+    .check();
   await expect.poll(() => browser.shell.evaluate(token, '--tab-height')).toBe('28px');
   expect(await page.evaluate(token, '--tab-height')).toBe('28px');
   // The page only reaches its own channels.
@@ -288,7 +292,9 @@ test('opens a setting from its link and marks the section of the page in the nav
   await page.evaluate(() => {
     location.hash = '#appearance.density';
   });
-  await expect(page.getByRole('radio', { name: 'Compact' })).toBeFocused();
+  await expect(
+    page.getByRole('radiogroup', { name: 'Density' }).getByRole('radio', { name: 'Compact' }),
+  ).toBeFocused();
 });
 
 test('marks the section in view, also below its heading and at the end of the page', async () => {
@@ -530,9 +536,10 @@ test('scales the controls with the density, and the text with the text size and 
   const height = (): Promise<string> => address.evaluate((input) => getComputedStyle(input).height);
   // The address bar has the height of a large control at each density.
   expect(await height()).toBe('32px');
-  await page.getByRole('radio', { name: 'Compact' }).check();
+  const density = page.getByRole('radiogroup', { name: 'Density' });
+  await density.getByRole('radio', { name: 'Compact' }).check();
   await expect.poll(height).toBe('28px');
-  await page.getByRole('radio', { name: 'Comfortable' }).check();
+  await density.getByRole('radio', { name: 'Comfortable' }).check();
   await expect.poll(height).toBe('40px');
   const body = (property: 'fontSize' | 'fontFamily') => () =>
     page.evaluate((name) => getComputedStyle(document.body)[name], property);

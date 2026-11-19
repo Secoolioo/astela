@@ -1,9 +1,18 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { brand } from '../../shared/brand.ts';
+import {
+  layoutKeys,
+  layoutPresetIds,
+  lockedPresets,
+  presetOf,
+  type LayoutPresetId,
+} from '../../shared/layout-presets.ts';
 import { searchEngines } from '../../shared/search-engines.ts';
 import { builtInThemes, lineOpacity } from '../../shared/themes.ts';
 import { isMessageKey, type MessageKey, type Translator } from '../i18n/i18n.ts';
 import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
+import { layoutPreview, layoutPreviewStyles } from '../ui-kit/layout-previews.ts';
 import { SettingsClient, paintSwatches, type PageBridge } from '../ui-kit/settings-client.ts';
 
 /** The steps of the guide, in order. */
@@ -11,8 +20,6 @@ const steps = ['welcome', 'look', 'layout', 'search', 'import', 'browser', 'done
 type Step = (typeof steps)[number];
 
 const colorModes = ['system', 'light', 'dark'] as const;
-const tabPositions = ['top', 'bottom', 'left', 'right'] as const;
-const densities = ['compact', 'normal', 'comfortable'] as const;
 
 /** Surface colors of a window preview. */
 interface PreviewColors {
@@ -39,7 +46,7 @@ function previewColors(mode: 'light' | 'dark'): PreviewColors {
 }
 
 /**
- * The setup guide that opens on the first start of a profile: look, tab layout and search
+ * The setup guide that opens on the first start of a profile: look, layout and search
  * engine, step by step. Every choice applies at once, so the browser around the guide
  * shows it; every step can be skipped, and the settings page offers the same choices.
  */
@@ -55,6 +62,7 @@ export class SetupGuide extends LitElement {
   static override styles = [
     choiceStyles,
     switchStyles,
+    layoutPreviewStyles,
     css`
       :host {
         display: flex;
@@ -180,15 +188,9 @@ export class SetupGuide extends LitElement {
         font-size: var(--font-size-ui);
         line-height: var(--line-height-ui);
       }
-      /* Presentation attributes cannot use custom properties, so the previews use classes. */
-      .card .accent {
-        fill: var(--accent);
-      }
-      .card .bar {
-        fill: var(--surface-1);
-      }
-      .card .page {
-        fill: var(--surface-2);
+      .card .note {
+        color: var(--text-2);
+        font-size: var(--font-size-small);
       }
       .engines {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -352,37 +354,52 @@ export class SetupGuide extends LitElement {
       ${this.renderSwatches()}`;
   }
 
+  /**
+   * The layouts: a card for each preset, which sets the place of the tabs and the toolbar and
+   * the density at once, and the bookmarks bar. The settings page has each part on its own.
+   */
   private renderLayout(): TemplateResult {
+    const values = Object.fromEntries(layoutKeys.map((key) => [key, this.client?.get(key)?.value]));
+    const loaded = layoutKeys.every((key) => this.client?.get(key) !== undefined);
+    const current = presetOf(values);
+    const locked = lockedPresets(values, (key) => this.client?.get(key)?.locked === true);
     return html`<h1>${this.t('setup.layout.title')}</h1>
       <p>${this.t('setup.layout.body')}</p>
-      <h2 id="tabs">${this.t('settings.tabPosition')}</h2>
-      <div class="cards" role="radiogroup" aria-labelledby="tabs">
-        ${tabPositions.map((position) =>
-          this.renderCard(
-            'tabs.position',
-            position,
-            `settings.tabPosition.${position}`,
-            layoutPreview(position),
-          ),
+      <div class="cards" role="radiogroup" aria-label=${this.t('settings.layout')}>
+        ${layoutPresetIds.map(
+          (id) =>
+            html`<label class="card">
+              <input
+                type="radio"
+                name="layout"
+                aria-labelledby=${`layout-${id}`}
+                aria-describedby=${`layout-${id}-note`}
+                .checked=${live(current === id)}
+                ?disabled=${!loaded || locked.includes(id)}
+                @change=${() => void this.applyPreset(id)}
+              />
+              ${layoutPreview(id)}
+              <span id=${`layout-${id}`}>${this.t(`settings.layout.${id}`)}</span>
+              <span class="note" id=${`layout-${id}-note`}>
+                ${
+                  locked.includes(id)
+                    ? this.t('settings.managed')
+                    : this.t(`settings.layout.${id}.note`)
+                }
+              </span>
+            </label>`,
         )}
-      </div>
-      <h2 id="density">${this.t('settings.density')}</h2>
-      <div class="segments" role="radiogroup" aria-labelledby="density">
-        ${densities.map((density) => {
-          const setting = this.client?.get('appearance.density');
-          return html`<label>
-            <input
-              type="radio"
-              name="appearance.density"
-              .checked=${setting?.value === density}
-              ?disabled=${setting?.locked !== false}
-              @change=${() => void this.client?.set('appearance.density', density)}
-            />${this.tk(`settings.density.${density}`)}
-          </label>`;
-        })}
       </div>
       <h2>${this.t('shell.bookmarksBar')}</h2>
       ${this.renderSwitch('bookmarks.bar', 'settings.bookmarksBar', 'settings.bookmarksBarNote')}`;
+  }
+
+  /**
+   * Applies a layout preset. A click checks its card at once, and the change of the settings
+   * shows the preset; when the browser refused it, the cards show the settings as they are.
+   */
+  private async applyPreset(id: LayoutPresetId): Promise<void> {
+    if ((await this.client?.applyPreset(id)) !== true) this.requestUpdate();
   }
 
   /** A switch for a setting of the guide, with a note below its label, and more rows. */
@@ -606,18 +623,4 @@ function modePreview(mode: (typeof colorModes)[number]): TemplateResult {
       ? svg`${previewWindow(0, 80, previewColors('light'))}${previewWindow(80, 80, previewColors('dark'))}`
       : previewWindow(0, 160, previewColors(mode));
   return html`<svg viewBox="0 0 160 90" aria-hidden="true">${parts}</svg>`;
-}
-
-/** A small window that shows where the tab strip goes, drawn in the page's own colors. */
-function layoutPreview(position: (typeof tabPositions)[number]): TemplateResult {
-  const tabs = {
-    top: svg`<rect x="0" y="0" width="160" height="12" class="accent" /><rect x="0" y="12" width="160" height="12" class="bar" />`,
-    bottom: svg`<rect x="0" y="0" width="160" height="12" class="bar" /><rect x="0" y="78" width="160" height="12" class="accent" />`,
-    left: svg`<rect x="0" y="0" width="160" height="12" class="bar" /><rect x="0" y="12" width="40" height="78" class="accent" />`,
-    right: svg`<rect x="0" y="0" width="160" height="12" class="bar" /><rect x="120" y="12" width="40" height="78" class="accent" />`,
-  }[position];
-  return html`<svg viewBox="0 0 160 90" aria-hidden="true">
-    <rect x="0" y="0" width="160" height="90" class="page" />
-    ${tabs}
-  </svg>`;
 }

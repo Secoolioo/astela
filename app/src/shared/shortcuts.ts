@@ -63,6 +63,7 @@ export const windowCommands = [
   'bookmark.toggle',
   'bookmarks.open',
   'bookmarks.toggleBar',
+  'toolbar.toggleAutoHide',
   'history.open',
   'downloads.open',
   'settings.open',

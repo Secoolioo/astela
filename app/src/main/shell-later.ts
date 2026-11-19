@@ -29,6 +29,7 @@ import {
   MoveTabToWorkspace,
   ToggleReader,
   TogglePictureInPicture,
+  HoldTopRows,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type { TabId } from '../domain/tabs/tab-service.ts';
@@ -113,6 +114,8 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
     TogglePictureInPicture,
     (_request, { sender }) => (windowOf(sender).execute('media.pictureInPicture'), null),
   );
+  // What holds the rows that hide open in the shell: the pointer over them, and the focus.
+  router.handle(HoldTopRows, (holds, { sender }) => (windowOf(sender).rows?.hold(holds), null));
   router.handle(
     GetFavicon,
     async ({ key }, { sender }) => (await windowOf(sender).favicon(key)) ?? null,

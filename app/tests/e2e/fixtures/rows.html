@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture rows</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="clicks">0</p>
+    <script>
+      // The test reads how often the page changed its size and was clicked.
+      window.resizes = 0;
+      window.clicks = 0;
+      addEventListener('resize', () => {
+        window.resizes += 1;
+      });
+      addEventListener('click', () => {
+        window.clicks += 1;
+        document.getElementById('clicks').textContent = String(window.clicks);
+      });
+    </script>
+  </body>
+</html>

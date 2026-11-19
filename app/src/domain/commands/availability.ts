@@ -50,6 +50,11 @@ export interface CommandContext {
    * popups and while a setting or a policy turns them off.
    */
   readonly workspaces: number;
+  /**
+   * Whether turning the hiding of the tabs and the toolbar on or off changes them: the tab strip
+   * is at the top, and no mandatory policy sets it.
+   */
+  readonly autoHide: boolean;
 }
 
 /**
@@ -97,6 +102,8 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
       return true;
     case 'window.newPrivate':
       return context.privateWindows;
+    case 'toolbar.toggleAutoHide':
+      return context.autoHide;
     case 'palette.open':
     case 'tabs.search':
       return context.palette;

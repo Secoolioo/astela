@@ -110,6 +110,40 @@ describe('settingsIndex', () => {
     }
   });
 
+  it('lists the layouts before the density, and the place and hiding of the toolbar after the tabs', () => {
+    const appearance = (
+      settingsIndex.find((section) => section.id === 'appearance')?.rows ?? []
+    ).map((candidate) => candidate.id);
+    expect(
+      appearance.slice(appearance.indexOf('layout'), appearance.indexOf('layout') + 2),
+    ).toEqual(['layout', 'appearance.density']);
+    const tabs = appearance.indexOf('tabs.position');
+    expect(appearance.slice(tabs, tabs + 3)).toEqual([
+      'tabs.position',
+      'toolbar.placement',
+      'toolbar.autoHide',
+    ]);
+    // The layouts row shows the four settings that a preset sets, and words find each row.
+    expect(row('layout').settings).toEqual([
+      'tabs.position',
+      'toolbar.placement',
+      'toolbar.autoHide',
+      'appearance.density',
+    ]);
+    const layout = textOf(row('layout').keys, row('layout').words);
+    for (const word of ['layout', 'anordnung', 'kompakt', 'zen', 'vertical', 'vertikal']) {
+      expect(layout).toContain(word);
+    }
+    const placement = textOf(row('toolbar.placement').keys, row('toolbar.placement').words);
+    for (const word of ['address bar', 'adressleiste', 'next to the tabs', 'neben den tabs']) {
+      expect(placement).toContain(word);
+    }
+    const hiding = textOf(row('toolbar.autoHide').keys, row('toolbar.autoHide').words);
+    for (const word of ['hide', 'ausblenden', 'zen']) expect(hiding).toContain(word);
+    // The note of the layouts names the density, which finds the row of the density only.
+    expect(layout).not.toContain('dichte');
+  });
+
   it('lists the switch of sleeping tabs before their time in the section of performance', () => {
     const performance = settingsIndex.find((section) => section.id === 'performance');
     expect(performance?.title).toBe('settings.performance');

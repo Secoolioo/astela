@@ -39,6 +39,7 @@ const context = (change: Partial<CommandContext> = {}): CommandContext => ({
   reader: false,
   pictureInPicture: false,
   workspaces: 1,
+  autoHide: true,
   ...change,
 });
 

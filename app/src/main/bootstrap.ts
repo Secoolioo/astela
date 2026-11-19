@@ -129,6 +129,8 @@ import {
   TitleBarSetting,
   DensitySetting,
   ToolbarItemsSetting,
+  ToolbarPlacementSetting,
+  ToolbarAutoHideSetting,
   coreSettings,
 } from './core-settings.ts';
 import { AppearanceController } from './appearance.ts';
@@ -703,6 +705,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     defaultZoom: () => settings.get(DefaultZoomSetting),
     homePage: () => settings.get(HomePageSetting),
     tabStripPosition: () => settings.get(TabStripPositionSetting),
+    toolbarPlacement: () => settings.get(ToolbarPlacementSetting),
+    // The tabs and the toolbar that hide until they are needed, whose code loads while they do.
+    autoHideToolbar: () => settings.inspect(ToolbarAutoHideSetting),
+    toggleAutoHideToolbar: () =>
+      void settings.set(ToolbarAutoHideSetting, !settings.get(ToolbarAutoHideSetting)),
+    hidingRows: () => import('../platform/electron/hiding-rows.ts'),
     // The title bar of a window is fixed when it opens; the setting applies after a restart.
     titleBar: () => ({
       integrated: titleBarAtStart === 'integrated',
@@ -1045,13 +1053,16 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       }
     }
   });
-  // The density sets the height of the top row, which the window controls share.
+  // The density and the place of the toolbar set the height of the top row, which the window
+  // controls share.
   const shellSettings = new Set([
     BookmarksBarSetting.key,
     HomeButtonSetting.key,
     DefaultZoomSetting.key,
     ToolbarItemsSetting.key,
     TabStripPositionSetting.key,
+    ToolbarPlacementSetting.key,
+    ToolbarAutoHideSetting.key,
     DensitySetting.key,
     ContentBlockerSetting.key,
     BlockerAllowedSitesSetting.key,
