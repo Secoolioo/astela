@@ -372,7 +372,10 @@ test('hides the top rows and shows them over the page when the pointer reaches t
       const host = document.querySelector('app-shell');
       if (!(host instanceof HTMLElement)) return;
       new MutationObserver(() => {
-        if (host.dataset['rows'] === 'hidden') Reflect.set(window, 'hiddenAt', Date.now());
+        // Both processes count from the same clock, finer than a millisecond.
+        if (host.dataset['rows'] === 'hidden') {
+          Reflect.set(window, 'hiddenAt', performance.timeOrigin + performance.now());
+        }
       }).observe(host, { attributes: true, attributeFilter: ['data-rows'] });
     });
     await browser.main.evaluate(({ BaseWindow }) => {
@@ -382,7 +385,9 @@ test('hides the top rows and shows them over the page when the pointer reaches t
       content.addChildView = (child, index) => {
         if ('webContents' in child) {
           const url = (child as Electron.WebContentsView).webContents.getURL();
-          if (url.endsWith('/rows.html')) Object.assign(globalThis, { pageAbove: Date.now() });
+          if (url.endsWith('/rows.html')) {
+            Object.assign(globalThis, { pageAbove: performance.timeOrigin + performance.now() });
+          }
         }
         // On macOS Electron reads an index of undefined as 0, the bottom: pass only a given one.
         if (index === undefined) add(child);

@@ -16,6 +16,7 @@ import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import type { WindowManager } from '../platform/electron/browser-window.ts';
+import { CertificateLog } from '../platform/electron/certificate-log.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { HttpsFirst } from '../platform/electron/https-first.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
@@ -94,6 +95,22 @@ export interface WebRequestOptions {
 }
 
 /**
+ * Where the decisions of sites about permissions are kept for a kind of window: the setting
+ * for regular windows and workspaces, the memory of the private session for private windows.
+ */
+export interface PermissionStore {
+  /** The decisions of all sites. */
+  readonly sites: () => SitePermissions;
+  /**
+   * Keeps new decisions, and tells whether they were kept; a policy or a full list can refuse
+   * them.
+   */
+  readonly save: (sites: SitePermissions) => boolean;
+  /** Whether a policy manages the decisions, so that they cannot be changed. */
+  readonly managed: () => boolean;
+}
+
+/**
  * The code for the requests of web pages: the steps of the request pipeline, HTTPS-First,
  * the third-party cookies and the content blocker, with the exceptions for certificates and
  * the answers to the frames of web pages, the logins that sites ask for, the downloads and
@@ -107,6 +124,11 @@ export interface WebRequests {
   readonly blocker: ContentBlocker;
   /** The certificates that people accepted after the warning, for their session. */
   readonly certificates: CertificateExceptions;
+  /**
+   * The certificates that Chromium checked, by session and host, which the verify function of
+   * each web session hands over (ADR 0059).
+   */
+  readonly certificateLog: CertificateLog;
   readonly frames: BlockerFrames;
   /**
    * Saves a download in the downloads folder without a question, under a name that is free
@@ -128,8 +150,17 @@ export interface WebRequests {
    * session is known only once it was made, so each question looks again.
    */
   permissions(session: Session): PermissionHandler;
+  /** Where the decisions of the pages of a session are kept, as their kind of window decides. */
+  permissionStore(session: Session): PermissionStore;
   /** Gives a session of web content that was made after this code the frame preload. */
   protect(session: Session): void;
+  /**
+   * Forgets what this code keeps for a session that ended, such as the private session once the
+   * last private window closed: the certificates that Chromium checked and that people
+   * accepted, the insecure addresses that they opened and the answers about permissions.
+   * Electron keeps every session until the browser quits, so nothing else lets them go.
+   */
+  forget(session: Session): void;
 }
 
 /**
@@ -172,6 +203,10 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   // come from requests, which wait for this code, so none comes before it.
   const certificates = new CertificateExceptions(options.certificateOverride);
   certificates.attach(options.app);
+  // With this switch, Chromium connects whatever certificate a site shows, as tests do.
+  const certificateLog = new CertificateLog(
+    options.app.commandLine.hasSwitch('ignore-certificate-errors'),
+  );
   const frames = blockerFrames(
     blocker,
     options.isWebSession,
@@ -273,35 +308,52 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   };
   const windowOf = (contents: WebContents): ReturnType<WindowManager['forTab']> =>
     windows.forTab(contents);
-  const webPermissions = sitePermissions({
+  const regularStore: PermissionStore = {
     sites: () => settings.get(SitePermissionsSetting),
     save: (sites) => {
       const result = settings.set(SitePermissionsSetting, sites);
       if (!result.ok) {
         options.logger.warn('A permission was not saved', { error: result.error.kind });
       }
+      return result.ok;
     },
-    windowOf,
-    prompts: loadPrompts,
-    logger: options.logger,
-  });
+    managed: () => settings.inspect(SitePermissionsSetting).locked,
+  };
   // Private windows ask again, and keep the answers only until the last of them closes: the
   // private session keeps them, and the next private window gets a new session.
+  const privateStores = new WeakMap<Session, PermissionStore>();
+  const permissionStore = (s: Session): PermissionStore => {
+    if (!options.isPrivate(s)) return regularStore;
+    let store = privateStores.get(s);
+    if (store === undefined) {
+      let sites: SitePermissions = {};
+      store = {
+        sites: () => sites,
+        save: (kept) => {
+          sites = kept;
+          return true;
+        },
+        managed: () => false,
+      };
+      privateStores.set(s, store);
+    }
+    return store;
+  };
+  const handlerFor = (store: PermissionStore): PermissionHandler =>
+    sitePermissions({
+      sites: store.sites,
+      save: (sites) => void store.save(sites),
+      windowOf,
+      prompts: loadPrompts,
+      logger: options.logger,
+    });
+  const webPermissions = handlerFor(regularStore);
   const privatePermissions = new WeakMap<Session, PermissionHandler>();
   const handlerOf = (s: Session): PermissionHandler => {
     if (!options.isPrivate(s)) return webPermissions;
     let handler = privatePermissions.get(s);
     if (handler === undefined) {
-      let sites: SitePermissions = {};
-      handler = sitePermissions({
-        sites: () => sites,
-        save: (kept) => {
-          sites = kept;
-        },
-        windowOf,
-        prompts: loadPrompts,
-        logger: options.logger,
-      });
+      handler = handlerFor(permissionStore(s));
       privatePermissions.set(s, handler);
     }
     return handler;
@@ -333,11 +385,20 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     httpsFirst,
     blocker,
     certificates,
+    certificateLog,
     frames,
     saveDownload,
     openWindow,
     blocksPopup,
     permissions,
+    permissionStore,
     protect,
+    forget: (s) => {
+      certificateLog.forget(s);
+      certificates.forget(s);
+      httpsFirst.forgetSession(s);
+      privateStores.delete(s);
+      privatePermissions.delete(s);
+    },
   };
 }

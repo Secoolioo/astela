@@ -33,14 +33,15 @@ export default defineConfig({
         'src/ui/ui-kit/browser-import.ts',
         'src/ui/ui-kit/default-browser.ts',
         // The elements of the menus, of the star's popover, of the command palette, of the
-        // popover of a group of tabs and of the list of the workspaces in the overlay, and
-        // their motion, which the end-to-end tests drive; their keys, places and results are
-        // tested here.
+        // popover of a group of tabs, of the list of the workspaces and of site information in
+        // the overlay, and their motion, which the end-to-end tests drive; their keys, places
+        // and results are tested here.
         'src/ui/overlay/overlay-menu.ts',
         'src/ui/overlay/overlay-bookmark.ts',
         'src/ui/overlay/command-palette.ts',
         'src/ui/overlay/group-popover.ts',
         'src/ui/overlay/workspace-list.ts',
+        'src/ui/overlay/site-info.ts',
         'src/ui/overlay/popover-motion.ts',
         'src/platform/electron/default-browser.ts',
         'src/main/data-service.ts',

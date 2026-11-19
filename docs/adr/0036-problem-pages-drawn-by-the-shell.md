@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Replaces the error page `app://error` that the plan for `0.1.0-beta.4` named. [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) draws the problem of a page in the side of a split view that it belongs to, and its buttons act on that side's tab.
+Accepted. Replaces the error page `app://error` that the plan for `0.1.0-beta.4` named. [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) draws the problem of a page in the side of a split view that it belongs to, and its buttons act on that side's tab. [ADR 0059](0059-site-information-with-checked-certificates.md) lets people turn the warning back on for a host in site information, which ends the exception before the browser quits and closes the open connections of the session.
 
 ## Date
 

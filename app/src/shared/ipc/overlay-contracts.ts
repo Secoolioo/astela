@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { certificateReasons, siteConnections } from '../connection.ts';
 import { shortcutPattern, windowCommands } from '../shortcuts.ts';
 import { swatches } from '../swatches.ts';
 import { workspaceIcons } from '../workspace-icons.ts';
@@ -336,6 +337,84 @@ const CommandPalette = v.strictObject({
 /** The command palette. */
 export type CommandPalette = v.InferOutput<typeof CommandPalette>;
 
+/** A name of a certificate, or of the authority that issued it. */
+const CertificateName = v.pipe(v.string(), v.maxLength(300));
+
+/**
+ * What site information shows of a certificate: whom it was issued to and by, the
+ * organizations of both, when it is valid, in seconds since 1970, its SHA-256 fingerprint as
+ * Electron writes it (`sha256/` and Base64), the authorities that it was issued through, up to
+ * the root, and whether Chromium knows that root as one that the system trusts by default:
+ * `null` when Chromium did not check the certificate, or found it not trusted.
+ */
+const CertificateSummary = v.strictObject({
+  subject: CertificateName,
+  subjectOrganization: CertificateName,
+  issuer: CertificateName,
+  issuerOrganization: CertificateName,
+  validFrom: v.pipe(v.number(), v.safeInteger()),
+  validUntil: v.pipe(v.number(), v.safeInteger()),
+  fingerprint: v.pipe(v.string(), v.maxLength(100), v.regex(/^(?:sha256\/[A-Za-z0-9+/=]*)?$/)),
+  chain: v.pipe(v.array(CertificateName), v.maxLength(8)),
+  knownRoot: v.nullable(v.boolean()),
+});
+
+/** What site information shows of a certificate. */
+export type CertificateSummary = v.InferOutput<typeof CertificateSummary>;
+
+/** The number of the time that site information opened, which its requests name. */
+const SiteInfoId = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
+
+/** A permission of a site that it asked for and that was decided, and whether it is allowed. */
+const SitePermissionRow = v.strictObject({
+  name: v.picklist(['camera', 'microphone', 'location', 'notifications', 'clipboard']),
+  allowed: v.boolean(),
+});
+
+/**
+ * Site information for the page of the active tab at the chip of its connection: the number
+ * of the time it opened, which its requests name, so that they act only on the site that it
+ * shows; the host of the page with its port; what the connection is, why its certificate is not
+ * trusted and Chromium's name for the error, such as `ERR_CERT_DATE_INVALID`; the certificate,
+ * `null` when the browser did not see it; whether the tab shows a loaded web page, which has
+ * permissions, cookies and the content blocker, unlike a warning; whether it is a private
+ * window; the permissions that were decided for the page's origin, whether a policy manages
+ * them, and whether one changed since the popover opened, which a reload of the page applies;
+ * how many cookies the site has, `null` until they are counted; the site whose cookies count,
+ * such as `example.com` for `www.example.com`; whether its cookies and data were just deleted;
+ * and the content blocker on the page, `null` where it does not work.
+ */
+const SiteInformation = v.strictObject({
+  kind: v.literal('site'),
+  id: SiteInfoId,
+  anchor: OverlayAnchor,
+  host: v.pipe(v.string(), v.maxLength(300)),
+  connection: v.picklist(siteConnections),
+  reason: v.nullable(v.picklist(certificateReasons)),
+  code: v.pipe(v.string(), v.regex(/^[A-Z0-9_]{0,64}$/)),
+  certificate: v.nullable(CertificateSummary),
+  page: v.boolean(),
+  private: v.boolean(),
+  permissions: v.pipe(v.array(SitePermissionRow), v.maxLength(5)),
+  managed: v.boolean(),
+  changed: v.boolean(),
+  cookies: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0))),
+  site: v.pipe(v.string(), v.maxLength(300)),
+  cleared: v.boolean(),
+  blocker: v.nullable(
+    v.strictObject({
+      site: v.pipe(v.string(), v.maxLength(253)),
+      blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
+      on: v.boolean(),
+      available: v.boolean(),
+      failed: v.boolean(),
+    }),
+  ),
+});
+
+/** Site information for the page of the active tab. */
+export type SiteInformation = v.InferOutput<typeof SiteInformation>;
+
 /** What the overlay shows, or `null` when it is closed. */
 // A union rather than a variant: the union is in the bundle of the browser process anyway.
 export const OverlayContent = v.nullable(
@@ -351,6 +430,7 @@ export const OverlayContent = v.nullable(
     CommandPalette,
     GroupEditor,
     WorkspaceList,
+    SiteInformation,
   ]),
 );
 
@@ -471,10 +551,13 @@ export const ChooseSuggestion = defineRequest({
   capability: 'overlay',
 });
 
-/** Turns the content blocker off or on for the site of the active tab, and reloads it. */
+/**
+ * Turns the content blocker off or on for the site of the active tab, and reloads it. Site
+ * information names the number of the time it opened, as its other requests do.
+ */
 export const ToggleSiteBlocking = defineRequest({
   channel: 'overlay.toggleSiteBlocking',
-  request: v.strictObject({}),
+  request: v.strictObject({ id: v.optional(SiteInfoId) }),
   response: v.null(),
   capability: 'overlay',
 });
@@ -482,6 +565,72 @@ export const ToggleSiteBlocking = defineRequest({
 /** Opens the settings at the row of the content blocker and closes the overlay. */
 export const OpenBlockerSettings = defineRequest({
   channel: 'overlay.openBlockerSettings',
+  request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Allows or blocks a permission that was decided for the site of site information, in the
+ * store of its kind of window; the change applies to new requests at once, and to what the page
+ * uses already once it reloads.
+ */
+export const SetSitePermission = defineRequest({
+  channel: 'overlay.setSitePermission',
+  request: v.strictObject({
+    id: SiteInfoId,
+    permission: SitePermissionRow.entries.name,
+    allowed: v.boolean(),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Forgets every permission that was decided for the site of site information. */
+export const ResetSitePermissions = defineRequest({
+  channel: 'overlay.resetSitePermissions',
+  request: v.strictObject({ id: SiteInfoId }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Deletes the cookies of the site of site information, and the data that its page's origin
+ * keeps, such as local storage, in the session of the window.
+ */
+export const ClearSiteData = defineRequest({
+  channel: 'overlay.clearSiteData',
+  request: v.strictObject({ id: SiteInfoId }),
+  response: v.null(),
+  capability: 'overlay',
+  ratePerSecond: 2,
+});
+
+/**
+ * Turns the warning back on for the site of site information: the certificate that people
+ * accepted, or the insecure address that they opened past HTTPS-First, is no longer allowed,
+ * and the page loads again.
+ */
+export const RestoreWarnings = defineRequest({
+  channel: 'overlay.restoreWarnings',
+  request: v.strictObject({ id: SiteInfoId }),
+  response: v.null(),
+  capability: 'overlay',
+  ratePerSecond: 2,
+});
+
+/** Loads the page of site information again, as after a change of its permissions. */
+export const ReloadSitePage = defineRequest({
+  channel: 'overlay.reloadTab',
+  request: v.strictObject({ id: SiteInfoId }),
+  response: v.null(),
+  capability: 'overlay',
+  ratePerSecond: 2,
+});
+
+/** Opens the settings at the permissions of sites and closes the overlay. */
+export const OpenSiteSettings = defineRequest({
+  channel: 'overlay.openSiteSettings',
   request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',

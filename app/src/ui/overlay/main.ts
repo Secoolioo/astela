@@ -4,6 +4,7 @@ import { GroupPopover } from './group-popover.ts';
 import { OverlayBookmark } from './overlay-bookmark.ts';
 import { OverlayMenu } from './overlay-menu.ts';
 import { OverlayPage } from './overlay-page.ts';
+import { SiteInfoPopover } from './site-info.ts';
 import { WorkspaceList } from './workspace-list.ts';
 
 const i18n = new Translator(pageLanguage());
@@ -13,6 +14,7 @@ customElements.define('overlay-bookmark', OverlayBookmark);
 customElements.define('command-palette', CommandPalette);
 customElements.define('group-popover', GroupPopover);
 customElements.define('workspace-list', WorkspaceList);
+customElements.define('site-info', SiteInfoPopover);
 customElements.define('overlay-page', OverlayPage);
 const page = new OverlayPage();
 page.i18n = i18n;

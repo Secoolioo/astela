@@ -75,6 +75,7 @@ import { IpcGate } from '../platform/electron/ipc-gate.ts';
 import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { IpcRouter } from '../platform/electron/ipc-router.ts';
 import { attachLater } from '../platform/electron/pipeline-later.ts';
+import { answerWithChromium } from '../platform/electron/certificate-verify.ts';
 import { serveResources } from '../platform/blocker/resource-protocol.ts';
 import {
   cleanUserAgent,
@@ -358,7 +359,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // The data service, and the code that talks to it, start with the first call.
   let dataClient: Promise<DataServiceClient> | undefined;
   let startedClient: DataServiceClient | undefined;
-  const data: DataClient = {
+  const data: DataClient & { settled(): Promise<void> } = {
     call: (method, ...params) => {
       dataClient ??= import('../platform/electron/data-service-client.ts').then(
         ({ DataServiceClient: Client }) =>
@@ -371,6 +372,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       return dataClient.then((client) => client.call(method, ...params));
     },
     dispose: () => startedClient?.dispose(),
+    settled: () => dataClient?.then((client) => client.settled()) ?? Promise.resolve(),
   };
   // The keyboard shortcuts of the windows, made again when people change them. While the
   // command palette, split view, the workspaces, the reader view or picture in picture are off,
@@ -492,6 +494,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         activity?.downloading(contents, item);
       });
       attachLater(s, () => loadWeb().then((loaded) => loaded.pipeline));
+      // Chromium decides about every certificate; site information notes what it checked. The
+      // checks come with requests of web pages, which wait for the code that keeps the notes.
+      answerWithChromium(s, (request) => web?.certificateLog.record(s, request));
       // The code for the requests of web pages gives the frame preload to the sessions made
       // before it as it loads, and to the others here.
       web?.protect(s);
@@ -519,6 +524,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     privateSession = undefined;
     downloads?.forgetPrivate();
     if (ended === undefined) return;
+    // Electron keeps the session until the browser quits; what the code for the requests of web
+    // pages noted for it goes now.
+    web?.forget(ended);
     // The icons of the private pages go with their session.
     import('../platform/electron/favicons.ts').then(
       ({ favicons }) => favicons.forget(ended),
@@ -969,6 +977,22 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
               settings,
               blocker: (await loadWeb()).blocker,
               blocking,
+            });
+          },
+          openSiteInfo: async (window, anchor) => {
+            const [{ openSiteInfo }, loaded] = await Promise.all([
+              import('./site-info.ts'),
+              loadWeb(),
+            ]);
+            await openSiteInfo(window, anchor, {
+              windows,
+              router,
+              overlay: overlayOptions,
+              settings,
+              blocker: loaded.blocker,
+              blocking,
+              web: loaded,
+              logger,
             });
           },
         }),

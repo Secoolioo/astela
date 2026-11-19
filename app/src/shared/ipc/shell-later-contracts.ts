@@ -95,6 +95,17 @@ export const OpenBlockerPopover = defineRequest({
   capability: 'shell',
 });
 
+/**
+ * Opens site information for the page of the active tab at the chip of its connection, in the
+ * address bar.
+ */
+export const OpenSiteInfo = defineRequest({
+  channel: 'shell.openSiteInfo',
+  request: PopoverAnchor,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Opens a menu in the overlay with the contents of a folder of the bookmarks bar at its button. */
 export const OpenBookmarkFolder = defineRequest({
   channel: 'shell.openBookmarkFolder',
@@ -349,4 +360,5 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   ToggleReader,
   TogglePictureInPicture,
   HoldTopRows,
+  OpenSiteInfo,
 ];

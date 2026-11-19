@@ -22,6 +22,8 @@ export class DataServiceClient {
   private failedStarts = 0;
   private restingUntil = 0;
   private readonly pending = new Map<number, (response: DataResponse) => void>();
+  /** Who waits until every call sent so far has its answer. */
+  private readonly waiting: (() => void)[] = [];
   private readonly entry: string;
   private readonly databasePath: string;
   private readonly logger: Logger;
@@ -65,9 +67,23 @@ export class DataServiceClient {
     });
   }
 
+  /**
+   * Waits until every call sent so far has its answer, or the service stopped: the browser
+   * waits for this before it quits, so that a change saved just before, such as a download that
+   * just finished, reaches the profile database.
+   */
+  settled(): Promise<void> {
+    if (this.pending.size === 0) return Promise.resolve();
+    return new Promise((done) => this.waiting.push(done));
+  }
+
   /** Stops the service. */
   dispose(): void {
     this.child?.kill();
+  }
+
+  private wakeIfSettled(): void {
+    if (this.pending.size === 0) for (const done of this.waiting.splice(0)) done();
   }
 
   private start(): UtilityProcess {
@@ -78,12 +94,14 @@ export class DataServiceClient {
       this.failedStarts = 0;
       this.pending.get(response.id)?.(response);
       this.pending.delete(response.id);
+      this.wakeIfSettled();
     });
     child.on('exit', (code) => {
       if (this.child === child) this.child = undefined;
       for (const [id, settle] of this.pending)
         settle({ id, error: `The data service stopped (${code})` });
       this.pending.clear();
+      this.wakeIfSettled();
       if (code !== 0) {
         this.logger.warn('The data service stopped', { code });
         this.failedStarts += 1;

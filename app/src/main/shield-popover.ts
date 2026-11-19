@@ -1,5 +1,4 @@
-import { exceptionFor, siteOf, type Blocking } from '../domain/blocker/blocking.ts';
-import { exceptionSite, toggleSite } from '../domain/blocker/allowed-sites.ts';
+import type { Blocking } from '../domain/blocker/blocking.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { ContentBlocker } from '../platform/blocker/content-blocker.ts';
 import type {
@@ -9,12 +8,8 @@ import type {
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
 import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
-import {
-  OpenBlockerSettings,
-  ToggleSiteBlocking,
-  type OverlayContent,
-} from '../shared/ipc/overlay-contracts.ts';
-import { BlockerAllowedSitesSetting, ContentBlockerSetting } from './core-settings.ts';
+import { OpenBlockerSettings, type OverlayContent } from '../shared/ipc/overlay-contracts.ts';
+import { ContentBlockerSetting } from './core-settings.ts';
 import {
   existingOverlay,
   focusBackOf,
@@ -24,6 +19,7 @@ import {
   track,
   windowOfOverlay,
 } from './overlays.ts';
+import { blockerStateOf, connectBlockerSwitch } from './site-blocking.ts';
 
 /** What the content blocker's popover needs from the browser process. */
 export interface ShieldPopoverDependencies {
@@ -68,15 +64,8 @@ function connect(deps: ShieldPopoverDependencies): void {
   const { router, windows } = deps;
   const windowOf = (overlay: WindowOverlay): BrowserWindowController | undefined =>
     windowOfOverlay(windows.all, overlay);
-  router.handle(ToggleSiteBlocking, (_request, { sender }) => {
-    const overlay = overlayBySender(sender.id);
-    const window = overlay === undefined ? undefined : windowOf(overlay);
-    if (window !== undefined && overlay?.content?.kind === 'shield') {
-      toggle(deps, window);
-      refresh(window, overlay);
-    }
-    return null;
-  });
+  // The switch for the site acts for the active tab, whose state the popover shows.
+  connectBlockerSwitch('shield', deps, { allows: () => true, refresh });
   router.handle(OpenBlockerSettings, (_request, { sender }) => {
     const overlay = overlayBySender(sender.id);
     const window = overlay === undefined ? undefined : windowOf(overlay);
@@ -107,38 +96,8 @@ function shieldOf(
   anchor: OverlayAnchor,
 ): OverlayContent | undefined {
   const tab = window.tabs.active;
-  const site = siteOf(tab?.url ?? '');
-  if (tab === undefined || site === undefined) return undefined;
-  // An exception covers the whole registrable domain, such as example.co.uk.
-  const domain = exceptionSite(site, deps.blocker.domainOf(tab.url) ?? site);
-  return {
-    kind: 'shield',
-    anchor,
-    site: exceptionFor(site, deps.settings.get(BlockerAllowedSitesSetting)) ?? domain,
-    blocked: tab.blocked,
-    on: deps.blocking(tab.url) !== 'off',
-    available: deps.settings.get(ContentBlockerSetting),
-    failed: deps.blocker.status === 'failed',
-  };
-}
-
-/** Turns blocking off or on for the site of a window's active tab and reloads it. */
-function toggle(deps: ShieldPopoverDependencies, window: BrowserWindowController): void {
-  const tab = window.tabs.active;
-  const site = siteOf(tab?.url ?? '');
-  if (tab === undefined || site === undefined) return;
-  const domain = deps.blocker.domainOf(tab.url) ?? site;
-  const saved = deps.settings.set(
-    BlockerAllowedSitesSetting,
-    toggleSite(deps.settings.get(BlockerAllowedSitesSetting), site, domain),
-  );
-  if (saved.ok) {
-    window.tabs.run(tab.id, 'reload');
-  } else {
-    void import('./browser-menu.ts').then(({ showBlockerSaveError }) =>
-      showBlockerSaveError(window, saved.error.kind === 'locked-by-policy'),
-    );
-  }
+  const state = tab === undefined ? undefined : blockerStateOf(deps, tab);
+  return state === undefined ? undefined : { kind: 'shield', anchor, ...state };
 }
 
 /** Shows the current state of the active tab in an open popover, or closes it. */

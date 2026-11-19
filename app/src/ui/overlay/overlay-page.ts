@@ -6,6 +6,7 @@ import type {
   CommandPalette as PaletteContent,
   GroupEditor,
   MenuPopover,
+  SiteInformation,
   WorkspaceList as WorkspaceListContent,
 } from '../../shared/ipc/overlay-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
@@ -15,6 +16,7 @@ import type { CommandPalette } from './command-palette.ts';
 import type { GroupPopover } from './group-popover.ts';
 import type { OverlayBookmark } from './overlay-bookmark.ts';
 import type { OverlayMenu } from './overlay-menu.ts';
+import type { SiteInfoPopover } from './site-info.ts';
 import type { WorkspaceList } from './workspace-list.ts';
 import { placePopover } from './placement.ts';
 import { enter, leave } from './popover-motion.ts';
@@ -117,7 +119,8 @@ type Content =
   | BookmarkEditor
   | PaletteContent
   | GroupEditor
-  | WorkspaceListContent;
+  | WorkspaceListContent
+  | SiteInformation;
 
 /** What the prompt says that a site wants, for each permission. */
 const wants = {
@@ -148,13 +151,21 @@ const isContent = (value: unknown): value is Content =>
     'palette',
     'group',
     'workspaces',
+    'site',
   ].includes(String(value.kind));
 
 /**
  * The kinds of content with an element of their own, which gives the focus to its first item
  * or field and handles Escape itself, such as a menu that closes its submenu first.
  */
-const ownElement = new Set<Content['kind']>(['menu', 'bookmark', 'palette', 'group', 'workspaces']);
+const ownElement = new Set<Content['kind']>([
+  'menu',
+  'bookmark',
+  'palette',
+  'group',
+  'workspaces',
+  'site',
+]);
 
 /** What the buttons of a download do. */
 type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'folder' | 'retry' | 'remove';
@@ -601,7 +612,8 @@ export class OverlayPage extends LitElement {
         (next.kind === 'palette' &&
           previous.kind === 'palette' &&
           next.session !== previous.session) ||
-        (next.kind === 'group' && previous.kind === 'group' && next.id !== previous.id))
+        (next.kind === 'group' && previous.kind === 'group' && next.id !== previous.id) ||
+        (next.kind === 'site' && previous.kind === 'site' && next.id !== previous.id))
     ) {
       this.opened += 1;
       this.shownKey = this.opened;
@@ -617,7 +629,9 @@ export class OverlayPage extends LitElement {
             ? this.t('overlay.group')
             : next.kind === 'workspaces'
               ? this.t('overlay.workspaces')
-              : (nameOf(next) ?? this.pageTitle);
+              : next.kind === 'site'
+                ? this.t('shell.siteInfo')
+                : (nameOf(next) ?? this.pageTitle);
     if (next === null) return;
     if (next.kind === 'screen') this.chosen = undefined;
     if (next.kind === 'permission') this.arm(next.id);
@@ -677,8 +691,15 @@ export class OverlayPage extends LitElement {
     const container = this.renderRoot.querySelector('.leaving');
     const nested = [
       ...(container?.querySelectorAll<
-        OverlayMenu | OverlayBookmark | CommandPalette | GroupPopover | WorkspaceList
-      >('overlay-menu, overlay-bookmark, command-palette, group-popover, workspace-list') ?? []),
+        | OverlayMenu
+        | OverlayBookmark
+        | CommandPalette
+        | GroupPopover
+        | WorkspaceList
+        | SiteInfoPopover
+      >(
+        'overlay-menu, overlay-bookmark, command-palette, group-popover, workspace-list, site-info',
+      ) ?? []),
     ];
     await Promise.all(nested.map((element) => element.updateComplete));
     const surfaces = [
@@ -808,6 +829,15 @@ export class OverlayPage extends LitElement {
           .i18n=${this.i18n}
           .leaving=${leaving}
         ></workspace-list>`;
+    }
+    if (content.kind === 'site') {
+      return html`<div class="backdrop" @click=${this.close}></div>
+        <site-info
+          .content=${content}
+          .bridge=${this.bridge}
+          .i18n=${this.i18n}
+          .leaving=${leaving}
+        ></site-info>`;
     }
     if (content.kind === 'bookmark') {
       // A click next to the popover saves the bookmark, as Done does.
