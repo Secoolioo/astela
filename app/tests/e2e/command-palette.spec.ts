@@ -1226,3 +1226,24 @@ test('shows the group and workspace of a tab in another workspace and switches t
     await browser.close();
   }
 });
+
+test('names the new tab page a new tab while it has no title of its own, in the tab strip and in tab search', async () => {
+  const browser = await launch();
+  try {
+    // Without a title of its own, Chromium names a page after its address, as the new tab page
+    // before its title comes; the tab strip and tab search name it a new tab all the same.
+    const newTab = await waitForPage(browser, (url) => url === 'app://newtab/');
+    await newTab.evaluate(() => {
+      document.title = '';
+    });
+    await expect.poll(async () => (await shellState(browser.shell)).tabs[0]?.title).toBe('');
+    await expect(browser.shell.getByRole('tab', { selected: true })).toHaveAttribute(
+      'title',
+      'New tab',
+    );
+    const search = await openPalette(browser, 'app://shell', true);
+    await expect(search.dialog.getByRole('option', { name: /^New tab/ })).toBeVisible();
+  } finally {
+    await browser.close();
+  }
+});
