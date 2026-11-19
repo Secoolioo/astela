@@ -79,3 +79,41 @@ export function idleCpuLimit(
   const relative = bare + extraPoints;
   return platform === 'darwin' ? relative : Math.min(ceiling, relative);
 }
+
+/** The idle CPU of the browser and of the bare reference in one round, and the browser's limit. */
+export interface IdleCpuRound {
+  readonly browser: number;
+  readonly bare: number;
+  readonly limit: number;
+}
+
+/**
+ * The round of idle CPU windows that leaves the browser the most room below its limit. In each
+ * round the browser and the reference run one after the other, under the same load of the
+ * runner, so a round compares like with like; the quietest window of one variant would otherwise
+ * meet the quietest of the other from a calmer moment of the runner.
+ * @param browser - The browser's load in % of one core, one value per round.
+ * @param bare - The reference's load in the same rounds.
+ * @param ceiling - The absolute budget in % of one core.
+ * @param extraPoints - How many percentage points the browser may add to the reference.
+ * @param platform - The system, as {@link idleCpuLimit} takes it.
+ */
+export function idleCpuRound(
+  browser: readonly number[],
+  bare: readonly number[],
+  ceiling: number,
+  extraPoints: number,
+  platform: NodeJS.Platform,
+): IdleCpuRound {
+  let best: IdleCpuRound | undefined;
+  for (const [index, load] of browser.entries()) {
+    const reference = bare[index];
+    if (reference === undefined) continue;
+    const limit = idleCpuLimit(reference, ceiling, extraPoints, platform);
+    if (best === undefined || limit - load > best.limit - best.browser) {
+      best = { browser: load, bare: reference, limit };
+    }
+  }
+  if (best === undefined) throw new Error('No round measured both variants');
+  return best;
+}
