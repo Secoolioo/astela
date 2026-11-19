@@ -2248,7 +2248,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const steps = entry.clearing !== true;
     this.tabs.update(id, {
       url: contents.getURL() || entry.requested,
-      title: contents.getTitle(),
+      title: titleOf(contents),
       loading: contents.isLoading(),
       // Back ends a cover, such as the reader view.
       canGoBack:
@@ -2961,4 +2961,16 @@ function titleBarOptions(
 /** Where the three buttons of a macOS window go: centered in the top row. */
 function buttonPosition(area: TitleBarArea): Electron.Point {
   return { x: 14, y: Math.max(0, Math.round((area.height - 14) / 2)) };
+}
+
+/**
+ * The title of a page. Chromium names a page without a title of its own after its address, as
+ * a page of the browser before its title comes; that is no title, so the tab strip and tab
+ * search name the page themselves.
+ * @param contents - The page.
+ */
+function titleOf(contents: WebContents): string {
+  const title = contents.getTitle();
+  const url = contents.getURL();
+  return tabPageOf(url) !== undefined && (title === url || `${title}/` === url) ? '' : title;
 }
