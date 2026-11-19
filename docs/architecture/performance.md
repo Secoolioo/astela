@@ -109,7 +109,7 @@ The reference is a bare Electron app with:
 
 ### CPU
 
-CPU load is the change in `cumulativeCPUUsage` over 60 seconds.
+CPU load is the change in `cumulativeCPUUsage` over 60 seconds. Each round measures the browser and then the bare reference; a budget that fails measures a second round. The round that leaves the browser the most room below its limit counts, so that the browser is always compared with the reference under the same load of the runner. On Windows the system counts CPU time in steps of about 15.6 ms, so the reference of one round can show 0.00 % while the next shows 0.13 %.
 
 The browser runs with its update check turned off by the `UpdatePolicy` policy (`0`). The first check fetches the update feed 30 to 60 seconds after the start, inside the window, and what it costs depends on the network and on the feed: once the first release was live, the browser's idle load on macOS rose from 0.01 to between 0.13 and 0.23 percentage points above the reference. The check repeats only every four hours, so a 60-second window would weigh it far too much. To measure locally in the same way, set the same policy.
 
