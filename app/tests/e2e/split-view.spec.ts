@@ -445,7 +445,14 @@ test('lets the page of one side cover the window in full screen and brings both 
     const second = fixture('second.html');
     const { leftPage } = await splitWith(browser, find, second);
     await focusView(browser, find);
-    const sides = (await tabViews(browser)).map((view) => view.bounds);
+    /** Where the window is, and the pages of the two sides in it. */
+    const place = async (): Promise<{ frame: unknown; sides: unknown[] }> => ({
+      frame: await browser.main.evaluate(({ BaseWindow }) =>
+        BaseWindow.getAllWindows()[0]?.getBounds(),
+      ),
+      sides: (await tabViews(browser)).map((view) => view.bounds),
+    });
+    const before = await place();
     await leftPage.getByRole('button', { name: 'Full screen' }).click();
     await expect.poll(() => windowFullScreen(browser)).toBe(true);
     const window = await browser.main.evaluate(({ BaseWindow }) =>
@@ -457,9 +464,8 @@ test('lets the page of one side cover the window in full screen and brings both 
     await expect.poll(async () => (await viewOf(browser, second))?.visible).toBe(false);
     await pressIn(browser, find, 'Escape');
     await expect.poll(() => windowFullScreen(browser)).toBe(false);
-    await expect
-      .poll(async () => (await tabViews(browser)).map((view) => view.bounds))
-      .toEqual(sides);
+    // The window goes back where it was, and the two sides with it.
+    await expect.poll(place).toEqual(before);
     expect((await tabViews(browser)).map((view) => view.visible)).toEqual([true, true]);
   } finally {
     await browser.close();

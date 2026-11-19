@@ -2235,6 +2235,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.setFullScreen(on);
       return;
     }
+    // Where the window is right now, in case the system moved it since it last said so.
+    if (on) this.notePlace();
     const before = this.placeBeforeFullScreen;
     this.window.setSimpleFullScreen(on);
     if (!on && before !== undefined) this.placeAgain(before);
