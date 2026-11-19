@@ -423,6 +423,13 @@ test('hides the top rows and shows them over the page when the pointer reaches t
       );
       throw new Error(`${String(error)}\nVIEWLOG\n${log.join('\n')}`, { cause: error });
     }
+    // Temporary: the log of macOS also when the rows show, so this diagnosis never merges.
+    if (mac) {
+      const log = await browser.main.evaluate(
+        () => (globalThis as unknown as { viewLog: string[] }).viewLog,
+      );
+      throw new Error(`VIEWLOG\n${log.join('\n')}`);
+    }
     if (mac) await expect.poll(buttonsShown).toEqual([true]);
     // The page neither moved nor changed its size.
     expect(await view()).toEqual(before);
