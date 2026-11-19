@@ -21,7 +21,10 @@ export interface ShutdownDependencies {
    * their own; those that keep their data on disk write their storage and cookies.
    */
   readonly web: Iterable<Session>;
-  readonly data: Pick<DataClient, 'dispose'> & { settled(): Promise<void> };
+  readonly data: Pick<DataClient, 'dispose'> & {
+    /** Waits until every call sent to the profile database so far has its answer. */
+    settled(): Promise<void>;
+  };
   /** The update service, once it has started. */
   readonly updates: Pick<UpdateService, 'installOnExit' | 'dispose'> | undefined;
 }
