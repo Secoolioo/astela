@@ -363,7 +363,8 @@ test('warns about a certificate that is not trusted and continues only when aske
     await waitForPage(browser, (current) => current.endsWith('/second.html'));
     await open(browser, `${url}again.html`);
     await waitForPage(browser, (current) => current === `${url}again.html`);
-    expect(await pageShown(browser, `${url}again.html`)).toBe(true);
+    // The browser process lists the page of the window a moment after DevTools tells of it.
+    await expect.poll(() => pageShown(browser, `${url}again.html`)).toBe(true);
     await expect(problem).toBeHidden();
   } finally {
     await browser.close();
