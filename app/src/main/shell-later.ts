@@ -30,6 +30,7 @@ import {
   ToggleReader,
   TogglePictureInPicture,
   HoldTopRows,
+  OpenSiteInfo,
 } from '../shared/ipc/shell-later-contracts.ts';
 import type { FolderEntry } from '../domain/menus/browser-menu.ts';
 import type { TabId } from '../domain/tabs/tab-service.ts';
@@ -70,6 +71,8 @@ export interface LaterShellDependencies {
     window: BrowserWindowController,
     anchor: PopoverAnchor,
   ) => Promise<void>;
+  /** Opens site information for the page of a window's active tab at the chip of its connection. */
+  readonly openSiteInfo: (window: BrowserWindowController, anchor: PopoverAnchor) => Promise<void>;
   /**
    * Asks the pages of tabs what only they can tell before the tabs go to sleep, such as a video
    * in picture in picture that a page started itself.
@@ -272,6 +275,11 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(OpenBlockerPopover, async (anchor, { sender }) => {
     const window = windows.forShell(sender);
     if (window !== undefined) await dependencies.openShieldPopover(window, anchor);
+    return null;
+  });
+  router.handle(OpenSiteInfo, async (anchor, { sender }) => {
+    const window = windows.forShell(sender);
+    if (window !== undefined) await dependencies.openSiteInfo(window, anchor);
     return null;
   });
 }

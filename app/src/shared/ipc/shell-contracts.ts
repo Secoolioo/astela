@@ -140,11 +140,21 @@ const DownloadsSummary = v.strictObject({
  * The popover of a button of the shell that the overlay shows, so that the button shows it as
  * open: the browser menu, the menu of a folder of the bookmarks bar with the folder's id (that
  * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's,
- * the list of downloads, the list of the workspaces and the popover of a group of tabs at its
- * chip. `folder` is `null` for all but folders. Rows that hide show while one is open.
+ * the list of downloads, the list of the workspaces, the popover of a group of tabs at its
+ * chip and site information at the chip of the connection. `folder` is `null` for all but
+ * folders. Rows that hide show while one is open.
  */
 export const ShellPopover = v.strictObject({
-  kind: v.picklist(['menu', 'folder', 'bookmark', 'shield', 'downloads', 'workspaces', 'group']),
+  kind: v.picklist([
+    'menu',
+    'folder',
+    'bookmark',
+    'shield',
+    'downloads',
+    'workspaces',
+    'group',
+    'site',
+  ]),
   folder: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 /** The popover of a button of the shell that the overlay shows. */

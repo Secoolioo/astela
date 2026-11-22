@@ -103,6 +103,35 @@ describe('HttpsFirst', () => {
     expect(await https.beforeRequest(image as OnBeforeRequestListenerDetails)).toBeUndefined();
   });
 
+  it('tells which hosts people opened insecurely and sends them to the secure address again', async () => {
+    let enabled = true;
+    const https = new HttpsFirst({
+      enabled: () => enabled,
+      allowlist: () => ['intranet.example.com'],
+    });
+    const contents = page();
+    const privatePage = { session: {} as Session } as unknown as WebContents;
+    https.allow(contents, 'http://Example.org/page');
+    https.allow(contents, 'http://other.example/');
+    https.allow(privatePage, 'http://example.org/');
+    expect(https.isAllowed(contents, 'example.org')).toBe(true);
+    // A host of the allowlist was never opened past the warning.
+    expect(https.isAllowed(contents, 'intranet.example.com')).toBe(false);
+    // While HTTPS-First is off, no host is opened past its warning.
+    enabled = false;
+    expect(https.isAllowed(contents, 'example.org')).toBe(false);
+    enabled = true;
+    expect(https.revoke(contents, 'EXAMPLE.org')).toBe(true);
+    expect(https.revoke(contents, 'example.org')).toBe(false);
+    expect(https.isAllowed(contents, 'example.org')).toBe(false);
+    expect(await https.beforeRequest(request(contents, 1, 'http://example.org/'))).toEqual({
+      redirectURL: 'https://example.org/',
+    });
+    // Only that host, and only in that session.
+    expect(https.isAllowed(contents, 'other.example')).toBe(true);
+    expect(https.isAllowed(privatePage, 'example.org')).toBe(true);
+  });
+
   it('leaves names under no public suffix, such as those of routers, insecure', async () => {
     const https = new HttpsFirst({ enabled: () => true, allowlist: () => [] });
     const contents = page();
@@ -138,5 +167,16 @@ describe('HttpsFirst', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('forgets the insecure addresses of a session that ended', () => {
+    const https = new HttpsFirst({ enabled: () => true, allowlist: () => [] });
+    const privatePage = { session: {} as Session } as unknown as WebContents;
+    const contents = page();
+    https.allow(privatePage, 'http://example.org/');
+    https.allow(contents, 'http://example.org/');
+    https.forgetSession(privatePage.session);
+    expect(https.isAllowed(privatePage, 'example.org')).toBe(false);
+    expect(https.isAllowed(contents, 'example.org')).toBe(true);
   });
 });

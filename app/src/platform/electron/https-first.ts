@@ -160,6 +160,38 @@ export class HttpsFirst implements RequestInterceptor {
     hosts.add(host);
     this.allowed.set(contents.session, hosts);
   }
+
+  /**
+   * Whether people opened the insecure address of a host in the session of a page, past the
+   * warning, while HTTPS-First is on; a host of the `HttpAllowlist` policy does not count.
+   * @param contents - The page.
+   * @param host - The host, without its port.
+   */
+  isAllowed(contents: WebContents, host: string): boolean {
+    return (
+      this.options.enabled() && this.allowed.get(contents.session)?.has(host.toLowerCase()) === true
+    );
+  }
+
+  /**
+   * Sends the pages of a host in the session of a page to the secure address again, as
+   * before people opened its insecure address.
+   * @param contents - The page.
+   * @param host - The host, without its port.
+   * @returns Whether the session allowed the insecure address of the host.
+   */
+  revoke(contents: WebContents, host: string): boolean {
+    return this.allowed.get(contents.session)?.delete(host.toLowerCase()) === true;
+  }
+
+  /**
+   * Forgets the insecure addresses that a session allowed, such as the private session once
+   * the last private window closed: Electron keeps every session until the browser quits.
+   * @param session - The session that ended.
+   */
+  forgetSession(session: Session): void {
+    this.allowed.delete(session);
+  }
 }
 
 function hostOf(address: string): string | undefined {

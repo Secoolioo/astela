@@ -517,7 +517,12 @@ test('shows the host first and how secure the connection of the page is', async 
     const address = shell.getByRole('textbox', { name: 'Address and search bar' });
     await open(browser, 'https://secure.astela-e2e.net/page?q=1');
     await waitForPage(browser, (url) => url.startsWith('https://secure.astela-e2e.net/'));
-    await expect(shell.getByRole('img', { name: 'Connection is secure' })).toBeVisible();
+    // The chip of a web page opens site information, so it is a button.
+    await expect(shell.getByRole('button', { name: 'Connection is secure' })).toBeVisible();
+    await expect(shell.getByRole('button', { name: 'Connection is secure' })).toHaveAttribute(
+      'aria-haspopup',
+      'dialog',
+    );
     // The field keeps the whole address; the view of it starts with the host, without https.
     await expect(address).toHaveValue('https://secure.astela-e2e.net/page?q=1');
     await expect(shell.locator('.url .host')).toHaveText('secure.astela-e2e.net');
@@ -528,7 +533,7 @@ test('shows the host first and how secure the connection of the page is', async 
     await address.blur();
     // A site without encryption says so.
     await open(browser, 'http://plain.astela-e2e.net/index.html');
-    await expect(shell.getByRole('img', { name: 'Not secure' })).toContainText('Not secure');
+    await expect(shell.getByRole('button', { name: 'Not secure' })).toContainText('Not secure');
     // The browser's own pages say whose they are.
     await open(browser, 'app://settings');
     await expect(shell.getByRole('img', { name: 'Page of Astela' })).toBeVisible();
@@ -561,8 +566,8 @@ test('says that a site whose certificate is not trusted is not secure, also afte
         );
     });
     const shell = browser.shell;
-    const notSecure = shell.getByRole('img', { name: 'Not secure' });
-    const secureConnection = shell.getByRole('img', { name: 'Connection is secure' });
+    const notSecure = shell.getByRole('button', { name: 'Not secure' });
+    const secureConnection = shell.getByRole('button', { name: 'Connection is secure' });
     // A page that could not be loaded, here from a server without encryption, shows nothing
     // about its connection.
     await open(browser, 'https://plain.astela-e2e.net/');

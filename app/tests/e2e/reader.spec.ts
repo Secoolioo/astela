@@ -331,7 +331,13 @@ test('opens and closes with its shortcut, Back and its links', async () => {
     // A link of the reader view opens in its tab, which ends the reader view.
     await button.click();
     reader = await readerPage(browser);
-    await reader.getByRole('link', { name: 'a link' }).click();
+    // The click ends the reader view, whose page can close before the click reports back.
+    await reader
+      .getByRole('link', { name: 'a link' })
+      .click()
+      .catch((error: unknown) => {
+        if (!String(error).includes('has been closed')) throw error;
+      });
     await expect(address).toHaveValue(second);
     await expect.poll(() => readerViews(browser)).toBe(0);
     await expect(button).toHaveCount(0);

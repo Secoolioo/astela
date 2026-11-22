@@ -21,7 +21,10 @@ export interface ShutdownDependencies {
    * their own; those that keep their data on disk write their storage and cookies.
    */
   readonly web: Iterable<Session>;
-  readonly data: Pick<DataClient, 'dispose'>;
+  readonly data: Pick<DataClient, 'dispose'> & {
+    /** Waits until every call sent to the profile database so far has its answer. */
+    settled(): Promise<void>;
+  };
   /** The update service, once it has started. */
   readonly updates: Pick<UpdateService, 'installOnExit' | 'dispose'> | undefined;
 }
@@ -48,6 +51,9 @@ export async function shutDown(dependencies: ShutdownDependencies): Promise<void
         logger.debug('The browser could not mark that it quit', { error: String(error) }),
       );
     e.join(session, 'session');
+    // Changes sent to the profile database just before, such as a download that just
+    // finished, are written before the data service stops.
+    e.join(dependencies.data.settled(), 'data');
     for (const each of web) {
       if (!each.isPersistent()) continue;
       each.flushStorageData();
