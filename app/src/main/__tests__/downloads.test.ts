@@ -144,7 +144,11 @@ describe('Downloads', () => {
     expect(showMessageBox).toHaveBeenCalledTimes(1);
     expect(showMessageBox.mock.calls[0]?.[1]).toMatchObject({
       message: 'Cancel the private downloads?',
-      buttons: ['Keep downloading', 'Cancel downloads'],
+      // The buttons of macOS name their actions in title case.
+      buttons:
+        process.platform === 'darwin'
+          ? ['Keep Downloading', 'Cancel Downloads']
+          : ['Keep downloading', 'Cancel downloads'],
       defaultId: 0,
       cancelId: 0,
     });

@@ -748,7 +748,11 @@ test('saves a page as PDF into the downloads folder, on the paper of the region'
           {
             defaultPath: join(folder, 'Fixture find.pdf'),
             filters: [
-              { name: language === 'de' ? 'PDF-Dokument' : 'PDF document', extensions: ['pdf'] },
+              {
+                // The file dialogs of macOS name their types in title case.
+                name: language === 'de' ? 'PDF-Dokument' : mac ? 'PDF Document' : 'PDF document',
+                extensions: ['pdf'],
+              },
             ],
           },
         ]);

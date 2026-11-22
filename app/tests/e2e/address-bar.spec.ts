@@ -538,9 +538,12 @@ test('gives the suggestions room for their shadow and shows an address once', as
   try {
     const shell = browser.shell;
     const address = shell.getByRole('textbox', { name: 'Address and search bar' });
-    // A white page below the dark list shows its shadow most.
+    // A white page below the dark list shows its shadow most. It holds nothing, so that only the
+    // shadow changes its pixels beside the list: its heading, in the fonts of macOS, reaches the
+    // pixels that the test reads.
     await open(browser, `${server.origin}/index.html`);
-    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await page.evaluate(() => document.body.replaceChildren());
     await address.click();
     await address.pressSequentially('example.com');
     const overlay = await overlayPage(browser);

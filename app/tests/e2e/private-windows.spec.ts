@@ -324,7 +324,11 @@ test('asks before the last private window cancels its downloads, also when its l
       browser.main.evaluate(() => Reflect.get(globalThis, 'asked') as unknown[]);
     const question = {
       message: 'Cancel the private downloads?',
-      buttons: ['Keep downloading', 'Cancel downloads'],
+      // The buttons of macOS name their actions in title case.
+      buttons:
+        process.platform === 'darwin'
+          ? ['Keep Downloading', 'Cancel Downloads']
+          : ['Keep downloading', 'Cancel downloads'],
     };
     await openIn(browser, browser.shell, '/regular');
     const shell = await openPrivate(browser);
