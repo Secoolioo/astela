@@ -578,6 +578,8 @@
   "shortcut.page.reloadHard": "Reload without the cache",
   "shortcut.page.home": "Open the home page",
   "shortcut.omnibox.focus": "Go to the address bar",
+  "shortcut.focus.nextPane": "Go to the next pane",
+  "shortcut.focus.previousPane": "Go to the previous pane",
   "shortcut.palette.open": "Open the command palette",
   "shortcut.tabs.search": "Search the open tabs",
   "shortcut.menu.open": "Open the menu",

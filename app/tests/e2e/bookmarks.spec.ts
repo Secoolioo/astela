@@ -60,13 +60,23 @@ test('bookmarks a page with the star and edits, moves and removes it on the book
     const page = await waitForPage(browser, (url) => url.startsWith('app://bookmarks'));
     await expect(page.getByRole('button', { name: /^Fixture home/ })).toBeVisible();
 
+    // The name of a new folder has the focus, all of it selected, so that typing replaces it
+    // and Enter saves it.
     await page.getByRole('button', { name: 'New folder in Other bookmarks' }).click();
-    await page.getByLabel('Name', { exact: true }).fill('Work');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByRole('button', { name: 'Work', exact: true })).toBeVisible();
+    const name = page.getByLabel('Name', { exact: true });
+    await expect(name).toBeFocused();
+    await page.keyboard.type('Work stuff');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Work stuff', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New folder', exact: true })).toHaveCount(0);
 
+    // So has the name of a bookmark that ✎ edits.
     await page.getByRole('button', { name: 'Edit Fixture home' }).click();
-    await page.getByLabel('Name', { exact: true }).fill('Home page');
+    await expect(name).toBeFocused();
+    expect(
+      await name.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd]),
+    ).toEqual([0, 'Fixture home'.length]);
+    await name.fill('Home page');
     await page.getByLabel('Address', { exact: true }).fill('not an address');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('alert')).toHaveText(/starts with http/);
@@ -76,14 +86,14 @@ test('bookmarks a page with the star and edits, moves and removes it on the book
     await folder.selectOption(work ?? '');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('This folder is empty.')).toBeVisible();
-    await page.getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('button', { name: 'Work stuff', exact: true }).click();
     await expect(page.getByRole('button', { name: /^Home page/ })).toBeVisible();
 
     await page.getByRole('searchbox', { name: 'Search bookmarks' }).fill('home');
     await expect(page.getByRole('button', { name: /^Home page/ })).toBeVisible();
     await page.getByRole('searchbox', { name: 'Search bookmarks' }).fill('');
 
-    await page.getByRole('button', { name: 'Remove Work' }).click();
+    await page.getByRole('button', { name: 'Remove Work stuff' }).click();
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(page.getByRole('button', { name: /^Home page/ })).toHaveCount(0);
     await expect

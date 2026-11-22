@@ -1266,6 +1266,58 @@ export async function pressNative(
 }
 
 /**
+ * Presses a key in the view that has the focus of the window, as the keyboard does: the
+ * browser sees it first, then the page, whose default action may move the focus, as Tab does.
+ * @param browser - The running browser.
+ * @param keyCode - Electron key code, such as `Tab`.
+ * @param modifiers - Modifier names; `primary` is Cmd on macOS and Ctrl elsewhere.
+ */
+export async function pressFocused(
+  browser: Browser,
+  keyCode: string,
+  modifiers: readonly ('primary' | 'control' | 'shift' | 'alt')[] = [],
+): Promise<void> {
+  const mapped = modifiers.map((m) =>
+    m === 'primary' ? (process.platform === 'darwin' ? 'meta' : 'control') : m,
+  );
+  const sent = await browser.main.evaluate(
+    ({ webContents }, { keyCode: key, mapped: mods }) => {
+      const view = webContents.getAllWebContents().find((contents) => contents.isFocused());
+      view?.sendInputEvent({ type: 'keyDown', keyCode: key, modifiers: mods });
+      view?.sendInputEvent({ type: 'keyUp', keyCode: key, modifiers: mods });
+      return view !== undefined;
+    },
+    { keyCode, mapped },
+  );
+  if (!sent) throw new Error(`No view has the focus for ${keyCode}`);
+}
+
+/**
+ * Where the focus of the window is, as the browser process sees it: `shell`, `page` for a web
+ * page or the host of a page of the browser, such as `setup`, then the focused element of that
+ * view, also inside shadow roots, by its name, its id or its text, or `body`; `none` without a
+ * view.
+ * @param browser - The running browser.
+ */
+export function focusedElement(browser: Browser): Promise<string> {
+  return browser.main.evaluate(async ({ webContents }) => {
+    const view = webContents.getAllWebContents().find((contents) => contents.isFocused());
+    if (view === undefined) return 'none';
+    const url = view.getURL();
+    const where = url.startsWith('app://') ? new URL(url).host : 'page';
+    const element: unknown = await view.executeJavaScript(`(() => {
+      let element = document.activeElement;
+      while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+      if (element === null || element === document.body) return 'body';
+      const name = element.getAttribute('aria-label');
+      if (name !== null) return name;
+      return element.id === '' ? element.textContent.trim() : '#' + element.id;
+    })()`);
+    return `${where} ${String(element)}`;
+  });
+}
+
+/**
  * Clicks the back or forward button of a mouse through the DevTools protocol, so the page
  * gets the mouse events of a real button. Playwright's mouse has no such buttons.
  * @param page - The page under the pointer.

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture focus frame only</title>
+  </head>
+  <body>
+    <h1>Only a frame</h1>
+    <iframe
+      id="other"
+      title="Frame of another site"
+      data-site="other"
+      data-src="frame-field.html"
+    ></iframe>
+    <script>
+      // The frames of another site load from localhost, which reaches the same fixture server.
+      const other = location.origin.replace('127.0.0.1', 'localhost');
+      for (const frame of document.querySelectorAll('iframe[data-site="other"]')) {
+        frame.src = `${other}/${frame.dataset.src}`;
+      }
+    </script>
+  </body>
+</html>

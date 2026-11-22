@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
 import type { MessageKey, Translator } from '../i18n/i18n.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
@@ -233,6 +233,16 @@ export class BookmarksPage extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.stopListening?.();
+  }
+
+  protected override updated(changed: PropertyValues<this>): void {
+    // The editor that opens, for a new folder or with ✎, takes the focus in its name, all of it
+    // selected, as the star's popover does: typing replaces the name, and Enter saves it. The
+    // lists that load again after a change elsewhere leave the focus where it is.
+    if (!changed.has('editing') || this.editing === undefined) return;
+    const name = this.renderRoot.querySelector<HTMLInputElement>('#title');
+    name?.focus();
+    name?.select();
   }
 
   protected override render(): TemplateResult {

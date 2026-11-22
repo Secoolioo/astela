@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture focus frames</title>
+  </head>
+  <body>
+    <h1>Focus with frames</h1>
+    <a id="one" href="#one">First link</a>
+    <!-- A frame of another site with nothing to focus, one of the page's own site, and one of
+         another site with a field; localhost is another site than 127.0.0.1. -->
+    <iframe id="empty" title="Empty frame" data-site="other" data-src="second.html"></iframe>
+    <iframe id="same" title="Frame of this site" src="frame-field.html"></iframe>
+    <iframe
+      id="other"
+      title="Frame of another site"
+      data-site="other"
+      data-src="frame-field.html"
+    ></iframe>
+    <a id="two" href="#two">Last link</a>
+    <script>
+      // The frames of another site load from localhost, which reaches the same fixture server.
+      const other = location.origin.replace('127.0.0.1', 'localhost');
+      for (const frame of document.querySelectorAll('iframe[data-site="other"]')) {
+        frame.src = `${other}/${frame.dataset.src}`;
+      }
+    </script>
+  </body>
+</html>

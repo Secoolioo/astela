@@ -27,6 +27,8 @@ import type {
   ReopenClosedTab,
   ResetZoom,
   SetTabMuted,
+  KeyOnTab,
+  FocusContent,
   GetFavicon,
   MoveTab,
   OpenTabMenu,
@@ -70,6 +72,8 @@ interface Requests {
   'shell.prepareOverlay': typeof PrepareOverlay;
   'tabs.favicon': typeof GetFavicon;
   'tabs.setMuted': typeof SetTabMuted;
+  'tabs.key': typeof KeyOnTab;
+  'tabs.focusContent': typeof FocusContent;
   'tabs.move': typeof MoveTab;
   'tabs.openMenu': typeof OpenTabMenu;
   'omnibox.suggest': typeof SuggestAddresses;

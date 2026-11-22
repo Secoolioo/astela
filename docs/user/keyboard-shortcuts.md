@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view, workspaces and the reader view, and the moves of tabs into and out of groups, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view, workspaces and the reader view, the moves of tabs into and out of groups, `F6` between the address bar and the page, Tab between the toolbar and the page, and the keys of the tab strip, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -12,7 +12,7 @@ A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function k
 
 ## Commands without a shortcut
 
-Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **Picture in picture**, **Turn hiding the toolbar on or off**, **About Astela** and **Quit Astela**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
+Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **Picture in picture**, **Turn hiding the toolbar on or off**, **About Astela** and **Quit Astela**, and on macOS **Go to the next pane** and **Go to the previous pane**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
 
 ## Windows and Linux
 
@@ -35,7 +35,9 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | Forward                        | `Alt+Right Arrow` or the keyboard's Forward key |
 | Reload                         | `F5` or `Ctrl+R`                                |
 | Open the home page             | `Alt+Home`                                      |
-| Go to the address bar          | `Ctrl+L`, `Alt+D` or `F6`                       |
+| Go to the address bar          | `Ctrl+L` or `Alt+D`                             |
+| Go to the next pane            | `F6`                                            |
+| Go to the previous pane        | `Shift+F6`                                      |
 | Open the command palette       | `Ctrl+K`                                        |
 | Search the open tabs           | `Ctrl+Shift+A`                                  |
 | Open the menu                  | `F10`, or `Alt` pressed and released alone      |
@@ -113,6 +115,14 @@ On keyboard layouts that need Option, or Option and Shift, to type `[` and `]`, 
 **Picture in picture** shows a video of the page that plays in [picture in picture](page-tools.md#picture-in-picture), or ends picture in picture, as its button does. It has no key at first, as in Chrome; the keys of other browsers need AltGr on German keyboards. While picture in picture is off in the settings, a key that you gave it reaches the page.
 
 **Open or end split view** opens a new tab page beside the active tab in a [split view](tabs.md#split-view), or ends the split view of the active tab. `Command+Shift+S` stays free, as it means Save As on macOS. While split view is off in the settings, the shortcut reaches the page.
+
+## The toolbar, the tabs and the page
+
+Tab and Shift+Tab move through the controls of the toolbar and the elements of the page, as in other browsers: Tab after the last control of the toolbar goes into the page, and Tab after the last element of the page goes back to the first control of the toolbar; Shift+Tab goes the other way. The page itself is a stop on the way in, so the next Tab goes to its first element and the next Shift+Tab to its last. The fields and buttons in frames of a page, such as those of a card payment, a captcha or an embedded video, are on the way like the page's own elements. When the last element of a page is in such a frame, Tab after it goes round the page instead of to the toolbar; `Ctrl+L` (`Command+L` on macOS), or `F6` on Windows and Linux, takes you to the address bar from there. While a page shows why it could not be loaded, the keys go round the toolbar and that message.
+
+On Windows and Linux, `F6` and `Shift+F6` go from the toolbar to the page and from the page to the address bar. The page keeps its scroll position, what you typed and the element that had the focus. While a page shows why it could not be loaded, `F6` goes from the toolbar to the first button of that message, such as **Try again**, and from there back to the address bar. `Ctrl+L` and `Alt+D` always go to the address bar. On macOS, the panes have no shortcut; you can give them one under **Keyboard shortcuts** in the [settings](settings.md).
+
+In the tab strip, the arrow keys move between the tabs, Up and Down in a tab strip at a side, and go round at the ends; Home and End go to the first and the last tab, Enter or Space show the tab, and Delete closes it; on macOS, the delete key closes it too. The focus stays in the tab strip, and Tab leaves it; see [Tabs](tabs.md#keyboard).
 
 ## Workspaces
 

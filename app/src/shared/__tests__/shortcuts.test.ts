@@ -252,9 +252,29 @@ describe('defaultShortcuts', () => {
   });
 });
 
-describe('the shortcut of the browser menu', () => {
-  it('opens the menu with F10 on Windows and Linux, after the address bar and the palette in the list', () => {
+describe('the shortcuts of the panes', () => {
+  it('goes between the address bar and the page with F6 and Shift+F6 on Windows and Linux, after the address bar in the list', () => {
     const after = windowCommands.indexOf('omnibox.focus') + 1;
+    expect(windowCommands.slice(after, after + 2)).toEqual([
+      'focus.nextPane',
+      'focus.previousPane',
+    ]);
+    for (const platform of ['win32', 'linux']) {
+      const table = shortcutTable(platform);
+      expect(shortcutsOf(table, 'focus.nextPane')).toEqual(['F6']);
+      expect(shortcutsOf(table, 'focus.previousPane')).toEqual(['Shift+F6']);
+      expect(shortcutsOf(table, 'omnibox.focus')).toEqual(['Ctrl+L', 'Alt+D']);
+    }
+    // macOS gives the panes no shortcut, as before; people can give them one.
+    expect(shortcutsOf(shortcutTable('darwin'), 'focus.nextPane')).toEqual([]);
+    expect(shortcutProblem('Shift+F6', 'win32')).toBeUndefined();
+    expect(displayShortcut('Shift+F6', false)).toBe('Shift+F6');
+  });
+});
+
+describe('the shortcut of the browser menu', () => {
+  it('opens the menu with F10 on Windows and Linux, after the address bar, the panes and the palette in the list', () => {
+    const after = windowCommands.indexOf('focus.previousPane') + 1;
     expect(windowCommands.slice(after, after + 3)).toEqual([
       'palette.open',
       'tabs.search',

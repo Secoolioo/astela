@@ -112,12 +112,6 @@ export class SetupGuide extends LitElement {
       .option .note {
         color: var(--text-2);
       }
-      .option input {
-        width: 16px;
-        height: 16px;
-        margin: 0;
-        accent-color: var(--accent);
-      }
       .step {
         flex: 1;
         animation: enter var(--motion-fast) var(--ease-out);
@@ -571,7 +565,7 @@ export class SetupGuide extends LitElement {
     return html`<footer>
       ${
         index > 0 && !last
-          ? html`<button @click=${() => this.go(index - 1)}>${this.t('setup.back')}</button>`
+          ? html`<button @click=${() => void this.go(index - 1)}>${this.t('setup.back')}</button>`
           : nothing
       }
       <span class="spacer"></span>
@@ -583,14 +577,31 @@ export class SetupGuide extends LitElement {
       ${
         last
           ? html`<button class="primary" @click=${this.finish}>${this.t('setup.finish')}</button>`
-          : html`<button class="primary" @click=${() => this.go(index + 1)}>
+          : html`<button class="primary" @click=${() => void this.go(index + 1)}>
               ${this.t(index === 0 ? 'setup.start' : 'setup.next')}
             </button>`
       }
     </footer>`;
   }
 
-  private go(index: number): void {
+  /**
+   * Shows another step. Continue on the search step saves a search address of the user's own
+   * first, also one typed without Enter, and stays there until the browser takes it, with the
+   * focus in the field; Back and Skip setup never wait. A policy that sets the address turns the
+   * field off, so a locked setting never holds the guide.
+   */
+  private async go(index: number): Promise<void> {
+    const from = this.step;
+    const field = this.renderRoot.querySelector('input[type="url"]');
+    if (index > steps.indexOf(from) && field instanceof HTMLInputElement && !field.disabled) {
+      const saved = await this.saveSearchUrl(field.value);
+      // Back, while the browser answered, wins.
+      if (this.step !== from) return;
+      if (!saved) {
+        field.focus();
+        return;
+      }
+    }
     this.step = steps[index] ?? this.step;
   }
 
@@ -599,10 +610,14 @@ export class SetupGuide extends LitElement {
   };
 
   private async setSearchUrl(event: Event): Promise<void> {
-    const input = event.target;
-    if (input instanceof HTMLInputElement && this.client !== undefined) {
-      this.searchError = !(await this.client.set('search.urlTemplate', input.value.trim()));
-    }
+    if (event.target instanceof HTMLInputElement) await this.saveSearchUrl(event.target.value);
+  }
+
+  /** Saves a search address of the user's own; whether the browser took it. */
+  private async saveSearchUrl(value: string): Promise<boolean> {
+    if (this.client === undefined) return true;
+    this.searchError = !(await this.client.set('search.urlTemplate', value.trim()));
+    return !this.searchError;
   }
 }
 

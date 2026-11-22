@@ -63,6 +63,8 @@ describe('availableCommands', () => {
       'page.reload',
       'page.home',
       'omnibox.focus',
+      'focus.nextPane',
+      'focus.previousPane',
       'window.fullscreen',
       'bookmarks.open',
       'bookmarks.toggleBar',

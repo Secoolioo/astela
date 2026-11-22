@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import type { WebContents, WebContentsView, WebFrameMain } from 'electron';
 import { is } from 'valibot';
 import {
   onlyShown,
@@ -48,6 +48,7 @@ export const windowCommands: WindowCommands = {
   openPage,
   forgetHistories,
   tabAction,
+  leavePage,
 };
 
 /**
@@ -123,6 +124,15 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'page.home':
       if (active !== undefined) window.goHome(active.id);
       break;
+    case 'focus.nextPane':
+    case 'focus.previousPane':
+      // The toolbar and the page are the two panes, so either key goes from one to the other.
+      // The shell draws the problem of a page in the page's place, and goes between the problem
+      // and the address bar itself.
+      if (!window.shellContents.isFocused()) window.focusShell('omnibox.focus');
+      else if (active !== undefined && active.problem !== null) window.focusShell('focus.pane');
+      else window.focusContent(true);
+      break;
     case 'settings.open':
       openPage(host, 'settings', '');
       break;
@@ -194,6 +204,30 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       options.onAppCommand?.(window, command);
       break;
   }
+}
+
+/**
+ * Moves the focus on to the first control of the toolbar when Tab leaves the end of a page, or
+ * to its last control when Shift+Tab leaves the start, as the page's preload reports. Only the
+ * top frame of the page that has the focus hands it on.
+ * @param host - The window.
+ * @param view - The view of the page.
+ * @param frame - The frame that reported it.
+ * @param reverse - Whether Shift+Tab left the start.
+ */
+function leavePage(
+  host: WindowHost,
+  view: WebContentsView,
+  frame: WebFrameMain | null,
+  reverse: unknown,
+): void {
+  if (typeof reverse !== 'boolean' || frame === null || frame.parent !== null) return;
+  // A page in full screen covers the toolbar, so the keys go round the page there.
+  if (!view.webContents.isFocused() || host.coveringTab() !== undefined) return;
+  // A frame of the page that took the focus keeps it.
+  const focused = view.webContents.focusedFrame;
+  if (focused !== null && focused.parent !== null) return;
+  host.window.focusShell(reverse ? 'focus.last' : 'focus.first');
 }
 
 /**
@@ -483,6 +517,9 @@ function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
       break;
     case 'duplicate':
       tabs.open(tab.url, { after: id, title: tab.title });
+      break;
+    case 'close':
+      tabs.close(id);
       break;
     case 'closeOthers':
     case 'closeRight': {

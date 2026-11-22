@@ -38,8 +38,12 @@ import {
   type StripItem,
   type StripUnit,
 } from './strip-items.ts';
+import { stripKey } from './strip-keys.ts';
 import { TabIcons } from '../ui-kit/tab-icons.ts';
 import { workspaceIconSvg } from '../ui-kit/workspace-icons.ts';
+
+/** Whether the shell runs on macOS, whose keyboards type some keys differently. */
+const mac = navigator.userAgent.includes('Macintosh');
 
 /**
  * The browser shell: tab strip, navigation buttons and the address bar. It renders the
@@ -53,6 +57,7 @@ export class AppShell extends LitElement {
     addressFocused: { state: true },
     drops: { state: true },
     protectedMedia: { state: true },
+    stripFocus: { state: true },
   };
 
   /** Styles of the shell, scoped to its shadow root. */
@@ -420,6 +425,11 @@ export class AppShell extends LitElement {
     }
     .tabs[data-after] {
       border-inline-end-color: var(--line-1);
+    }
+    /* The tabs and chips fill the scroll box, which cuts off what lies outside it, so their
+       rings lie within them. An outline stays in forced colors, unlike a shadow. */
+    .tabs :focus-visible {
+      outline-offset: -2px;
     }
     /* The active tab's surface, which slides from tab to tab. */
     .indicator {
@@ -1226,6 +1236,16 @@ export class AppShell extends LitElement {
    * cannot play, which show a sign in the address bar while they are active.
    */
   declare protectedMedia: readonly string[];
+  /**
+   * The tab that has the focus while it is in the tab strip, which Tab reaches in the strip in
+   * place of the active tab, as in a list of tabs.
+   */
+  declare stripFocus: string | undefined;
+  /**
+   * The tab that Enter or Space showed, or Delete closed, in the tab strip, until the state that
+   * this brings: the focus stays in the strip, also when a new tab page becomes the active tab.
+   */
+  private keyedTab: { readonly id: string; readonly close: boolean } | undefined;
   /** Whether the focused address bar had all of its text selected before an update. */
   private addressSelected = false;
   bridge: ShellBridge | undefined;
@@ -1395,6 +1415,7 @@ export class AppShell extends LitElement {
     this.addressFocused = false;
     this.drops = undefined;
     this.protectedMedia = [];
+    this.stripFocus = undefined;
   }
 
   override connectedCallback(): void {
@@ -1414,6 +1435,9 @@ export class AppShell extends LitElement {
       bridge.on('shell.stateChanged', (state) => (this.state = state)),
       bridge.on('shell.command', (command) => {
         if (command === 'find.focus') this.focusFind();
+        else if (command === 'focus.first' || command === 'focus.last') {
+          this.focusEnd(command === 'focus.last');
+        } else if (command === 'focus.pane') this.focusProblemPane();
         else if (command === 'downloads.open') this.openDownloadsAtButton();
         else if (command === 'omnibox.done') this.leaveAddress();
         else if (command === 'menu.open') this.openMenuAtButton();
@@ -1544,7 +1568,7 @@ export class AppShell extends LitElement {
     if (changed.has('drops')) this.placeDrops();
     // Enter or Space on a chip leave the focus there, also when the change of the group makes
     // a new tab page the active tab.
-    const keysOnChip = changed.has('state') && this.keysStayOnChip();
+    const keysOnChip = changed.has('state') && (this.keysStayOnChip() || this.keysStayOnTab());
     // A tab that becomes active on the new tab page waits for input in the address bar,
     // unless the address bar took input for a tab that the New tab button opens: selecting
     // it would let the next key replace that input.
@@ -1577,6 +1601,21 @@ export class AppShell extends LitElement {
   }
 
   /**
+   * Whether the state brings what Enter, Space or Delete on a tab asked for while the focus is in
+   * the tab strip, where it then stays.
+   */
+  private keysStayOnTab(): boolean {
+    const keyed = this.keyedTab;
+    if (keyed === undefined) return false;
+    const done = keyed.close
+      ? !this.state.tabs.some((tab) => tab.id === keyed.id)
+      : this.state.activeTabId === keyed.id;
+    if (!done) return false;
+    this.keyedTab = undefined;
+    return this.tabStrip?.contains(this.shadowRoot?.activeElement ?? null) === true;
+  }
+
+  /**
    * Whether the state brings the change of a group that Enter or Space on its chip asked for,
    * while the chip has the focus, which it then keeps.
    */
@@ -1598,7 +1637,9 @@ export class AppShell extends LitElement {
     const rows = tabRow
       ? html`${this.renderToolbar(t, true)}${this.renderTabStrip(t, true)}`
       : html`${this.renderTabStrip(t, false)}${this.renderToolbar(t, false)}`;
+    // The two ends of the shell hand Tab and Shift+Tab on to the page, whichever row comes first.
     return html`
+      <span class="visually-hidden" tabindex="0" @focus=${this.leaveShell}></span>
       ${rows} ${this.renderBookmarksBar(t)} ${this.renderFind()}
       <div class="visually-hidden" role="status">${this.workspaceShown}</div>
       <div class="content">
@@ -1610,6 +1651,7 @@ export class AppShell extends LitElement {
             : this.renderSplit(this.state.split, t)
         }
       </div>
+      <span class="visually-hidden" tabindex="0" data-end @focus=${this.leaveShell}></span>
       ${hiding === null || hiding.shown ? nothing : this.renderReveal(hiding.rest)}
     `;
   }
@@ -1623,6 +1665,7 @@ export class AppShell extends LitElement {
     tabRow: boolean,
   ): TemplateResult {
     const vertical = this.state.tabStrip === 'left' || this.state.tabStrip === 'right';
+    const roving = this.rovingTab;
     return html`
       <div
         role="tablist"
@@ -1633,6 +1676,9 @@ export class AppShell extends LitElement {
         ${this.renderWorkspaceButton()} ${this.renderDrops()}
         <div
           class="tabs"
+          @keydown=${this.onStripKey}
+          @focusin=${this.onStripFocus}
+          @focusout=${this.onStripFocus}
           @scroll=${this.markHiddenTabs}
           @wheel=${this.onTabsWheel}
           @pointermove=${this.onDragMove}
@@ -1644,7 +1690,7 @@ export class AppShell extends LitElement {
             stripItems(this.state),
             (item) => item.key,
             (item) =>
-              item.kind === 'tab' ? this.renderTab(item.tab, t) : this.renderChip(item, t),
+              item.kind === 'tab' ? this.renderTab(item.tab, t, roving) : this.renderChip(item, t),
           )}
           <div class="ghosts" aria-hidden="true"></div>
         </div>
@@ -1827,6 +1873,70 @@ export class AppShell extends LitElement {
           : nothing
       }
     </div>`;
+  }
+
+  /**
+   * Tab past the last control of the shell, or Shift+Tab past its first, goes on to the page, as
+   * in other browsers; the page hands the keys back at its ends. Where the shell shows what the
+   * content area holds, the problem of a page, the keys go round in the shell instead. Focus that
+   * comes to an end of the shell from none of its controls, as with Tab before any of them had
+   * the focus, goes to the control next to that end.
+   */
+  private readonly leaveShell = (event: FocusEvent): void => {
+    const edge = event.currentTarget;
+    if (!(edge instanceof HTMLElement)) return;
+    const end = edge.hasAttribute('data-end');
+    const from = event.relatedTarget !== null;
+    const active = this.active;
+    if (!from || active === undefined || active.problem !== null) {
+      const stops = this.tabStops();
+      (end === from ? stops[0] : stops.at(-1))?.focus();
+      return;
+    }
+    edge.blur();
+    void this.bridge?.invoke('tabs.focusContent', { reverse: !end });
+  };
+
+  /** The controls of the shell that Tab stops at, in their order, without its two ends. */
+  private tabStops(): HTMLElement[] {
+    return [
+      ...this.renderRoot.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, a[href], summary, [tabindex]',
+      ),
+    ].filter(
+      (element) =>
+        element.tabIndex >= 0 &&
+        !element.matches(':disabled, span.visually-hidden') &&
+        element.closest('[inert]') === null &&
+        element.checkVisibility({ visibilityProperty: true }),
+    );
+  }
+
+  /**
+   * Gives the first or the last control of the shell the focus, for Tab past the end of the
+   * page or Shift+Tab past its start.
+   */
+  private focusEnd(last: boolean): void {
+    const stops = this.tabStops();
+    (last ? stops.at(-1) : stops[0])?.focus();
+  }
+
+  /**
+   * F6 or Shift+F6 while the shell shows the problem of the active tab's page in the page's
+   * place, which is then the pane of the page: the focus goes from the problem to the address
+   * bar, and from the rest of the shell to the first control of the problem, or to the problem
+   * itself where it has none.
+   */
+  private focusProblemPane(): void {
+    const title = `problem-title-${this.state.activeTabId ?? ''}`;
+    const problem = [...this.renderRoot.querySelectorAll<HTMLElement>('section.problem')].find(
+      (section) => section.getAttribute('aria-labelledby') === title,
+    );
+    if (problem === undefined || problem.contains(this.shadowRoot?.activeElement ?? null)) {
+      this.focusAddress();
+      return;
+    }
+    (this.tabStops().find((stop) => problem.contains(stop)) ?? problem).focus();
   }
 
   /**
@@ -2075,9 +2185,11 @@ export class AppShell extends LitElement {
     void this.bridge?.invoke('tabs.resizeSplit', { tabId: split.start, ratio: next, done: true });
   }
 
+  /** A tab of the strip; `roving` is the tab that Tab reaches in the strip, see `rovingTab`. */
   private renderTab(
     tab: TabView,
     t: (key: Parameters<Translator['t']>[0]) => string,
+    roving: string | null,
   ): TemplateResult {
     const selected = tab.id === this.state.activeTabId;
     const title = tab.title || displayUrl(tab.url) || t('shell.untitled');
@@ -2091,7 +2203,7 @@ export class AppShell extends LitElement {
         data-split=${tab.split ?? nothing}
         data-group=${tab.group?.id ?? nothing}
         data-color=${tab.group?.color ?? nothing}
-        tabindex=${selected ? 0 : -1}
+        tabindex=${tab.id === roving ? 0 : -1}
         aria-selected=${selected ? 'true' : 'false'}
         aria-label=${title}
         aria-description=${this.tabDescription(tab, t) ?? nothing}
@@ -2376,6 +2488,76 @@ export class AppShell extends LitElement {
   /** The elements of the items of the tab strip, in their order, each with its key as `data-id`. */
   private stripElements(): HTMLElement[] {
     return [...(this.tabStrip?.querySelectorAll<HTMLElement>(':scope > [data-id]') ?? [])];
+  }
+
+  /**
+   * The tab that Tab reaches in the tab strip: the one with the focus while the focus is in the
+   * strip, or else the active tab.
+   */
+  private get rovingTab(): string | null {
+    const focus = this.stripFocus;
+    return focus !== undefined && this.state.tabs.some((tab) => tab.id === focus)
+      ? focus
+      : this.state.activeTabId;
+  }
+
+  /** Follows the tab with the focus while the focus is in the tab strip. */
+  private readonly onStripFocus = (event: FocusEvent): void => {
+    const strip = this.tabStrip;
+    if (event.type === 'focusout') {
+      const next = event.relatedTarget;
+      if (!(next instanceof Node) || strip?.contains(next) !== true) this.stripFocus = undefined;
+      return;
+    }
+    const item = event.target;
+    if (item instanceof HTMLElement && item.getAttribute('role') === 'tab') {
+      this.stripFocus = item.dataset['id'];
+    }
+  };
+
+  /**
+   * Keys on a tab or a chip of the tab strip, as in a list of tabs (`strip-keys.ts`): the arrows,
+   * Up and Down at a side of the window, move the focus and go round at the ends; Home and End go
+   * to the first and the last item; Enter and Space show the focused tab, and Delete closes it,
+   * also the delete key of macOS. The focus stays in the strip. Chips keep their own Enter and
+   * Space.
+   */
+  private readonly onStripKey = (event: KeyboardEvent): void => {
+    const action = stripKey(event, this.vertical, mac);
+    const item = event.target;
+    if (action === undefined || !(item instanceof HTMLElement)) return;
+    const items = this.stripElements();
+    const index = items.indexOf(item);
+    if (index < 0) return;
+    const count = items.length;
+    const tabId = item.getAttribute('role') === 'tab' ? item.dataset['id'] : undefined;
+    let next: HTMLElement | undefined;
+    if (action === 'previous') next = items[(index + count - 1) % count];
+    else if (action === 'next') next = items[(index + 1) % count];
+    else if (action === 'first') next = items[0];
+    else if (action === 'last') next = items[count - 1];
+    else if (action === 'show' && tabId !== undefined) {
+      event.preventDefault();
+      this.keyOnTab(tabId, false);
+      return;
+    } else if (action === 'close' && tabId !== undefined) {
+      event.preventDefault();
+      if (event.repeat) return;
+      // The focus goes on to the next item, or to the one before the last.
+      items[index + 1 < count ? index + 1 : index - 1]?.focus();
+      this.keyOnTab(tabId, true);
+      return;
+    }
+    if (next === undefined) return;
+    event.preventDefault();
+    next.focus();
+    next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+
+  /** Shows or closes a tab with a key of the tab strip, which keeps the focus in the strip. */
+  private keyOnTab(tabId: string, close: boolean): void {
+    this.keyedTab = { id: tabId, close };
+    void this.bridge?.invoke('tabs.key', { tabId, action: close ? 'close' : 'activate' });
   }
 
   private activateTab(tabId: string): void {
@@ -3448,7 +3630,7 @@ export class AppShell extends LitElement {
     // Two sides can show a problem at once; each title has an id of its own.
     const title = `problem-title-${tab.id}`;
     if (problem.kind === 'certificate') {
-      return html`<section class="problem" aria-labelledby=${title}>
+      return html`<section class="problem" aria-labelledby=${title} tabindex="-1">
         <h1 id=${title}>${this.tp('problem.certificateTitle')}</h1>
         <p>${this.tp('problem.certificate', { site })}</p>
         <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
@@ -3475,7 +3657,7 @@ export class AppShell extends LitElement {
       </section>`;
     }
     if (problem.kind === 'insecure') {
-      return html`<section class="problem" aria-labelledby=${title}>
+      return html`<section class="problem" aria-labelledby=${title} tabindex="-1">
         <h1 id=${title}>${this.tp('problem.insecureTitle')}</h1>
         <p>${this.tp('problem.insecure', { site })}</p>
         <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
@@ -3494,7 +3676,7 @@ export class AppShell extends LitElement {
       </section>`;
     }
     const crashed = problem.kind === 'crashed';
-    return html`<section class="problem" aria-labelledby=${title}>
+    return html`<section class="problem" aria-labelledby=${title} tabindex="-1">
       <h1 id=${title}>${this.tp(crashed ? 'problem.crashedTitle' : 'problem.errorTitle')}</h1>
       <p>${this.tp(crashed ? 'problem.crashed' : problemMessage(problem.code), { site })}</p>
       <p class="code">${this.tp('problem.code', { code: problem.code })}</p>

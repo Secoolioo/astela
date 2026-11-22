@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { noAppRegionCss } from '../shared/app-region.ts';
 import { scriptletWorld } from '../shared/isolated-worlds.ts';
 import { guardCredentials, watchKeySystems, type SecurityKeyReport } from './page-world.ts';
+import { startOver, watchTabOut } from './tab-out.ts';
 
 /**
  * Runs in every frame of web pages, top frames and iframes alike. It first keeps the frame
@@ -18,7 +19,9 @@ import { guardCredentials, watchKeySystems, type SecurityKeyReport } from './pag
  * security key, requests of security keys and passkeys tell the browser that they start and end,
  * and end when the browser cancels them (`page-world.ts`); Windows shows its own dialog. A
  * request for protected playback that fails tells the browser once, which says why the site
- * cannot play its video or music. The script exposes nothing to the page.
+ * cannot play its video or music. In the top frame, Tab past the end of the page, or Shift+Tab
+ * past its start, tells the browser, which moves the focus on to the toolbar (`tab-out.ts`). The
+ * script exposes nothing to the page.
  */
 
 /** A procedural rule: the elements of its selector are hidden or changed by its directive. */
@@ -110,6 +113,13 @@ if (isFrameRules(rules)) {
   if (rules.elements) {
     reportElements();
   }
+}
+
+// The keys that leave the page go on in the toolbar, and those from the toolbar start the page
+// over at its start or its end.
+if (window.top === window) {
+  watchTabOut(window, document, (reverse) => ipcRenderer.send('page.tabOut', reverse));
+  ipcRenderer.on('page.tabIn', (_event, reverse: unknown) => startOver(document, reverse === true));
 }
 
 // The wrappers of the page's own world, before the page's scripts. A frame whose world runs no
