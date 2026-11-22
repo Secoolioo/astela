@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   FixtureServer,
+  focusPage,
   launch,
   overlayPage,
   pressNative,
@@ -468,7 +469,10 @@ test('names the site and the way out when a page takes the screen or the pointer
     await pressInPage(browser, 'Escape');
     await expect(notice).toBeHidden({ timeout: 1500 });
     await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
-    // A page that takes the mouse pointer says how to get it back.
+    // A page that takes the mouse pointer says how to get it back. It takes the pointer only
+    // while it has the focus, which a person's click into it gives and the clicks of a test do
+    // not; on macOS, the window can come out of full screen without any view of it focused.
+    await focusPage(browser, page);
     await page.getByRole('button', { name: 'Lock the pointer' }).click();
     await expect(notice).toHaveText(`${host} – Press Esc to show your cursor`);
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('player');
