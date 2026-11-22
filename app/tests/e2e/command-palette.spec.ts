@@ -542,6 +542,7 @@ test('opens no palette in a window without the focus, where it would show withou
     await pressNative(browser, 'N', ['primary']);
     await expect.poll(() => windowCount(browser)).toBe(2);
     await expect.poll(() => focusedWindow(browser)).not.toBe(first);
+    const second = await focusedWindow(browser);
     await focusWindow(browser, first);
     await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
     // A palette that opened once has its code loaded, so the next one decides at once.
@@ -551,9 +552,9 @@ test('opens no palette in a window without the focus, where it would show withou
     await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
     // As when the window loses the focus right after the shortcut, while the palette's code
     // loads: the window has no focus when the palette is to show.
+    await focusWindow(browser, second);
     await browser.main.evaluate(
-      async ({ webContents, BaseWindow }, { address, id, modifier }) => {
-        BaseWindow.fromId(id ?? 0)?.blur();
+      async ({ webContents }, { address, modifier }) => {
         const view = webContents
           .getAllWebContents()
           .find((contents) => contents.getURL() === address);
@@ -561,20 +562,12 @@ test('opens no palette in a window without the focus, where it would show withou
         view?.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [modifier] });
         for (let turn = 0; turn < 3; turn++) await new Promise((done) => setImmediate(done));
       },
-      {
-        address: fixture('index.html'),
-        id: first,
-        modifier: mac ? ('meta' as const) : ('control' as const),
-      },
+      { address: fixture('index.html'), modifier: mac ? ('meta' as const) : ('control' as const) },
     );
     await focusWindow(browser, first);
-    // A system that left the focus with the window opened the palette as usual.
-    if (await palette.dialog.isVisible()) {
-      await expect.poll(() => focused(browser, 'app://overlay')).toBe(true);
-    } else {
-      await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
-      await expect.poll(() => overlayAttached(browser, first ?? undefined)).toBe(false);
-    }
+    await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
+    await expect(palette.dialog).toBeHidden();
+    await expect.poll(() => overlayAttached(browser, first ?? undefined)).toBe(false);
   } finally {
     await browser.close();
   }
