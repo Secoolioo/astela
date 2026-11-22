@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   FixtureServer,
-  focusPage,
   launch,
   pressNative,
   removeAfterExit,
@@ -522,9 +521,19 @@ test('opens and closes the developer tools of a page', async () => {
       mac ? pressInPage(browser, 'I', ['primary', 'alt']) : pressInPage(browser, 'F12');
     await toggle();
     await expect.poll(opened).toBe(true);
-    // The window of the developer tools can take the focus, as on Windows; the keys of the page
-    // reach it once a person is back in the page.
-    await focusPage(browser, page);
+    // The window of the developer tools can take the focus, as on Windows, also a moment after
+    // the page got it back; the keys of the page reach it once a person is back in the page, so
+    // the page takes the focus again until it keeps it.
+    await expect
+      .poll(() =>
+        browser.main.evaluate(({ webContents }, address) => {
+          const contents = webContents.getAllWebContents().find((c) => c.getURL() === address);
+          if (contents === undefined || contents.isFocused()) return contents !== undefined;
+          contents.focus();
+          return false;
+        }, page.url()),
+      )
+      .toBe(true);
     await toggle();
     await expect.poll(opened).toBe(false);
   } finally {
