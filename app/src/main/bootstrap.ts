@@ -815,6 +815,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       pictureInPicture?.focused(window);
     },
     onPrivateWindowsClosed: forgetPrivate,
+    holdsPrivateClose: (window) => downloads?.holdsPrivateClose(window) === true,
     // The shortcut shows the downloads button first; the shell opens the list at it.
     showDownloads: (window) =>
       void loadDownloads().then((list) => {

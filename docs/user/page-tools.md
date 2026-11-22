@@ -2,7 +2,7 @@
 
 > **Status:** available from 0.1.0-beta.4; the reader view and picture in picture from 0.1.0-beta.7.
 
-These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; the browser menu at the end of the toolbar has them too, Find, Print and Save page as with the others and View source and Developer tools under More tools, and on macOS the File and View menus of the menu bar. On the browser's own pages, such as the settings, these items cannot be chosen.
+These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) list their keys for each system; the browser menu at the end of the toolbar has them too, Find, Print and Save page as with the others and Save as PDF, View source and Developer tools under More tools, and on macOS the File and View menus of the menu bar. On the browser's own pages, such as the settings, these items cannot be chosen.
 
 ## Find in the page
 
@@ -23,6 +23,8 @@ These tools work on web pages. The [keyboard shortcuts](keyboard-shortcuts.md) l
 ## Print, save and view the source
 
 `Ctrl+P` (`Command+P`) opens the print dialog of the system. `Ctrl+S` (`Command+S`) saves the page with its images and styles; Astela suggests the title of the page as the file name, in the downloads folder. `Ctrl+U` (`Command+Option+U`) shows the source of the page in a new tab.
+
+From 0.1.0-beta.7, **Save as PDF…** under More tools in the browser menu (also in the File menu on macOS, and in the [command palette](command-palette.md)) saves the page as a PDF document, as it would print. Astela suggests the title of the page as the file name, in the downloads folder. The paper follows the region of your system, as the formats of dates and times do: US Letter in the United States, Canada, Mexico and the other regions that use it, A4 elsewhere, unless the page asks for a size of its own. Chrome takes the region from its language, but Astela speaks only English and German, so it would not know a British or a Canadian system; where the system names no region, the language of Astela decides. The reader view saves the article. There is no print preview with options yet: the PDF has no headers and footers, and leaves out the background colors and images of the page, as printing does by default.
 
 ## Developer tools
 

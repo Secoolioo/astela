@@ -409,7 +409,8 @@ export class TabService implements Disposable {
   /**
    * Closes a tab. Closing the active tab activates the other tab of its split view, or its
    * right neighbour, or the left one at the end; the split view ends with either of its tabs.
-   * Closing the last tab opens a blank tab.
+   * Closing the last tab opens a blank tab, or closes the window when it closes with its last
+   * tab, as popups and private windows do.
    * @param id - The tab.
    */
   close(id: TabId): void {
@@ -425,7 +426,8 @@ export class TabService implements Disposable {
    * Changes the strip in a way of its own, such as the groups of tabs do, and tells the views
    * and the session: the tabs that left the strip lose their views, the content area shows the
    * tabs that the strip shows now, and a window that the change left without an active tab gets
-   * a new tab, or closes when it is a popup without tabs.
+   * a new tab, or closes when it has no tabs left and closes with its last tab, as popups and
+   * private windows do.
    * @param change - Changes the strip, and gives the tabs that left it.
    */
   edit(change: (strip: TabStrip<Tab>) => readonly Tab[] | void): void {

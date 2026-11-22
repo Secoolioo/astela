@@ -123,13 +123,22 @@ describe('localGroups', () => {
 
   it('puts a name that starts with the text first, then one whose words start with it', () => {
     // Reopen the closed tab and Quit, by its keywords, follow in the order of the catalog.
+    // Closing the window comes after closing tabs, so Enter after close closes only the tab,
+    // which can be reopened, also in German.
     expect(commands(localGroups('close', 'commands', content(), t(english)), 'commands')).toEqual([
       'tab.close',
       'tab.closeOthers',
       'tab.closeRight',
+      'window.close',
       'tab.reopen',
       'app.quit',
     ]);
+    const inGerman = commands(
+      localGroups('schließen', 'commands', content(), t(german)),
+      'commands',
+    );
+    expect(inGerman[0]).toBe('tab.close');
+    expect(inGerman.indexOf('window.close')).toBeGreaterThan(inGerman.indexOf('tab.closeRight'));
     expect(commands(localGroups('oth tab', 'commands', content(), t(english)), 'commands')).toEqual(
       ['tab.closeOthers'],
     );

@@ -157,6 +157,11 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'window.newPrivate':
       options.openPrivateWindow?.();
       break;
+    case 'window.close':
+      // As the button of the window does: a private window that closes last ends the private
+      // session.
+      window.window.close();
+      break;
     case 'bookmark.toggle':
       // Only web pages get bookmarks; the browser's own pages have their own commands. The
       // shell opens the popover of the star at the star, or at the menu button without it.
@@ -180,13 +185,16 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
     case 'page.reloadHard':
     case 'page.print':
     case 'page.save':
+    case 'page.savePdf':
     case 'page.source':
     case 'devtools.toggle': {
       // These work on web pages; the browser's own pages keep them to themselves.
       const contents = active === undefined ? undefined : host.webContentsOf(active.id);
       if (contents === undefined || active === undefined) break;
-      // A cover, such as the reader view, prints what it shows; the other tools are the page's.
+      // A cover, such as the reader view, prints what it shows, also into a PDF; the other
+      // tools are the page's.
       const cover = host.entries.get(active.id)?.cover;
+      const printed = command === 'page.print' || command === 'page.savePdf';
       if (command === 'page.reloadHard') {
         window.uncover(active.id, 'reloaded');
         contents.reloadIgnoringCache();
@@ -194,7 +202,7 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
         options.onPageCommand?.(
           window,
           command,
-          command === 'page.print' && cover !== undefined ? cover.view.webContents : contents,
+          printed && cover !== undefined ? cover.view.webContents : contents,
         );
       }
       break;

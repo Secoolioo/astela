@@ -186,3 +186,24 @@ describe('runFromMenuBar', () => {
     expect(done).toEqual(['find.open']);
   });
 });
+
+describe('the File menu of macOS', () => {
+  it('closes the window with Shift+Command+W, as other browsers do, before the tools of the page', () => {
+    const template = macMenuBar(
+      () => undefined,
+      shortcutTable('darwin'),
+    ) as unknown as MenuItemConstructorOptions[];
+    const file = template.find((item) => item.label?.replaceAll('&', '') === 'Ablage');
+    const submenu = Array.isArray(file?.submenu) ? file.submenu : [];
+    const entries = submenu.map((item) =>
+      item.type === 'separator' ? '-' : [item.label?.replaceAll('&', ''), item.accelerator],
+    );
+    expect(entries.slice(3, 6)).toEqual(['-', ['Fenster schließen', 'Shift+Cmd+W'], '-']);
+    // The item closes the key window, as in other apps of macOS, rather than running the command
+    // in the browser window used last: the key window can be one of the developer tools, and
+    // there is none while every window is in the Dock, which turns the item off.
+    const close = submenu[4];
+    expect(close).toMatchObject({ role: 'close', registerAccelerator: false });
+    expect(close?.click).toBeUndefined();
+  });
+});

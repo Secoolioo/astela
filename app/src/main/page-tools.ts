@@ -1,6 +1,8 @@
-import { dialog, type WebContents } from 'electron';
+import { app, dialog, type WebContents } from 'electron';
 import { uiLocale } from './ui-language.ts';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { paperSizeFor } from '../domain/page-tools/paper-size.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import type { BrowserWindowController, PageCommand } from '../platform/electron/browser-window.ts';
 import { translatorFor } from './i18n/i18n.ts';
@@ -15,8 +17,8 @@ export interface PageToolDependencies {
 }
 
 /**
- * Prints a web page, saves it, shows its source in a new tab, or opens or closes its
- * developer tools. The module loads with the first of these commands.
+ * Prints a web page, saves it, also as PDF, shows its source in a new tab, or opens or closes
+ * its developer tools. The module loads with the first of these commands.
  * @param window - The window of the page's tab.
  * @param command - The command.
  * @param contents - The page.
@@ -49,6 +51,28 @@ export async function runPageCommand(
           deps.logger.warn('The page was not saved', { error: String(error) });
         });
       }
+      break;
+    }
+    case 'page.savePdf': {
+      // Electron has no print preview with its Save as PDF; this saves the page as the system
+      // prints it, on the paper of the system's region, and the page may choose another.
+      const locale = uiLocale();
+      const i18n = translatorFor(locale, process.platform);
+      const name = `${safeFileName(contents.getTitle()) || 'page'}.pdf`;
+      const { canceled, filePath } = await dialog.showSaveDialog(window.window, {
+        defaultPath: join(deps.downloadFolder(), name),
+        filters: [{ name: i18n.t('dialog.pdf'), extensions: ['pdf'] }],
+      });
+      if (canceled || filePath === undefined || contents.isDestroyed()) break;
+      await contents
+        .printToPDF({
+          pageSize: paperSizeFor(app.getSystemLocale(), locale),
+          preferCSSPageSize: true,
+        })
+        .then((pdf) => writeFile(filePath, pdf))
+        .catch((error: unknown) => {
+          deps.logger.warn('The page was not saved as PDF', { error: String(error) });
+        });
       break;
     }
     case 'page.source': {

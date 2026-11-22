@@ -35,6 +35,7 @@ export type BrowserMenuText =
   | 'newTab'
   | 'newWindow'
   | 'newPrivateWindow'
+  | 'closeWindow'
   | 'zoom'
   | 'zoomOut'
   | 'resetZoom'
@@ -50,6 +51,7 @@ export type BrowserMenuText =
   | 'pictureInPicture'
   | 'print'
   | 'savePage'
+  | 'savePdf'
   | 'moreTools'
   | 'viewSource'
   | 'developerTools'
@@ -179,6 +181,7 @@ export function browserMenu(
       item('newTab', 'tab.new'),
       item('newWindow', 'window.new'),
       ...(context.privateWindows ? [item('newPrivateWindow', 'window.newPrivate')] : []),
+      item('closeWindow', 'window.close'),
       separator,
       zoomRow,
       separator,
@@ -225,6 +228,7 @@ export function moreTools(
     parent,
     label: text('moreTools'),
     items: [
+      commandItem(input, text, 'savePdf', 'page.savePdf'),
       commandItem(input, text, 'viewSource', 'page.source'),
       ...(input.context.developerTools
         ? [commandItem(input, text, 'developerTools', 'devtools.toggle')]

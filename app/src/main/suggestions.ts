@@ -36,8 +36,14 @@ export interface SuggestionPlace {
   readonly rowHeight: number;
 }
 
-/** Space around the list for its shadow, in CSS pixels. */
-const margin = 12;
+/**
+ * Room beside and below the list for its shadow, `--shadow-popover`, in CSS pixels: the view
+ * of the overlay cannot paint outside its bounds, and the shadow's blur of 24 px, 8 px lower
+ * than the list, needs this much to fade out. The list's inset in the overlay's page is the
+ * same.
+ */
+const side = 24;
+const below = 32;
 
 /** The suggestions that a window shows, and the newest request for them. */
 interface Shown {
@@ -102,11 +108,12 @@ export async function suggest(
   state.items = items;
   state.selected = -1;
   state.tabId = own;
+  // The list has a border of 1 px above and below its rows.
   const bounds = {
-    x: Math.max(0, place.x - margin),
+    x: Math.max(0, place.x - side),
     y: place.y,
-    width: place.width + 2 * margin,
-    height: items.length * place.rowHeight + 2 * margin,
+    width: place.width + 2 * side,
+    height: items.length * place.rowHeight + 2 + below,
   };
   const content = { kind: 'suggestions' as const, items: items.map(view), selected: -1 };
   if (overlay.content?.kind === 'suggestions') overlay.update(content, bounds);

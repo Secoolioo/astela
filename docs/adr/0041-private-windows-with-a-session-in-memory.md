@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md): private windows have tab groups, which the session does not keep either, but no workspaces.
+Accepted. [ADR 0055](0055-tab-groups-and-workspaces-in-the-tab-model.md): private windows have tab groups, which the session does not keep either, but no workspaces. From 0.1.0-beta.7, a private window closes with its last tab, and the last private window asks before it cancels downloads that still run, as Chrome does.
 
 ## Date
 

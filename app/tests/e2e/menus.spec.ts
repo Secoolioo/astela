@@ -98,6 +98,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             'New Tab ⌘T',
             'New Window ⌘N',
             'New Private Window ⇧⌘N',
+            'Close Window ⇧⌘W',
             '-',
             zoom,
             '-',
@@ -123,6 +124,7 @@ test('opens the browser menu in the overlay and leaves no native menu', async ()
             'New tab Ctrl+T',
             'New window Ctrl+N',
             'New private window Ctrl+Shift+N',
+            'Close window Ctrl+Shift+W',
             '-',
             zoom,
             '-',
@@ -252,9 +254,7 @@ test('opens the menu from its button with the keyboard, its submenus with the ar
     await expect(moreTools).toHaveAttribute('aria-expanded', 'false');
     await overlay.keyboard.press('ArrowRight');
     const tools = await overlayMenu(browser, mac ? 'More Tools' : 'More tools');
-    await expect(
-      tools.getByRole('menuitem', { name: mac ? 'View Source' : 'View source' }),
-    ).toBeFocused();
+    await expect(tools.getByRole('menuitem', { name: 'Save as PDF…' })).toBeFocused();
     await expect(moreTools).toHaveAttribute('aria-expanded', 'true');
     await overlay.keyboard.press('ArrowLeft');
     await expect(tools).toBeHidden();
@@ -268,6 +268,59 @@ test('opens the menu from its button with the keyboard, its submenus with the ar
     // The arrow down opens the menu from its button as well.
     await menuButton(browser).press('ArrowDown');
     await expect(first).toBeFocused();
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The shell of the window that opened after the first one. */
+async function secondShell(browser: Browser): Promise<Page> {
+  const find = (): Page | undefined =>
+    browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find(
+        (page) =>
+          !page.isClosed() && page.url().startsWith('app://shell') && page !== browser.shell,
+      );
+  await expect.poll(() => find() !== undefined).toBe(true);
+  const shell = find();
+  if (shell === undefined) throw new Error('The second window has no shell');
+  await expect(shell.getByRole('tab')).toHaveCount(1);
+  return shell;
+}
+
+test('closes a window from the browser menu and with its shortcut, and keeps the others', async () => {
+  const browser = await launch();
+  try {
+    await open(browser, 'index.html');
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    const second = await secondShell(browser);
+    const overlays = browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => page.url().startsWith('app://overlay'));
+    await second.getByRole('button', { name: 'Menu', exact: true }).click();
+    const menu = await overlayMenu(browser, 'Menu', overlays);
+    const close = menu.getByRole('menuitem', { name: mac ? 'Close Window' : 'Close window' });
+    await expect(close).toHaveAttribute(
+      'aria-keyshortcuts',
+      mac ? 'Shift+Meta+W' : 'Control+Shift+W',
+    );
+    await close.click();
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    // Shift with the key that closes a tab closes the window that has the focus.
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    await secondShell(browser);
+    // Its new tab page is the only one: the first window shows a page of the server.
+    await pressNative(browser, 'W', ['primary', 'shift'], 'app://newtab');
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    // The first window keeps its tab.
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/index.html`]);
   } finally {
     await browser.close();
   }
@@ -289,8 +342,13 @@ test('speaks German with German access keys and key names', async () => {
     const entries = await menuEntries(menu);
     // macOS shows Command+Q next to Quit in any case.
     const keys = mac
-      ? ['Neuer Tab ⌘T', 'Neues privates Fenster ⇧⌘N', 'Beenden ⌘Q']
-      : ['Neuer Tab Strg+T', 'Neues privates Fenster Strg+Umschalt+N', 'Beenden'];
+      ? ['Neuer Tab ⌘T', 'Neues privates Fenster ⇧⌘N', 'Fenster schließen ⇧⌘W', 'Beenden ⌘Q']
+      : [
+          'Neuer Tab Strg+T',
+          'Neues privates Fenster Strg+Umschalt+N',
+          'Fenster schließen Strg+Umschalt+W',
+          'Beenden',
+        ];
     expect(entries).toEqual(expect.arrayContaining([...keys, 'Weitere Tools']));
     const history = menu.getByRole('menuitem', { name: 'Verlauf', exact: true });
     await expect(history).toBeVisible();
