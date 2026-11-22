@@ -523,7 +523,8 @@ const overlayRows = `(() => {
 
 /**
  * Records what the browser showed at the end of a test: the shell's state and address bar,
- * every web contents with its process, what the overlays show, and the end of the browser's
+ * every web contents with its process, what the overlays show, the errors that the browser's
+ * own pages logged to their console since the start, and the end of the browser's
  * log; a view that has not shown its first page by then adds what the browser did since its
  * start (see {@link waitingReport}). The record goes with the files of the test, which CI keeps when a
  * test fails: a failed expectation fails the test only after the test closed its browser. A
@@ -590,7 +591,16 @@ async function reportState(
       answerTime,
       'The overlays',
     );
-    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views, overlays })}\n`;
+    const consoleErrors = await within(
+      main.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { e2eConsoleErrors?: string[] }).e2eConsoleErrors ??
+          [],
+      ),
+      answerTime,
+      'The browser process',
+    );
+    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views, overlays, consoleErrors })}\n`;
     // A view whose first navigation has not committed has no address yet, but loads.
     if (views.some((view) => view.url === '' && view.loading)) {
       report += await waitingReport(main, record);
@@ -971,6 +981,11 @@ function recordNavigations(main: MainProcess): Promise<void> {
     if (store.e2eNavigations !== undefined) return;
     const events = new Map<number, string[]>();
     store.e2eNavigations = events;
+    // Errors that the browser's own pages log, such as one that stops the shell from drawing
+    // a new state.
+    const consoleErrors: string[] = [];
+    (globalThis as typeof globalThis & { e2eConsoleErrors?: string[] }).e2eConsoleErrors =
+      consoleErrors;
     const notes = new Map<number, (what: string) => void>();
     const sessions = new WeakSet<Electron.Session>();
     const noteRequest = (
@@ -1030,6 +1045,13 @@ function recordNavigations(main: MainProcess): Promise<void> {
       contents.on('unresponsive', () => note('unresponsive'));
       contents.on('responsive', () => note('responsive'));
       contents.once('destroyed', () => note('destroyed'));
+      contents.on('console-message', (details) => {
+        if (details.level !== 'error' || !contents.getURL().startsWith('app://')) return;
+        consoleErrors.push(
+          `${String(Date.now())} ${contents.getURL()} ${details.message} (${details.sourceId}:${String(details.lineNumber)})`,
+        );
+        if (consoleErrors.length > 40) consoleErrors.splice(0, consoleErrors.length - 40);
+      });
     };
     for (const contents of webContents.getAllWebContents()) watchView(contents);
     app.on('web-contents-created', (_event, contents) => watchView(contents));
