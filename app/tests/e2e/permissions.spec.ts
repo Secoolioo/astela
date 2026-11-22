@@ -165,11 +165,12 @@ test('takes a double click on Allow as one answer, not also as the answer to the
     const prompt = await question(browser);
     await expect(prompt).toContainText('Use your camera');
     await prompt.getByRole('button', { name: 'Allow' }).click();
-    expect(await camera).toBe('tracks: 1');
     // The second click of a double click comes a moment later, when the next question shows
-    // where the first one was. It answers nothing.
+    // where the first one was. It answers nothing. It comes before the camera starts, which
+    // can take longer than the moment in which a question takes no clicks.
     await expect(prompt).toContainText('Use your microphone');
     await prompt.getByRole('button', { name: 'Allow' }).click({ force: true });
+    expect(await camera).toBe('tracks: 1');
     await prompt.getByRole('button', { name: 'Block' }).click();
     expect(await microphone).toBe('NotAllowedError');
   } finally {
