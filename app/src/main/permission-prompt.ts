@@ -128,6 +128,9 @@ export function permissionPrompts(
   const showNext = (window: BrowserWindowController, target: WindowOverlay): void => {
     const queue = queues.get(target) ?? [];
     for (let next = queue[0]; next !== undefined; next = queue[0]) {
+      // A question that shows already stays, such as that of a site that asked again before
+      // the overlay looked for the next question after the one before it closed.
+      if (target.content?.kind === 'permission' && target.content.id === next.id) return;
       // A page that left, or is no longer shown, has nobody to ask.
       if (!visible(window, next.contents, next.origin) || busy(target)) {
         queue.shift();
