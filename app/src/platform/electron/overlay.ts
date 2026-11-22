@@ -53,6 +53,17 @@ export interface OverlayOpenOptions {
    * shell and the page and does not take the focus; the whole window otherwise.
    */
   readonly bounds?: Electron.Rectangle;
+  /**
+   * Where content that stays when the window changes its size lies then, such as a notice at
+   * the top of a page that takes the whole screen; other content closes at once.
+   */
+  readonly place?: () => Electron.Rectangle;
+  /**
+   * Whether the content takes no part in the input, as a notice does: the focus goes back to
+   * the page whenever the view gets it, as from a click on the notice, and the keys that reach
+   * the view meanwhile do nothing, so that Escape is left to the page.
+   */
+  readonly passive?: boolean;
   /** The button of the shell that the popover belongs to, which shows it as open. */
   readonly popover?: ShellPopover;
   /**
@@ -80,10 +91,10 @@ export const exitFallbackMs = 250;
  * web content, which lies above the shell. The view is made when it is first needed, or a
  * moment before, and is part of the window only while it shows something, because a view
  * takes the clicks and the focus of what lies below it. A click next to the popover, Escape,
- * a shortcut, a change of the window's size or of its visible tab closes it, and so does a
- * crash or a hang of its page; the focus goes back to the page, or to the shell when the
- * keyboard opened the popover there, and the view leaves the window once the popover has left
- * the page.
+ * a shortcut, a change of the window's size, unless what it shows stays, as a notice does, or
+ * a change of its visible tab closes it, and so does a crash or a hang of its page; the focus
+ * goes back to the page, or to the shell when the keyboard opened the popover there, and the
+ * view leaves the window once the popover has left the page.
  */
 export class WindowOverlay implements OverlayHandle {
   private view: WebContentsView | undefined;
@@ -108,6 +119,8 @@ export class WindowOverlay implements OverlayHandle {
   private hung = false;
   /** Whether the process of the overlay's page ended, until the page loads again. */
   private gone = false;
+  /** Called once the overlay shows nothing, such as for a notice that waits for a question. */
+  private idle: (() => void)[] = [];
   private readonly window: BrowserWindowController;
   private readonly options: OverlayOptions;
 
@@ -146,6 +159,16 @@ export class WindowOverlay implements OverlayHandle {
    */
   get yieldsToQuestions(): boolean {
     return this.shown === null || this.shownOptions.yieldsToQuestions === true;
+  }
+
+  /**
+   * Calls back once, a moment after the overlay closed, such as for a notice that waits until
+   * a question of a site has its answer. What opens in that moment, such as the next question,
+   * shows first.
+   * @param callback - What to do then.
+   */
+  whenIdle(callback: () => void): void {
+    this.idle.push(callback);
   }
 
   /**
@@ -201,6 +224,17 @@ export class WindowOverlay implements OverlayHandle {
   }
 
   /**
+   * Puts content that stays where its `place` says now, such as a notice whose size its page
+   * has measured.
+   */
+  refit(): void {
+    const place = this.shownOptions.place;
+    if (this.shown !== null && place !== undefined && this.view !== undefined) {
+      this.view.setBounds(place());
+    }
+  }
+
+  /**
    * Offers a command of the window to what the overlay shows, as its shortcut does, such as for
    * an item of the menu bar of macOS: the palette takes its own commands to close or to switch
    * its scope.
@@ -245,6 +279,8 @@ export class WindowOverlay implements OverlayHandle {
     this.settle();
     this.shownOptions = {};
     if (this.window.overlay === this) this.window.overlay = undefined;
+    const waiting = this.idle.splice(0);
+    if (waiting.length > 0) setTimeout(() => waiting.forEach((callback) => callback()), 0);
     const view = this.view;
     if (view === undefined || this.window.window.isDestroyed()) return;
     const hadFocus = this.tookFocus || view.webContents.isFocused();
@@ -330,10 +366,15 @@ export class WindowOverlay implements OverlayHandle {
    * overlay unless the page handles it, a shortcut of the window closes the overlay and runs,
    * unless the popover takes it, and Alt alone closes a menu. While the window holds the keys
    * typed after the shortcut of the command palette, they go to the palette once it asks for
-   * them, and Escape among them closes it.
+   * them, and Escape among them closes it. Content that takes no part in the input, such as a
+   * notice, gets no keys.
    */
   private onInput(event: { preventDefault(): void }, input: Input): void {
     if (this.shown === null) return;
+    if (this.shownOptions.passive === true) {
+      event.preventDefault();
+      return;
+    }
     const keys = this.shownOptions.keys ?? {};
     if (
       keys.closeOnAlt === true &&
@@ -406,7 +447,15 @@ export class WindowOverlay implements OverlayHandle {
       close();
     });
     contents.on('responsive', () => (this.hung = false));
-    this.window.window.on('resize', close);
+    // A click on a notice gives the focus back to the page, which keeps Escape.
+    contents.on('focus', () => {
+      if (this.shown !== null && this.shownOptions.passive === true) this.window.focusContent();
+    });
+    // Content that stays, such as a notice, takes its new place.
+    this.window.window.on('resize', () => {
+      if (this.shown !== null && this.shownOptions.place !== undefined) this.refit();
+      else close();
+    });
     // An Alt that went down before the window lost the focus, as for Alt+Tab, closes nothing.
     this.window.window.on('blur', () => this.altTap.reset());
     this.window.window.once('closed', () => {

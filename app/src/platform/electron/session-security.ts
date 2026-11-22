@@ -7,8 +7,16 @@ import type {
   WebContents,
 } from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
-import { mayOpenWindow } from '../../domain/navigation/new-tab.ts';
+import { mayOpenWindow, placedDisposition } from '../../domain/navigation/new-tab.ts';
 import { originOf } from './ipc-gate.ts';
+
+/**
+ * When web pages may play sound: only after people used the page, as Chrome lets them on the
+ * desktop; Electron would let every page play sound at once. A page that a script opens gets
+ * the same from the window guard, as Electron does not pass it on from the opener. Without
+ * sound, videos still play, so sites start them muted.
+ */
+export const webAutoplayPolicy = 'document-user-activation-required';
 
 /** Decides about the permissions of the pages of a session, asking the user where needed. */
 export interface PermissionHandler {
@@ -102,9 +110,10 @@ export interface WebContentsGuardOptions {
  * Applies navigation and window guards to every `WebContents` that is created:
  * - `<webview>` is never attached.
  * - Pages cannot open free windows: what a script opens becomes a tab, or a popup window of
- *   the browser, and keeps its opener. A window of Document Picture-in-Picture, which Electron
- *   reports with the disposition `other`, is refused: the browser has no such windows yet, and
- *   a tab in its place would break the page (ADR 0057).
+ *   the browser, and keeps its opener. What Electron cannot place, such as a window of
+ *   Document Picture-in-Picture with the disposition `other`, is refused: the browser has no
+ *   such windows yet, and a tab in its place would break the page (ADR 0057). What a page
+ *   opens may play sound only after people used it, as its opener.
  * - The browser's own views never leave their `app://` origin.
  * - Web content never navigates to `app://`.
  * @param app - The Electron app.
@@ -116,7 +125,7 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (
         options.isInternal(contents) ||
-        disposition === 'other' ||
+        !placedDisposition(disposition) ||
         !mayOpenWindow(url) ||
         options.blocksPopup?.(url, contents) === true
       ) {
@@ -127,6 +136,7 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
         // Tabs and windows stay open when the page that opened them closes, as in other
         // browsers; Electron would close them with it.
         outlivesOpener: true,
+        overrideBrowserWindowOptions: { webPreferences: { autoplayPolicy: webAutoplayPolicy } },
         // Electron hands over the page that Chromium made, and the browser shows it.
         createWindow: (made) => {
           const created: unknown = Reflect.get(made, 'webContents');

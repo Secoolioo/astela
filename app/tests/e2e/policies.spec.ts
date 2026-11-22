@@ -1,7 +1,18 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { launch, overlayPage, pressNative, shellState, waitForPage } from './harness.ts';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import {
+  chooseMenuItem,
+  FixtureServer,
+  launch,
+  overlayPage,
+  pressNative,
+  recordMenus,
+  shellState,
+  waitForPage,
+} from './harness.ts';
 
 /** The names under which the systems keep the browser's policies. */
 const brand = JSON.parse(readFileSync(new URL('../../../brand.json', import.meta.url), 'utf8')) as {
@@ -88,8 +99,20 @@ type PolicyValues = Readonly<Record<string, boolean | number | string>>;
 
 const sleepFile = `/etc/${brand.slug}/policies/managed/e2e-sleep.json`;
 
-/** Sets mandatory policies of the system: in the registry, the managed preferences or a file. */
-function setPolicies(values: PolicyValues): void {
+/** A value of a policy in a property list of macOS. */
+function plistValue(value: boolean | number | string): string {
+  if (typeof value === 'boolean') return `<${String(value)}/>`;
+  return typeof value === 'number'
+    ? `<integer>${String(value)}</integer>`
+    : `<string>${value}</string>`;
+}
+
+/**
+ * Sets mandatory policies of the system: in the registry, the managed preferences or a file.
+ * @param values - The policies.
+ * @param file - The file of the policies on Linux.
+ */
+function setPolicies(values: PolicyValues, file = sleepFile): void {
   if (process.platform === 'win32') {
     for (const [name, value] of Object.entries(values)) {
       const text = typeof value === 'string';
@@ -107,15 +130,7 @@ function setPolicies(values: PolicyValues): void {
     }
   } else if (process.platform === 'darwin') {
     const entries = Object.entries(values)
-      .map(([name, value]) => {
-        const plist =
-          typeof value === 'boolean'
-            ? `<${String(value)}/>`
-            : typeof value === 'string'
-              ? `<string>${value}</string>`
-              : `<integer>${String(value)}</integer>`;
-        return `<key>${name}</key>${plist}`;
-      })
+      .map(([name, value]) => `<key>${name}</key>${plistValue(value)}`)
       .join('');
     asAdministrator('mkdir', ['-p', '/Library/Managed Preferences']);
     asAdministrator(
@@ -127,20 +142,24 @@ function setPolicies(values: PolicyValues): void {
     );
     asAdministrator('chmod', ['644', macFile]);
   } else {
-    asAdministrator('mkdir', ['-p', sleepFile.slice(0, sleepFile.lastIndexOf('/'))]);
-    asAdministrator('tee', [sleepFile], `${JSON.stringify(values)}\n`);
+    asAdministrator('mkdir', ['-p', file.slice(0, file.lastIndexOf('/'))]);
+    asAdministrator('tee', [file], `${JSON.stringify(values)}\n`);
   }
 }
 
-/** Removes the policies that a test set. */
-function removePolicies(values: PolicyValues): void {
+/**
+ * Removes the policies that a test set.
+ * @param values - The policies.
+ * @param file - The file of the policies on Linux.
+ */
+function removePolicies(values: PolicyValues, file = sleepFile): void {
   try {
     if (process.platform === 'win32') {
       for (const name of Object.keys(values)) {
         execFileSync('reg', ['delete', windowsKey, '/v', name, '/f'], { stdio: 'ignore' });
       }
     } else {
-      asAdministrator('rm', ['-f', process.platform === 'darwin' ? macFile : sleepFile]);
+      asAdministrator('rm', ['-f', process.platform === 'darwin' ? macFile : file]);
     }
   } catch {
     // Nothing was set.
@@ -259,5 +278,50 @@ test('leaves out the command that turns hiding the toolbar on or off while a pol
   } finally {
     removePolicies(policies);
     await browser.close();
+  }
+});
+
+test('saves an image from its menu into the folder that a policy sets, without asking', async () => {
+  // A test may change the policies of the system only on a CI runner, which is thrown away.
+  test.skip(process.env['CI'] === undefined, 'Changes the policies of the system');
+  const server = new FixtureServer();
+  await server.start();
+  const folder = mkdtempSync(join(tmpdir(), 'managed-downloads-'));
+  const file = `/etc/${brand.slug}/policies/managed/e2e-downloads.json`;
+  // As Chrome does, a folder that an organization sets holds also what people save as.
+  const policies = { DownloadDirectory: folder, PromptForDownloadLocation: false };
+  setPolicies(policies, file);
+  const browser = await launch();
+  try {
+    await recordMenus(browser);
+    await browser.main.evaluate(({ dialog }) => {
+      dialog.showSaveDialog = () => {
+        Object.assign(globalThis, { askedWhere: true });
+        return Promise.resolve({ canceled: true, filePath: '' });
+      };
+    });
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/media.html`);
+    await address.press('Enter');
+    const page = await waitForPage(browser, (url) => url.endsWith('/media.html'));
+    await page.waitForFunction(
+      () => (document.getElementById('image') as HTMLImageElement).naturalWidth > 0,
+    );
+    await page.click('#image', { button: 'right' });
+    await chooseMenuItem(browser, [
+      process.platform === 'darwin' ? 'Save Image As…' : 'Sa&ve image as…',
+    ]);
+    const saved = join(folder, 'image.png');
+    await expect.poll(() => existsSync(saved), { timeout: 10_000 }).toBe(true);
+    const fixture = resolve(import.meta.dirname, 'fixtures', 'image.png');
+    await expect.poll(() => readFileSync(saved).equals(readFileSync(fixture))).toBe(true);
+    expect(
+      await browser.main.evaluate(() => (globalThis as { askedWhere?: boolean }).askedWhere),
+    ).toBeUndefined();
+  } finally {
+    removePolicies(policies, file);
+    await browser.close();
+    await server.stop();
+    rmSync(folder, { recursive: true, force: true });
   }
 });

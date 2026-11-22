@@ -8,6 +8,7 @@ import {
 } from '../domain/context-menu/context-menu.ts';
 import type { ContextMenuRequest } from '../platform/electron/browser-window.ts';
 import { contextMenuLabels } from './context-menu-labels.ts';
+import { saveAs } from './save-as.ts';
 
 /** What the context menu needs from the composition root. */
 export interface ContextMenuDependencies {
@@ -125,6 +126,9 @@ function run(
   switch (action.kind) {
     case 'openTab':
       deps.openTab(action.url, contents, action.activate);
+      break;
+    case 'download':
+      saveAs(contents, action.url);
       break;
     case 'copyText':
       void clipboard

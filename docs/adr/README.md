@@ -99,3 +99,4 @@ Each rejected option as a bullet point with a short reason.
 | [0057](0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)  | Reader view and picture in picture in isolated worlds                     |
 | [0058](0058-layout-presets-and-top-rows-that-hide.md)                  | Layout presets, the toolbar in the row of the tabs and top rows that hide |
 | [0059](0059-site-information-with-checked-certificates.md)             | Site information with the certificates that Chromium checked              |
+| [0064](0064-web-features-that-electron-shows-no-ui-for.md)             | Web features that Electron shows no UI for                                |

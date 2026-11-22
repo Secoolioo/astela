@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture push</title>
+  </head>
+  <body>
+    <h1>Fixture push</h1>
+    <script>
+      // What a web app finds of push and notifications, in the page and in its service worker.
+      window.check = async () => {
+        const registration = await navigator.serviceWorker.register('/push-sw.js');
+        const ready = await navigator.serviceWorker.ready;
+        const worker = await new Promise((done) => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = (event) => done(event.data);
+          ready.active.postMessage('check', [channel.port2]);
+        });
+        const shown = await registration.showNotification('Fixture push').then(
+          () => 'shown',
+          (error) => error.name,
+        );
+        return {
+          page: 'PushManager' in window,
+          manager: typeof registration.pushManager,
+          worker,
+          shown,
+        };
+      };
+    </script>
+  </body>
+</html>

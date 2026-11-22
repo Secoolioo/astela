@@ -3,9 +3,10 @@ import {
   querySelectorAll,
   type AST,
 } from '@ghostery/adblocker-extended-selectors';
-import { ipcRenderer, webFrame } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { noAppRegionCss } from '../shared/app-region.ts';
 import { scriptletWorld } from '../shared/isolated-worlds.ts';
+import { guardCredentials, watchKeySystems, type SecurityKeyReport } from './page-world.ts';
 
 /**
  * Runs in every frame of web pages, top frames and iframes alike. It first keeps the frame
@@ -13,7 +14,11 @@ import { scriptletWorld } from '../shared/isolated-worlds.ts';
  * and then applies the content blocker's rules for the frame's address: element hiding rules
  * as a style sheet, and scriptlets in the page's own world before the page's scripts run.
  * Rules that depend on the page's elements follow once the document exists and whenever new
- * elements appear. The script exposes nothing to the page.
+ * elements appear. On Linux and macOS, where Electron shows nothing while a site waits for a
+ * security key, requests of security keys and passkeys tell the browser that they start and end,
+ * and end when the browser cancels them (`page-world.ts`); Windows shows its own dialog. A
+ * request for protected playback that fails tells the browser once, which says why the site
+ * cannot play its video or music. The script exposes nothing to the page.
  */
 
 /** A procedural rule: the elements of its selector are hidden or changed by its directive. */
@@ -105,6 +110,28 @@ if (isFrameRules(rules)) {
   if (rules.elements) {
     reportElements();
   }
+}
+
+// The wrappers of the page's own world, before the page's scripts. A frame whose world runs no
+// scripts, such as a sandboxed one, gets none and keeps the rules above.
+try {
+  contextBridge.executeInMainWorld({
+    func: watchKeySystems,
+    args: [(keySystem: string) => ipcRenderer.send('media.protected', keySystem)],
+  });
+  if (process.platform !== 'win32') {
+    const cancel: unknown = contextBridge.executeInMainWorld({
+      func: guardCredentials,
+      args: [
+        (event: SecurityKeyReport, id: number) => ipcRenderer.send('webauthn.request', event, id),
+      ],
+    });
+    ipcRenderer.on('webauthn.cancel', (_event, id: unknown) => {
+      if (typeof cancel === 'function' && typeof id === 'number') cancel(id);
+    });
+  }
+} catch {
+  // Nothing to wrap where the page has no scripts.
 }
 
 /**

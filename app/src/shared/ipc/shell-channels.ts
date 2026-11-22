@@ -33,8 +33,9 @@ export const shellLaterChannels = [
 
 /**
  * Channel names of the shell, without schemas, so the preload script stays tiny. A test
- * checks that this list matches the contracts in `shell-contracts.ts` and
- * `shell-later-contracts.ts`.
+ * checks that this list matches the contracts in `shell-contracts.ts`,
+ * `shell-later-contracts.ts` and `media-contracts.ts`, whose handler comes with the code for
+ * web pages.
  */
 export const shellChannels = [
   'shell.getState',
@@ -44,6 +45,7 @@ export const shellChannels = [
   'tabs.navigate',
   'tabs.action',
   'shell.setInsets',
+  'shell.openProtectedMedia',
   ...shellLaterChannels,
 ] as const;
 
@@ -52,6 +54,7 @@ export const shellEventChannels = [
   'shell.stateChanged',
   'shell.command',
   'shell.editGroup',
+  'shell.protectedMedia',
 ] as const;
 
 /** A request channel of the shell. */

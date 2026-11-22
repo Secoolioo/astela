@@ -49,6 +49,15 @@ const video: Partial<ContextMenuParams> = {
   mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false },
 };
 
+/** Selected text in a link around an audio that can be saved. */
+const audio: Partial<ContextMenuParams> = {
+  linkURL: 'https://example.com/',
+  mediaType: 'audio',
+  srcURL: 'https://example.com/song.ogg',
+  selectionText: 'text',
+  mediaFlags: { canShowPictureInPicture: false, isShowingPictureInPicture: false, canSave: true },
+};
+
 /** The same video while it shows in picture in picture. */
 const shownVideo: Partial<ContextMenuParams> = {
   ...video,
@@ -65,6 +74,7 @@ const clicks = {
   history: {},
   video,
   'video in picture in picture': shownVideo,
+  audio,
 };
 
 /** The texts of the menu that a click opens on a page. */
@@ -104,6 +114,7 @@ describe('contextMenuLabels', () => {
       'Open Link in New Tab',
       'Copy Link Address',
       'Open Image in New Tab',
+      'Save Image As…',
       'Copy Image',
       'Copy Image Address',
       'Copy',
@@ -124,6 +135,9 @@ describe('contextMenuLabels', () => {
     expect(texts(video, 'en-US', 'darwin')).toEqual([
       'Open Link in New Tab',
       'Copy Link Address',
+      'Open Video in New Tab',
+      'Save Video As…',
+      'Copy Video Address',
       'Picture in Picture',
       'Copy',
       'Search search.example for “text”',

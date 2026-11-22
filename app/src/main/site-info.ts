@@ -95,7 +95,7 @@ const siteStorages = [
 const countWait = 200;
 
 /** What a site or a proxy asks, which site information never takes the place of. */
-const questions = new Set<OverlayContent['kind']>(['permission', 'screen', 'login']);
+const questions = new Set<OverlayContent['kind']>(['permission', 'securityKey', 'screen', 'login']);
 
 const opened = new WeakMap<WindowOverlay, Opened>();
 let openings = 0;

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture storage access</title>
+  </head>
+  <body>
+    <h1>Fixture storage access</h1>
+    <button id="ask" type="button">Ask for the cookies of this site</button>
+    <output id="result"></output>
+    <script>
+      // As a page, it embeds itself from another site; as that frame, a click asks for access
+      // to its cookies, as embedded sign-ins and comments do.
+      if (window === window.top) {
+        const frame = document.createElement('iframe');
+        frame.src = `http://localhost:${location.port}/storage-access.html?frame`;
+        document.body.append(frame);
+      }
+      document.getElementById('ask').addEventListener('click', () => {
+        const result = document.getElementById('result');
+        document.requestStorageAccess().then(
+          () => document.hasStorageAccess().then((has) => (result.textContent = `granted ${has}`)),
+          (error) => (result.textContent = error.name),
+        );
+      });
+    </script>
+  </body>
+</html>

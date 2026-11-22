@@ -159,7 +159,7 @@ The [maintainer workflow](../maintainers/WORKFLOW.md) describes the environments
 
 - The root certificate store, CRLSet and Certificate Transparency data are updated only through Electron updates. This is why the response times above matter.
 - There is no ASAR integrity validation on Linux (as of October 2026); package signatures protect the installation there.
-- WebAuthn has no PIN entry UI and no hybrid (QR code) passkeys. Device-bound authenticators, such as USB security keys, Windows Hello and Touch ID, remain usable.
+- WebAuthn on Linux and macOS has no PIN entry, no sign-in with a phone (hybrid, QR code) and no passkeys of macOS itself; security keys that people only touch work, with the question of the browser ([security keys and passkeys](#security-keys-and-passkeys)). Windows uses the dialog of its own system, with Windows Hello.
 - Safe Browsing is unavailable; list-based protection follows in M2.
 - AppImage sandbox restrictions on Ubuntu 24.04 and later, and the limits of rollback, are described in [updates](updates.md).
 
@@ -184,11 +184,15 @@ Every outbound connection will be documented on a "Network connections" document
 
 GitHub and GitHub Pages see the IP address during update checks. The privacy statement on the website will say exactly that, and that Astela itself collects nothing.
 
+### Security keys and passkeys
+
+Electron 45 shows nothing while a site waits for a security key on Linux and macOS, cannot ask for a PIN and cancels a sign-in with a passkey when nobody chooses its account; Chromium would let such a request wait at least three minutes. On those systems the frame preload wraps `navigator.credentials.create()` and `get()` in the page's own world, with `contextBridge.executeInMainWorld` and a `Proxy` that keeps their name, length and native text (`app/src/preload/page-world.ts`). Only requests with `publicKey` are wrapped, and not those with `mediation` `conditional` or `immediate`, nor one that comes while a wrapped request of the document waits, which Chromium refuses at once, so that a page that asks in a loop reports one request; a wrapped request gets a signal of its own next to the site's, ends with `NotAllowedError` at the site's timeout or when the browser cancels it, and reports its start and end with `webauthn.request`. The browser process takes the site from `event.senderFrame`, never from the page, and asks in the overlay of the tab's window while the tab shows (`app/src/main/webauthn-prompt.ts`); Cancel sends `webauthn.cancel` to that frame. It keeps one question per frame and at most eight per page, and ignores further reports, so that no page can make the browser process do more work than that. The sessions of web content choose the account of a key that holds one for the site, and let the person choose among several (`select-webauthn-account`); the choice belongs to the frame's request and ends with it, also when the site's timeout ends the request. Windows keeps the dialog of `webauthn.dll`. PIN entry, sign-in with a phone and the passkeys of macOS need Electron to support them ([ADR 0064](../adr/0064-web-features-that-electron-shows-no-ui-for.md)).
+
 ### Geolocation
 
 - Astela ships no `GOOGLE_API_KEY`.
-- Windows and macOS will use the operating system's location provider.
-- On Linux, the XDG desktop portal will be evaluated; if it is not usable, the permission will be denied with an explanation.
+- Windows and macOS use the operating system's location provider.
+- On Linux, Chromium in Electron 45 asks only Google's network location service, without a key, which answers with an error and on a desktop with NetworkManager would also get the nearby Wi-Fi networks. Its provider for the XDG desktop portal is built in but ends the browser at the first request, because it calls the session bus from a thread that does not own it. So the browser refuses the location on Linux at once, from requests and checks, without a question and without a request to Google; sites get `PERMISSION_DENIED`. A `GOOGLE_API_KEY` in the environment of the browser turns the question back on.
 
 ### Data protection
 
@@ -218,7 +222,7 @@ The security baseline is implemented in `app/src/platform/electron/` and `app/el
 
 - Every view runs sandboxed with context isolation and without Node integration; tabs have no preload.
 - Web sessions ask before a site uses the camera, the microphone, the location, notifications or the clipboard, and share a screen or a window only after the user picked it; the sessions of the browser's own pages refuse every permission, and every session denies device access.
-- `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). A window of Document Picture-in-Picture, which arrives with the disposition `other`, is refused ([ADR 0057](../adr/0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)). A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
+- `<webview>` is never attached; pages cannot open free windows: what a script opens becomes a tab or a popup window of the browser and keeps its opener ([ADR 0040](../adr/0040-tabs-and-popups-that-keep-their-opener.md)). What Electron cannot place, such as a window of Document Picture-in-Picture with the disposition `other`, is refused (`placedDisposition`, [ADR 0057](../adr/0057-reader-view-and-picture-in-picture-in-isolated-worlds.md)); the browser also turns Blink's features `DocumentPictureInPictureAPI` and `PushMessaging` off before the first page starts, so sites see both as missing, as the browser has no such windows and no push service. Pages play sound only after people used them (`autoplayPolicy: 'document-user-activation-required'`, as in Chrome), also pages that a page opens, which Electron would not give the preference of their opener: the window guard gives it to them as they are made, and the view that takes such a page over names the preferences of a web view, as Electron would otherwise reset them to its defaults, which play sound at once, the next time Chromium hands the page its preferences anew, as for a change of the theme. A script can open only an http or https URL, or `about:blank`, which it fills itself, and a tab opened from the context menu only an http or https URL; the browser's own pages open nothing.
 - Private windows load web pages in a session in memory of their own, with the same guards, pipeline and content blocker; its data is deleted after the last private window closed ([ADR 0041](../adr/0041-private-windows-with-a-session-in-memory.md)).
 - The shell and internal pages cannot leave their `app://` origin; web content can neither navigate to `app://` nor load it, because web sessions answer such requests with 403.
 - Restored histories bring back only entries of the kind of their view, and page states only as base64 text within their limits ([ADR 0053](../adr/0053-sleeping-tabs-and-an-exact-session.md)).

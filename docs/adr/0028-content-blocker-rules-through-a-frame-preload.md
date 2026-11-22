@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. [ADR 0031](0031-scriptlets-in-their-own-scope-and-world.md) refines how scriptlets run and how hiding rules are inserted. [ADR 0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md) adds the procedural rules.
+Accepted. [ADR 0031](0031-scriptlets-in-their-own-scope-and-world.md) refines how scriptlets run and how hiding rules are inserted. [ADR 0033](0033-procedural-and-popup-filters-and-exceptions-per-domain.md) adds the procedural rules. [ADR 0064](0064-web-features-that-electron-shows-no-ui-for.md) lets the frame preload also wrap requests for security keys and protected media in the page's own world and report them.
 
 ## Date
 

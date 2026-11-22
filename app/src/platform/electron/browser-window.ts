@@ -68,6 +68,7 @@ import { privateWindowArgument } from '../../shared/private-window.ts';
 import type { IpcGate } from './ipc-gate.ts';
 import type { IpcRouter } from './ipc-router.ts';
 import type { TabActivity } from './tab-activity.ts';
+import { webAutoplayPolicy } from './session-security.ts';
 import { commandForInput, type WindowCommand } from './shortcuts.ts';
 import type { ShortcutRecorder } from './shortcut-recorder.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
@@ -2102,6 +2103,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               // The window takes the screen for a page in full screen itself, so the page
               // leaves full screen at once and never waits for the window's animation.
               disableHtmlFullscreenWindowResize: true,
+              // Sound only after people used the page, as in Chrome.
+              autoplayPolicy: webAutoplayPolicy,
               ...this.options.webFonts?.(),
               zoomFactor: this.options.defaultZoom?.() ?? 1,
             }
@@ -2130,7 +2133,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /**
    * Creates the view for a URL: a web view without a preload, or for an internal page a
    * view in the internal session whose preload only offers that page's channels. A page that
-   * a script opened comes with its own contents, which the view takes over.
+   * a script opened comes with its own contents, which the view takes over with the
+   * preferences of a web view: Electron puts the preferences that a view names in place of
+   * those of the contents, also when it names none, and a page would then play sound at once.
    */
   private createView(
     id: TabId,
@@ -2142,9 +2147,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // page, as the browser's other web pages, leaves the window to the browser in full screen:
     // Electron would put the window in full screen before it reports the page's.
     const view = new WebContentsView(
-      adopted === undefined
-        ? this.viewOptions(page, id)
-        : { webContents: adopted, webPreferences: { disableHtmlFullscreenWindowResize: true } },
+      Object.assign(this.viewOptions(page, id), adopted && { webContents: adopted }),
     );
     const contents = view.webContents;
     this.viewSessions.add(contents.session);

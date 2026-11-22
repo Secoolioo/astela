@@ -162,6 +162,35 @@ export function forget(
 }
 
 /**
+ * Whether the browser can find where the device is. On Linux, Chromium asks only Google's
+ * location service, which answers nobody without a key, and its provider for the location
+ * service of the system ends the browser in Electron 45; sites that ask there get no at once,
+ * without a question. A key that the environment gives the browser, as `GOOGLE_API_KEY`,
+ * lets Chromium ask that service.
+ * @param platform - The system, as Node.js names it.
+ * @param apiKey - The value of `GOOGLE_API_KEY`, if any.
+ */
+export function canLocate(platform: string, apiKey: string | undefined): boolean {
+  return platform !== 'linux' || (apiKey ?? '') !== '';
+}
+
+/**
+ * Whether a frame of another site gets its cookies, which the Storage Access API reports: only
+ * where the browser keeps no third-party cookies away. While Chromium blocks them itself, a
+ * grant would give the frame no cookies (ADR 0044), so the site is told no at once and keeps
+ * its other way to sign in.
+ * @param blocked - Whether Chromium blocks them since the start, whether the session is one of
+ *   private windows, which always keep them away, and whether the setting blocks them.
+ */
+export function storageAccessOpen(blocked: {
+  readonly native: boolean;
+  readonly private: boolean;
+  readonly setting: boolean;
+}): boolean {
+  return !blocked.native && !blocked.private && !blocked.setting;
+}
+
+/**
  * Whether a frame may use what its page decides. A page lets the frames of other sites use
  * its camera, microphone and location through its permissions policy, which Chromium
  * applies; no such policy covers notifications, so only the page's own site gets them.

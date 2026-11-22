@@ -1,5 +1,9 @@
 import type { PayloadOf, RequestOf, ResponseOf } from '../../shared/ipc/contract.ts';
 import type {
+  OpenProtectedMedia,
+  ProtectedMediaChanged,
+} from '../../shared/ipc/media-contracts.ts';
+import type {
   ActivateTab,
   CloseTab,
   GetShellState,
@@ -52,6 +56,7 @@ interface Requests {
   'tabs.navigate': typeof NavigateTab;
   'tabs.action': typeof TabAction;
   'shell.setInsets': typeof SetShellInsets;
+  'shell.openProtectedMedia': typeof OpenProtectedMedia;
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerPopover': typeof OpenBlockerPopover;
   'shell.openDownloads': typeof OpenDownloads;
@@ -86,6 +91,7 @@ interface Events {
   'shell.stateChanged': ShellState;
   'shell.command': PayloadOf<typeof ShellCommand>;
   'shell.editGroup': PayloadOf<typeof EditGroupRequested>;
+  'shell.protectedMedia': PayloadOf<typeof ProtectedMediaChanged>;
 }
 
 /** The API that the shell's preload script exposes. */

@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 import { defineEvent, defineRequest } from '../../shared/ipc/contract.ts';
+import { ProtectedMediaChanged, shellWebRequests } from '../../shared/ipc/media-contracts.ts';
 import {
   shellChannels,
   shellEventChannels,
@@ -139,15 +140,22 @@ describe('IpcGate', () => {
 
 describe('contracts', () => {
   it('keeps the preload channel list in sync with the contracts', () => {
-    expect([...shellRequests, ...shellLaterRequests].map((c) => c.channel).toSorted()).toEqual(
-      [...shellChannels].toSorted(),
-    );
+    expect(
+      [...shellRequests, ...shellLaterRequests, ...shellWebRequests]
+        .map((c) => c.channel)
+        .toSorted(),
+    ).toEqual([...shellChannels].toSorted());
     // The channels that load later are the ones whose contracts load later.
     expect(shellLaterRequests.map((c) => c.channel).toSorted()).toEqual(
       [...shellLaterChannels].toSorted(),
     );
     expect(
-      [ShellStateChanged.channel, ShellCommand.channel, EditGroupRequested.channel].toSorted(),
+      [
+        ShellStateChanged.channel,
+        ShellCommand.channel,
+        EditGroupRequested.channel,
+        ProtectedMediaChanged.channel,
+      ].toSorted(),
     ).toEqual([...shellEventChannels].toSorted());
   });
 

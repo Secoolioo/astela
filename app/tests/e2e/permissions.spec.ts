@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   FixtureServer,
   launch,
+  overlayAttached,
   pressNative,
   systemPicker,
   waitForPage,
@@ -88,6 +89,26 @@ test('asks before a site shows notifications, keeps the answer and lets the sett
     await expect(prompt).toContainText('Show notifications');
     await prompt.getByRole('button', { name: 'Block' }).click();
     expect(await again).toBe('denied');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('offers sites no push, which the browser cannot deliver, but shows their notifications', async () => {
+  const browser = await launch([], {
+    settings: { 'permissions.sites': { [server.origin]: { notifications: 'allow' } } },
+  });
+  try {
+    const page = await open(browser, `${server.origin}/push.html`);
+    // Sites see that push is missing, in the page and in its service worker, and fall back.
+    expect(
+      await page.evaluate(() => (window as unknown as { check(): Promise<unknown> }).check()),
+    ).toEqual({
+      page: false,
+      manager: 'undefined',
+      worker: { push: false, manager: 'undefined' },
+      shown: 'shown',
+    });
   } finally {
     await browser.close();
   }
@@ -281,23 +302,43 @@ test('asks for the camera and the microphone together and lets the page use both
   }
 });
 
+/**
+ * Whether the browser cannot find the location: on Linux, Chromium asks only Google's location
+ * service, which answers nobody without a key.
+ */
+const noLocation = process.platform === 'linux' && (process.env['GOOGLE_API_KEY'] ?? '') === '';
+
 test('asks about the location and the clipboard, and only the visible tab asks', async () => {
   const browser = await launch();
   try {
     const page = await open(browser, url());
+    // Where the browser cannot find the location, the answer comes within a second.
     const located = page.evaluate(
-      () =>
-        new Promise<number | string>((done) =>
+      (limit) =>
+        new Promise<number | string>((done) => {
           navigator.geolocation.getCurrentPosition(
             () => done('located'),
             (error) => done(error.code),
-          ),
-        ),
+          );
+          if (limit > 0) setTimeout(() => done('waiting'), limit);
+        }),
+      noLocation ? 1000 : 0,
     );
-    const prompt = await question(browser);
-    await expect(prompt).toContainText('Know your location');
-    await prompt.getByRole('button', { name: 'Block' }).click();
-    expect(await located).toBe(1);
+    if (noLocation) {
+      // A site that cannot learn the location gets no at once, without a question.
+      expect(await located).toBe(1);
+      expect(
+        await page.evaluate(() =>
+          navigator.permissions.query({ name: 'geolocation' }).then((status) => status.state),
+        ),
+      ).toBe('denied');
+      expect(await overlayAttached(browser)).toBe(false);
+    } else {
+      const prompt = await question(browser);
+      await expect(prompt).toContainText('Know your location');
+      await prompt.getByRole('button', { name: 'Block' }).click();
+      expect(await located).toBe(1);
+    }
 
     await browser.main.evaluate(({ clipboard }) => clipboard.writeText('Copied text'));
     const read = page.evaluate(() =>
@@ -306,6 +347,7 @@ test('asks about the location and the clipboard, and only the visible tab asks',
         (error: unknown) => (error instanceof Error ? error.name : String(error)),
       ),
     );
+    const prompt = await question(browser);
     await expect(prompt).toContainText('See text and images that you copy');
     await prompt.getByRole('button', { name: 'Allow' }).click();
     expect(await read).toBe('Copied text');
@@ -343,5 +385,36 @@ test('lets a site see the screen or the window that the user chooses', async () 
     await expect(page.locator('#result')).toHaveText('AbortError');
   } finally {
     await browser.close();
+  }
+});
+
+/** Clicks the button of the frame of another site in the storage access fixture, and its result. */
+async function askForStorage(browser: Browser): Promise<string> {
+  const page = await open(browser, `${server.origin}/storage-access.html`);
+  const frameUrl = `${server.origin.replace('127.0.0.1', 'localhost')}/storage-access.html?frame`;
+  await expect.poll(() => page.frames().some((frame) => frame.url() === frameUrl)).toBe(true);
+  const frame = page.frameLocator('iframe');
+  // A real click in the frame, which the request needs.
+  await frame.getByRole('button', { name: 'Ask for the cookies of this site' }).click();
+  const result = frame.locator('#result');
+  await expect(result).not.toHaveText('');
+  return (await result.textContent()) ?? '';
+}
+
+test('tells frames of other sites at once whether they get their cookies, as the setting says', async () => {
+  // While the browser blocks third-party cookies, as it does by default, a frame gets none.
+  const blocking = await launch();
+  try {
+    expect(await askForStorage(blocking)).toBe('NotAllowedError');
+    expect(await overlayAttached(blocking)).toBe(false);
+  } finally {
+    await blocking.close();
+  }
+  // Without the blocking, the frame has its cookies, and the site learns it.
+  const allowing = await launch([], { settings: { 'privacy.blockThirdPartyCookies': false } });
+  try {
+    expect(await askForStorage(allowing)).toBe('granted true');
+  } finally {
+    await allowing.close();
   }
 });

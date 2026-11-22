@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import type * as Electron from 'electron';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   chooseMenuItem,
   FixtureServer,
@@ -13,6 +16,7 @@ import {
 } from './harness.ts';
 
 const server = new FixtureServer();
+const fixtures = resolve(import.meta.dirname, 'fixtures');
 let browser: Browser;
 
 test.beforeAll(async () => {
@@ -35,8 +39,16 @@ const en =
         openLink: 'Open Link in New Tab',
         copyLink: 'Copy Link Address',
         openImage: 'Open Image in New Tab',
+        saveImage: 'Save Image As…',
         copyImage: 'Copy Image',
         copyImageAddress: 'Copy Image Address',
+        openVideo: 'Open Video in New Tab',
+        saveVideo: 'Save Video As…',
+        copyVideoAddress: 'Copy Video Address',
+        openAudio: 'Open Audio in New Tab',
+        saveAudio: 'Save Audio As…',
+        copyAudioAddress: 'Copy Audio Address',
+        pictureInPicture: 'Picture in Picture',
         search: 'Search duckduckgo.com for “Fixture menus”',
         undo: 'Undo',
         redo: 'Redo',
@@ -53,8 +65,16 @@ const en =
         openLink: 'Open link in new &tab',
         copyLink: 'Copy link addr&ess',
         openImage: 'Open &image in new tab',
+        saveImage: 'Sa&ve image as…',
         copyImage: 'Cop&y image',
         copyImageAddress: 'C&opy image address',
+        openVideo: 'Open vi&deo in new tab',
+        saveVideo: 'Sa&ve video as…',
+        copyVideoAddress: 'C&opy video address',
+        openAudio: 'Open au&dio in new tab',
+        saveAudio: 'Sa&ve audio as…',
+        copyAudioAddress: 'C&opy audio address',
+        pictureInPicture: '&Picture in picture',
         search: '&Search duckduckgo.com for “Fixture menus”',
         undo: '&Undo',
         redo: '&Redo',
@@ -177,7 +197,7 @@ test('opens and copies images', async () => {
     () => (document.getElementById('image') as HTMLImageElement).naturalWidth > 0,
   );
   await page.click('#image', { button: 'right' });
-  expectItems(await menu(1), [en.openImage, en.copyImage, en.copyImageAddress]);
+  expectItems(await menu(1), [en.openImage, en.saveImage, en.copyImage, en.copyImageAddress]);
   await choose(en.copyImageAddress);
   await expect.poll(clipboardText).toBe(`${server.origin}/image.png`);
   await choose(en.copyImage);
@@ -206,6 +226,49 @@ test('opens and copies images', async () => {
     ],
     active: `${server.origin}/menus.html`,
   });
+});
+
+test('saves images, videos and audio, and opens and copies the address of their files', async () => {
+  await start();
+  const folder = mkdtempSync(join(tmpdir(), 'saved-media-'));
+  try {
+    const target = join(folder, 'saved image.png');
+    // The question where to save gets an answer, as people choose a place.
+    await browser.main.evaluate(({ dialog }, path) => {
+      dialog.showSaveDialog = () => Promise.resolve({ canceled: false, filePath: path });
+    }, target);
+    const page = await open('media.html');
+    await page.waitForFunction(() => {
+      const image = document.getElementById('image') as HTMLImageElement;
+      const video = document.getElementById('video') as HTMLVideoElement;
+      const audio = document.getElementById('audio') as HTMLAudioElement;
+      return image.naturalWidth > 0 && video.readyState >= 1 && audio.readyState >= 1;
+    });
+    await page.click('#image', { button: 'right' });
+    expectItems(await menu(1), [en.openImage, en.saveImage, en.copyImage, en.copyImageAddress]);
+    await choose(en.saveImage);
+    await expect.poll(() => existsSync(target)).toBe(true);
+    await expect
+      .poll(() => readFileSync(target).equals(readFileSync(join(fixtures, 'image.png'))))
+      .toBe(true);
+
+    const clip = `${server.origin}/clip.webm`;
+    await page.click('#video', { button: 'right' });
+    const video = await menu(2);
+    expectItems(video, [en.openVideo, en.saveVideo, en.copyVideoAddress, en.pictureInPicture]);
+    expect(video.disabled).not.toContain(en.saveVideo);
+    await choose(en.copyVideoAddress);
+    await expect.poll(clipboardText).toBe(clip);
+
+    await page.click('#audio', { button: 'right' });
+    expectItems(await menu(3), [en.openAudio, en.saveAudio, en.copyAudioAddress]);
+    await choose(en.openAudio);
+    await expect
+      .poll(async () => (await tabUrls()).urls)
+      .toEqual([`${server.origin}/media.html`, clip]);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test('edits text in the clicked field of a page or of the address bar', async () => {
