@@ -77,14 +77,16 @@ let sessions = 0;
 let answers = 0;
 let dependencies: PaletteDependencies | undefined;
 const watched = new WeakSet<WebContents>();
+const watchedWindows = new WeakSet<BrowserWindowController>();
 
 /**
  * Opens the command palette of a window in the overlay, at the top of its pages, with
  * everything or the open tabs. The keys typed since the shortcut go to its field when its page
  * asks for its first results. A palette that shows already hears of the shortcut: its own
  * closes it, the other one switches the scope. A site's question that the overlay shows stays,
- * and Escape typed before the palette showed opens nothing. The first call connects the
- * channels of the palette.
+ * and Escape typed before the palette showed opens nothing, as does a window that lost the focus
+ * meanwhile: its palette would show without the keyboard. The first call connects the channels
+ * of the palette.
  * @param window - The window.
  * @param scope - What the palette searches.
  * @param deps - What the palette needs.
@@ -95,7 +97,7 @@ export function openPalette(
   deps: PaletteDependencies,
 ): void {
   if (dependencies === undefined) connect(deps);
-  if (window.window.isDestroyed() || window.typingCancelled) {
+  if (window.window.isDestroyed() || window.typingCancelled || !window.window.isFocused()) {
     window.releaseTyping();
     return;
   }
@@ -133,7 +135,7 @@ export function openPalette(
   });
   states.set(overlay, state);
   track(window, overlay);
-  closeOnBlur(overlay);
+  closeOnBlur(window, overlay);
 }
 
 /** Tells the page of a palette that one of its shortcuts was pressed. */
@@ -144,14 +146,27 @@ function publishShortcut(overlay: WindowOverlay, scope: PaletteOpening, router: 
   }
 }
 
-/** Closes the palette when its page loses the focus, as when the window loses it. */
-function closeOnBlur(overlay: WindowOverlay): void {
-  const contents = overlay.contents;
-  if (contents === undefined || watched.has(contents)) return;
-  watched.add(contents);
-  contents.on('blur', () => {
+/**
+ * Closes the palette when its page loses the focus, and when its window loses it. The page has
+ * the focus only if it took it as the palette opened; a window that gets the focus back gives it
+ * to the view that had it last, which is then not the palette.
+ */
+function closeOnBlur(window: BrowserWindowController, overlay: WindowOverlay): void {
+  const close = (): void => {
     if (overlay.content?.kind === 'palette') overlay.close();
-  });
+  };
+  const contents = overlay.contents;
+  if (contents !== undefined && !watched.has(contents)) {
+    watched.add(contents);
+    contents.on('blur', close);
+  }
+  if (!watchedWindows.has(window)) {
+    watchedWindows.add(window);
+    // The window tells of its blur a moment later, when it may have the focus again.
+    window.window.on('blur', () => {
+      if (!window.window.isDestroyed() && !window.window.isFocused()) close();
+    });
+  }
 }
 
 /** The content of the overlay for the palette of a window. */
