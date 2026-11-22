@@ -165,11 +165,12 @@ test('takes a double click on Allow as one answer, not also as the answer to the
     const prompt = await question(browser);
     await expect(prompt).toContainText('Use your camera');
     await prompt.getByRole('button', { name: 'Allow' }).click();
-    expect(await camera).toBe('tracks: 1');
     // The second click of a double click comes a moment later, when the next question shows
-    // where the first one was. It answers nothing.
+    // where the first one was. It answers nothing. It comes before the camera starts, which
+    // can take longer than the moment in which a question takes no clicks.
     await expect(prompt).toContainText('Use your microphone');
     await prompt.getByRole('button', { name: 'Allow' }).click({ force: true });
+    expect(await camera).toBe('tracks: 1');
     await prompt.getByRole('button', { name: 'Block' }).click();
     expect(await microphone).toBe('NotAllowedError');
   } finally {
@@ -192,6 +193,70 @@ test('closes a question with a click next to it, which refuses this time only', 
     await prompt.getByRole('button', { name: 'Allow' }).click();
     expect(await again).toBe('tracks: 1');
   } finally {
+    await browser.close();
+  }
+});
+
+/**
+ * Holds back the timers of 0 ms of the browser process until {@link releaseZeroTimers}, as a
+ * busy system delays them: the browser shows the next question of a window with such a timer.
+ */
+async function holdZeroTimers(browser: Browser): Promise<void> {
+  await browser.main.evaluate(() => {
+    const store = globalThis as typeof globalThis & { e2eReleaseTimers?: () => void };
+    const set = globalThis.setTimeout;
+    const clear = globalThis.clearTimeout;
+    const held = new Map<ReturnType<typeof setTimeout>, () => void>();
+    globalThis.setTimeout = ((handler: unknown, ms?: number, ...rest: unknown[]) => {
+      if ((ms ?? 0) > 0 || typeof handler !== 'function') {
+        return set(handler as () => void, ms, ...rest);
+      }
+      const timer = set(() => undefined, 2 ** 31 - 1);
+      held.set(timer, () => (handler as (...values: unknown[]) => void)(...rest));
+      return timer;
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout> | undefined) => {
+      if (timer !== undefined) held.delete(timer);
+      clear(timer);
+    }) as typeof clearTimeout;
+    store.e2eReleaseTimers = () => {
+      globalThis.setTimeout = set;
+      globalThis.clearTimeout = clear;
+      for (const [timer, run] of held) {
+        clear(timer);
+        run();
+      }
+      held.clear();
+    };
+  });
+}
+
+/** Runs the timers that {@link holdZeroTimers} held back, and lets new ones run at once. */
+async function releaseZeroTimers(browser: Browser): Promise<void> {
+  await browser.main.evaluate(() => {
+    (globalThis as typeof globalThis & { e2eReleaseTimers?: () => void }).e2eReleaseTimers?.();
+  });
+}
+
+test('keeps the question of a site that asks again before the browser was ready for it', async () => {
+  const browser = await launch(['--use-fake-device-for-media-stream']);
+  try {
+    const page = await open(browser, url());
+    const asked = media(page, { video: true });
+    const prompt = await question(browser);
+    await expect(prompt).toContainText('Use your camera');
+    // A click next to the question refuses it; on a busy system the site asks again before
+    // the browser has looked for the next question.
+    await holdZeroTimers(browser);
+    await prompt.page().mouse.click(8, 8);
+    expect(await asked).toBe('NotAllowedError');
+    const again = media(page, { video: true });
+    await expect(prompt).toContainText('Use your camera');
+    await releaseZeroTimers(browser);
+    await prompt.getByRole('button', { name: 'Allow' }).click();
+    expect(await again).toBe('tracks: 1');
+  } finally {
+    await releaseZeroTimers(browser).catch(() => undefined);
     await browser.close();
   }
 });

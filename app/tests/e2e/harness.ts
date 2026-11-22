@@ -46,6 +46,10 @@ declare global {
       invoke(channel: string, payload: unknown): Promise<unknown>;
       on(channel: string, listener: (payload: unknown) => void): () => void;
     };
+    /** The states that the shell page got, as the harness records them. */
+    e2eStates?: string[];
+    /** The mark of a state that the harness records, its size and a hash of its JSON. */
+    e2eMark?: (state: unknown) => string;
   }
 }
 
@@ -415,6 +419,7 @@ export async function launch(
     cdp = await chromium.connectOverCDP(devtoolsMatch[1] ?? '');
     shell = await waitForPage({ cdp }, (url) => url.startsWith('app://shell'));
     await shell.waitForSelector('app-shell');
+    await within(shell.evaluate(recordStates), answerTime, 'The shell');
   } catch (error) {
     sessionFiles.close();
     await reportFailedStart(child, main, profile, devtoolsMatch[1] ?? '', String(error));
@@ -523,7 +528,8 @@ const overlayRows = `(() => {
 
 /**
  * Records what the browser showed at the end of a test: the shell's state and address bar,
- * every web contents with its process, what the overlays show, and the end of the browser's
+ * every web contents with its process, what the overlays show, the errors that the browser's
+ * own pages logged to their console since the start, and the end of the browser's
  * log; a view that has not shown its first page by then adds what the browser did since its
  * start (see {@link waitingReport}). The record goes with the files of the test, which CI keeps when a
  * test fails: a failed expectation fails the test only after the test closed its browser. A
@@ -590,7 +596,40 @@ async function reportState(
       answerTime,
       'The overlays',
     );
-    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views, overlays })}\n`;
+    const consoleErrors = await within(
+      main.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { e2eConsoleErrors?: string[] }).e2eConsoleErrors ??
+          [],
+      ),
+      answerTime,
+      'The browser process',
+    );
+    // The states that the browser process sent to the shell, those that the shell page got,
+    // and the one that the shell shows, so that a shell that does not show a change tells
+    // where the change stopped.
+    const shellStates = {
+      sent: await within(
+        main.evaluate(
+          () =>
+            (globalThis as typeof globalThis & { e2eSentStates?: string[] }).e2eSentStates ?? [],
+        ),
+        answerTime,
+        'The browser process',
+      ),
+      ...(await within(
+        shell.evaluate(() => ({
+          received: window.e2eStates ?? [],
+          shown:
+            window.e2eMark?.(
+              (document.querySelector('app-shell') as { state?: unknown } | null)?.state,
+            ) ?? '',
+        })),
+        answerTime,
+        'The shell',
+      )),
+    };
+    report = `Browser at the end of the test: ${JSON.stringify({ state, address, views, overlays, consoleErrors, shellStates })}\n`;
     // A view whose first navigation has not committed has no address yet, but loads.
     if (views.some((view) => view.url === '' && view.loading)) {
       report += await waitingReport(main, record);
@@ -962,7 +1001,8 @@ function watchSessionFiles(folder: string): SessionFiles {
  * Keeps, in the browser process, the latest events of the main frame of every view with
  * their times: navigations that start, redirect, commit or fail, the request of the page that
  * goes out, gets its response or fails, loads that start and stop, and renderers that go away
- * or stop answering, each with the process of the view.
+ * or stop answering, each with the process of the view. It also keeps the errors that the
+ * browser's own pages log and the states that the browser sends to the shell.
  * @param main - The browser process.
  */
 function recordNavigations(main: MainProcess): Promise<void> {
@@ -971,6 +1011,16 @@ function recordNavigations(main: MainProcess): Promise<void> {
     if (store.e2eNavigations !== undefined) return;
     const events = new Map<number, string[]>();
     store.e2eNavigations = events;
+    // Errors that the browser's own pages log, such as one that stops the shell from drawing
+    // a new state.
+    const consoleErrors: string[] = [];
+    (globalThis as typeof globalThis & { e2eConsoleErrors?: string[] }).e2eConsoleErrors =
+      consoleErrors;
+    // The states that the browser sends to the shell, each with its time, its view and its
+    // mark, the size and a hash of its JSON, which the shell page's record of the same state
+    // matches (see recordStates).
+    const sentStates: string[] = [];
+    (globalThis as typeof globalThis & { e2eSentStates?: string[] }).e2eSentStates = sentStates;
     const notes = new Map<number, (what: string) => void>();
     const sessions = new WeakSet<Electron.Session>();
     const noteRequest = (
@@ -1030,9 +1080,57 @@ function recordNavigations(main: MainProcess): Promise<void> {
       contents.on('unresponsive', () => note('unresponsive'));
       contents.on('responsive', () => note('responsive'));
       contents.once('destroyed', () => note('destroyed'));
+      const send = contents.send.bind(contents);
+      contents.send = (channel: string, ...args: unknown[]): void => {
+        if (channel === 'shell.stateChanged') {
+          const state = args[0] as { readonly activeTabId?: unknown } | undefined;
+          const text = JSON.stringify(state) ?? '';
+          let hash = 2166136261;
+          for (let index = 0; index < text.length; index++) {
+            hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+          }
+          sentStates.push(
+            `${String(Date.now())} ${String(contents.id)} ${String(text.length)}:${(hash >>> 0).toString(16)} active ${String(state?.activeTabId)}`,
+          );
+          if (sentStates.length > 20) sentStates.splice(0, sentStates.length - 20);
+        }
+        send(channel, ...args);
+      };
+      contents.on('console-message', (details) => {
+        if (details.level !== 'error' || !contents.getURL().startsWith('app://')) return;
+        consoleErrors.push(
+          `${String(Date.now())} ${contents.getURL()} ${details.message} (${details.sourceId}:${String(details.lineNumber)})`,
+        );
+        if (consoleErrors.length > 40) consoleErrors.splice(0, consoleErrors.length - 40);
+      });
     };
     for (const contents of webContents.getAllWebContents()) watchView(contents);
     app.on('web-contents-created', (_event, contents) => watchView(contents));
+  });
+}
+
+/**
+ * Records the states that the shell page of the first window gets, each with its time and its
+ * mark, as the browser process records those that it sends (see recordNavigations).
+ */
+function recordStates(): void {
+  if (window.e2eStates !== undefined) return;
+  const states: string[] = [];
+  window.e2eStates = states;
+  // The same mark as the browser process gives the states that it sends.
+  const mark = (window.e2eMark = (state: unknown): string => {
+    const text = JSON.stringify(state) ?? '';
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index++) {
+      hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+    }
+    return `${String(text.length)}:${(hash >>> 0).toString(16)}`;
+  });
+  window.bridge.on('shell.stateChanged', (state) => {
+    states.push(
+      `${String(Date.now())} ${mark(state)} active ${String((state as { readonly activeTabId?: unknown }).activeTabId)}`,
+    );
+    if (states.length > 20) states.splice(0, states.length - 20);
   });
 }
 

@@ -497,6 +497,82 @@ test('closes when its window loses the focus, and gives the focus back to the pa
   }
 });
 
+test('closes when its window loses the focus, also when its page did not take the focus as it opened', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, 'index.html');
+    await focusPage(browser, page);
+    const first = await focusedWindow(browser);
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    await expect.poll(() => focusedWindow(browser)).not.toBe(first);
+    const second = await focusedWindow(browser);
+    await focusWindow(browser, first);
+    await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
+    // As when the focus that the overlay gives its page as the palette opens comes to nothing:
+    // the window keeps the focus on the page then.
+    await browser.main.evaluate(({ webContents }) => {
+      const known = new Set(webContents.getAllWebContents().map((contents) => contents.id));
+      const prototype = Object.getPrototypeOf(webContents.getAllWebContents()[0]) as {
+        focus(this: Electron.WebContents): void;
+      };
+      const focus = Object.getOwnPropertyDescriptor(prototype, 'focus')?.value as
+        ((this: Electron.WebContents) => void) | undefined;
+      prototype.focus = function (this: Electron.WebContents): void {
+        if (known.has(this.id) && !this.getURL().startsWith('app://overlay')) focus?.call(this);
+      };
+    });
+    const palette = await openPalette(browser, fixture('index.html'));
+    await expect.poll(() => focused(browser, 'app://overlay')).toBe(false);
+    await palette.field.fill('zoom');
+    await focusWindow(browser, second);
+    await expect(palette.dialog).toBeHidden();
+    await expect.poll(() => overlayAttached(browser, first ?? undefined)).toBe(false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens no palette in a window without the focus, where it would show without the keyboard', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, 'index.html');
+    await focusPage(browser, page);
+    const first = await focusedWindow(browser);
+    await pressNative(browser, 'N', ['primary']);
+    await expect.poll(() => windowCount(browser)).toBe(2);
+    await expect.poll(() => focusedWindow(browser)).not.toBe(first);
+    const second = await focusedWindow(browser);
+    await focusWindow(browser, first);
+    await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
+    // A palette that opened once has its code loaded, so the next one decides at once.
+    const palette = await openPalette(browser, fixture('index.html'));
+    await palette.field.press('Escape');
+    await expect(palette.dialog).toBeHidden();
+    await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
+    // As when the window loses the focus right after the shortcut, while the palette's code
+    // loads: the window has no focus when the palette is to show.
+    await focusWindow(browser, second);
+    await browser.main.evaluate(
+      async ({ webContents }, { address, modifier }) => {
+        const view = webContents
+          .getAllWebContents()
+          .find((contents) => contents.getURL() === address);
+        view?.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [modifier] });
+        view?.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [modifier] });
+        for (let turn = 0; turn < 3; turn++) await new Promise((done) => setImmediate(done));
+      },
+      { address: fixture('index.html'), modifier: mac ? ('meta' as const) : ('control' as const) },
+    );
+    await focusWindow(browser, first);
+    await expect.poll(() => focused(browser, fixture('index.html'))).toBe(true);
+    await expect(palette.dialog).toBeHidden();
+    await expect.poll(() => overlayAttached(browser, first ?? undefined)).toBe(false);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('lists only the commands that can run now, also those of the menus, and runs them on the active tab', async () => {
   const browser = await launch();
   try {
