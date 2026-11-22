@@ -6,10 +6,12 @@ import { release } from 'node:os';
 import {
   chooseMenuItem,
   FixtureServer,
+  focusedElement,
   launch,
   menuCount,
   overlayAttached,
   overlayPage,
+  pressFocused,
   pressNative,
   recordedMenu,
   recordMenus,
@@ -337,9 +339,14 @@ test('moves the focus to the other side when its page takes the focus, and keeps
     });
     await new Promise((done) => setTimeout(done, 300));
     await stays();
-    // Tab past the end of the right page stays in the right page.
-    for (let press = 0; press < 4; press += 1) await pressIn(browser, second, 'Tab');
-    await new Promise((done) => setTimeout(done, 300));
+    // Tab past the end of the right page goes on to the toolbar, never to the left page, and
+    // Shift+Tab from there comes back to the right page.
+    await pressIn(browser, second, 'Tab');
+    await expect.poll(() => focusedElement(browser)).toBe('shell Workspace Default');
+    expect((await shellState(browser.shell)).activeTabId).toBe(right?.id);
+    expect((await viewOf(browser, again))?.focused).toBe(false);
+    await pressFocused(browser, 'Tab', ['shift']);
+    await expect.poll(async () => (await viewOf(browser, second))?.focused).toBe(true);
     await stays();
     expect(await rightPage.evaluate(() => document.title)).toBe('Fixture second');
   } finally {

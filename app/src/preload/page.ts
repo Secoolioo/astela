@@ -1,9 +1,14 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { applyAppearance } from './appearance.ts';
+import { startOver, watchTabOut } from './tab-out.ts';
 
 const scopeArgument = process.argv.find((arg) => arg.startsWith('--bridge-scope='));
 const scopes = (scopeArgument?.slice('--bridge-scope='.length) ?? '').split(',').filter(Boolean);
 applyAppearance();
+// Tab past the end of the page, or Shift+Tab past its start, goes on in the toolbar, and the
+// keys from the toolbar start the page over at its start or its end (`tab-out.ts`).
+watchTabOut(window, document, (reverse) => ipcRenderer.send('page.tabOut', reverse));
+ipcRenderer.on('page.tabIn', (_event, reverse: unknown) => startOver(document, reverse === true));
 
 const inScope = (channel: string): boolean =>
   scopes.some((scope) => channel.startsWith(`${scope}.`));

@@ -143,6 +143,8 @@ let contentsId = 0;
 /** The web contents of a view, whose events the test sends. */
 class FakeContents extends EventEmitter {
   readonly id = (contentsId += 1);
+  /** The messages of the page's frames, such as Tab past the end of the page. */
+  readonly ipc = new EventEmitter();
   constructor() {
     super();
     return lenient(this);

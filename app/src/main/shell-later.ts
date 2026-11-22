@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import { webContents, type WebContents } from 'electron';
 import type { PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
   FindInPage,
@@ -13,6 +13,8 @@ import {
   ReopenClosedTab,
   ResetZoom,
   SetTabMuted,
+  KeyOnTab,
+  FocusContent,
   GetFavicon,
   MoveTab,
   OpenTabMenu,
@@ -219,6 +221,27 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(ResizeSplit, ({ tabId, ratio, done }, { sender }) => {
     windowOf(sender).resizeSplit(tabId, ratio, done);
+    return null;
+  });
+  router.handle(KeyOnTab, ({ tabId, action }, { sender }) => {
+    const window = windowOf(sender);
+    // Delete closes the tab as the window closes the tabs that people close.
+    const run = (): void =>
+      action === 'close' ? window.tabAction(tabId, 'close') : window.tabs.activate(tabId);
+    // The keys of the tab strip keep the focus there, also when the active tab changes.
+    if (window.shellContents.isFocused()) window.keepingFocus(run);
+    else run();
+    return null;
+  });
+  router.handle(FocusContent, ({ reverse }, { sender }) => {
+    const window = windowOf(sender);
+    // Focus that moved on meanwhile, such as with a click, stays where it went.
+    if (!window.shellContents.isFocused()) return null;
+    window.focusContent(true);
+    // The page starts over at its start, or at its end, so that the next Tab or Shift+Tab goes
+    // to its first or its last element.
+    const page = webContents.getFocusedWebContents();
+    if (page !== null && page !== sender) page.send('page.tabIn', reverse);
     return null;
   });
   router.handle(

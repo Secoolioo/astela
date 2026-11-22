@@ -6,9 +6,11 @@ import type * as Electron from 'electron';
 import {
   chooseMenuItem,
   FixtureServer,
+  focusedElement,
   lastMenu,
   launch,
   overlayPage,
+  pressFocused,
   pressNative,
   recordMenus,
   removeAfterExit,
@@ -582,6 +584,211 @@ test('switches to a tab by its place and moves the active tab with the keyboard'
     await browser.close();
     await server.stop();
   }
+});
+
+/** Opens the pages in tabs of their own, the first one in the tab that the window has. */
+async function openTabs(browser: Browser, server: FixtureServer, pages: readonly string[]) {
+  const shell = browser.shell;
+  const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+  for (const [index, page] of pages.entries()) {
+    if (index > 0) {
+      await shell.getByRole('button', { name: 'New tab' }).click();
+      await expect(shell.getByRole('tab')).toHaveCount(index + 1);
+    }
+    await address.fill(`${server.origin}/${page}`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith(`/${page}`));
+  }
+}
+
+/** Moves the focus back from the address bar with Shift+Tab until the active tab has it. */
+async function focusActiveTab(browser: Browser): Promise<void> {
+  await pressFocused(browser, 'L', ['primary']);
+  await expect.poll(() => focusedElement(browser)).toBe('shell Address and search bar');
+  const active = browser.shell.locator('[role="tab"][aria-selected="true"]');
+  const focused = (): Promise<boolean> =>
+    active.evaluate((tab) => (tab.getRootNode() as ShadowRoot).activeElement === tab);
+  for (let i = 0; i < 10 && !(await focused()); i += 1) {
+    const before = await focusedElement(browser);
+    await pressFocused(browser, 'Tab', ['shift']);
+    await expect.poll(() => focusedElement(browser)).not.toBe(before);
+  }
+  await expect.poll(focused).toBe(true);
+  await expect.poll(() => focusedElement(browser)).toMatch(/^shell /);
+}
+
+/** Whether a place along a side of a tab lies past its round corners. */
+function along(size: number, place: number): boolean {
+  return place >= 10 && place < size - 10;
+}
+
+/**
+ * How many pixels of each side of the active tab its focus ring changes, from 3 pixels outside
+ * the tab to 3 pixels inside it, without the round corners: the window draws the tab with the
+ * focus, and again once the focus left it.
+ */
+async function ringSides(
+  browser: Browser,
+): Promise<Record<'top' | 'right' | 'bottom' | 'left', number>> {
+  const tab = browser.shell.locator('[role="tab"][aria-selected="true"]');
+  const box = await tab.boundingBox();
+  if (box === null) throw new Error('The active tab is not laid out');
+  const rect = {
+    x: Math.round(box.x) - 4,
+    y: Math.round(box.y) - 4,
+    width: Math.round(box.width) + 8,
+    height: Math.round(box.height) + 8,
+  };
+  const frames = (): Promise<unknown> =>
+    browser.shell.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
+  const capture = async (): Promise<{ width: number; height: number; data: number[] }> => {
+    await frames();
+    return browser.main.evaluate(async ({ webContents }, area) => {
+      const shell = webContents
+        .getAllWebContents()
+        .find((c) => c.getURL().startsWith('app://shell'));
+      const image = await shell?.capturePage(area);
+      if (image === undefined) return { width: 0, height: 0, data: [] };
+      return { ...image.getSize(), data: [...image.toBitmap()] };
+    }, rect);
+  };
+  const focused = await capture();
+  await tab.evaluate((element) => {
+    if (element instanceof HTMLElement) element.blur();
+  });
+  const unfocused = await capture();
+  const scale = focused.width / rect.width;
+  const sides = { top: 0, right: 0, bottom: 0, left: 0 };
+  for (let y = 0; y < focused.height; y += 1) {
+    for (let x = 0; x < focused.width; x += 1) {
+      const at = (y * focused.width + x) * 4;
+      const changed = [0, 1, 2].some(
+        (channel) =>
+          Math.abs((focused.data[at + channel] ?? 0) - (unfocused.data[at + channel] ?? 0)) > 40,
+      );
+      if (!changed) continue;
+      // In CSS pixels, from the edges of the tab, which lie 4 pixels inside the capture.
+      const cx = x / scale - 4;
+      const cy = y / scale - 4;
+      if (Math.abs(cy) < 3 && along(box.width, cx)) sides.top += 1;
+      if (Math.abs(cy - box.height) < 3 && along(box.width, cx)) sides.bottom += 1;
+      if (Math.abs(cx) < 3 && along(box.height, cy)) sides.left += 1;
+      if (Math.abs(cx - box.width) < 3 && along(box.height, cy)) sides.right += 1;
+    }
+  }
+  return sides;
+}
+
+test('moves the focus between the tabs with the arrow keys, Home and End, and shows or closes the focused tab', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    await openTabs(browser, server, ['index.html', 'second.html', 'focus.html']);
+    await focusActiveTab(browser);
+    const press = async (
+      key: string,
+      title: string,
+      modifiers: readonly 'shift'[] = [],
+    ): Promise<void> => {
+      await pressFocused(browser, key, modifiers);
+      await expect.poll(() => focusedElement(browser)).toBe(`shell ${title}`);
+    };
+    await press('Left', 'Fixture second');
+    await press('Left', 'Fixture home');
+    // The arrows go round at the ends.
+    await press('Left', 'Fixture focus');
+    await press('Right', 'Fixture home');
+    await press('End', 'Fixture focus');
+    await press('Home', 'Fixture home');
+    // Tab leaves the strip from the tab with the focus, and comes back to the active tab.
+    await press('Tab', 'New tab');
+    await press('Tab', 'Fixture focus', ['shift']);
+    // Enter shows the focused tab, and the focus stays on it in the strip.
+    await press('Left', 'Fixture second');
+    await pressFocused(browser, 'Return');
+    const active = browser.shell.locator('[role="tab"][aria-selected="true"]');
+    await expect(active).toHaveAttribute('title', 'Fixture second');
+    await expect.poll(() => focusedElement(browser)).toBe('shell Fixture second');
+    // Delete closes the focused tab, and the focus goes on to the next one.
+    await pressFocused(browser, 'Delete');
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect(browser.shell.getByRole('tab', { name: 'Fixture second' })).toHaveCount(0);
+    await expect.poll(() => focusedElement(browser)).toBe('shell Fixture focus');
+  } finally {
+    await browser.close();
+    await server.stop();
+  }
+});
+
+test('closes the last tab with Delete, and with the delete key of macOS, which types Backspace', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    await openTabs(browser, server, ['index.html', 'second.html', 'focus.html']);
+    await focusActiveTab(browser);
+    const tabs = browser.shell.getByRole('tab');
+    await pressFocused(browser, 'Backspace');
+    if (process.platform === 'darwin') {
+      // The focus goes on to the tab before the last one, which closed.
+      await expect(tabs).toHaveCount(2);
+      await expect.poll(() => focusedElement(browser)).toBe('shell Fixture second');
+    } else {
+      // Elsewhere Backspace is no key of lists, and leaves the tab open.
+      await expect.poll(() => focusedElement(browser)).toBe('shell Fixture focus');
+      await expect(tabs).toHaveCount(3);
+      await pressFocused(browser, 'Delete');
+      await expect(tabs).toHaveCount(2);
+      await expect.poll(() => focusedElement(browser)).toBe('shell Fixture second');
+    }
+    await expect(browser.shell.getByRole('tab', { name: 'Fixture focus' })).toHaveCount(0);
+  } finally {
+    await browser.close();
+    await server.stop();
+  }
+});
+
+test('moves between the tabs with Up and Down at a side, and draws the whole ring of a focused tab', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  for (const position of ['top', 'left'] as const) {
+    const browser = await launch([], { settings: { 'tabs.position': position } });
+    try {
+      await openTabs(
+        browser,
+        server,
+        position === 'top' ? ['index.html'] : ['index.html', 'second.html'],
+      );
+      await focusActiveTab(browser);
+      // The ring lies within the tab, as the strip, which scrolls, cuts off what lies around it.
+      const sides = await ringSides(browser);
+      expect(
+        Object.values(sides).every((pixels) => pixels > 10),
+        JSON.stringify(sides),
+      ).toBe(true);
+      if (position === 'top') continue;
+      await focusActiveTab(browser);
+      for (const [key, title] of [
+        ['Up', 'Fixture home'],
+        ['Down', 'Fixture second'],
+        ['Up', 'Fixture home'],
+      ] as const) {
+        await pressFocused(browser, key);
+        await expect.poll(() => focusedElement(browser)).toBe(`shell ${title}`);
+      }
+      await pressFocused(browser, 'Space');
+      await expect(browser.shell.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute(
+        'title',
+        'Fixture home',
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+  await server.stop();
 });
 
 test('draws the title bar with the tabs, and leaves it to the system after a restart when chosen', async () => {

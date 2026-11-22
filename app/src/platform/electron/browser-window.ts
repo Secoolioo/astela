@@ -6,6 +6,7 @@ import {
   type Input,
   type Rectangle,
   type WebContents,
+  type WebFrameMain,
 } from 'electron';
 import { DisposableStore, toDisposable, type Disposable } from '../../shared/disposable.ts';
 import type { Capability } from '../../shared/ipc/contract.ts';
@@ -542,11 +543,32 @@ export interface WindowCommands {
   paneOf(host: WindowHost, contents: WebContents): OverlayAnchor | undefined;
   /** Closes the view of a tab that the window does not show, which gets a new one once it shows. */
   renewView(host: WindowHost, id: TabId, history: TabHistory | undefined): void;
+  /**
+   * Moves the focus on to the toolbar when Tab leaves the end of the page of a view, or to the
+   * end of the toolbar when Shift+Tab leaves its start, as the page's preload reports.
+   * @param host - The window.
+   * @param view - The view of the page.
+   * @param frame - The frame that reported it, which must be the page's top frame.
+   * @param reverse - Whether Shift+Tab left the start, as the page reports it.
+   */
+  leavePage(
+    host: WindowHost,
+    view: WebContentsView,
+    frame: WebFrameMain | null,
+    reverse: unknown,
+  ): void;
 }
 
-/** An item of the menu of a tab that the window runs. */
+/** An item of the menu of a tab that the window runs, or the close of a tab with a key. */
 export type TabAction =
-  'newTabRight' | 'duplicate' | 'closeOthers' | 'closeRight' | 'split' | 'endSplit' | 'swapSplit';
+  | 'newTabRight'
+  | 'duplicate'
+  | 'close'
+  | 'closeOthers'
+  | 'closeRight'
+  | 'split'
+  | 'endSplit'
+  | 'swapSplit';
 
 /** The code that loads later for the windows of each window manager, by their options. */
 const laterCode = new WeakMap<
@@ -843,6 +865,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
     this.shell = new WebContentsView({
       webPreferences: {
+        // The shell takes no focus when its page commits: at the start, it commits after the
+        // window gave the page of the first tab the focus. The window focuses the shell itself.
+        focusOnNavigation: false,
         preload: options.shellPreload,
         partition: options.internalPartition,
         additionalArguments: [
@@ -1491,13 +1516,19 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   /**
    * Focuses the page that the content area shows, that of the active tab once it shows, or
    * the shell for the new tab page, where typing goes to the address bar.
+   * @param keys - Whether keys move the focus into the page, as Tab and F6 do, which go into the
+   *   new tab page's own view too.
    */
-  focusContent(): void {
+  focusContent(keys = false): void {
     const shown = this.shownTabs();
     const id = shown.find((tab) => tab === this.tabs.active?.id) ?? shown[0];
     const entry = id === undefined ? undefined : this.entries.get(id);
     // The shell shows the new tab page's address bar and the problems of pages.
-    if (entry === undefined || entry.page === 'newtab' || this.problemOf(id ?? '') !== null) {
+    if (
+      entry === undefined ||
+      (entry.page === 'newtab' && !keys) ||
+      this.problemOf(id ?? '') !== null
+    ) {
       this.focusShell();
     } else {
       this.focusView(this.shownViewOf(entry).webContents);
@@ -1515,9 +1546,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Gives the shell the focus, and with a command the field that it names.
-   * @param command - The field, such as the address bar.
+   * @param command - The field, such as the address bar, its first or last control, or the
+   *   problem of a page that it shows in the page's place, see `ShellCommand`.
    */
-  private focusShell(command?: 'omnibox.focus' | 'find.focus'): void {
+  focusShell(
+    command?: 'omnibox.focus' | 'find.focus' | 'focus.first' | 'focus.last' | 'focus.pane',
+  ): void {
     this.focusOnLoad = undefined;
     this.shell.webContents.focus();
     if (command !== undefined) {
@@ -2209,6 +2243,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
    */
   private follow(id: TabId, view: WebContentsView, web: boolean): void {
     const contents = view.webContents;
+    // Tab past the end of the page, or Shift+Tab past its start, goes on in the toolbar.
+    contents.ipc.on('page.tabOut', ({ senderFrame }, reverse: unknown) =>
+      this.withCommands((code, host) => code.leavePage(host, view, senderFrame, reverse)),
+    );
     contents.on('before-input-event', (event, input) => {
       const taken = this.intercept(event, input, contents.id);
       // A web page that people type into may hold changes that it has not saved yet; the code

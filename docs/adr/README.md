@@ -100,3 +100,4 @@ Each rejected option as a bullet point with a short reason.
 | [0058](0058-layout-presets-and-top-rows-that-hide.md)                  | Layout presets, the toolbar in the row of the tabs and top rows that hide |
 | [0059](0059-site-information-with-checked-certificates.md)             | Site information with the certificates that Chromium checked              |
 | [0064](0064-web-features-that-electron-shows-no-ui-for.md)             | Web features that Electron shows no UI for                                |
+| [0065](0065-keyboard-focus-between-the-toolbar-and-the-page.md)        | Keyboard focus between the toolbar and the page                           |

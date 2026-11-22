@@ -14,6 +14,8 @@ export const shellLaterChannels = [
   'shell.prepareOverlay',
   'tabs.favicon',
   'tabs.setMuted',
+  'tabs.key',
+  'tabs.focusContent',
   'tabs.move',
   'tabs.openMenu',
   'omnibox.suggest',

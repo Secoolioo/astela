@@ -8,6 +8,8 @@ If the certificate of a site is not trusted, for example because it was issued f
 
 If the process that showed a page stops, for example because it ran out of memory, the tab says that the page crashed. **Reload** shows the page again. Other tabs keep their pages.
 
+With the keyboard, Tab goes round the toolbar and the buttons of the message. From 0.1.0-beta.7, `F6` and `Shift+F6` on Windows and Linux go from the toolbar to the first button of the message and from there back to the address bar, as they go between the toolbar and a page; see [Keyboard shortcuts](keyboard-shortcuts.md#the-toolbar-the-tabs-and-the-page).
+
 In a [split view](tabs.md#split-view), each side shows why its own page did not load, in its own half of the window, and its buttons, such as **Try again**, act on that side; a click there gives that side the focus.
 
 If a site or a proxy asks for a user name and password, Astela asks for them in a small window above the page and names the site and the area it gives. If the connection is not encrypted, it says so, because others could read what you send; a proxy usually gets them unencrypted, also on the way to an https site, so its question always says so. A tab in the background asks once you show it, not over the tab in front; in a split view, the side without the focus asks once you click into it, and the window shows over its side. **Sign in** sends them; **Cancel** or Escape shows the page as the site sends it without signing in.

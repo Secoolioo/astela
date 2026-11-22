@@ -48,6 +48,8 @@ export const windowCommands = [
   'page.reloadHard',
   'page.home',
   'omnibox.focus',
+  'focus.nextPane',
+  'focus.previousPane',
   'palette.open',
   'tabs.search',
   'menu.open',
@@ -190,7 +192,9 @@ const pcShortcuts: readonly (readonly [string, WindowCommand])[] = [
   ['BrowserForward', 'page.forward'],
   ['Ctrl+L', 'omnibox.focus'],
   ['Alt+D', 'omnibox.focus'],
-  ['F6', 'omnibox.focus'],
+  // The address bar and the page take turns, as the panes of a window do in other programs.
+  ['F6', 'focus.nextPane'],
+  ['Shift+F6', 'focus.previousPane'],
   ['Ctrl+K', 'palette.open'],
   ['Ctrl+Shift+A', 'tabs.search'],
   // The menu of the window, as F10 opens it in other programs of Windows and Linux.

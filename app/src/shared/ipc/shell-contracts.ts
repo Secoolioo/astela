@@ -294,9 +294,11 @@ export const ShellStateChanged = defineEvent({
 });
 
 /**
- * Asks the shell to run a UI command, such as focusing the address bar after a shortcut, or
- * opening the browser menu or the popover of the bookmark star at its button, which only the
- * shell knows.
+ * Asks the shell to run a UI command, such as focusing the address bar after a shortcut, its
+ * first or last control after Tab or Shift+Tab left the page, or opening the browser menu or the
+ * popover of the bookmark star at its button, which only the shell knows. With `focus.pane`, F6
+ * or Shift+F6 goes between the address bar and the problem of a page that the shell shows in the
+ * page's place.
  */
 export const ShellCommand = defineEvent({
   channel: 'shell.command',
@@ -304,6 +306,9 @@ export const ShellCommand = defineEvent({
     'omnibox.focus',
     'omnibox.done',
     'find.focus',
+    'focus.first',
+    'focus.last',
+    'focus.pane',
     'downloads.open',
     'menu.open',
     'bookmark.edit',

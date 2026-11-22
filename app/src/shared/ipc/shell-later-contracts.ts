@@ -147,6 +147,28 @@ export const SetTabMuted = defineRequest({
 });
 
 /**
+ * Shows or closes a tab with a key of the tab strip, Enter or Space and Delete, which keeps the
+ * focus in the strip, also when the active tab changes with it.
+ */
+export const KeyOnTab = defineRequest({
+  channel: 'tabs.key',
+  request: v.strictObject({ tabId: TabId, action: v.picklist(['activate', 'close']) }),
+  response: Done,
+  capability: 'shell',
+});
+
+/**
+ * Gives the page that the content area shows the focus, starting at its start, or at its end
+ * with `reverse`, when Tab leaves the last control of the shell, or Shift+Tab its first.
+ */
+export const FocusContent = defineRequest({
+  channel: 'tabs.focusContent',
+  request: v.strictObject({ reverse: v.boolean() }),
+  response: Done,
+  capability: 'shell',
+});
+
+/**
  * Moves a tab to another place among the tabs of its window. While the window has groups of
  * tabs, `group` names the group that the tab joins there, or `null` for none; without it, a
  * place between two tabs of a group joins that group, and a tab keeps its group at its edges.
@@ -346,6 +368,8 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   PrepareOverlay,
   GetFavicon,
   SetTabMuted,
+  KeyOnTab,
+  FocusContent,
   MoveTab,
   OpenTabMenu,
   SuggestAddresses,

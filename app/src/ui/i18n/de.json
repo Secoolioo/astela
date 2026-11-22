@@ -578,6 +578,8 @@
   "shortcut.page.reloadHard": "Ohne Cache neu laden",
   "shortcut.page.home": "Startseite öffnen",
   "shortcut.omnibox.focus": "Zur Adressleiste",
+  "shortcut.focus.nextPane": "Zum nächsten Bereich",
+  "shortcut.focus.previousPane": "Zum vorherigen Bereich",
   "shortcut.palette.open": "Befehlspalette öffnen",
   "shortcut.tabs.search": "Offene Tabs durchsuchen",
   "shortcut.menu.open": "Menü öffnen",

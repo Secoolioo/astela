@@ -90,6 +90,8 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
     case 'tab.new':
     case 'window.new':
     case 'omnibox.focus':
+    case 'focus.nextPane':
+    case 'focus.previousPane':
     case 'menu.open':
     case 'window.fullscreen':
     case 'bookmarks.open':

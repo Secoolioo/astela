@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { launch, waitForPage, type Browser } from './harness.ts';
+import { focusedElement, launch, pressFocused, waitForPage, type Browser } from './harness.ts';
 
 /** Clicks a button that replaces the page, once the click call has returned. */
 async function clickAway(page: Page, name: string): Promise<void> {
@@ -75,6 +75,92 @@ test('guides a new profile through its look, layout and search engine', async ()
       newTab.getByRole('searchbox', { name: 'Search with Ecosia or enter address' }),
     ).toBeVisible();
     await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The addresses of the views that have the focus, as the browser process sees it. */
+function focusedViews(browser: Browser): Promise<string[]> {
+  return browser.main.evaluate(({ webContents }) =>
+    webContents
+      .getAllWebContents()
+      .filter((contents) => contents.isFocused())
+      .map((contents) => contents.getURL()),
+  );
+}
+
+test('gives the guide the focus at the first start, so that Tab reaches its buttons', async () => {
+  const browser = await launch([], { firstRun: true });
+  try {
+    const page = await waitForPage(browser, (url) => url.startsWith('app://setup'));
+    await page.waitForLoadState('load');
+    await expect.poll(() => focusedViews(browser)).toEqual(['app://setup/']);
+    await pressFocused(browser, 'Tab');
+    await expect.poll(() => focusedElement(browser)).toBe('setup Skip setup');
+    await pressFocused(browser, 'Tab');
+    await expect.poll(() => focusedElement(browser)).toBe('setup Get started');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('draws the switches of the guide as the settings do, with the knob in its track', async () => {
+  const browser = await launch([], { firstRun: true });
+  try {
+    const page = await waitForPage(browser, (url) => url.startsWith('app://setup'));
+    await page.getByRole('button', { name: 'Get started' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Choose a layout' })).toBeVisible();
+    const toggle = page.getByRole('switch', { name: /^Show bookmarks bar/ });
+    const look = (): Promise<string[]> =>
+      toggle.evaluate((element) => [
+        getComputedStyle(element).width,
+        getComputedStyle(element).height,
+        getComputedStyle(element, '::before').transform,
+      ]);
+    expect(await look()).toEqual(['32px', '18px', 'none']);
+    await toggle.check();
+    await expect.poll(look).toEqual(['32px', '18px', 'matrix(1, 0, 0, 1, 14, 0)']);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('stays on the search step until the browser takes a search address of your own', async () => {
+  const browser = await launch([], { firstRun: true });
+  try {
+    const page = await waitForPage(browser, (url) => url.startsWith('app://setup'));
+    await page.getByRole('button', { name: 'Get started' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const step = page.getByRole('heading', { name: 'Pick your search engine' });
+    await expect(step).toBeVisible();
+    await page.getByRole('radio', { name: 'Custom' }).check();
+    const field = page.getByRole('textbox', { name: 'Search address' });
+    // Neither an empty field nor an address that is not one goes on, and the field says why.
+    for (const value of ['', 'not a url']) {
+      await field.fill(value);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(page.getByRole('alert')).toHaveText('Enter an https address that contains %s.');
+      await expect(step).toBeVisible();
+      await expect(field).toBeFocused();
+    }
+    // Continue saves what the field holds, also without Enter.
+    await field.fill('https://search.example/?q=%s');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Bring your bookmarks along' })).toBeVisible();
+    expect(await page.evaluate(() => window.bridge.invoke('settings.getAll', {}))).toMatchObject({
+      settings: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'search.urlTemplate',
+          value: 'https://search.example/?q=%s',
+        }),
+      ]),
+    });
+    // Back is never held back.
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(step).toBeVisible();
   } finally {
     await browser.close();
   }

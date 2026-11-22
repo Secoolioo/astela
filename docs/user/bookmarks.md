@@ -14,8 +14,8 @@ On a page that has a bookmark, the star and the shortcut open the same popover, 
 To see and organize your bookmarks, open the menu at the right end of the toolbar and choose **Bookmarks**, or press Ctrl+Shift+O (Command+Shift+O on macOS). The bookmarks page shows two folders, **Bookmarks bar** and **Other bookmarks**, with the folders you create in them:
 
 - Click a bookmark to open it, or Ctrl-click (Command-click on macOS) to open it in a new tab. Click a folder to show or hide what it contains.
-- **New folder** adds a folder; give it a name and choose **Save**.
-- The ✎ button renames a bookmark or folder, changes the address of a bookmark, and moves either into another folder.
+- **New folder** adds a folder; type its name, which is selected already, and press Enter or choose **Save**.
+- The ✎ button renames a bookmark or folder, changes the address of a bookmark, and moves either into another folder. Its name has the focus, all of it selected.
 - The × button removes a bookmark. Removing a folder that is not empty asks first, because everything in it is removed as well.
 - Type in the search field to find bookmarks by words of their title or address.
 
