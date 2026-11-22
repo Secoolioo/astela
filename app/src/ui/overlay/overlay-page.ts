@@ -66,6 +66,31 @@ interface Permission {
   readonly pane?: Pane;
 }
 
+/** A site that waits for a security key, or for the choice of one of the key's accounts. */
+interface SecurityKey {
+  readonly kind: 'securityKey';
+  readonly id: number;
+  readonly site: string;
+  readonly accounts: readonly { readonly name: string; readonly displayName: string }[];
+  readonly pane?: Pane;
+}
+
+/** The popover of the sign of a page that asked for protected video or music. */
+interface ProtectedMedia {
+  readonly kind: 'protectedMedia';
+  readonly anchor: Shield['anchor'];
+}
+
+/**
+ * A notice at the top of a page that took the whole screen or the mouse pointer, with the
+ * page's site unless its origin names none.
+ */
+interface Notice {
+  readonly kind: 'notice';
+  readonly notice: 'fullScreen' | 'pointerLock';
+  readonly site?: string;
+}
+
 /** A site that wants to see a screen or a window, and what it can choose from. */
 interface Screen {
   readonly kind: 'screen';
@@ -112,6 +137,9 @@ type Content =
   | Shield
   | Login
   | Permission
+  | SecurityKey
+  | ProtectedMedia
+  | Notice
   | Screen
   | DownloadsList
   | Suggestions
@@ -143,6 +171,9 @@ const isContent = (value: unknown): value is Content =>
     'shield',
     'login',
     'permission',
+    'securityKey',
+    'protectedMedia',
+    'notice',
     'screen',
     'downloads',
     'suggestions',
@@ -478,6 +509,29 @@ export class OverlayPage extends LitElement {
       .dialog.wide {
         width: 640px;
       }
+      /* An account of a security key shows its name below the name that it shows. */
+      .account {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .account .note {
+        margin: 0;
+      }
+      /* The notice of a page that took the screen or the pointer, at the top in the middle; it
+         takes no clicks. */
+      .notice {
+        position: fixed;
+        top: var(--space-3);
+        inset-inline: var(--space-3);
+        width: fit-content;
+        margin: 0 auto;
+        padding: var(--space-2) var(--space-4);
+        border-radius: var(--radius-pill);
+        overflow-wrap: anywhere;
+        text-align: center;
+        pointer-events: none;
+      }
       .sources {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
@@ -635,11 +689,17 @@ export class OverlayPage extends LitElement {
     if (next === null) return;
     if (next.kind === 'screen') this.chosen = undefined;
     if (next.kind === 'permission') this.arm(next.id);
+    if (next.kind === 'notice') void this.updateComplete.then(() => this.measureNotice(next));
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
     // The suggestions leave the focus in the address bar, where the typing goes on, and menus
     // and the bookmark's popover give it to their first item or field themselves.
-    if (previous?.kind !== next.kind && next.kind !== 'suggestions' && !ownElement.has(next.kind)) {
+    if (
+      previous?.kind !== next.kind &&
+      next.kind !== 'suggestions' &&
+      next.kind !== 'notice' &&
+      !ownElement.has(next.kind)
+    ) {
       void this.updateComplete.then(() =>
         (
           this.renderRoot.querySelector<HTMLElement>('.current input, .current .source') ??
@@ -791,6 +851,9 @@ export class OverlayPage extends LitElement {
   private renderContent(content: Content, leaving: boolean): TemplateResult {
     if (content.kind === 'login') return this.renderLogin(content);
     if (content.kind === 'permission') return this.renderPermission(content);
+    if (content.kind === 'securityKey') return this.renderSecurityKey(content);
+    if (content.kind === 'protectedMedia') return this.renderProtectedMedia(content);
+    if (content.kind === 'notice') return this.renderNotice(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
     if (content.kind === 'suggestions') return this.renderSuggestions(content);
@@ -961,6 +1024,104 @@ export class OverlayPage extends LitElement {
       </section>`;
   }
 
+  /**
+   * The question of a site that waits for a security key: it asks for the key, or for one of its
+   * accounts, until the key answers, the person chooses an account or cancels, also with a click
+   * next to it.
+   */
+  private renderSecurityKey(question: SecurityKey): TemplateResult {
+    const site = { site: question.site };
+    const choosing = question.accounts.length > 0;
+    return html`<div class="backdrop" @click=${this.close}></div>
+      <section
+        class="dialog popover"
+        role="dialog"
+        tabindex="-1"
+        aria-labelledby="security-key-title"
+        data-surface
+        data-center=${centerOf(question.pane)}
+      >
+        <h2 id="security-key-title">
+          ${this.t(choosing ? 'overlay.securityKeyAccounts' : 'overlay.securityKeyTitle', site)}
+        </h2>
+        ${
+          choosing
+            ? html`<ul>
+                ${question.accounts.map(
+                  (account, index) =>
+                    html`<li>
+                      <button
+                        type="button"
+                        class="account"
+                        @click=${() => this.chooseAccount(question.id, index)}
+                      >
+                        <span>${account.displayName || account.name}</span>
+                        ${
+                          account.displayName !== '' && account.name !== ''
+                            ? html`<span class="note">${account.name}</span>`
+                            : nothing
+                        }
+                      </button>
+                    </li>`,
+                )}
+              </ul>`
+            : html`<p>${this.t('overlay.securityKeyNote')}</p>`
+        }
+        <div class="buttons">
+          <button type="button" @click=${this.close}>${this.t('overlay.cancel')}</button>
+        </div>
+      </section>`;
+  }
+
+  /** Why the page cannot play its protected video or music, at the sign in the address bar. */
+  private renderProtectedMedia(popover: ProtectedMedia): TemplateResult {
+    return html`<div class="backdrop" @click=${this.close}></div>
+      <section
+        class="popover"
+        role="dialog"
+        aria-labelledby="protected-media-title"
+        data-surface
+        data-anchor=${anchorText(popover.anchor)}
+        data-align="end"
+      >
+        <p class="site" id="protected-media-title">${this.t('overlay.protectedMediaTitle')}</p>
+        <p class="note">${this.t('overlay.protectedMediaNote')}</p>
+        <button type="button" @click=${this.learnAboutProtectedMedia}>
+          ${this.t('overlay.learnMore')}
+        </button>
+      </section>`;
+  }
+
+  /**
+   * The notice of a page that took the whole screen or the mouse pointer, at the top of the
+   * window for a moment. It takes no focus; a screen reader reads it once.
+   */
+  private renderNotice(notice: Notice): TemplateResult {
+    const full = notice.notice === 'fullScreen';
+    const text =
+      notice.site === undefined
+        ? this.t(full ? 'overlay.fullScreenNoticePage' : 'overlay.pointerLockNoticePage')
+        : this.t(full ? 'overlay.fullScreenNotice' : 'overlay.pointerLockNotice', {
+            site: notice.site,
+          });
+    return html`<p class="notice popover" role="status" data-surface>${text}</p>`;
+  }
+
+  /**
+   * Tells the browser process how much room the notice needs, with the room around it, so
+   * that its part of the window shows all of its text and no more. The size of its layout
+   * counts, not that of its motion.
+   */
+  private measureNotice(notice: Notice): void {
+    const element = this.renderRoot.querySelector<HTMLElement>('.current .notice');
+    if (this.content !== notice || element === null) return;
+    const room = element.offsetTop;
+    void this.bridge?.invoke('overlay.noticeSize', {
+      width: Math.min(4096, Math.ceil(element.offsetWidth + 2 * room) + 2),
+      height: Math.min(4096, Math.ceil(element.offsetHeight + 2 * room)),
+    });
+  }
+
   /** The screens and windows that a site may see, as pictures with their names. */
   private renderScreens(picker: Screen): TemplateResult {
     const group = (screens: boolean): TemplateResult | typeof nothing => {
@@ -1107,6 +1268,10 @@ export class OverlayPage extends LitElement {
     void this.bridge?.invoke('overlay.answerPermission', { id, allow });
   }
 
+  private chooseAccount(id: number, index: number): void {
+    void this.bridge?.invoke('overlay.chooseSecurityKeyAccount', { id, index });
+  }
+
   private share(id: string): void {
     void this.bridge?.invoke('overlay.shareScreen', { id });
   }
@@ -1124,6 +1289,10 @@ export class OverlayPage extends LitElement {
       username: value('username'),
       password: value('password'),
     });
+  };
+
+  private readonly learnAboutProtectedMedia = (): void => {
+    void this.bridge?.invoke('overlay.learnAboutProtectedMedia', {});
   };
 
   private readonly close = (): void => {

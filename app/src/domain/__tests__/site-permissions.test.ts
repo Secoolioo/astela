@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   answer,
+  canLocate,
   decide,
   forget,
   isGranted,
   maxSites,
   originOf,
   permissionsFor,
+  storageAccessOpen,
   type SitePermissions,
 } from '../permissions/site-permissions.ts';
 
@@ -140,5 +142,26 @@ describe('originOf with every part of an address', () => {
     expect(originOf('http://example.com:080/')).toBe('http://example.com');
     expect(originOf('https://example.com:8443')).toBe('https://example.com:8443');
     expect(originOf('https://example.com?q')).toBe('https://example.com');
+  });
+});
+
+describe('canLocate', () => {
+  it('finds no location on Linux without a key for the location service', () => {
+    expect(canLocate('linux', undefined)).toBe(false);
+    expect(canLocate('linux', '')).toBe(false);
+    expect(canLocate('linux', 'key')).toBe(true);
+    // Windows and macOS ask the location service of the system.
+    expect(canLocate('win32', undefined)).toBe(true);
+    expect(canLocate('darwin', undefined)).toBe(true);
+  });
+});
+
+describe('storageAccessOpen', () => {
+  it('reports cookies to frames of other sites only where nothing keeps them away', () => {
+    const open = { native: false, private: false, setting: false };
+    expect(storageAccessOpen(open)).toBe(true);
+    expect(storageAccessOpen({ ...open, native: true })).toBe(false);
+    expect(storageAccessOpen({ ...open, private: true })).toBe(false);
+    expect(storageAccessOpen({ ...open, setting: true })).toBe(false);
   });
 });

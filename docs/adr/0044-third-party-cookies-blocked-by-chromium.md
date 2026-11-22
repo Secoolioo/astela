@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Builds on [ADR 0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) for the request pipeline.
+Accepted. Builds on [ADR 0027](0027-blocker-with-the-default-lists-of-ublock-origin.md) for the request pipeline. [ADR 0064](0064-web-features-that-electron-shows-no-ui-for.md) answers the Storage Access API from the same state, without a question.
 
 ## Date
 

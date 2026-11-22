@@ -11,12 +11,14 @@ export interface EditFlags {
   readonly canSelectAll: boolean;
 }
 
-/** What Chromium tells about a clicked video, as far as picture in picture goes. */
+/** What Chromium tells about a clicked video or audio, as far as the menu goes. */
 export interface MediaFlags {
   /** Whether the video can show in picture in picture. */
   readonly canShowPictureInPicture: boolean;
   /** Whether the video shows in picture in picture now. */
   readonly isShowingPictureInPicture: boolean;
+  /** Whether the video or audio can be saved as a file, which a stream cannot. */
+  readonly canSave?: boolean;
 }
 
 /**
@@ -41,7 +43,7 @@ export interface ContextMenuParams {
   /** Replacements for the misspelled word under the pointer, when spell checking is on. */
   readonly dictionarySuggestions: readonly string[];
   readonly editFlags: EditFlags;
-  /** What a clicked video allows; tests may leave it out. */
+  /** What a clicked video or audio allows; tests may leave it out. */
   readonly mediaFlags?: MediaFlags;
 }
 
@@ -72,8 +74,15 @@ export interface ContextMenuLabels {
   readonly openLinkInNewTab: string;
   readonly copyLinkAddress: string;
   readonly openImageInNewTab: string;
+  readonly saveImageAs: string;
   readonly copyImage: string;
   readonly copyImageAddress: string;
+  readonly openVideoInNewTab: string;
+  readonly saveVideoAs: string;
+  readonly copyVideoAddress: string;
+  readonly openAudioInNewTab: string;
+  readonly saveAudioAs: string;
+  readonly copyAudioAddress: string;
   readonly pictureInPicture: string;
   readonly exitPictureInPicture: string;
   readonly undo: string;
@@ -99,12 +108,14 @@ export type EditCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAl
 
 /**
  * What a menu item does. `openTab` opens a URL in a new tab next to the page, in the
- * background unless `activate` is set; `copyImage` copies the image that was clicked,
+ * background unless `activate` is set; `download` saves the file of a URL where people choose;
+ * `copyImage` copies the image that was clicked,
  * `pictureInPicture` shows the clicked video in picture in picture or ends picture in picture,
  * and `inspect` opens the developer tools at the clicked element.
  */
 export type ContextMenuAction =
   | { readonly kind: 'openTab'; readonly url: string; readonly activate: boolean }
+  | { readonly kind: 'download'; readonly url: string }
   | { readonly kind: 'copyText'; readonly text: string }
   | { readonly kind: 'copyImage' }
   | { readonly kind: 'pictureInPicture'; readonly enter: boolean }
@@ -140,7 +151,7 @@ const separator: ContextMenuEntry = { type: 'separator' };
 
 /**
  * Describes the context menu for a click, for Electron to show as a native menu. The groups
- * follow Chromium's menus: link, image, video, text field with spelling suggestions first,
+ * follow Chromium's menus: link, image, video or audio, text field with spelling suggestions first,
  * then the selection. A page where nothing specific was clicked gets the history items, and
  * every page menu ends with Inspect while the developer tools may open; the shell gets the
  * text field items only.
@@ -206,24 +217,55 @@ function imageItems(input: ContextMenuInput, labels: ContextMenuLabels): Context
     ...(mayOpenInNewTab(srcURL)
       ? [item(labels.openImageInNewTab, { kind: 'openTab', url: srcURL, activate: false })]
       : []),
+    // As in Chrome, an image saves once it has loaded.
+    ...(srcURL === ''
+      ? []
+      : [item(labels.saveImageAs, { kind: 'download', url: srcURL }, params.hasImageContents)]),
     item(labels.copyImage, { kind: 'copyImage' }, params.hasImageContents && input.canCopyImage),
     ...(srcURL === '' ? [] : [item(labels.copyImageAddress, { kind: 'copyText', text: srcURL })]),
   ];
 }
 
 /**
- * Picture in picture for a clicked video that can show in it, or that shows in it, while
- * picture in picture is on.
+ * The items of a clicked video or audio, as in Chrome: open its file in a new tab, when a tab
+ * may open its address, save it, which a stream cannot, and copy its address. A video ends with
+ * picture in picture while picture in picture is on, when it can show in it or shows in it.
  */
 function mediaItems(input: ContextMenuInput, labels: ContextMenuLabels): ContextMenuItem[] {
-  const { mediaType, mediaFlags } = input.params;
-  if (mediaType !== 'video' || mediaFlags === undefined || !input.pictureInPicture) return [];
+  const { mediaType, mediaFlags, srcURL } = input.params;
+  if (mediaType !== 'video' && mediaType !== 'audio') return [];
+  const video = mediaType === 'video';
+  const items = [
+    ...(mayOpenInNewTab(srcURL)
+      ? [
+          item(video ? labels.openVideoInNewTab : labels.openAudioInNewTab, {
+            kind: 'openTab',
+            url: srcURL,
+            activate: false,
+          }),
+        ]
+      : []),
+    ...(srcURL === ''
+      ? []
+      : [
+          item(
+            video ? labels.saveVideoAs : labels.saveAudioAs,
+            { kind: 'download', url: srcURL },
+            mediaFlags?.canSave === true,
+          ),
+          item(video ? labels.copyVideoAddress : labels.copyAudioAddress, {
+            kind: 'copyText',
+            text: srcURL,
+          }),
+        ]),
+  ];
+  if (!video || mediaFlags === undefined || !input.pictureInPicture) return items;
   if (mediaFlags.isShowingPictureInPicture) {
-    return [item(labels.exitPictureInPicture, { kind: 'pictureInPicture', enter: false })];
+    items.push(item(labels.exitPictureInPicture, { kind: 'pictureInPicture', enter: false }));
+  } else if (mediaFlags.canShowPictureInPicture) {
+    items.push(item(labels.pictureInPicture, { kind: 'pictureInPicture', enter: true }));
   }
-  return mediaFlags.canShowPictureInPicture
-    ? [item(labels.pictureInPicture, { kind: 'pictureInPicture', enter: true })]
-    : [];
+  return items;
 }
 
 function spellingItems(params: ContextMenuParams): ContextMenuItem[] {

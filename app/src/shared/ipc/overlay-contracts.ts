@@ -55,6 +55,50 @@ const PermissionPrompt = v.strictObject({
 });
 
 /**
+ * A site that waits for a security key or a passkey: the number of the request, the site, and
+ * the accounts to choose from when the key holds several for the site, each with its name and
+ * the name that it shows.
+ */
+const SecurityKeyPrompt = v.strictObject({
+  kind: v.literal('securityKey'),
+  id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+  site: v.pipe(v.string(), v.maxLength(300)),
+  accounts: v.pipe(
+    v.array(
+      v.strictObject({
+        name: v.pipe(v.string(), v.maxLength(300)),
+        displayName: v.pipe(v.string(), v.maxLength(300)),
+      }),
+    ),
+    v.maxLength(100),
+  ),
+  pane: v.optional(OverlayAnchor),
+});
+
+/**
+ * The popover of the address bar's sign for a page that asked for protected video or music,
+ * which Astela cannot play yet, at its button.
+ */
+const ProtectedMediaPopover = v.strictObject({
+  kind: v.literal('protectedMedia'),
+  anchor: OverlayAnchor,
+});
+
+/**
+ * A short notice at the top of a page that took the whole screen or the mouse pointer: the
+ * site's host with the port if it has one, shortened at its start, and how to leave; without
+ * a site for a page whose origin names none. It takes no focus and no keys.
+ */
+const PageNotice = v.strictObject({
+  kind: v.literal('notice'),
+  notice: v.picklist(['fullScreen', 'pointerLock']),
+  site: v.optional(v.pipe(v.string(), v.maxLength(300))),
+});
+
+/** A notice above a page. */
+export type PageNotice = v.InferOutput<typeof PageNotice>;
+
+/**
  * A site that wants to see a screen or a window, and the screens and windows to choose from:
  * their names, and small pictures of them as JPEG data URLs, empty when the system has none.
  */
@@ -422,6 +466,9 @@ export const OverlayContent = v.nullable(
     ShieldPopover,
     LoginPrompt,
     PermissionPrompt,
+    SecurityKeyPrompt,
+    ProtectedMediaPopover,
+    PageNotice,
     ScreenPicker,
     DownloadsPanel,
     SuggestionList,
@@ -654,6 +701,43 @@ export const AnswerPermission = defineRequest({
     id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
     allow: v.boolean(),
   }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Signs in with an account of the question for a security key, by its place; the question names
+ * the request that it answers.
+ */
+export const ChooseSecurityKeyAccount = defineRequest({
+  channel: 'overlay.chooseSecurityKeyAccount',
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(99)),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * The size that the notice of a page needs in the overlay, with the room around it, as the
+ * page measured it; the notice's part of the window takes that size, so that its text, which
+ * ends with the way out, shows in full and the rest of the page takes the clicks.
+ */
+export const MeasureNotice = defineRequest({
+  channel: 'overlay.noticeSize',
+  request: v.strictObject({
+    width: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(4096)),
+    height: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(4096)),
+  }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Opens the user guide on protected video and music in a new tab, and closes the popover. */
+export const LearnAboutProtectedMedia = defineRequest({
+  channel: 'overlay.learnAboutProtectedMedia',
+  request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',
 });

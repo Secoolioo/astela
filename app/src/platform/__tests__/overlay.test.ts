@@ -302,6 +302,73 @@ describe('WindowOverlay', () => {
     expect(children).toHaveLength(0);
   });
 
+  it('keeps content that has a place of its own when the window changes its size', () => {
+    const { overlay, children, focus, emit } = windowOf();
+    const notice: OverlayContent = { kind: 'notice', notice: 'fullScreen', site: 'example.com' };
+    let width = 480;
+    overlay.open(notice, {
+      bounds: { x: 360, y: 0, width, height: 80 },
+      place: () => ({ x: 0, y: 0, width, height: 80 }),
+    });
+    // A notice takes no focus.
+    expect(children[0]?.webContents.focused).toBe(false);
+    width = 300;
+    emit('resize');
+    expect(children).toHaveLength(1);
+    expect(children[0]?.bounds).toEqual({ x: 0, y: 0, width: 300, height: 80 });
+    expect(overlay.content).toBe(notice);
+    overlay.close();
+    expect(children).toHaveLength(0);
+    expect(focus).toEqual([]);
+  });
+
+  it('gives the focus back to the page from content that takes no input, and keeps its keys from it', () => {
+    const { overlay, children, focus } = windowOf();
+    const notice: OverlayContent = { kind: 'notice', notice: 'fullScreen', site: 'example.com' };
+    let size = { width: 480, height: 80 };
+    overlay.open(notice, {
+      bounds: { x: 360, y: 0, ...size },
+      place: () => ({ x: 360, y: 0, ...size }),
+      passive: true,
+    });
+    // A click on the notice gives its view the focus, which goes back to the page at once.
+    emitContents(children[0], 'focus');
+    expect(focus).toEqual(['content']);
+    // Escape and shortcuts that reach the view meanwhile do nothing, so the page keeps Escape.
+    expect(press(children[0], key('Escape'))).toBe(false);
+    expect(press(children[0], key('t', 'keyDown', { control: true }))).toBe(false);
+    expect(overlay.content).toBe(notice);
+    // The view takes the size that its page measured.
+    size = { width: 300, height: 104 };
+    overlay.refit();
+    expect(children[0]?.bounds).toEqual({ x: 360, y: 0, width: 300, height: 104 });
+    // Other content keeps the focus that it took.
+    overlay.close();
+    focus.length = 0;
+    overlay.open(shield);
+    emitContents(children[0], 'focus');
+    expect(focus).toEqual([]);
+  });
+
+  it('calls back a moment after it closed, once, for what waited for it', () => {
+    const { overlay } = windowOf();
+    const calls: (string | null)[] = [];
+    overlay.open(shield);
+    overlay.whenIdle(() => void calls.push(overlay.content?.kind ?? null));
+    overlay.open(suggestions);
+    vi.runAllTimers();
+    // Content that takes the place of other content is no reason.
+    expect(calls).toEqual([]);
+    overlay.close();
+    expect(calls).toEqual([]);
+    vi.runAllTimers();
+    expect(calls).toEqual([null]);
+    overlay.open(shield);
+    overlay.close();
+    vi.runAllTimers();
+    expect(calls).toEqual([null]);
+  });
+
   it('calls what the content asked for once, when it closes or something takes its place', () => {
     const { overlay } = windowOf();
     const closed: string[] = [];

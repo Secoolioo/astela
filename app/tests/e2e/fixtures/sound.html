@@ -5,7 +5,7 @@
     <title>Sound</title>
   </head>
   <body>
-    <p>This page plays a quiet tone.</p>
+    <p>This page plays a quiet tone once it is clicked.</p>
     <script>
       const context = new AudioContext();
       const tone = context.createOscillator();
@@ -13,6 +13,8 @@
       volume.gain.value = 0.05;
       tone.connect(volume).connect(context.destination);
       tone.start();
+      // Pages play sound only after people used them; the tone starts with the first click.
+      addEventListener('pointerdown', () => void context.resume());
     </script>
   </body>
 </html>

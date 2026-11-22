@@ -14,6 +14,10 @@ If a site or a proxy asks for a user name and password, Astela asks for them in 
 
 If a page stops responding, for example because a script runs without end, Astela asks whether to wait for it or to close the page. When the page responds again, the question goes away by itself.
 
+## Protected video and music
+
+Astela cannot play video and music yet that sites protect with Widevine, a kind of digital rights management: Netflix, Disney+, Prime Video, Spotify, Apple Music and similar services. Such a site shows an error of its own instead, often with a code. From 0.1.0-beta.7, Astela says so with a quiet sign in the address bar while you look at the page; its popover says why and links here. The sign goes once the page plays media or you go to another page, and a page that already played media gets none, because players and scripts also ask for protected playback that they do not need. Video and music that are not protected, such as on YouTube or a trailer, play as usual. Whether Astela gets a build that can play protected media is decided for a later milestone; see the [roadmap](../roadmap.md).
+
 ## Sites without a secure connection
 
 From 0.1.0-beta.5, the browser opens sites over HTTPS, also when a link, a bookmark or the address bar names their insecure `http://` address. When a site does not answer securely, or gives no answer within 10 seconds, the tab shows **This site has no secure connection** in place of the page: others in the network could see or change what you send to such a site and receive from it. **Continue to** loads the insecure address, and the browser does not ask again for that site until it closes; a private window asks on its own. From 0.1.0-beta.7, **Use a secure connection again** in [site information](address-bar.md#site-information) takes that back. **Go back** returns to the page before.

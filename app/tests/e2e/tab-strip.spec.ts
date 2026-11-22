@@ -91,6 +91,8 @@ test('mutes a tab that plays sound and turns its sound on again', async () => {
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await address.fill(`${server.origin}/sound.html`);
     await address.press('Enter');
+    // A page plays sound only once it was used.
+    await (await waitForPage(browser, (url) => url.endsWith('/sound.html'))).click('body');
     const muted = (): Promise<boolean | undefined> =>
       browser.main.evaluate(({ webContents }) =>
         webContents
@@ -122,6 +124,7 @@ test("takes the speaker away when one of the browser's own pages takes the place
     const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
     await address.fill(`${server.origin}/sound.html`);
     await address.press('Enter');
+    await (await waitForPage(browser, (url) => url.endsWith('/sound.html'))).click('body');
     const sound = browser.shell.getByRole('tab', { name: 'Sound' });
     await expect(sound.getByRole('button', { name: 'Mute tab' })).toBeVisible();
     // The settings page gets a view of its own in the same tab.

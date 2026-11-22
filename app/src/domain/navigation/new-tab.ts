@@ -17,3 +17,13 @@ export function mayOpenInNewTab(url: string): boolean {
 export function mayOpenWindow(url: string): boolean {
   return mayOpenInNewTab(url) || /^about:blank(?:[?#].*)?$/i.test(url);
 }
+
+/**
+ * Tells whether Electron can place a page that a page opens: in a tab, in the foreground or the
+ * background, or in a window of its own. It cannot place anything else, such as the window of
+ * Document Picture-in-Picture with the disposition `other`, and would leave the page waiting.
+ * @param disposition - How the page asked for it, as Electron reports it.
+ */
+export function placedDisposition(disposition: string): boolean {
+  return /-tab$|^new-window$/.test(disposition);
+}

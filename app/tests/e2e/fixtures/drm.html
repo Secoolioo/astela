@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture protected media</title>
+  </head>
+  <body>
+    <h1>Fixture protected media</h1>
+    <output id="result"></output>
+    <video id="video" muted playsinline width="160" height="90"></video>
+    <script>
+      // A player asks for the key system of the address, as streaming sites ask for Widevine;
+      // with `play`, the page plays a video without sound first, as a news site does before a
+      // script that tells browsers apart asks.
+      const parameters = new URLSearchParams(location.search);
+      const keySystem = parameters.get('keySystem');
+      const config = [
+        {
+          initDataTypes: ['webm'],
+          videoCapabilities: [{ contentType: 'video/webm; codecs="vp8"' }],
+        },
+      ];
+      const ask = () =>
+        navigator.requestMediaKeySystemAccess(keySystem, config).then(
+          () => (document.getElementById('result').textContent = 'supported'),
+          (error) => (document.getElementById('result').textContent = error.name),
+        );
+      if (parameters.has('play')) {
+        const video = document.getElementById('video');
+        video.addEventListener('playing', () => setTimeout(ask, 500), { once: true });
+        video.src = '/clip.webm';
+        void video.play();
+      } else {
+        ask();
+      }
+    </script>
+  </body>
+</html>

@@ -10,12 +10,15 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Blocking } from '../domain/blocker/blocking.ts';
 import { freeName, pathKey } from '../domain/downloads/downloads.ts';
-import type { SitePermissions } from '../domain/permissions/site-permissions.ts';
+import { storageAccessOpen, type SitePermissions } from '../domain/permissions/site-permissions.ts';
 import { popupBounds } from '../domain/windows/popup-bounds.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
-import type { WindowManager } from '../platform/electron/browser-window.ts';
+import type {
+  BrowserWindowController,
+  WindowManager,
+} from '../platform/electron/browser-window.ts';
 import { CertificateLog } from '../platform/electron/certificate-log.ts';
 import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { HttpsFirst } from '../platform/electron/https-first.ts';
@@ -26,18 +29,23 @@ import type { PermissionHandler } from '../platform/electron/session-security.ts
 import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import { blockerFrames, type BlockerFrames } from './blocker-frames.ts';
-import { listenToFrames } from './web-frames.ts';
+import { chosenToSave } from './save-as.ts';
+import { listenToFrames, type FrameReports } from './web-frames.ts';
+import type { ProtectedMedia } from './protected-media.ts';
+import type { SecurityKeyPrompts } from './webauthn-prompt.ts';
 import {
   AskDownloadSetting,
   BlockerAnnoyancesSetting,
   BlockerCookieNoticesSetting,
   BlockThirdPartyCookiesSetting,
   ContentBlockerSetting,
+  DownloadFolderSetting,
   HttpAllowlistSetting,
   HttpsFirstSetting,
   SitePermissionsSetting,
 } from './core-settings.ts';
 import type { Downloads } from './downloads.ts';
+import type { PageNoticeKind, PageNotices } from './page-notices.ts';
 import type { PermissionPrompts } from './permission-prompt.ts';
 import { sitePermissions } from './site-permissions.ts';
 
@@ -214,12 +222,76 @@ export function webRequests(options: WebRequestOptions): WebRequests {
       thirdPartyCookies.blocksFrame(origin, topOrigin, frameSession),
     (contents) => options.readerPageOf(contents) !== undefined,
   );
+  // Sites that wait for a security key or a passkey ask in the window of their tab; the
+  // questions load with the first request.
+  let keyPrompts: Promise<SecurityKeyPrompts> | undefined;
+  const withKeyPrompts = (
+    run: (prompts: SecurityKeyPrompts) => void,
+    failed?: () => void,
+  ): void => {
+    keyPrompts ??= Promise.all([import('./webauthn-prompt.ts'), options.windows.laterCode()]).then(
+      ([{ securityKeyPrompts }]) => securityKeyPrompts(options.overlay, options.router),
+    );
+    keyPrompts.then(run, (error: unknown) => {
+      options.logger.error('The questions for security keys did not load', error);
+      failed?.();
+    });
+  };
+  // A page that asked for protected video or music in vain shows a sign in the address bar,
+  // unless it played media since its document loaded: then a player or a script only probed.
+  let media: Promise<ProtectedMedia> | undefined;
+  const played = new WeakSet<WebContents>();
+  const reports: FrameReports = {
+    report: (contents, frame, event, request) => {
+      const window = options.isWebSession(contents.session)
+        ? options.windows.forTab(contents)
+        : undefined;
+      if (window !== undefined) {
+        withKeyPrompts((prompts) => prompts.report(window, contents, frame, event, request));
+      }
+    },
+    chooseAccount: (details, answer) => {
+      const { frame } = details;
+      const contents = frame === null ? undefined : webContents.fromFrame(frame);
+      const window = contents === undefined ? undefined : options.windows.forTab(contents);
+      if (frame === null || contents === undefined || window === undefined) {
+        answer();
+        return;
+      }
+      withKeyPrompts(
+        (prompts) =>
+          prompts.chooseAccount(
+            window,
+            contents,
+            frame,
+            details.relyingPartyId,
+            details.accounts,
+            answer,
+          ),
+        () => answer(),
+      );
+    },
+    protectedMedia: (contents) => {
+      if (!options.isWebSession(contents.session) || played.has(contents)) return;
+      media ??= Promise.all([import('./protected-media.ts'), options.windows.laterCode()]).then(
+        ([{ protectedMedia }]) => protectedMedia(options.windows, options.overlay, options.router),
+      );
+      media.then(
+        (loaded) => {
+          if (!contents.isDestroyed() && !played.has(contents)) loaded.mark(contents);
+        },
+        (error: unknown) =>
+          options.logger.error('The signs of protected media did not load', error),
+      );
+    },
+  };
   // The frames of web pages ask for their rules as they start, which they can only once this
   // code has loaded, before the first web page.
   const protect = listenToFrames(
     () => Promise.resolve(frames),
     options.framePreload,
     options.logger,
+    reports,
   );
   for (const s of options.webSessions) protect(s);
   const { windows } = options;
@@ -237,7 +309,12 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   const saveDownload = (item: DownloadItem, from: Session): void => {
     const privateWindow = options.isPrivate(from);
     const folder = options.downloadFolder();
-    const ask = settings.get(AskDownloadSetting);
+    // A file that people chose to save from a context menu asks where, as in other browsers,
+    // unless a mandatory policy sets the folder, which then holds it, as in Chrome.
+    const chosen = chosenToSave(item.getURLChain()[0]);
+    const ask =
+      settings.get(AskDownloadSetting) ||
+      (chosen && !settings.inspect(DownloadFolderSetting).locked);
     // While the browser asks where to save a download, it goes on under a name of its own.
     const working = (path: string): string => (ask ? `${path}.part` : path);
     const name = freeName(basename(item.getFilename()) || 'download', (candidate) => {
@@ -308,6 +385,36 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   };
   const windowOf = (contents: WebContents): ReturnType<WindowManager['forTab']> =>
     windows.forTab(contents);
+  let notices: Promise<PageNotices> | undefined;
+  const notice = (
+    window: BrowserWindowController,
+    contents: WebContents,
+    kind: PageNoticeKind,
+  ): void => {
+    notices ??= Promise.all([import('./page-notices.ts'), windows.laterCode()]).then(
+      ([{ pageNotices }]) => pageNotices(options.overlay, options.router),
+    );
+    notices.then(
+      (loaded) => loaded.show(window, contents, kind),
+      (error: unknown) => options.logger.error('The notices of pages did not load', error),
+    );
+  };
+  // A page of a tab that takes the whole screen or the mouse pointer says so in its window.
+  const noticeOf = (contents: WebContents, kind: PageNoticeKind): void => {
+    const window = windowOf(contents);
+    if (window !== undefined) notice(window, contents, kind);
+  };
+  // This code loads before the first web page loads, so that pages made before it get the
+  // notice as well, and pages that play media are known before the sign of protected media.
+  const watchPage = (contents: WebContents): void => {
+    if (!options.isWebSession(contents.session)) return;
+    contents.on('enter-html-full-screen', () => noticeOf(contents, 'fullScreen'));
+    contents.on('media-started-playing', () => played.add(contents));
+    contents.on('did-navigate', () => played.delete(contents));
+  };
+  for (const contents of webContents.getAllWebContents()) watchPage(contents);
+  options.app.on('web-contents-created', (_event, contents) => watchPage(contents));
+  const pointerNotice = (contents: WebContents): void => noticeOf(contents, 'pointerLock');
   const regularStore: PermissionStore = {
     sites: () => settings.get(SitePermissionsSetting),
     save: (sites) => {
@@ -345,6 +452,7 @@ export function webRequests(options: WebRequestOptions): WebRequests {
       save: (sites) => void store.save(sites),
       windowOf,
       prompts: loadPrompts,
+      pointerLocked: pointerNotice,
       logger: options.logger,
     });
   const webPermissions = handlerFor(regularStore);
@@ -358,19 +466,31 @@ export function webRequests(options: WebRequestOptions): WebRequests {
     }
     return handler;
   };
+  // A frame of another site that asks for its cookies learns whether it has them, without a
+  // question: while they are blocked, a grant would give it none.
+  const cookiesOpen = (s: Session): boolean =>
+    storageAccessOpen({
+      native: options.nativeCookieBlocking,
+      private: options.isPrivate(s),
+      setting: settings.get(BlockThirdPartyCookiesSetting),
+    });
   // A page that got a camera, a microphone or the screen stays awake.
   const permissions = (s: Session): PermissionHandler => {
     const handler = handlerOf(s);
     return {
       request: (contents, permission, mediaTypes, requestingUrl) =>
-        handler.request(contents, permission, mediaTypes, requestingUrl).then((granted) => {
-          if (granted && permission === 'media' && mediaTypes.length > 0) {
-            options.activity()?.capturing(contents);
-          }
-          return granted;
-        }),
+        permission === 'storage-access'
+          ? Promise.resolve(cookiesOpen(s))
+          : handler.request(contents, permission, mediaTypes, requestingUrl).then((granted) => {
+              if (granted && permission === 'media' && mediaTypes.length > 0) {
+                options.activity()?.capturing(contents);
+              }
+              return granted;
+            }),
       check: (contents, permission, origin, details) =>
-        handler.check(contents, permission, origin, details),
+        permission === 'storage-access'
+          ? cookiesOpen(s)
+          : handler.check(contents, permission, origin, details),
       shareScreen: (request, callback) =>
         handler.shareScreen(request, (streams) => {
           const contents =

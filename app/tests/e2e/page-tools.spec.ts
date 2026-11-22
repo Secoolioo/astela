@@ -1,10 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import type * as Electron from 'electron';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   FixtureServer,
   launch,
+  overlayPage,
   pressNative,
   removeAfterExit,
   shellState,
@@ -23,8 +25,12 @@ test.afterAll(async () => {
   await server.stop();
 });
 
-async function open(browser: Browser, url: string): Promise<Page> {
-  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+async function open(
+  browser: Browser,
+  url: string,
+  addressName = 'Address and search bar',
+): Promise<Page> {
+  const address = browser.shell.getByRole('textbox', { name: addressName });
   await address.fill(url);
   await address.press('Enter');
   const page = await waitForPage(browser, (current) => current === url);
@@ -436,6 +442,187 @@ test('puts the window back where people moved it, and maximized when it was, onc
     await expect.poll(async () => (await place())?.maximized).toBe(true);
     await showAndLeave();
     await expect.poll(place).toMatchObject({ maximized: true, normal: moved });
+  } finally {
+    await browser.close();
+  }
+});
+
+test('names the site and the way out when a page takes the screen or the pointer', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/notices.html`);
+    const host = new URL(server.origin).host;
+    const fullScreen = page.getByRole('button', { name: 'Full screen' });
+    await fullScreen.click();
+    const notice = (await overlayPage(browser)).getByRole('status');
+    await expect(notice).toHaveText(`${host} is now full screen – Press Esc to exit`);
+    const shown = Date.now();
+    // The notice shows for a moment, without the focus, which stays with the page.
+    await expect(notice).toBeHidden({ timeout: 8000 });
+    expect(Date.now() - shown).toBeGreaterThan(3000);
+    await pressInPage(browser, 'Escape');
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+    // It goes with full screen.
+    await fullScreen.click();
+    await expect(notice).toBeVisible();
+    await pressInPage(browser, 'Escape');
+    await expect(notice).toBeHidden({ timeout: 1500 });
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+    // A page that takes the mouse pointer says how to get it back.
+    await page.getByRole('button', { name: 'Lock the pointer' }).click();
+    await expect(notice).toHaveText(`${host} – Press Esc to show your cursor`);
+    await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('player');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('keeps a question of a site in place of the notice, which follows once it has an answer', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/notices.html`;
+    const page = await open(browser, url);
+    const host = new URL(server.origin).host;
+    // The window is in full screen already, so the page's full screen does not resize it.
+    await browser.main.evaluate(({ BaseWindow }) =>
+      BaseWindow.getAllWindows()[0]?.setFullScreen(true),
+    );
+    await expect
+      .poll(() =>
+        browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isFullScreen()),
+      )
+      .toBe(true);
+    const asked = page.evaluate(() => Notification.requestPermission());
+    const overlay = await overlayPage(browser);
+    const question = overlay.getByRole('dialog', { name: `${host} wants to` });
+    await expect(question).toBeVisible();
+    // The page takes the screen while the question is open, as a click a moment before lets it.
+    await browser.main.evaluate(
+      ({ webContents }, address) =>
+        webContents
+          .getAllWebContents()
+          .find((contents) => contents.getURL() === address)
+          ?.executeJavaScript("document.getElementById('player').requestFullscreen()", true),
+      url,
+    );
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('player');
+    await new Promise((done) => setTimeout(done, 500));
+    await expect(question).toBeVisible();
+    await expect(overlay.getByRole('status')).toHaveCount(0);
+    await question.getByRole('button', { name: 'Block' }).click();
+    expect(await asked).toBe('denied');
+    await expect(overlay.getByRole('status')).toHaveText(
+      `${host} is now full screen – Press Esc to exit`,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The part of the window that the overlay takes, and the box of its notice in that part. */
+async function noticeArea(
+  browser: Browser,
+  overlay: Page,
+): Promise<{ readonly view: Electron.Rectangle; readonly notice: Electron.Rectangle | null }> {
+  const view = await browser.main.evaluate(({ BaseWindow }) => {
+    const views = BaseWindow.getAllWindows()[0]?.contentView.children ?? [];
+    const found = views.find(
+      (child) =>
+        'webContents' in child &&
+        (child as Electron.WebContentsView).webContents.getURL().startsWith('app://overlay'),
+    );
+    return found?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 };
+  });
+  return { view, notice: await overlay.getByRole('status').boundingBox() };
+}
+
+/** The address of the page that has the focus, which keys reach. */
+function focusedAddress(browser: Browser): Promise<string | undefined> {
+  return browser.main.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL());
+}
+
+test('shows all of a notice in its own small part, with a long site shortened, and leaves the focus and Escape to the page', async () => {
+  // A long host whose first labels anyone who owns the site can choose; names below
+  // localhost lead to this computer.
+  const long = `${'a'.repeat(60)}.${'b'.repeat(60)}.${'c'.repeat(40)}.localhost`;
+  const url = `${server.origin.replace('127.0.0.1', long)}/notices.html`;
+  // German with the largest text needs three lines for the notice, more than fit before.
+  const browser = await launch(['--lang=de'], { settings: { 'appearance.textSize': 'larger' } });
+  try {
+    const page = await open(browser, url, 'Adress- und Suchleiste');
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    const overlay = await overlayPage(browser);
+    const notice = overlay.getByRole('status');
+    const site = `…${new URL(url).host.slice(-59)}`;
+    await expect(notice).toHaveText(
+      `${site} wird jetzt im Vollbild angezeigt – Drücke Esc zum Beenden`,
+    );
+    // The text, which ends with the way out, shows in full, and the notice's part of the
+    // window is not much bigger than the notice, so the page keeps the clicks next to it.
+    await expect
+      .poll(async () => {
+        const { view, notice: box } = await noticeArea(browser, overlay);
+        return (
+          box !== null &&
+          box.y + box.height <= view.height &&
+          box.x >= 0 &&
+          box.x + box.width <= view.width &&
+          view.width <= box.width + 64 &&
+          view.height <= box.y + box.height + 32
+        );
+      })
+      .toBe(true);
+    // A click on the notice gives the focus back to the page, so Escape still ends full screen.
+    await browser.main.evaluate(({ webContents }) =>
+      webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL().startsWith('app://overlay'))
+        ?.focus(),
+    );
+    await expect.poll(() => focusedAddress(browser)).toBe(url);
+    await browser.main.evaluate(({ webContents }) => {
+      const focused = webContents.getFocusedWebContents();
+      focused?.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      focused?.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    });
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+    await expect(notice).toBeHidden();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('names the site of a page that another page wrote, and only the way out for a page of no site', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/notices.html`);
+    const host = new URL(server.origin).host;
+    // A page that a script opened empty and wrote itself belongs to the site of its opener.
+    await page.evaluate(() => {
+      const written = window.open('about:blank');
+      written?.document.write(
+        '<button onclick="document.body.requestFullscreen()">Written full screen</button>',
+      );
+    });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    const written = await waitForPage(browser, (address) => address === 'about:blank');
+    await written.getByRole('button', { name: 'Written full screen' }).click();
+    const overlay = await overlayPage(browser);
+    await expect(overlay.getByRole('status')).toHaveText(
+      `${host} is now full screen – Press Esc to exit`,
+    );
+    await expect.poll(() => written.evaluate(() => document.fullscreenElement !== null)).toBe(true);
+    await written.evaluate(() => document.exitFullscreen());
+    await expect(overlay.getByRole('status')).toBeHidden();
+    // A page whose origin names no site, such as one of a data address, says how to leave.
+    await browser.main.evaluate(async ({ webContents }) => {
+      const blank = webContents.getAllWebContents().find((c) => c.getURL() === 'about:blank');
+      await blank?.loadURL('data:text/html,<p id="opaque">No site</p>');
+      await blank?.executeJavaScript('document.body.requestFullscreen()', true);
+    });
+    await expect(overlay.getByRole('status')).toHaveText(
+      'This page is now full screen – Press Esc to exit',
+    );
   } finally {
     await browser.close();
   }

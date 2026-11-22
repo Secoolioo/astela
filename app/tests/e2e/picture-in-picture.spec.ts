@@ -584,14 +584,18 @@ test('ends picture in picture from the context menu of a video in a frame beyond
   }
 });
 
-test('refuses a window of Document Picture-in-Picture, which shows in no tab', async () => {
+test('offers pages no windows of Document Picture-in-Picture, which show in no tab', async () => {
   const browser = await launch();
   try {
     const page = await open(browser, `${server.origin}/document-pip.html`);
+    // Sites see the interface as missing and keep their player in the page.
+    expect(await page.evaluate(() => 'documentPictureInPicture' in window)).toBe(false);
     await page.click('#open');
-    await expect(page.locator('#result')).toHaveText(/^refused: /);
+    await expect(page.locator('#result')).toHaveText('missing');
     await new Promise((done) => setTimeout(done, 500));
     await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    // The page still answers.
+    expect(await page.evaluate(() => document.title)).toBe('Fixture document picture in picture');
   } finally {
     await browser.close();
   }

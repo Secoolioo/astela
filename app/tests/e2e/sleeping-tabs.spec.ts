@@ -228,7 +228,8 @@ test('offers no sleep for the active tab, a sleeping tab, or a tab that plays so
   });
   try {
     const shell = browser.shell;
-    await visit(browser, `${server.origin}/sound.html`);
+    // A page plays sound only once it was used.
+    await (await visit(browser, `${server.origin}/sound.html`)).click('body');
     const sound = shell.getByRole('tab', { name: 'Sound' });
     await expect(sound.getByRole('button', { name: 'Mute tab' })).toBeVisible();
     await newTab(browser);
@@ -436,7 +437,7 @@ test('puts tabs to sleep after the time of the settings while they let it, excep
     await shell.getByRole('tab', { name: 'Fixture second' }).click({ button: 'right' });
     await chooseMenuItem(browser, ['Pin']);
     await newTab(browser);
-    await visit(browser, at('sound.html'));
+    await (await visit(browser, at('sound.html'))).click('body');
     await expect(
       shell.getByRole('tab', { name: 'Sound' }).getByRole('button', { name: 'Mute tab' }),
     ).toBeVisible();

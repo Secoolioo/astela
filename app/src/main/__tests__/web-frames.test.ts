@@ -6,12 +6,21 @@ import type { BlockerFrames } from '../blocker-frames.ts';
 
 type FrameListener = (event: IpcMainEvent) => void;
 type ElementsHandler = (event: IpcMainInvokeEvent, payload: unknown) => Promise<unknown>;
-const channels: { frame?: FrameListener; elements?: ElementsHandler } = {};
+type KeyListener = (event: IpcMainEvent, kind: unknown, request: unknown) => void;
+type MediaListener = (event: IpcMainEvent, keySystem: unknown) => void;
+const channels: {
+  frame?: FrameListener;
+  elements?: ElementsHandler;
+  keys?: KeyListener;
+  media?: MediaListener;
+} = {};
 
 vi.mock('electron', () => ({
   ipcMain: {
-    on: (channel: string, listener: FrameListener) => {
+    on: (channel: string, listener: FrameListener & KeyListener & MediaListener) => {
       if (channel === 'blocker.frame') channels.frame = listener;
+      if (channel === 'webauthn.request') channels.keys = listener;
+      if (channel === 'media.protected') channels.media = listener;
     },
     handle: (channel: string, handler: ElementsHandler) => {
       if (channel === 'blocker.elements') channels.elements = handler;
@@ -58,12 +67,58 @@ describe('listenToFrames', () => {
     expect(await report).toBe('{"classes":["ad"]}');
     // Each web session gets the frame preload at once.
     const registerPreloadScript = vi.fn();
-    addPreload({ registerPreloadScript } as unknown as Session);
+    addPreload({ registerPreloadScript, on: vi.fn() } as unknown as Session);
     expect(registerPreloadScript).toHaveBeenCalledWith({
       type: 'frame',
       id: 'content-blocker',
       filePath: '/app/frame.cjs',
     });
+  });
+
+  it('passes on what frames report of security keys and protected media, and accounts of a key', () => {
+    const report = vi.fn();
+    const chooseAccount = vi.fn();
+    const protectedMedia = vi.fn();
+    const addPreload = listenToFrames(
+      () => Promise.reject(new Error('unused')),
+      '/app/frame.cjs',
+      logger().logger,
+      { report, chooseAccount, protectedMedia },
+    );
+    const frame = { origin: 'https://example.com' };
+    const sender = { id: 7 };
+    const event = { sender, senderFrame: frame } as unknown as IpcMainEvent;
+    channels.keys?.(event, 'start', 0);
+    channels.keys?.(event, 'end', 0);
+    // What a page could send otherwise reaches no question.
+    for (const [kind, request] of [
+      ['begin', 1],
+      ['start', -1],
+      ['start', 1.5],
+      ['start', '1'],
+    ] as const) {
+      channels.keys?.(event, kind, request);
+    }
+    channels.keys?.({ sender, senderFrame: null } as unknown as IpcMainEvent, 'start', 2);
+    expect(report.mock.calls).toEqual([
+      [sender, frame, 'start', 0],
+      [sender, frame, 'end', 0],
+    ]);
+    // A page that asked for protected playback in vain is marked; nonsense is not.
+    channels.media?.(event, 'com.widevine.alpha');
+    channels.media?.(event, 42);
+    channels.media?.(event, 'x'.repeat(101));
+    expect(protectedMedia.mock.calls).toEqual([[sender]]);
+    // A session lets the person choose the account of a key for a passkey.
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    addPreload({
+      registerPreloadScript: vi.fn(),
+      on: (name: string, listener: (...args: unknown[]) => void) => listeners.set(name, listener),
+    } as unknown as Session);
+    const answer = vi.fn();
+    const details = { relyingPartyId: 'example.com', accounts: [], frame: null };
+    listeners.get('select-webauthn-account')?.({}, details, answer);
+    expect(chooseAccount).toHaveBeenCalledWith(details, answer);
   });
 
   it('answers frames without rules when the answers cannot load, so no page waits forever', async () => {

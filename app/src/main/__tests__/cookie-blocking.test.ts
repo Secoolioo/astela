@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cookiesBlockedAtStart, enableFeature } from '../cookie-blocking.ts';
+import { addFeatures, cookiesBlockedAtStart } from '../cookie-blocking.ts';
 
 const folders: string[] = [];
 
@@ -46,19 +46,32 @@ describe('cookiesBlockedAtStart', () => {
   });
 });
 
-describe('enableFeature', () => {
+describe('addFeatures', () => {
   it('adds a feature to those that the command line enables, once', () => {
     const switches = new Map<string, string>([['enable-features', 'Alpha,Beta']]);
     const commandLine = {
       getSwitchValue: (name: string) => switches.get(name) ?? '',
       appendSwitch: (name: string, value = '') => void switches.set(name, value),
     };
-    enableFeature(commandLine, 'Gamma');
+    addFeatures(commandLine, 'enable-features', 'Gamma');
     expect(switches.get('enable-features')).toBe('Alpha,Beta,Gamma');
-    enableFeature(commandLine, 'Gamma');
+    addFeatures(commandLine, 'enable-features', 'Gamma');
     expect(switches.get('enable-features')).toBe('Alpha,Beta,Gamma');
     switches.clear();
-    enableFeature(commandLine, 'Gamma');
+    addFeatures(commandLine, 'enable-features', 'Gamma');
     expect(switches.get('enable-features')).toBe('Gamma');
+  });
+
+  it('turns features of Blink off after those that the command line turns off', () => {
+    const switches = new Map<string, string>([['disable-blink-features', 'Alpha']]);
+    const commandLine = {
+      getSwitchValue: (name: string) => switches.get(name) ?? '',
+      appendSwitch: (name: string, value = '') => void switches.set(name, value),
+    };
+    addFeatures(commandLine, 'disable-blink-features', 'DocumentPictureInPictureAPI,PushMessaging');
+    expect(switches.get('disable-blink-features')).toBe(
+      'Alpha,DocumentPictureInPictureAPI,PushMessaging',
+    );
+    expect(switches.has('enable-features')).toBe(false);
   });
 });

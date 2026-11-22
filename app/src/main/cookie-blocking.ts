@@ -56,15 +56,20 @@ export interface FeatureSwitches {
 }
 
 /**
- * Enables a Chromium feature, together with those that the command line already enables.
+ * Adds Chromium features to a switch that lists them, such as the features that the command
+ * line enables or those of Blink that it turns off, after the ones that it lists already, as
+ * Chromium reads only the last value of a switch. A feature that the switch lists already is
+ * not added again.
  * @param commandLine - The command line of the browser process, before Chromium starts.
- * @param feature - The name of the feature.
+ * @param list - The switch.
+ * @param features - The names of the features, separated by commas.
  */
-export function enableFeature(commandLine: FeatureSwitches, feature: string): void {
-  const features = commandLine
-    .getSwitchValue('enable-features')
-    .split(',')
-    .filter((name) => name !== '');
-  if (features.includes(feature)) return;
-  commandLine.appendSwitch('enable-features', [...features, feature].join(','));
+export function addFeatures(
+  commandLine: FeatureSwitches,
+  list: 'enable-features' | 'disable-blink-features',
+  features: string,
+): void {
+  const listed = commandLine.getSwitchValue(list);
+  if (listed.split(',').includes(features)) return;
+  commandLine.appendSwitch(list, listed === '' ? features : `${listed},${features}`);
 }

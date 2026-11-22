@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Puts into practice the prompt per origin that [security](../architecture/security.md#permission-handlers) planned, which until now refused every request. In a split view, [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) lets only the side with the focus ask, over its side; the other side is treated like a tab in the background. [ADR 0059](0059-site-information-with-checked-certificates.md) lets site information change and reset the decided permissions of a site, in the store of its kind of window: the setting for regular windows, the private session for private windows.
+Accepted. Puts into practice the prompt per origin that [security](../architecture/security.md#permission-handlers) planned, which until now refused every request. In a split view, [ADR 0054](0054-split-view-with-two-tabs-side-by-side.md) lets only the side with the focus ask, over its side; the other side is treated like a tab in the background. [ADR 0059](0059-site-information-with-checked-certificates.md) lets site information change and reset the decided permissions of a site, in the store of its kind of window: the setting for regular windows, the private session for private windows. [ADR 0064](0064-web-features-that-electron-shows-no-ui-for.md) adds the question for a security key, refuses the location on Linux at once and answers the Storage Access API from the blocking of third-party cookies.
 
 ## Date
 

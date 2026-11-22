@@ -1,8 +1,4 @@
-import {
-  cookiesBlockedAtStart,
-  enableFeature,
-  thirdPartyCookieFeature,
-} from './cookie-blocking.ts';
+import { addFeatures, cookiesBlockedAtStart, thirdPartyCookieFeature } from './cookie-blocking.ts';
 import { newTabBackgroundRoute } from '../platform/electron/app-protocol-routes.ts';
 import {
   paletteCommands,
@@ -277,7 +273,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     recommended: policies.getRecommended('BlockThirdPartyCookies')?.value,
     fallback: BlockThirdPartyCookiesSetting.default,
   });
-  if (nativeCookieBlocking) enableFeature(app.commandLine, thirdPartyCookieFeature);
+  if (nativeCookieBlocking)
+    addFeatures(app.commandLine, 'enable-features', thirdPartyCookieFeature);
+  // The browser has no push service and cannot place windows of Document Picture-in-Picture:
+  // sites see both as missing and fall back, rather than offer what cannot work.
+  addFeatures(
+    app.commandLine,
+    'disable-blink-features',
+    'DocumentPictureInPictureAPI,PushMessaging',
+  );
 
   if (!app.requestSingleInstanceLock()) {
     app.quit();

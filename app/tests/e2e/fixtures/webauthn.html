@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture security keys</title>
+  </head>
+  <body>
+    <h1>Fixture security keys</h1>
+    <button id="create" type="button">Create a passkey</button>
+    <button id="short" type="button">Sign in with a key for three seconds</button>
+    <script>
+      // Requests of a site for a security key or a passkey, and how each one ended.
+      const random = (length) => crypto.getRandomValues(new Uint8Array(length));
+      window.results = {};
+      window.lastCredential = undefined;
+      const record = (label, request) => {
+        const started = Date.now();
+        results[label] = { state: 'pending' };
+        request.then(
+          (credential) => {
+            results[label] = { state: 'resolved', ms: Date.now() - started };
+            if (credential) lastCredential = credential;
+          },
+          (error) => (results[label] = { state: error.name, ms: Date.now() - started }),
+        );
+      };
+      window.create = (label, timeout, name = 'tester') =>
+        record(
+          label,
+          navigator.credentials.create({
+            publicKey: {
+              challenge: random(32),
+              rp: { name: 'Fixture', id: location.hostname },
+              user: { id: random(16), name: `${name}@example.com`, displayName: name },
+              pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+              timeout,
+              authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+            },
+          }),
+        );
+      window.signIn = (label, timeout, allow, signal, mediation) =>
+        record(
+          label,
+          navigator.credentials.get({
+            publicKey: {
+              challenge: random(32),
+              rpId: location.hostname,
+              timeout,
+              userVerification: 'preferred',
+              allowCredentials: allow ? [{ type: 'public-key', id: allow }] : [],
+            },
+            ...(signal ? { signal } : {}),
+            ...(mediation ? { mediation } : {}),
+          }),
+        );
+      document.getElementById('create').addEventListener('click', () => create('click', 20000));
+      document.getElementById('short').addEventListener('click', () => signIn('short', 3000));
+    </script>
+  </body>
+</html>

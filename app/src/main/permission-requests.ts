@@ -24,6 +24,8 @@ export interface SitePermissionOptions {
   readonly windowOf: (contents: WebContents) => BrowserWindowController | undefined;
   /** Loads the prompts, which come with the first question. */
   readonly prompts: () => Promise<PermissionPrompts>;
+  /** Called when a page took the mouse pointer, which needs no question but a notice. */
+  readonly pointerLocked?: (contents: WebContents) => void;
   readonly logger: Logger;
 }
 
@@ -63,6 +65,7 @@ export async function requestPermission(
   requestingUrl: string,
 ): Promise<boolean> {
   const needed = permissionsFor(permission, mediaTypes);
+  if (permission === 'pointerLock' && needed === 'grant') options.pointerLocked?.(contents);
   if (needed === 'grant' || needed === 'refuse') return needed === 'grant';
   const origin = originOf(contents.getURL());
   if (origin === undefined || !mayAsk(permission, origin, requestingUrl)) return false;

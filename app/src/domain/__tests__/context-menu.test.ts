@@ -8,14 +8,21 @@ import {
   type ContextMenuParams,
   type MediaFlags,
 } from '../context-menu/context-menu.ts';
-import { mayOpenInNewTab, mayOpenWindow } from '../navigation/new-tab.ts';
+import { mayOpenInNewTab, mayOpenWindow, placedDisposition } from '../navigation/new-tab.ts';
 
 const labels: ContextMenuLabels = {
   openLinkInNewTab: 'Open link in new tab',
   copyLinkAddress: 'Copy link address',
   openImageInNewTab: 'Open image in new tab',
+  saveImageAs: 'Save image as…',
   copyImage: 'Copy image',
   copyImageAddress: 'Copy image address',
+  openVideoInNewTab: 'Open video in new tab',
+  saveVideoAs: 'Save video as…',
+  copyVideoAddress: 'Copy video address',
+  openAudioInNewTab: 'Open audio in new tab',
+  saveAudioAs: 'Save audio as…',
+  copyAudioAddress: 'Copy audio address',
   pictureInPicture: 'Picture in picture',
   exitPictureInPicture: 'Exit picture in picture',
   undo: 'Undo',
@@ -147,6 +154,20 @@ describe('mayOpenWindow', () => {
   });
 });
 
+describe('placedDisposition', () => {
+  it('places what opens in a tab, also from a middle click or Shift click, or in a window', () => {
+    for (const disposition of ['foreground-tab', 'background-tab', 'new-window']) {
+      expect(placedDisposition(disposition)).toBe(true);
+    }
+  });
+
+  it('places nothing else, such as a window of Document Picture-in-Picture', () => {
+    for (const disposition of ['other', 'default', 'save-to-disk', '']) {
+      expect(placedDisposition(disposition)).toBe(false);
+    }
+  });
+});
+
 describe('buildContextMenu', () => {
   it('offers the history items when nothing specific was clicked', () => {
     expect(render(menu({}))).toEqual(['Back [off]', 'Forward [off]', 'Reload']);
@@ -176,25 +197,33 @@ describe('buildContextMenu', () => {
     (url) => {
       expect(render(menu({ linkURL: url }))).toEqual(['Copy link address']);
       expect(render(menu({ mediaType: 'image', srcURL: url, hasImageContents: true }))).toEqual([
+        'Save image as…',
         'Copy image',
         'Copy image address',
       ]);
     },
   );
 
-  it('offers the image items and copies only images that have loaded', () => {
+  it('offers the image items and saves and copies only images that have loaded', () => {
     const src = 'https://example.com/i.png';
     const loaded = menu({ mediaType: 'image', srcURL: src, hasImageContents: true });
-    expect(render(loaded)).toEqual(['Open image in new tab', 'Copy image', 'Copy image address']);
+    expect(render(loaded)).toEqual([
+      'Open image in new tab',
+      'Save image as…',
+      'Copy image',
+      'Copy image address',
+    ]);
     expect(actionOf(loaded, 'Open image in new tab')).toEqual({
       kind: 'openTab',
       url: src,
       activate: false,
     });
+    expect(actionOf(loaded, 'Save image as…')).toEqual({ kind: 'download', url: src });
     expect(actionOf(loaded, 'Copy image')).toEqual({ kind: 'copyImage' });
     expect(actionOf(loaded, 'Copy image address')).toEqual({ kind: 'copyText', text: src });
     expect(render(menu({ mediaType: 'image', srcURL: src }))).toEqual([
       'Open image in new tab',
+      'Save image as… [off]',
       'Copy image [off]',
       'Copy image address',
     ]);
@@ -202,7 +231,40 @@ describe('buildContextMenu', () => {
     expect(
       render(menu({ mediaType: 'image', hasImageContents: true }, { canCopyImage: false })),
     ).toEqual(['Copy image [off]']);
-    expect(render(menu({ mediaType: 'video', srcURL: 'https://example.com/v.mp4' }))).toEqual([
+  });
+
+  it('opens, saves and copies the file of a video or audio, as far as it can be saved', () => {
+    const src = 'https://example.com/v.mp4';
+    const saved = { ...flags(false, false), canSave: true };
+    const video = menu({ mediaType: 'video', srcURL: src, mediaFlags: saved });
+    expect(render(video)).toEqual([
+      'Open video in new tab',
+      'Save video as…',
+      'Copy video address',
+    ]);
+    expect(actionOf(video, 'Open video in new tab')).toEqual({
+      kind: 'openTab',
+      url: src,
+      activate: false,
+    });
+    expect(actionOf(video, 'Save video as…')).toEqual({ kind: 'download', url: src });
+    expect(actionOf(video, 'Copy video address')).toEqual({ kind: 'copyText', text: src });
+    // A stream cannot be saved, and a menu without flags saves nothing either.
+    expect(render(menu({ mediaType: 'video', srcURL: src }))).toEqual([
+      'Open video in new tab',
+      'Save video as… [off]',
+      'Copy video address',
+    ]);
+    expect(render(menu({ mediaType: 'audio', srcURL: src, mediaFlags: saved }))).toEqual([
+      'Open audio in new tab',
+      'Save audio as…',
+      'Copy audio address',
+    ]);
+    // An address that no tab may open is only saved and copied, and without one, nothing.
+    expect(
+      render(menu({ mediaType: 'audio', srcURL: 'blob:https://example.com/1', mediaFlags: saved })),
+    ).toEqual(['Save audio as…', 'Copy audio address']);
+    expect(render(menu({ mediaType: 'video', mediaFlags: saved }))).toEqual([
       'Back [off]',
       'Forward [off]',
       'Reload',
@@ -211,26 +273,26 @@ describe('buildContextMenu', () => {
 
   it('shows a video in picture in picture, and ends picture in picture where it shows', () => {
     const src = 'https://example.com/v.webm';
+    const media = ['Open video in new tab', 'Save video as… [off]', 'Copy video address'];
     const video = menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(true, false) });
-    expect(render(video)).toEqual(['Picture in picture']);
+    expect(render(video)).toEqual([...media, 'Picture in picture']);
     expect(actionOf(video, 'Picture in picture')).toEqual({
       kind: 'pictureInPicture',
       enter: true,
     });
     const shown = menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(true, true) });
-    expect(render(shown)).toEqual(['Exit picture in picture']);
+    expect(render(shown)).toEqual([...media, 'Exit picture in picture']);
     expect(actionOf(shown, 'Exit picture in picture')).toEqual({
       kind: 'pictureInPicture',
       enter: false,
     });
     // A video that cannot show in it, audio, and picture in picture turned off get none.
-    const history = ['Back [off]', 'Forward [off]', 'Reload'];
     expect(
       render(menu({ mediaType: 'video', srcURL: src, mediaFlags: flags(false, false) })),
-    ).toEqual(history);
+    ).toEqual(media);
     expect(
       render(menu({ mediaType: 'audio', srcURL: src, mediaFlags: flags(true, false) })),
-    ).toEqual(history);
+    ).toEqual(['Open audio in new tab', 'Save audio as… [off]', 'Copy audio address']);
     expect(
       render(
         menu(
@@ -238,7 +300,7 @@ describe('buildContextMenu', () => {
           { pictureInPicture: false },
         ),
       ),
-    ).toEqual(history);
+    ).toEqual(media);
     // The groups keep their order: the link, the video, the selection and Inspect.
     expect(
       render(
@@ -257,6 +319,7 @@ describe('buildContextMenu', () => {
       'Open link in new tab',
       'Copy link address',
       '---',
+      ...media,
       'Picture in picture',
       '---',
       'Copy [off] <Ctrl+C>',
@@ -278,6 +341,7 @@ describe('buildContextMenu', () => {
       'Copy link address',
       '---',
       'Open image in new tab',
+      'Save image as…',
       'Copy image',
       'Copy image address',
     ]);

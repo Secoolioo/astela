@@ -52,6 +52,7 @@ export class AppShell extends LitElement {
     drafts: { state: true },
     addressFocused: { state: true },
     drops: { state: true },
+    protectedMedia: { state: true },
   };
 
   /** Styles of the shell, scoped to its shadow root. */
@@ -1220,6 +1221,11 @@ export class AppShell extends LitElement {
    */
   declare drops:
     { readonly over: string | null; readonly x: number; readonly y: number } | undefined;
+  /**
+   * The tabs of the window whose page asked for protected video or music that the browser
+   * cannot play, which show a sign in the address bar while they are active.
+   */
+  declare protectedMedia: readonly string[];
   /** Whether the focused address bar had all of its text selected before an update. */
   private addressSelected = false;
   bridge: ShellBridge | undefined;
@@ -1388,6 +1394,7 @@ export class AppShell extends LitElement {
     this.drafts = new Map();
     this.addressFocused = false;
     this.drops = undefined;
+    this.protectedMedia = [];
   }
 
   override connectedCallback(): void {
@@ -1414,6 +1421,7 @@ export class AppShell extends LitElement {
         else if (command === 'workspaces.open') this.openWorkspacesAtButton();
         else this.focusAddress();
       }),
+      bridge.on('shell.protectedMedia', ({ tabs }) => (this.protectedMedia = tabs)),
       bridge.on('shell.editGroup', ({ groupId, keyboard }) => {
         this.groupEditorPending = { id: groupId, at: performance.now(), keyboard };
         this.takeGroupEditorOpening();
@@ -1717,6 +1725,20 @@ export class AppShell extends LitElement {
             : nothing
         }
         ${this.renderAddress(this.addressTab, t)}
+        ${
+          active !== undefined && this.protectedMedia.includes(active.id)
+            ? html`<button
+                class="icon protected-media"
+                title=${t('shell.protectedMedia')}
+                aria-label=${t('shell.protectedMedia')}
+                aria-haspopup="dialog"
+                aria-expanded=${this.state.popover?.kind === 'protectedMedia' ? 'true' : 'false'}
+                @click=${this.openProtectedMedia}
+              >
+                ${icons.protectedMedia}
+              </button>`
+            : nothing
+        }
         ${
           active === undefined || sameZoom(active.zoom, this.state.defaultZoom)
             ? nothing
@@ -3045,6 +3067,14 @@ export class AppShell extends LitElement {
     }
   };
 
+  /** Opens the popover that says why the page cannot play its protected video or music. */
+  private readonly openProtectedMedia = (event: MouseEvent): void => {
+    const button = event.currentTarget;
+    if (button instanceof HTMLElement) {
+      void this.bridge?.invoke('shell.openProtectedMedia', anchorOf(button, event.detail === 0));
+    }
+  };
+
   /** Opens the content blocker's popover at its button. */
   private readonly openBlockerPopover = (event: MouseEvent): void => {
     const button = event.currentTarget;
@@ -4172,6 +4202,12 @@ const icons = {
     <path
       d="M9.3 3.5c.7-.4 1.3-.8 1.9-1.2a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1v7a8 8 0 0 1-.3 2.3"
     />
+  </svg>`,
+  protectedMedia: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m2 2 20 20" />
+    <path d="M8 4h11a2 2 0 0 1 2 2v10c0 .6-.3 1.2-.7 1.5" />
+    <path d="M16 20H5a2 2 0 0 1-2-2V6c0-.6.3-1.2.7-1.5" />
+    <path d="m10 9.5 4 2.5-4 2.5z" />
   </svg>`,
   pictureInPicture: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" />
