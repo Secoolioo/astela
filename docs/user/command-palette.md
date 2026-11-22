@@ -50,7 +50,7 @@ The sign becomes a chip in front of the field. Backspace in the empty field, or 
 - Enter acts on the marked row. If the results for what you just typed are still on their way, Enter waits a moment for them.
 - Esc closes the palette, and the focus goes back to the page, or to the address bar on the new tab page.
 - Tab stays in the field.
-- A click on a row acts on it; a click next to the palette closes it, and so does switching to another window.
+- A click on a row acts on it; a click next to the palette closes it, and so does switching to another window. A window that you leave right after the shortcut, before the palette shows, opens none.
 - In the palette, its own shortcut closes it: `Ctrl+K` in the palette, `Ctrl+Shift+A` in tab search (`Command` on macOS). The other one switches between everything and the open tabs and keeps what you typed. Every other shortcut of the browser closes the palette and runs, such as `Ctrl+T` for a new tab.
 - While an input method composes text in the field, its keys belong to it.
 
