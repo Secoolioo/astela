@@ -31,6 +31,10 @@ afterEach(() => {
   }
 });
 
+/** The permission bits of a file or folder. */
+const modeOf = (path: string): number => statSync(path).mode & 0o777;
+const posix = process.platform !== 'win32';
+
 describe('atomic writes', () => {
   it('writes files and leaves no temporary files', async () => {
     const dir = tempDir();
@@ -40,6 +44,30 @@ describe('atomic writes', () => {
     expect(readFileSync(join(dir, 'a', 'x.json'), 'utf8')).toBe('{"a":1}');
     expect(readFileSync(join(dir, 'b', 'y.json'), 'utf8')).toBe('ok');
     expect(readdirSync(join(dir, 'b')).toSorted()).toEqual(['y.json', 'z.txt']);
+  });
+
+  it.runIf(posix)('lets only the user read the files and the folders it makes', async () => {
+    const dir = tempDir();
+    await writeFileAtomic(join(dir, 'a', 'x.json'), '{}');
+    writeFileAtomicSync(join(dir, 'b', 'y.json'), '{}');
+    // A file of an older version that others could read gets the mode with its next save.
+    writeFileSync(join(dir, 'old.json'), '{}', { mode: 0o644 });
+    await writeFileAtomic(join(dir, 'old.json'), '{"saved":true}');
+    expect(
+      ['a', 'a/x.json', 'b', 'b/y.json', 'old.json'].map((name) => modeOf(join(dir, name))),
+    ).toEqual([0o700, 0o600, 0o700, 0o600, 0o600]);
+  });
+
+  it.runIf(posix)('gives a file that a person saves the usual modes of the system', async () => {
+    const dir = tempDir();
+    const usual = 0o666 & ~process.umask();
+    await writeFileAtomic(join(dir, 'settings.json'), '{}', 0o666);
+    // The report of the self-test, which its caller reads, maybe as another user.
+    writeFileAtomicSync(join(dir, 'report.json'), '{}', 0o666);
+    expect([modeOf(join(dir, 'settings.json')), modeOf(join(dir, 'report.json'))]).toEqual([
+      usual,
+      usual,
+    ]);
   });
 });
 
@@ -68,6 +96,21 @@ describe('RotatingFileLogSink', () => {
       .trim()
       .split('\n');
     expect(JSON.parse(last.at(-1) ?? '{}')).toMatchObject({ time: 11 });
+  });
+
+  it.runIf(posix)('lets only the user read the logs that it writes and rotates', () => {
+    const dir = tempDir();
+    const sink = new RotatingFileLogSink({
+      directory: join(dir, 'logs'),
+      name: 'main',
+      maxBytes: 200,
+    });
+    for (let i = 0; i < 6; i += 1) sink.write(record(i));
+    expect(
+      ['logs', 'logs/main.log', 'logs/main.1.log', 'logs/main.2.log'].map((name) =>
+        modeOf(join(dir, name)),
+      ),
+    ).toEqual([0o700, 0o600, 0o600, 0o600]);
   });
 
   it('never throws when the directory cannot be written', () => {
@@ -374,6 +417,15 @@ describe('JsonFileSessionStore', () => {
       new ManualClock(),
     );
     await expect(missing.markRunning()).rejects.toThrow(/ENOENT/);
+    store.dispose();
+  });
+
+  it.runIf(posix)('lets only the user read the marker of a running browser', async () => {
+    const { JsonFileSessionStore } = await import('../node/session-store.ts');
+    const file = join(tempDir(), 'session.json');
+    const store = new JsonFileSessionStore(file, new ManualClock(), 1000);
+    await store.markRunning();
+    expect(modeOf(`${file}.running`)).toBe(0o600);
     store.dispose();
   });
 

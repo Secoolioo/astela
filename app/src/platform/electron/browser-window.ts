@@ -61,6 +61,7 @@ import {
 import type { RowsHiding } from '../../domain/windows/top-rows.ts';
 import { visibleBounds, type WindowBounds } from '../../domain/windows/window-bounds.ts';
 import type { Blocking } from '../../domain/blocker/blocking.ts';
+import type { DocumentReader } from '../../domain/blocker/document-requests.ts';
 import type { CommandContext } from '../../domain/commands/availability.ts';
 import { AltTap } from '../../domain/windows/alt-tap.ts';
 import { HeldTyping, type TypedText } from '../../domain/palette/held-typing.ts';
@@ -461,6 +462,12 @@ export interface WebPages {
   cover(host: WindowHost, id: TabId, cover: TabCover): boolean;
   /** Ends the cover of a tab's page, as {@link BrowserWindowController.uncover} does. */
   uncover(host: WindowHost, id: TabId, end: CoverEnd): void;
+  /**
+   * Whether a blocked request of a web page counts for the document that its tab shows.
+   * @param contents - The page.
+   * @param document - Reads the document that made the request, if known.
+   */
+  counts(contents: WebContents, document: DocumentReader | undefined): boolean;
 }
 
 /**
@@ -1268,14 +1275,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
 
   /**
    * Counts a request that the content blocker blocked, if it belongs to one of this window's
-   * tabs.
+   * tabs and to the document that the tab shows.
    * @param contentsId - Id of the web contents that made the request.
+   * @param document - Reads the document that made it, if known.
    * @returns Whether the request belonged to this window.
    */
-  countBlocked(contentsId: number): boolean {
+  countBlocked(contentsId: number, document?: DocumentReader): boolean {
     for (const [id, entry] of this.entries) {
-      if (entry.view.webContents.id === contentsId) {
-        this.tabs.update(id, { blocked: (this.tabs.get(id)?.blocked ?? 0) + 1 });
+      const contents = entry.view.webContents;
+      if (contents.id === contentsId) {
+        if (this.webPages().loaded?.counts(contents, document) !== false) {
+          this.tabs.update(id, { blocked: (this.tabs.get(id)?.blocked ?? 0) + 1 });
+        }
         return true;
       }
     }
@@ -2290,10 +2301,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.layout();
       });
     }
-    // The counts of blocked requests and pop-ups belong to one page.
+    // The counts of pop-ups belong to one page, from the start of a navigation, as their list;
+    // those of blocked requests belong to the document on screen (web-pages.ts).
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
-        this.tabs.update(id, { blocked: 0, popups: 0 });
+        this.tabs.update(id, { popups: 0 });
       }
     });
     // A tab keeps its sound muted when it changes between web pages and the browser's own.
@@ -2549,12 +2561,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const old = entry.view;
     const oldRegistration = entry.registration;
     const focused = old.webContents.isFocused();
-    // The new view shows its own page, not the problem, the icon, the sound, the article or the
-    // videos of the old one: the old view's events no longer count, a new page plays no sound
-    // until it says so, and a web page has an article only once it was checked.
+    // The new view shows its own page, not the problem, the icon, the sound, the article, the
+    // videos or the blocked requests of the old one: the old view's events no longer count, a
+    // new page plays no sound until it says so, and a web page has an article only once it was
+    // checked.
     if (this.problemOf(id) !== null) this.tabs.update(id, { problem: null });
     this.dropFavicon(id);
-    this.tabs.update(id, { audible: false, reader: 'none', pictureInPicture: 'none' });
+    this.tabs.update(id, { audible: false, reader: 'none', pictureInPicture: 'none', blocked: 0 });
     // The new view's first page is a page of its own, not the one that a waking tab restores.
     Object.assign(entry, this.createView(id, url), {
       requested: url,
@@ -3117,10 +3130,11 @@ export class WindowManager implements Disposable {
   /**
    * Counts a request that the content blocker blocked in the tab that made it.
    * @param contentsId - Id of the web contents that made the request.
+   * @param document - Reads the document that made it, if known.
    */
-  countBlocked(contentsId: number): void {
+  countBlocked(contentsId: number, document?: DocumentReader): void {
     for (const window of this.windows) {
-      if (window.countBlocked(contentsId)) return;
+      if (window.countBlocked(contentsId, document)) return;
     }
   }
 

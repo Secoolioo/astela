@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { navigationHints, takesClientHints } from './client-hints.ts';
 
 /** The part of a session that loads icons. */
 export interface IconSession {
@@ -222,10 +223,11 @@ class SessionIcons {
   }
 
   /**
-   * Loads an icon like an image of its page: with the referrer that pages send by default
-   * and as a request for an image, so that the request pipeline and the content blocker see
-   * the page and the kind of the request. The request goes without cookies, and reading
-   * stops as soon as the icon is larger than the limit.
+   * Loads an icon like an image of its page: with the referrer that pages send by default,
+   * the client hints that Blink gives the images of a page, and as a request for an image, so
+   * that the request pipeline and the content blocker see the page and the kind of the
+   * request. The request goes without cookies, and reading stops as soon as the icon is
+   * larger than the limit.
    */
   private async read(
     address: URL,
@@ -239,6 +241,9 @@ class SessionIcons {
         credentials: 'omit',
         referrerPolicy: 'strict-origin-when-cross-origin',
         headers: {
+          ...(takesClientHints(address.href)
+            ? navigationHints(process.versions['chrome'] ?? '', process.platform)
+            : {}),
           'Sec-Fetch-Dest': 'image',
           ...(referrer === undefined ? {} : { Referer: referrer }),
         },

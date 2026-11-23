@@ -119,6 +119,10 @@ export class FixtureServer {
           const headers = {
             'content-type': contentType(file),
             ...(this.uncached.has(file) ? { 'cache-control': 'no-store' } : {}),
+            // With ?attachment, the browser saves the fixture instead of showing it.
+            ...(/[?&]attachment(?:&|$)/.test(request.url ?? '')
+              ? { 'content-disposition': 'attachment' }
+              : {}),
           };
           // Videos come in the parts that their player asks for.
           const part = file.endsWith('.webm')

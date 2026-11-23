@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -290,6 +290,33 @@ describe('ProfileDatabase migrations', () => {
     db.close();
     expect(existsSync(`${path}.v1.bak`)).toBe(true);
   });
+
+  it.runIf(process.platform !== 'win32')(
+    'lets only the user read the database, its log and its copies',
+    () => {
+      const path = tempDb();
+      const db = new ProfileDatabase(path);
+      db.addVisit('https://a.example/?token=secret');
+      const files = [path, `${path}-wal`, `${path}-shm`];
+      const modes = (): number[] => files.map((file) => statSync(file).mode & 0o777);
+      expect(modes()).toEqual([0o600, 0o600, 0o600]);
+      db.close();
+      // A database of an older version that others could read gets the mode too, and so do
+      // the copy before its migration and a copy that an earlier migration left.
+      const raw = new DatabaseSync(path);
+      raw.exec('DROP TABLE downloads; PRAGMA user_version = 2');
+      raw.close();
+      chmodSync(path, 0o644);
+      writeFileSync(`${path}.v1.bak`, 'copy', { mode: 0o644 });
+      chmodSync(`${path}.v1.bak`, 0o644);
+      const migrated = new ProfileDatabase(path);
+      expect([
+        ...modes(),
+        ...[1, 2].map((step) => statSync(`${path}.v${step}.bak`).mode & 0o777),
+      ]).toEqual([0o600, 0o600, 0o600, 0o600, 0o600]);
+      migrated.close();
+    },
+  );
 
   it('adds the list of downloads to a database of the second version', () => {
     const path = tempDb();

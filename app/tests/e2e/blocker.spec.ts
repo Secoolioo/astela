@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   chooseFromMenu,
@@ -643,6 +646,159 @@ test('lists the sites without blocking in the settings, to remove and to add the
     ).toBeVisible();
   } finally {
     await browser.close();
+  }
+});
+
+/** Opens an address in the active tab from the address bar. */
+async function go(browser: Browser, url: string): Promise<Page> {
+  const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+  await address.fill(url);
+  await address.press('Enter');
+  return waitForPage(browser, (current) => current === url);
+}
+
+/** How many requests the shield counts for the page of the first tab. */
+async function blocked(browser: Browser): Promise<number | undefined> {
+  return (await shellState(browser.shell)).tabs[0]?.blocked;
+}
+
+/**
+ * The count of the page that a tab shows now, once the page of `leaving.html` that it left
+ * sent its beacons: the server sees the last one, after the blocked ones. The state of the shell
+ * that shows a new title of the page holds every count that came before it.
+ * @param page - The page that the tab shows now.
+ * @param mark - The query of the page that was left.
+ */
+async function countAfterLeaving(
+  browser: Browser,
+  page: Page,
+  mark: string,
+): Promise<number | undefined> {
+  await expect
+    .poll(() => server.requests.some((request) => request.path === `/left.txt?${mark}`))
+    .toBe(true);
+  const title = `Counted ${mark}`;
+  await page.evaluate((text) => {
+    document.title = text;
+  }, title);
+  let count: number | undefined;
+  await expect
+    .poll(async () => {
+      const tab = (await shellState(browser.shell)).tabs[0];
+      count = tab?.blocked;
+      return tab?.title;
+    })
+    .toBe(title);
+  return count;
+}
+
+test('counts the blocked requests of a page that was left for no page, not for the next one', async () => {
+  const browser = await launch();
+  const otherSite = `http://localhost:${new URL(server.origin).port}`;
+  try {
+    // Another address in the same tab, of the same site and of another site, whose page runs
+    // in another process: the page that goes sends three blocked beacons, before the next one
+    // commits or after it.
+    for (const [mark, site] of [
+      ['typed', server.origin],
+      ['other', otherSite],
+    ] as const) {
+      await go(browser, `${server.origin}/leaving.html?${mark}`);
+      await expect.poll(() => blocked(browser)).toBe(1);
+      const next = await go(browser, `${site}/second.html?${mark}`);
+      expect(await countAfterLeaving(browser, next, mark)).toBe(0);
+    }
+    // A page that a page opens in a tab counts its own blocked requests.
+    const page = await go(browser, `${server.origin}/leaving.html?opener`);
+    await page.locator('#opens').click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () =>
+        (await shellState(browser.shell)).tabs.map(({ url, blocked: count }) => [url, count]),
+      )
+      .toEqual([
+        [`${server.origin}/leaving.html?opener`, 1],
+        [`${server.origin}/leaving.html?opened`, 1],
+      ]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('counts what a page that a page opened blocks before the browser sees it commit', async () => {
+  const browser = await launch();
+  try {
+    const page = await go(browser, `${server.origin}/leaving.html?opener`);
+    await expect.poll(() => blocked(browser)).toBe(1);
+    // The browser learns that the opened page has committed only after its first requests, as
+    // when the requests of a busy page come in before its commit.
+    await browser.main.evaluate(({ app }) => {
+      app.once('web-contents-created', (_event, contents) => {
+        const emit = contents.emit.bind(contents);
+        contents.emit = (name: string | symbol, ...args: unknown[]): boolean => {
+          if (name !== 'did-navigate') return emit(name, ...args);
+          setTimeout(() => emit(name, ...args), 1000);
+          return true;
+        };
+      });
+    });
+    await page.locator('#opens').click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () =>
+        (await shellState(browser.shell)).tabs.map(({ url, blocked: count }) => [url, count]),
+      )
+      .toEqual([
+        [`${server.origin}/leaving.html?opener`, 1],
+        [`${server.origin}/leaving.html?opened`, 1],
+      ]);
+    // The count stays once the browser has seen the commit.
+    await new Promise((done) => setTimeout(done, 1500));
+    expect((await shellState(browser.shell)).tabs[1]?.blocked).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('counts what a page blocks while the next page loads for that page, and the next from 0', async () => {
+  const browser = await launch();
+  const release = server.hold('second.html');
+  try {
+    await go(browser, `${server.origin}/leaving.html?every=100`);
+    await expect.poll(() => blocked(browser)).toBeGreaterThan(1);
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/second.html?slow`);
+    await address.press('Enter');
+    // The page on screen goes on asking for blocked images while the next one waits.
+    await expect
+      .poll(() => server.requests.some((request) => request.path === '/second.html?slow'))
+      .toBe(true);
+    const waiting = await blocked(browser);
+    await expect.poll(() => blocked(browser)).toBeGreaterThan(waiting ?? 0);
+    release();
+    const next = await waitForPage(browser, (url) => url.endsWith('/second.html?slow'));
+    expect(await countAfterLeaving(browser, next, 'every=100')).toBe(0);
+  } finally {
+    release();
+    await browser.close();
+  }
+});
+
+test('keeps the count of a page whose link saves a file instead of opening a page', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'e2e-blocker-downloads-'));
+  const browser = await launch();
+  try {
+    await browser.main.evaluate(({ app }, path) => app.setPath('downloads', path), folder);
+    const page = await go(browser, `${server.origin}/leaving.html?saves`);
+    await expect.poll(() => blocked(browser)).toBe(1);
+    // The link starts a navigation, which turns into a download; the page stays.
+    await page.locator('#attachment').click();
+    await expect.poll(async () => (await shellState(browser.shell)).downloads !== null).toBe(true);
+    expect(page.url()).toBe(`${server.origin}/leaving.html?saves`);
+    expect(await blocked(browser)).toBe(1);
+  } finally {
+    await browser.close();
+    rmSync(folder, { recursive: true, force: true });
   }
 });
 

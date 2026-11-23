@@ -3,7 +3,7 @@ import { uiLocale } from './ui-language.ts';
 import { NewTabBackgroundSetting, ShortcutsSetting } from './core-settings.ts';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
@@ -67,7 +67,8 @@ export async function exportSettings(
   }
   // Shortcuts are written as their system writes them; another system reads them otherwise.
   const file = { $schemaVersion: fileVersion, system: shortcutSystem(), settings: values };
-  await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`);
+  // A file that a person saves gets the modes of the system, as a download does.
+  await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`, 0o666);
   return true;
 }
 
@@ -202,7 +203,7 @@ export async function exportTheme(sender: WebContents, theme: CustomTheme): Prom
     light: orderedPalette(theme.light),
     dark: orderedPalette(theme.dark),
   };
-  await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`);
+  await writeFileAtomic(filePath, `${JSON.stringify(file, null, 2)}\n`, 0o666);
   return true;
 }
 
@@ -353,7 +354,6 @@ export async function chooseNewTabImage(
   const kind = imageKinds.find((known) => known.matches(content.subarray(0, 16)));
   if (kind === undefined) return 'invalid';
   const name = `background-${createHash('sha256').update(content).digest('hex').slice(0, 16)}.${kind.extension}`;
-  await mkdir(folder, { recursive: true });
   await writeFileAtomic(join(folder, name), content);
   for (const old of await readdir(folder)) {
     if (old !== name && old.startsWith('background-')) await rm(join(folder, old), { force: true });

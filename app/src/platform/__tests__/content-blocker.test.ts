@@ -7,7 +7,7 @@ import type {
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import { ContentBlocker } from '../blocker/content-blocker.ts';
@@ -39,6 +39,18 @@ function dataDir(filters: string, popups?: string): string {
   return dir;
 }
 
+/** The tabs that blocked requests counted for, with the documents that their readers name. */
+const countedFor = (onBlocked: Mock): unknown[][] =>
+  onBlocked.mock.calls.map(([id, read]: unknown[]) => [
+    id,
+    typeof read === 'function' ? (read as () => unknown)() : read,
+  ]);
+
+/** Fails a test that reads the address of the frame of a reader view. */
+const unread = (): never => {
+  throw new Error('The address of a reader view was read');
+};
+
 const request = (
   url: string,
   resourceType: string,
@@ -49,7 +61,8 @@ const request = (
     resourceType,
     webContentsId,
     referrer: 'https://news.example/',
-    frame: null,
+    // The main frame of the tab's page, which is its own top frame.
+    frame: { parent: null, top: null, detached: false, processId: 4, routingId: 1 },
   }) as unknown as OnBeforeRequestListenerDetails;
 
 describe('ContentBlocker', () => {
@@ -64,7 +77,7 @@ describe('ContentBlocker', () => {
     expect(await blocker.beforeRequest(request('https://ads.example/a.js', 'script'))).toEqual({
       cancel: true,
     });
-    expect(onBlocked).toHaveBeenCalledWith(3);
+    expect(countedFor(onBlocked)).toEqual([[3, '4:1']]);
     expect(await blocker.beforeRequest(request('https://news.example/app.js', 'script'))).toBe(
       undefined,
     );
@@ -72,6 +85,35 @@ describe('ContentBlocker', () => {
       undefined,
     );
     expect(await blocker.beforeRequest(request('data:text/plain,x', 'image'))).toBe(undefined);
+  });
+
+  it('blocks the requests of a document that another one replaced and names no document for them', async () => {
+    const onBlocked = vi.fn();
+    const blocker = new ContentBlocker({
+      dataDir: dataDir('||ads.example^\n'),
+      enabled: () => true,
+      onBlocked,
+      logger: logger(),
+    });
+    // A beacon of an unload handler comes from a detached frame, or from one that is gone.
+    for (const frame of [{ detached: true }, null]) {
+      const beacon = {
+        ...request('https://ads.example/collect', 'ping'),
+        frame,
+      } as unknown as OnBeforeRequestListenerDetails;
+      expect(await blocker.beforeRequest(beacon)).toEqual({ cancel: true });
+    }
+    expect(countedFor(onBlocked)).toEqual([
+      [3, null],
+      [3, null],
+    ]);
+    // A frame of a page counts for the document of its main frame.
+    const embedded = {
+      ...request('https://ads.example/frame.js', 'script'),
+      frame: { detached: false, processId: 5, routingId: 3, top: { processId: 4, routingId: 7 } },
+    } as unknown as OnBeforeRequestListenerDetails;
+    expect(await blocker.beforeRequest(embedded)).toEqual({ cancel: true });
+    expect(countedFor(onBlocked).at(-1)).toEqual([3, '4:7']);
   });
 
   it('judges the first requests of a new page by that page, not by the one before it', async () => {
@@ -128,8 +170,23 @@ describe('ContentBlocker', () => {
         webContents: reader,
         referrer: '',
         initiatorOrigin: 'null',
-        get frame(): never {
-          throw new Error('The frame of a reader view was read');
+        frame: {
+          detached: false,
+          processId: 9,
+          routingId: 1,
+          get url(): never {
+            return unread();
+          },
+          get parent(): never {
+            return unread();
+          },
+          top: {
+            processId: 9,
+            routingId: 1,
+            get url(): never {
+              return unread();
+            },
+          },
         },
       }) as unknown as OnBeforeRequestListenerDetails;
     expect(await blocker.beforeRequest(fromReader('https://news.example/ads/photo.jpg'))).toBe(
@@ -392,7 +449,7 @@ describe('content blocker rewrites', () => {
     expect(await blocker.beforeRequest(request('https://ads.example/tag.js', 'script'))).toEqual({
       redirectURL: resourceUrl('MIME_TYPE_STUB.js'),
     });
-    expect(onBlocked).toHaveBeenCalledWith(3);
+    expect(countedFor(onBlocked)).toEqual([[3, '4:1']]);
     expect(
       await blocker.beforeRequest(request('https://cdn.example/a.js?utm_source=x&b=2', 'script')),
     ).toEqual({ redirectURL: 'https://cdn.example/a.js?b=2' });

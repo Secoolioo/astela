@@ -166,7 +166,7 @@ By design, Astela collects no telemetry and uploads no crash reports. Every outg
 
 - **Updates:** the update feed on the project website and the packages on GitHub Releases.
 - **Content blocker (M2):** the filter list feed.
-- **Spell checking:** dictionaries are self-hosted from M2. In M1, spell checking is off on Windows and Linux, so nothing reaches third-party dictionary servers; macOS uses the system spell checker.
+- **Spell checking:** dictionaries are self-hosted from M2. In M1, spell checking is off on Windows and Linux, and every session there has an empty list of languages, so the browser downloads no dictionary at all, also not for private windows or workspaces; macOS uses the system spell checker.
 - **Search suggestions:** opt-in.
 
 ## Admin guide

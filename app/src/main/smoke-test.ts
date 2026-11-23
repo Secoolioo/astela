@@ -95,7 +95,7 @@ export function runSmokeTest(
       rendererSandboxed: rendererSandboxed(window.shellContents),
       errors,
     };
-    writeFileAtomicSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    writeReport(reportPath, report);
     if (!keepRunning || !report.ok) {
       app.exit(report.ok ? 0 : 1);
     }
@@ -179,9 +179,20 @@ export function runSandboxHelpSmokeTest(contents: WebContents, reportPath: strin
       url: contents.getURL(),
       errors: [],
     };
-    writeFileAtomicSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    writeReport(reportPath, report);
     app.exit(0);
   });
+}
+
+/**
+ * Writes a report where its caller asked for it. The report is no file of the profile but one
+ * that the caller reads, maybe as another user, as CI does with the report of a browser that
+ * ran as root in a container; it gets the modes of the system, as a file that a person saves.
+ * @param reportPath - Where to write the report.
+ * @param report - The report.
+ */
+function writeReport(reportPath: string, report: object): void {
+  writeFileAtomicSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 0o666);
 }
 
 function rendererSandboxed(contents: WebContents): boolean | 'unknown' {

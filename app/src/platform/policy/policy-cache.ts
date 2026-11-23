@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { RawPolicyValue } from '../../domain/policy/policy.ts';
 import type { PolicyCache } from '../../domain/policy/policy-service.ts';
+import { privateFileMode, privateFolderMode } from '../node/atomic-file.ts';
 
 /** Keeps the last successfully read policy values in a JSON file. */
 export class JsonFilePolicyCache implements PolicyCache {
@@ -23,8 +24,11 @@ export class JsonFilePolicyCache implements PolicyCache {
 
   write(values: readonly RawPolicyValue[]): void {
     try {
-      mkdirSync(dirname(this.path), { recursive: true });
-      writeFileSync(this.path, JSON.stringify(values));
+      // Only the user may read the cache. Each start writes it, so it waits for no flush to
+      // the disk. The mode applies to a new file; a file of an older version gets it after
+      // the start (`keepOlderFilesPrivate`).
+      mkdirSync(dirname(this.path), { recursive: true, mode: privateFolderMode });
+      writeFileSync(this.path, JSON.stringify(values), { mode: privateFileMode });
     } catch {
       // The cache is an optimization; failing to write it must not break startup.
     }

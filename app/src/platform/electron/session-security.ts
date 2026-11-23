@@ -51,7 +51,8 @@ export interface PermissionHandler {
  * Hardens a session: permission requests and checks go to the handler, or are refused
  * without one, as for the browser's own pages; device access is denied and spellchecking is
  * switched off on Windows and Linux, because it would download dictionaries from a
- * third-party server. Electron grants everything by default, so this runs on every session.
+ * third-party server. Electron grants everything by default, so this runs on every session,
+ * in the task that made it.
  * @param session - Any session.
  * @param permissions - Decides about the permissions of web pages.
  */
@@ -80,8 +81,11 @@ export function hardenSession(session: Session, permissions?: PermissionHandler)
     { useSystemPicker: true },
   );
   if (process.platform !== 'darwin') {
+    // A new session starts to load the dictionary of the system's language at once, and
+    // downloads it while it is missing, also with spellchecking off; an empty list of
+    // languages stops that load before it reaches the network.
+    session.setSpellCheckerLanguages([]);
     session.setSpellCheckerEnabled(false);
-    session.setSpellCheckerDictionaryDownloadURL('https://0.0.0.0/');
   }
 }
 
@@ -173,13 +177,17 @@ export function guardWebContents(app: App, options: WebContentsGuardOptions): vo
 }
 
 /**
- * Builds a user agent without the app and Electron tokens, so sites see a plain Chromium.
+ * Builds a user agent without the app and Electron tokens, so sites see a plain Chromium: the
+ * token of the app goes with any version, also one of a beta such as `0.1.0-beta.6`, and the
+ * version of Chromium is reduced to its major number, as Chrome sends it (`Chrome/156.0.0.0`).
+ * Pages that need the full version read it from `navigator.userAgentData`, as in Chrome.
  * @param userAgent - The default user agent.
  */
 export function cleanUserAgent(userAgent: string): string {
   return userAgent
     .replace(/\s+Electron\/\S+/g, '')
-    .replace(/\s+[A-Za-z][\w-]*\/\d+(?:\.\d+)*(?=\s+Chrome\/)/g, '')
+    .replace(/\s+[A-Za-z][\w-]*\/\S+(?=\s+Chrome\/)/g, '')
+    .replace(/(\sChrome\/\d+)(?:\.\d+)+/, '$1.0.0.0')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }

@@ -243,3 +243,38 @@ test('opens new windows from pages as tabs', async () => {
     1,
   );
 });
+
+test("sends Chrome's reduced user agent and the same client hints with pages, frames and images", async () => {
+  const major = await browser.main.evaluate(() => process.versions.chrome.split('.')[0] ?? '');
+  await navigate(`${server.origin}/index.html?agent`);
+  const page = await waitForPage(browser, (url) => url.endsWith('/index.html?agent'));
+  // An image and a frame of the page, which Blink and the browser process ask for.
+  await page.evaluate(() => {
+    new Image().src = '/image.png?agent';
+    const frame = document.createElement('iframe');
+    frame.src = '/second.html?agent';
+    document.body.append(frame);
+  });
+  const sent = (path: string) => server.requests.find((request) => request.path === path)?.headers;
+  await expect.poll(() => sent('/image.png?agent') !== undefined).toBe(true);
+  await expect.poll(() => sent('/second.html?agent') !== undefined).toBe(true);
+  // Chrome's user agent, without the token of the app and with the major version only, in the
+  // page and in the header; the hints of the page and of its frame are those that Blink sends
+  // with the image.
+  const plain = `(KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+  const agents = [
+    await page.evaluate(() => navigator.userAgent),
+    sent('/index.html?agent')?.['user-agent'] ?? '',
+  ];
+  const hints = (path: string) => {
+    const headers = sent(path);
+    return ['sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform'].map((name) => headers?.[name]);
+  };
+  const image = hints('/image.png?agent');
+  expect(image[0]).toContain(`"Chromium";v="${major}"`);
+  expect({
+    agents: agents.map((agent) => agent.slice(agent.indexOf('(KHTML'))),
+    page: hints('/index.html?agent'),
+    frame: hints('/second.html?agent'),
+  }).toEqual({ agents: [plain, plain], page: image, frame: image });
+});

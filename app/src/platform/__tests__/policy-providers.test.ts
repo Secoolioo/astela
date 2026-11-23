@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -322,6 +322,16 @@ describe('Node adapters', () => {
     ];
     cache.write(values);
     expect(cache.read()).toEqual(values);
+  });
+
+  it.runIf(process.platform !== 'win32')('lets only the user read the cache and its folder', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'policy-cache-'));
+    dirs.push(dir);
+    const file = join(dir, 'profile', 'policies.json');
+    new JsonFilePolicyCache(file).write([]);
+    expect([file, join(dir, 'profile')].map((path) => statSync(path).mode & 0o777)).toEqual([
+      0o600, 0o700,
+    ]);
   });
 
   it('reads, lists and removes real files', () => {

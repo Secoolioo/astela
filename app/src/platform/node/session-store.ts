@@ -8,7 +8,7 @@ import {
   withoutTabHistories,
   type SessionSnapshot,
 } from '../../domain/session/session.ts';
-import { writeFileAtomic } from './atomic-file.ts';
+import { privateFileMode, writeFileAtomic } from './atomic-file.ts';
 
 /** What the session file held at the start. */
 export interface StoredSession {
@@ -107,7 +107,7 @@ export class JsonFileSessionStore implements Disposable {
    */
   markRunning(): Promise<void> {
     return this.mark(async () => {
-      if (!this.quitting) await writeFile(this.marker, '');
+      if (!this.quitting) await writeFile(this.marker, '', { mode: privateFileMode });
     });
   }
 

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { Session } from 'electron';
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 import { defineEvent, defineRequest } from '../../shared/ipc/contract.ts';
@@ -26,7 +27,7 @@ import {
   appSourceRoutes,
 } from '../electron/app-protocol-routes.ts';
 import { IpcGate, originOf } from '../electron/ipc-gate.ts';
-import { cleanUserAgent } from '../electron/session-security.ts';
+import { cleanUserAgent, hardenSession } from '../electron/session-security.ts';
 
 const Ping = defineRequest({
   channel: 'test.ping',
@@ -188,12 +189,69 @@ describe('appSourceRoutes', () => {
   });
 });
 
+/**
+ * The calls that {@link hardenSession} makes on a session, by method name, on a system.
+ * @param platform - The system that the browser runs on.
+ */
+function hardeningCalls(platform: NodeJS.Platform): [string, ...unknown[]][] {
+  const calls: [string, ...unknown[]][] = [];
+  const session = new Proxy(
+    {},
+    {
+      get:
+        (_target, name) =>
+        (...args: unknown[]) =>
+          void calls.push([String(name), ...args]),
+    },
+  ) as Session;
+  const real = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    hardenSession(session);
+  } finally {
+    if (real !== undefined) Object.defineProperty(process, 'platform', real);
+  }
+  return calls;
+}
+
+describe('hardenSession', () => {
+  it.each(['linux', 'win32'] as const)(
+    'stops the load of spellchecker dictionaries on %s before it reaches the network',
+    (platform) => {
+      const spelling = hardeningCalls(platform).filter(([name]) => name.includes('SpellChecker'));
+      // An empty list of languages loads no dictionary, so nothing downloads one.
+      expect(spelling).toEqual([
+        ['setSpellCheckerLanguages', []],
+        ['setSpellCheckerEnabled', false],
+      ]);
+    },
+  );
+
+  it("leaves macOS to the system's spellchecker", () => {
+    expect(hardeningCalls('darwin').filter(([name]) => name.includes('SpellChecker'))).toEqual([]);
+  });
+});
+
 describe('cleanUserAgent', () => {
-  it('removes the app and Electron tokens', () => {
-    const ua =
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) app/0.1.0 Chrome/156.0.8078.48 Electron/45.0.0 Safari/537.36';
-    expect(cleanUserAgent(ua)).toBe(
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.48 Safari/537.36',
-    );
+  const plain =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
+
+  it.each([
+    ['a release', 'app/0.1.0'],
+    ['a beta', 'Astela/0.1.0-beta.6'],
+    ['build metadata', 'Astela/1.2.0+build.7'],
+  ])(
+    'removes the app and Electron tokens, with %s, and reduces the version of Chrome',
+    (_kind, token) => {
+      const ua = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) ${token} Chrome/156.0.8078.80 Electron/45.2.3 Safari/537.36`;
+      expect(cleanUserAgent(ua)).toBe(plain);
+    },
+  );
+
+  it('leaves the user agent of Chrome as it is', () => {
+    expect(cleanUserAgent(plain)).toBe(plain);
+    const windows =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
+    expect(cleanUserAgent(windows)).toBe(windows);
   });
 });

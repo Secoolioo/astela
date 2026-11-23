@@ -7,6 +7,7 @@ import type {
   OnHeadersReceivedListenerDetails,
   Session,
 } from 'electron';
+import { clientHintNames, navigationHints, takesClientHints } from './client-hints.ts';
 
 /** What an interceptor decides about a request. */
 export interface RequestDecision {
@@ -90,11 +91,21 @@ export function withoutHeaders<T>(
  * Owns the one `onBeforeRequest`, `onBeforeSendHeaders` and `onHeadersReceived` listener
  * that Electron allows per session and asks its interceptors in order: the first decision
  * about a request wins, every interceptor may add response headers, and the headers that any
- * of them names are removed. Requests of the browser's own pages never pass here, because the
+ * of them names are removed. Requests of documents and frames get the client hints that
+ * Chromium sends with them. Requests of the browser's own pages never pass here, because the
  * pipeline only serves web sessions.
  */
 export class RequestPipeline {
   private readonly interceptors: RequestInterceptor[] = [];
+  private readonly hints: Readonly<Record<string, string>>;
+
+  /**
+   * @param hints - The client hints of navigations to trustworthy sites; by default those of
+   *   the browser's Chromium on its system, as Blink gives them to the other requests.
+   */
+  constructor(hints = navigationHints(process.versions['chrome'] ?? '', process.platform)) {
+    this.hints = hints;
+  }
 
   /**
    * Adds an interceptor after the existing ones.
@@ -136,7 +147,8 @@ export class RequestPipeline {
   }
 
   /**
-   * Removes the request headers that the interceptors name before the request is sent.
+   * Removes the request headers that the interceptors name before the request is sent, and
+   * gives a document or a frame its client hints.
    * @param details - The request.
    * @param callback - Electron's answer.
    */
@@ -144,14 +156,20 @@ export class RequestPipeline {
     details: OnBeforeSendHeadersListenerDetails,
     callback: (response: BeforeSendResponse) => void,
   ): void {
+    const answer = (names: readonly string[]): BeforeSendResponse => {
+      if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') {
+        return names.length === 0
+          ? {}
+          : { requestHeaders: withoutHeaders(details.requestHeaders, names) };
+      }
+      // The hints go first, as Chromium sends them; a redirect to a site that is not
+      // trustworthy, such as from https to http, takes them away again.
+      const rest = withoutHeaders(details.requestHeaders, [...names, ...clientHintNames]);
+      return { requestHeaders: takesClientHints(details.url) ? { ...this.hints, ...rest } : rest };
+    };
     void this.removals((interceptor) => interceptor.removedRequestHeaders?.(details)).then(
-      (names) =>
-        callback(
-          names.length === 0
-            ? {}
-            : { requestHeaders: withoutHeaders(details.requestHeaders, names) },
-        ),
-      () => callback({}),
+      (names) => callback(answer(names)),
+      () => callback(answer([])),
     );
   }
 
