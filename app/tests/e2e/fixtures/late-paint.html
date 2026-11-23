@@ -6,7 +6,9 @@
   </head>
   <body>
     <!-- The link has its size from the start, but its text, and with it the first content that
-         the page paints, comes only a while after the page has loaded. -->
+         the page paints, comes only a while after the page has loaded; until then the page has
+         only text that it does not show. -->
+    <p style="visibility: hidden">Loading</p>
     <a
       id="open"
       href="opened.html"
@@ -14,6 +16,8 @@
       style="display: block; width: 200px; height: 40px"
     ></a>
     <script>
+      window.keys = [];
+      addEventListener('keydown', (event) => window.keys.push(event.code));
       setTimeout(() => {
         document.getElementById('open').textContent = 'Open';
       }, 1500);

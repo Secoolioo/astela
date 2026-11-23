@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Socket } from 'node:net';
 import { join } from 'node:path';
-import { FixtureServer, launch, pageReport } from './harness.ts';
-import { clickNative, openTab, stateOf } from './native.ts';
+import { FixtureServer, launch, pageReport, pressNative } from './harness.ts';
+import { clickNative, openTab, runIn, stateOf } from './native.ts';
 
 test('fails a test with a report of the browser process when the shell stops answering', async () => {
   const browser = await launch();
@@ -208,6 +208,28 @@ test('clicks a page with native input once it has painted, as Chromium drops the
     // The page has loaded, but paints its first content only a while later.
     await clickNative(browser, url, `document.querySelector('#open')`);
     await expect.poll(async () => (await stateOf(browser)).tabs.length).toBe(count + 1);
+  } finally {
+    await browser.close();
+    await server.stop();
+  }
+});
+
+test('presses keys in a page with native input once it has painted, as Chromium drops them before', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/late-paint.html`;
+    await openTab(browser, url);
+    await browser.main.evaluate(({ webContents }, address) => {
+      webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL() === address)
+        ?.focus();
+    }, url);
+    // The page has loaded and has the focus, but paints its first content only a while later.
+    await pressNative(browser, 'X', [], url);
+    await expect.poll(() => runIn<string[]>(browser, url, 'window.keys')).toEqual(['KeyX']);
   } finally {
     await browser.close();
     await server.stop();
