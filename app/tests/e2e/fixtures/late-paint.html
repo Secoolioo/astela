@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture late paint</title>
+  </head>
+  <body>
+    <!-- The link has its size from the start, but its text, and with it the first content that
+         the page paints, comes only a while after the page has loaded. -->
+    <a
+      id="open"
+      href="opened.html"
+      target="_blank"
+      style="display: block; width: 200px; height: 40px"
+    ></a>
+    <script>
+      setTimeout(() => {
+        document.getElementById('open').textContent = 'Open';
+      }, 1500);
+    </script>
+  </body>
+</html>
