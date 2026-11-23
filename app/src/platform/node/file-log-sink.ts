@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { LogRecord, LogSink } from '../../kernel/logging/logger.ts';
+import { privateFileMode, privateFolderMode } from './atomic-file.ts';
 
 /** Options for a {@link RotatingFileLogSink}. */
 export interface RotatingFileLogOptions {
@@ -16,8 +17,9 @@ export interface RotatingFileLogOptions {
 
 /**
  * Writes log records as JSON Lines to a local file and rotates it by size. Logs never
- * leave the device. Write errors are swallowed, because logging must never break the
- * browser.
+ * leave the device, and only the user may read the files and the folder that it makes, as
+ * they name the pages that failed; rotation renames a file with its mode. Write errors are
+ * swallowed, because logging must never break the browser.
  */
 export class RotatingFileLogSink implements LogSink {
   private readonly file: string;
@@ -34,13 +36,13 @@ export class RotatingFileLogSink implements LogSink {
     const line = `${JSON.stringify(record)}\n`;
     try {
       if (this.size < 0) {
-        mkdirSync(this.options.directory, { recursive: true });
+        mkdirSync(this.options.directory, { recursive: true, mode: privateFolderMode });
         this.size = fileSize(this.file);
       }
       if (this.size + line.length > this.options.maxBytes && this.size > 0) {
         this.rotate();
       }
-      appendFileSync(this.file, line);
+      appendFileSync(this.file, line, { mode: privateFileMode });
       this.size += Buffer.byteLength(line);
     } catch {
       this.size = -1;

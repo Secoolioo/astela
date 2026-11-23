@@ -3,9 +3,13 @@ import type { TabId, TabProblem } from '../../domain/tabs/tab-service.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
 import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
 import { activates } from '../../domain/navigation/popup-activation.ts';
+import { DocumentRequests, documentOf } from '../../domain/blocker/document-requests.ts';
 import type { CoverEnd, TabCover, WindowHost, WebPages } from './browser-window.ts';
 import { followActivation, pageActivations } from './page-activation.ts';
 import { typesText } from './tab-activity.ts';
+
+/** The document that each view of a web page shows, whose blocked requests the shield counts. */
+const documents = new WeakMap<WebContents, DocumentRequests>();
 
 /**
  * The code of the windows for their web pages, which loads with the first of them: what the
@@ -24,6 +28,8 @@ export const webPages: WebPages = {
   proceedInsecurely,
   cover: coverPage,
   uncover: uncoverPage,
+  counts: (contents, document) =>
+    documents.get(contents)?.counts(document) ?? (document === undefined || document() !== null),
 };
 
 /**
@@ -48,6 +54,18 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   // parsed, in case no preload ran in it either.
   if (adopted) keepAppRegionsOut(contents);
   contents.on('dom-ready', () => keepAppRegionsOut(contents));
+  // The shield counts the blocked requests of the document on screen, from its commit on, and
+  // those that it made before the browser saw it commit; a download or a stop, which commit no
+  // document, leaves the count of the page, and what a page that went still sends counts for no
+  // page.
+  const requests = new DocumentRequests();
+  documents.set(contents, requests);
+  // The page that a script opened may show its document already.
+  if (adopted) requests.opened(documentOf(contents.mainFrame));
+  contents.on('did-navigate', () => {
+    const blocked = requests.commit(documentOf(contents.mainFrame));
+    if (host.entries.get(id)?.view === view) window.tabs.update(id, { blocked });
+  });
   // Pages that change their address with the History API, as many web apps do, count as
   // visits too; a jump to an anchor on the same page does not. A private window keeps no
   // history.
@@ -216,15 +234,17 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
 function setProblem(host: WindowHost, id: TabId, problem: TabProblem | null): void {
   const { window } = host;
   if (problem === null && problemOf(host, id) === null) return;
-  // In place of its page, the tab shows no icon of a page, no cover, no article and no video;
-  // the page gets a check of its own once it has loaded again.
+  // In place of its page, the tab shows no icon of a page, no cover, no article, no video and
+  // no blocked requests; the page gets a check of its own once it has loaded again.
   if (problem !== null) {
     host.dropFavicon(id);
     window.uncover(id, 'gone');
   }
   window.tabs.update(
     id,
-    problem === null ? { problem } : { problem, reader: 'none', pictureInPicture: 'none' },
+    problem === null
+      ? { problem }
+      : { problem, reader: 'none', pictureInPicture: 'none', blocked: 0 },
   );
   if (window.isShown(id) && !window.window.isDestroyed()) {
     host.layout();

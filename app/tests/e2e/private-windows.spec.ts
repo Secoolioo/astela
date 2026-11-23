@@ -368,6 +368,57 @@ test('asks before the last private window cancels its downloads, also when its l
   }
 });
 
+/** The events of a net log of Chromium, with the names of their types. */
+function netLogEvents(
+  file: string,
+): { readonly type: string; readonly params: Record<string, unknown> }[] {
+  const text = readFileSync(file, 'utf8').trimEnd();
+  // A log that Chromium could not close has no end; its events are all there.
+  const log = JSON.parse(text.endsWith('}') ? text : `${text.replace(/,$/, '')}]}`) as {
+    readonly constants: { readonly logEventTypes: Readonly<Record<string, number>> };
+    readonly events: readonly {
+      readonly type: number;
+      readonly params?: Record<string, unknown>;
+    }[];
+  };
+  const names = new Map(
+    Object.entries(log.constants.logEventTypes).map(([name, id]) => [id, name]),
+  );
+  return log.events.map((event) => ({
+    type: names.get(event.type) ?? String(event.type),
+    params: event.params ?? {},
+  }));
+}
+
+test('downloads no spellchecker dictionary at the start or for a private window', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'e2e-net-log-'));
+  const log = join(folder, 'net-log.json');
+  try {
+    const browser = await launch([`--log-net-log=${log}`]);
+    try {
+      const shell = await openPrivate(browser);
+      await openIn(browser, shell, '/regular');
+    } finally {
+      await browser.close();
+    }
+    const events = netLogEvents(log);
+    const urls = events.flatMap(({ params }) =>
+      typeof params['url'] === 'string' ? [params['url']] : [],
+    );
+    // The log holds the requests of the browser, such as that of the page.
+    expect(urls).toContain(`${origin}/regular`);
+    // Chromium's download of dictionaries carries the traffic annotation
+    // spellcheck_hunspell_dictionary, whose hash is 117649486, whatever its address.
+    expect({
+      dictionaries: events.filter(({ params }) => params['traffic_annotation'] === 117649486)
+        .length,
+      toNoHost: [...new Set(urls.filter((url) => URL.parse(url)?.hostname === '0.0.0.0'))],
+    }).toEqual({ dictionaries: 0, toNoHost: [] });
+  } finally {
+    removeAfterExit(folder);
+  }
+});
+
 test('loads the icons of a private window apart from those of regular windows', async () => {
   const browser = await launch();
   try {

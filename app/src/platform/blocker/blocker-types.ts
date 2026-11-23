@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron';
 import type { Logger } from '../../kernel/logging/logger.ts';
+import type { DocumentReader } from '../../domain/blocker/document-requests.ts';
 
 /**
  * A procedural rule, such as `:has-text()`: the frame finds its elements itself, then marks
@@ -45,8 +46,11 @@ export interface ContentBlockerOptions {
   readonly dataDir: string;
   /** Whether blocking is on for a page, by its address; read for every request. */
   readonly enabled: (pageUrl: string) => boolean;
-  /** Called for every blocked request, with the id of the tab's web contents. */
-  readonly onBlocked?: (webContentsId: number) => void;
+  /**
+   * Called for every blocked request, with the id of the tab's web contents and what reads the
+   * document that made it, which the shield counts for that document only.
+   */
+  readonly onBlocked?: (webContentsId: number, document: DocumentReader) => void;
   /** Called when the status of the content blocker changes. */
   readonly onStatus?: (status: BlockerStatus) => void;
   /**

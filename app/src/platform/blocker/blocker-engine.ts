@@ -1,5 +1,9 @@
 import type { FiltersEngine, Request as EngineRequest, RequestType } from '@ghostery/adblocker';
-import type { OnBeforeRequestListenerDetails, OnHeadersReceivedListenerDetails } from 'electron';
+import type {
+  OnBeforeRequestListenerDetails,
+  OnHeadersReceivedListenerDetails,
+  WebFrameMain,
+} from 'electron';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'tldts-experimental';
 import { join } from 'node:path';
@@ -12,6 +16,7 @@ import type {
 } from './blocker-types.ts';
 import { resourceUrl, type ReplacementResource } from './resource-protocol.ts';
 import { withoutRemovedParameters } from '../../domain/blocker/parameters.ts';
+import { documentOf } from '../../domain/blocker/document-requests.ts';
 
 /** The engine and the request class of the library, loaded together. */
 interface LoadedEngine {
@@ -92,8 +97,11 @@ export class BlockerEngine {
       // Tracking parameters leave the address of a request that is not blocked.
       return withoutTrackingParameters(details.url, main.rewrite?.url);
     }
+    // A request counts for the document that made it, which the tab reads now or once a new
+    // document commits. One of a document that another one replaced, such as a beacon of its
+    // unload handler, still goes nowhere but does not count.
     if (details.webContentsId !== undefined) {
-      this.options.onBlocked?.(details.webContentsId);
+      this.options.onBlocked?.(details.webContentsId, () => documentOfRequest(details));
     }
     // A harmless stand-in keeps pages working that wait for the file they asked for.
     return result.redirect === undefined
@@ -271,4 +279,22 @@ function withoutTrackingParameters(
   if (rewritten === undefined || rewritten === url) return undefined;
   const cleaned = withoutRemovedParameters(url, rewritten);
   return cleaned === url ? undefined : { redirectURL: cleaned };
+}
+
+/**
+ * The document of the page that made a request, named by the main frame of the frame that made
+ * it, or `null` when the frame has left the frame tree: Electron gives no frame, or a detached
+ * one, for a document that a new one replaced while it runs its unload handlers. Electron reads
+ * the frame as it is asked, so a request of a new document that comes before the browser sees
+ * the document commit names the frame on screen, and the new one when it is read again.
+ * @param details - The request.
+ */
+function documentOfRequest(details: OnBeforeRequestListenerDetails): string | null {
+  try {
+    const frame: WebFrameMain | null | undefined = details.frame;
+    if (frame === null || frame === undefined || frame.detached) return null;
+    return documentOf(frame.top ?? frame);
+  } catch {
+    return null;
+  }
 }

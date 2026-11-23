@@ -9,6 +9,7 @@ import {
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Blocking } from '../domain/blocker/blocking.ts';
+import type { DocumentReader } from '../domain/blocker/document-requests.ts';
 import { freeName, pathKey } from '../domain/downloads/downloads.ts';
 import {
   allowsPopups,
@@ -90,8 +91,8 @@ export interface WebRequestOptions {
   readonly readerPageOf: (contents: WebContents) => string | undefined;
   /** Whether the content blocker works on a page, as the settings and the exceptions say. */
   readonly blocking: (url: string) => Blocking;
-  /** Counts a request that the content blocker blocked for the page that made it. */
-  readonly onBlocked: (contentsId: number) => void;
+  /** Counts a request that the content blocker blocked for the document that made it. */
+  readonly onBlocked: (contentsId: number, document: DocumentReader) => void;
   /** Called when the content blocker has loaded or could not load. */
   readonly onStatus: () => void;
   /** Whether a policy lets people continue to a site whose certificate is not trusted. */

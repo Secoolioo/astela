@@ -79,6 +79,7 @@ import {
   hardenSession,
   type PermissionHandler,
 } from '../platform/electron/session-security.ts';
+import { privateFolderMode } from '../platform/node/atomic-file.ts';
 import { RotatingFileLogSink } from '../platform/node/file-log-sink.ts';
 import { JsonFileSettingsStore } from '../platform/node/json-settings-store.ts';
 import { JsonFileSessionStore } from '../platform/node/session-store.ts';
@@ -332,7 +333,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // The background image of the new tab page lives in the profile; its folder exists from
   // the start, so the route that serves it has a place to look.
   const newTabFolder = join(userData, 'newtab');
-  mkdirSync(newTabFolder, { recursive: true });
+  mkdirSync(newTabFolder, { recursive: true, mode: privateFolderMode });
   const protocolHandler = new AppProtocol(
     layout.rendererDir,
     new Set(['shell', 'overlay', 'sandbox-help', ...tabPages]),
@@ -412,7 +413,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           isPrivate: (s) => privateSessions.has(s),
           isWebSession: (s) => webSessions.has(s),
           blocking,
-          onBlocked: (contentsId) => windows.countBlocked(contentsId),
+          onBlocked: (contentsId, document) => windows.countBlocked(contentsId, document),
           onStatus: () => windows.refreshShells(),
           certificateOverride: () => policies.mandatoryValue(SSLErrorOverrideAllowed) !== false,
           windows,
@@ -1295,6 +1296,10 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         updates.start();
       })
       .catch((error: unknown) => logger.error('The update service failed to start', error));
+    // What an older version left in the profile for others to read becomes the user's alone.
+    void import('./profile-modes.ts').then(({ keepOlderFilesPrivate }) =>
+      keepOlderFilesPrivate(userData),
+    );
     // The timer asks the windows about their tabs with their commands, which load meanwhile.
     void Promise.all([import('./tab-sleep.ts'), loadActivity(), windows.laterCode()])
       .then(([{ startTabSleeper }, loaded]) =>

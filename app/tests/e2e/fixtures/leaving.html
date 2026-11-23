@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture leaving</title>
+  </head>
+  <body>
+    <p>A page that reports when it is left.</p>
+    <img src="fixture-tracker.gif?leaving" alt="" />
+    <a id="attachment" href="second.html?attachment">A file to save</a>
+    <a id="opens" href="leaving.html?opened" target="_blank">The page again</a>
+    <script>
+      // As analytics do: blocked beacons when the page goes, then one that the server sees.
+      addEventListener('pagehide', () => {
+        for (let i = 0; i < 3; i += 1) navigator.sendBeacon(`fixture-tracker.gif?beacon=${i}`);
+        navigator.sendBeacon(`left.txt?${location.search.slice(1)}`);
+      });
+      // With ?every=<ms>, the page keeps asking for blocked images, as a page that polls.
+      const every = Number(new URLSearchParams(location.search).get('every'));
+      if (every > 0) {
+        setInterval(() => {
+          new Image().src = `fixture-tracker.gif?at=${Date.now()}`;
+        }, every);
+      }
+    </script>
+  </body>
+</html>

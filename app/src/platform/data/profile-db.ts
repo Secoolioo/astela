@@ -1,3 +1,4 @@
+import { chmodSync, closeSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { DownloadEntry, DownloadState } from '../../domain/downloads/downloads.ts';
 import { bookmarkRoots } from '../../shared/bookmarks.ts';
@@ -115,7 +116,8 @@ export const profileSchemaVersion = migrations.length;
  * in the data service process, never in the browser process, because SQLite calls block.
  * Schema changes run as numbered migrations; before one runs on an existing database, a
  * copy is written next to it with `VACUUM INTO`. A database from a newer version is opened
- * read-only, so an older version never changes data it does not understand.
+ * read-only, so an older version never changes data it does not understand. Only the user may
+ * read the database, its write-ahead log and its copies, which hold the history.
  */
 export class ProfileDatabase {
   private readonly db: DatabaseSync;
@@ -129,6 +131,7 @@ export class ProfileDatabase {
    */
   constructor(path: string, clock: () => number = Date.now) {
     this.clock = clock;
+    if (path !== ':memory:') keepDatabasePrivate(path);
     const probe = new DatabaseSync(path);
     const version = Number(probe.prepare('PRAGMA user_version').get()?.['user_version'] ?? 0);
     this.readOnly = version > profileSchemaVersion;
@@ -140,7 +143,9 @@ export class ProfileDatabase {
     this.db = probe;
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     if (version > 0 && version < profileSchemaVersion && path !== ':memory:') {
-      this.db.exec(`VACUUM INTO '${`${path}.v${version}.bak`.replaceAll("'", "''")}'`);
+      const copy = `${path}.v${version}.bak`;
+      this.db.exec(`VACUUM INTO '${copy.replaceAll("'", "''")}'`);
+      keepPrivate(copy);
     }
     for (let step = version; step < profileSchemaVersion; step += 1) {
       this.db.exec('BEGIN');
@@ -586,4 +591,42 @@ function ftsQuery(query: string): string {
     .filter((word) => word !== '')
     .map((word) => `"${word}"*`)
     .join(' ');
+}
+
+/**
+ * The mode of the database files: only the user may read them, as the browser's other files
+ * in the profile (`privateFileMode` of the atomic writes, which the data service does not load).
+ */
+const privateFile = 0o600;
+
+/**
+ * Makes the database readable by the user alone, before SQLite opens it: SQLite gives its
+ * write-ahead log and shared memory file the mode of the database. A database of an older
+ * version gets the mode too, with the files that SQLite kept of it and the copies that its
+ * migrations made.
+ * @param path - The database file, which is made, empty, if it is missing.
+ */
+function keepDatabasePrivate(path: string): void {
+  try {
+    closeSync(openSync(path, 'a', privateFile));
+  } catch {
+    // SQLite reports a database that it cannot open.
+  }
+  const copies = Array.from(
+    { length: profileSchemaVersion },
+    (_, step) => `${path}.v${step + 1}.bak`,
+  );
+  for (const file of [path, `${path}-wal`, `${path}-shm`, ...copies]) keepPrivate(file);
+}
+
+/**
+ * Makes a file readable by the user alone.
+ * @param file - The file; a file that is missing gets the mode when it is made.
+ */
+function keepPrivate(file: string): void {
+  try {
+    chmodSync(file, privateFile);
+  } catch {
+    // Missing: SQLite gives the files of a database the mode of the database.
+  }
 }

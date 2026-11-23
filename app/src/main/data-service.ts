@@ -16,7 +16,8 @@ const db = new ProfileDatabase(path);
 const temp = path === ':memory:' ? tmpdir() : join(dirname(path), 'import-temp');
 if (temp !== tmpdir()) {
   rmSync(temp, { recursive: true, force: true });
-  mkdirSync(temp, { recursive: true });
+  // Only the user may enter it, as the other folders of the browser in the profile.
+  mkdirSync(temp, { recursive: true, mode: 0o700 });
 }
 const importer = new BrowserImporter(db, {
   platform: process.platform,

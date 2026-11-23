@@ -146,6 +146,8 @@ describe('FaviconStore', () => {
           headers.get('sec-fetch-dest'),
           init?.referrerPolicy,
           init?.credentials,
+          // Client hints go to secure sites, as with the images of a page.
+          headers.get('sec-ch-ua-mobile'),
         ];
       }),
     ).toEqual([
@@ -155,6 +157,7 @@ describe('FaviconStore', () => {
         'image',
         'strict-origin-when-cross-origin',
         'omit',
+        '?0',
       ],
       [
         'https://cdn.example/icon.png',
@@ -162,6 +165,7 @@ describe('FaviconStore', () => {
         'image',
         'strict-origin-when-cross-origin',
         'omit',
+        '?0',
       ],
       [
         'http://plain.example/icon.png',
@@ -169,8 +173,16 @@ describe('FaviconStore', () => {
         'image',
         'strict-origin-when-cross-origin',
         'omit',
+        null,
       ],
-      ['https://cdn.example/other.png', null, 'image', 'strict-origin-when-cross-origin', 'omit'],
+      [
+        'https://cdn.example/other.png',
+        null,
+        'image',
+        'strict-origin-when-cross-origin',
+        'omit',
+        '?0',
+      ],
     ]);
   });
 

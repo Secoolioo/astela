@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -583,5 +592,135 @@ test('writes the session for a page whose title changes all the time only now an
     expect(sessionFile(profile)?.windows[0]?.tabs[0]?.title).toMatch(/^Tick \d+$/);
   } finally {
     removeAfterExit(profile);
+  }
+});
+
+test("lets only the user read the browser's own files in the profile", async () => {
+  test.skip(process.platform === 'win32', 'Windows keeps the rights of files apart from modes');
+  // The usual umask, which gives others the right to read new files.
+  const umask = process.umask(0o022);
+  let browser: Browser;
+  try {
+    browser = await launch();
+  } finally {
+    process.umask(umask);
+  }
+  const { profile } = browser;
+  const data = join(profile, 'data');
+  const modeOf = (name: string): string => (statSync(join(data, name)).mode & 0o777).toString(8);
+  const page = `${server.origin}/index.html?token=secret`;
+  let wal = '';
+  let running = '';
+  let report = '';
+  try {
+    try {
+      // The marker of a running browser, and the report of the self-test, which is no file of
+      // the profile but one that its caller names and reads, maybe as another user.
+      await expect.poll(() => existsSync(join(data, 'session.json.running'))).toBe(true);
+      running = modeOf('session.json.running');
+      report = (statSync(join(profile, 'ready.json')).mode & 0o777).toString(8);
+      await go(browser, page);
+      await waitForPage(browser, (url) => url === page);
+      await expect.poll(() => visitsOf(profile, page)).toBe(1);
+      // The session with the page is written before the next change, which keeps it as the
+      // backup.
+      await expect.poll(() => sessionFile(profile)?.windows[0]?.tabs[0]?.url).toBe(page);
+      // A setting that changes is written to the settings file.
+      await go(browser, 'app://settings/#appearance.theme');
+      const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+      await settings.evaluate(() =>
+        window.bridge.invoke('settings.set', { key: 'appearance.theme', value: 'ocean' }),
+      );
+      await expect.poll(() => existsSync(join(data, 'settings.json'))).toBe(true);
+      // The write-ahead log of the history goes once the database closes.
+      wal = modeOf('profile.db-wal');
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    expect(
+      Object.fromEntries([
+        ['profile.db-wal', wal],
+        ['session.json.running', running],
+        ['ready.json', report],
+        ...[
+          'session.json',
+          'session.json.bak',
+          'profile.db',
+          'settings.json',
+          'policy-cache.json',
+          'logs/main.log',
+          'logs',
+          'newtab',
+          'import-temp',
+        ].map((name) => [name, modeOf(name)]),
+      ]),
+    ).toEqual({
+      'profile.db-wal': '600',
+      'session.json.running': '600',
+      'ready.json': '644',
+      'session.json': '600',
+      'session.json.bak': '600',
+      'profile.db': '600',
+      'settings.json': '600',
+      'policy-cache.json': '600',
+      'logs/main.log': '600',
+      logs: '700',
+      newtab: '700',
+      'import-temp': '700',
+    });
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
+
+test('takes the rights of others from the files that an older version left in the profile', async () => {
+  test.skip(process.platform === 'win32', 'Windows keeps the rights of files apart from modes');
+  const profile = mkdtempSync(join(tmpdir(), 'e2e-profile-'));
+  const data = join(profile, 'data');
+  // An older version made its files and folders with the modes that the umask 022 gives.
+  const older: Record<string, string> = {
+    'settings.json': JSON.stringify({ $schemaVersion: 1, user: {} }),
+    'policy-cache.json': '[]',
+    'profile.db.v1.bak': 'copy of the history before a migration',
+    'logs/main.log': '',
+    'logs/main.1.log': '{"message":"https://example.com/?token=secret"}\n',
+    'logs/main.2.log': '{"message":"older"}\n',
+    'newtab/background-0123456789abcdef.png': 'image',
+  };
+  for (const folder of ['logs', 'newtab']) {
+    mkdirSync(join(data, folder), { recursive: true });
+    chmodSync(join(data, folder), 0o755);
+  }
+  for (const [name, content] of Object.entries(older)) {
+    writeFileSync(join(data, name), content);
+    chmodSync(join(data, name), 0o644);
+  }
+  const modes = (): Record<string, string> =>
+    Object.fromEntries(
+      [...Object.keys(older), 'logs', 'newtab'].map((name) => [
+        name,
+        (statSync(join(data, name)).mode & 0o777).toString(8),
+      ]),
+    );
+  const umask = process.umask(0o022);
+  let browser: Browser;
+  try {
+    browser = await launch([], { profile });
+  } finally {
+    process.umask(umask);
+  }
+  try {
+    // The data service, which keeps the copies of the history, starts with the first page.
+    const page = `${server.origin}/index.html`;
+    await go(browser, page);
+    await waitForPage(browser, (url) => url === page);
+    await expect.poll(() => visitsOf(profile, page)).toBe(1);
+    await expect.poll(modes).toEqual({
+      ...Object.fromEntries(Object.keys(older).map((name) => [name, '600'])),
+      logs: '700',
+      newtab: '700',
+    });
+  } finally {
+    await browser.close();
   }
 });
