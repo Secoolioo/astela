@@ -151,7 +151,7 @@ import type { Downloads } from './downloads.ts';
 import { GetBlockerStatus } from '../shared/ipc/blocker-contracts.ts';
 import { checkBoot } from './boot.ts';
 import { toolbarBackground, windowBackground } from './window-background.ts';
-import type { UpdateService } from '../domain/updates/update-service.ts';
+import type { UpdateController } from '../domain/updates/update-controller.ts';
 
 /** Paths of the bundled files, relative to the main bundle. */
 export interface BundleLayout {
@@ -373,9 +373,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     dispose: () => startedClient?.dispose(),
     settled: () => dataClient?.then((client) => client.settled()) ?? Promise.resolve(),
   };
+  // Organizations can keep people from opening private windows.
+  const privateWindowsAllowed = (): boolean =>
+    policies.mandatoryValue(PrivateModeAvailability) !== 1;
+  // Chromium's value 2 keeps the developer tools closed; 0 and 1 allow them for web pages.
+  const developerTools = (): boolean => policies.mandatoryValue(DeveloperToolsAvailability) !== 2;
   // The keyboard shortcuts of the windows, made again when people change them. While the
   // command palette, split view, the workspaces, the reader view or picture in picture are off,
-  // their shortcuts reach the pages.
+  // or a policy turns private windows or the developer tools off, their shortcuts reach the
+  // pages.
   const shortcutsNow = (): Map<string, WindowCommand> =>
     shortcutTable(process.platform, settings.get(ShortcutsSetting), [
       ...(settings.get(CommandPaletteSetting) ? [] : paletteCommands),
@@ -383,6 +389,8 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       ...(settings.get(WorkspacesEnabledSetting) ? [] : workspaceCommands),
       ...(settings.get(ReaderEnabledSetting) ? [] : readerCommands),
       ...(settings.get(PictureInPictureEnabledSetting) ? [] : pictureInPictureCommands),
+      ...(privateWindowsAllowed() ? [] : ['window.newPrivate' as const]),
+      ...(developerTools() ? [] : ['devtools.toggle' as const]),
     ]);
   let shortcuts = shortcutsNow();
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
@@ -535,9 +543,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       (error: unknown) => logger.warn('Private data was not deleted', { error: String(error) }),
     );
   };
-  // Organizations can keep people from opening private windows.
-  const privateWindowsAllowed = (): boolean =>
-    policies.mandatoryValue(PrivateModeAvailability) !== 1;
   const openPrivateWindow = (): void => {
     if (privateWindowsAllowed()) windows.open(undefined, { private: true });
   };
@@ -570,8 +575,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     const window = windows.forTab(opener);
     if (mayOpenInNewTab(url)) window?.tabs.open(url, { activate, opener: window.tabIdOf(opener) });
   };
-  // Chromium's value 2 keeps the developer tools closed; 0 and 1 allow them for web pages.
-  const developerTools = (): boolean => policies.mandatoryValue(DeveloperToolsAvailability) !== 2;
   // The menu code loads with the first context menu, not before the first window.
   const onContextMenu = (request: ContextMenuRequest): void => {
     void import('./context-menu.ts')
@@ -792,14 +795,15 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
       void loadPictureInPicture()
         .then((controller) => controller.toggle(window, tabId, pressed))
         .catch(failedPictureInPicture),
-    // The commands of the browser itself: its version, shown in a message, and quitting it.
+    // The commands of the browser itself: its version and the state of the updates, shown in a
+    // message that can start a check, and quitting it.
     onAppCommand: (window, command) => {
       if (command === 'app.quit') {
         app.quit();
         return;
       }
       void import('./browser-menu.ts')
-        .then(({ showAbout }) => showAbout(window))
+        .then(({ showAbout }) => showAbout(window, updates))
         .catch((error: unknown) => logger.error('The version of the browser was not shown', error));
     },
     // Administrators expect a change of policy to show when they come back to the browser.
@@ -1240,12 +1244,17 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     void import('./browser-menu.ts')
       .then(({ macMenuBar, runFromMenuBar }) =>
         Menu.setApplicationMenu(
-          macMenuBar((command) => runFromMenuBar(windows, command, openPrivateWindow), shortcuts, {
-            palette: settings.get(CommandPaletteSetting),
-            splitView: settings.get(SplitViewSetting),
-            reader: settings.get(ReaderEnabledSetting),
-            pictureInPicture: settings.get(PictureInPictureEnabledSetting),
-          }),
+          macMenuBar(
+            (command) => runFromMenuBar(windows, command, openPrivateWindow, () => updates),
+            shortcuts,
+            {
+              palette: settings.get(CommandPaletteSetting),
+              splitView: settings.get(SplitViewSetting),
+              reader: settings.get(ReaderEnabledSetting),
+              pictureInPicture: settings.get(PictureInPictureEnabledSetting),
+              policies,
+            },
+          ),
         ),
       )
       .catch((error: unknown) => logger.error('The menu bar failed', error));
@@ -1280,15 +1289,19 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     shortcuts = shortcutsNow();
     showMenuBar();
   });
+  // So do the policies of private windows and the developer tools, at a refresh of the policies.
+  policies.onDidChange(() => {
+    shortcuts = shortcutsNow();
+    showMenuBar();
+  });
 
   // Everything that is not needed for the first window loads after its shell, such as the
   // updates and what puts tabs to sleep that were not used for a while.
-  let updates: UpdateService | undefined;
+  let updates: UpdateController | undefined;
   first.shellContents.once('did-finish-load', () => {
     void import('./updates.ts')
-      .then(({ createUpdateService }) => {
-        updates = createUpdateService({ policies, clock, logger, userData, boot });
-        updates.start();
+      .then(({ startUpdates }) => {
+        updates = startUpdates({ policies, clock, logger, userData, boot });
       })
       .catch((error: unknown) => logger.error('The update service failed to start', error));
     // What an older version left in the profile for others to read becomes the user's alone.

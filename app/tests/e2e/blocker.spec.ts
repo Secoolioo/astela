@@ -144,6 +144,39 @@ test('counts blocked requests and switches the blocker off for one site', async 
   }
 });
 
+test('shows the switch on again when the list of sites without blocking is full', async () => {
+  const full = Array.from({ length: 10_000 }, (_, index) => `site${String(index)}.example`);
+  const browser = await launch([], { settings: { 'contentBlocker.allowedSites': full } });
+  try {
+    await browser.main.evaluate(({ dialog }) => {
+      const shown: string[] = [];
+      Reflect.set(globalThis, 'shownBoxes', shown);
+      dialog.showMessageBox = ((_window: unknown, options: Electron.MessageBoxOptions) => {
+        shown.push(`${options.message}: ${options.detail ?? ''}`);
+        return Promise.resolve({ response: 0, checkboxChecked: false });
+      }) as typeof dialog.showMessageBox;
+    });
+    const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+    await address.fill(`${server.origin}/blocker.html`);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+    const overlay = await openShield(browser, 'Content blocker: 2 blocked');
+    const blockHere = overlay.getByRole('switch', { name: 'Block ads on 127.0.0.1' });
+    await expect(blockHere).toBeChecked();
+    await blockHere.click();
+    await expect
+      .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'shownBoxes') as string[]))
+      .toEqual(['The change was not saved: The list of sites without blocking is full.']);
+    // The page keeps its blocker, and the switch says so again.
+    await expect(blockHere).toBeChecked();
+    await expect(
+      browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' }),
+    ).toBeVisible();
+  } finally {
+    await browser.close();
+  }
+});
+
 test('runs every scriptlet in a scope of its own, in its world and with its arguments', async () => {
   const browser = await launch();
   try {

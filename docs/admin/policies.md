@@ -17,6 +17,7 @@ A policy that is not on this page is unknown to this version. The browser ignore
 | [BlockThirdPartyCookies](#blockthirdpartycookies)                         | `privacy.blockThirdPartyCookies` | mandatory or recommended | no        |
 | [BookmarkBarEnabled](#bookmarkbarenabled)                                 | `bookmarks.bar`                  | mandatory or recommended | no        |
 | [CommandPaletteEnabled](#commandpaletteenabled)                           | `commandPalette.enabled`         | mandatory or recommended | no        |
+| [ContentBlockerAllowedSites](#contentblockerallowedsites)                 | `contentBlocker.allowedSites`    | mandatory or recommended | no        |
 | [ContentBlockerAnnoyancesEnabled](#contentblockerannoyancesenabled)       | `contentBlocker.annoyances`      | mandatory or recommended | no        |
 | [ContentBlockerCookieNoticesEnabled](#contentblockercookienoticesenabled) | `contentBlocker.cookieNotices`   | mandatory or recommended | no        |
 | [ContentBlockerEnabled](#contentblockerenabled)                           | `contentBlocker.enabled`         | mandatory or recommended | no        |
@@ -123,7 +124,7 @@ The minutes between two automatic checks for updates.
 - Value: integer (at least 60; at most 43200)
 - Levels: mandatory only
 - Sensitive: no
-- Restart needed: yes
+- Restart needed: no
 - Setting: none
 
 Without the policy, the browser checks every 240 minutes.
@@ -242,6 +243,41 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 ```xml
 <key>CommandPaletteEnabled</key>
 <false/>
+```
+
+## ContentBlockerAllowedSites
+
+The sites on which the content blocker is off, by host name or domain, such as `intranet.example.com`; a domain covers its hosts.
+
+- Value: list of strings (each must be a host name; at most 10000 entries)
+- Levels: mandatory or recommended
+- Sensitive: no
+- Restart needed: no
+- Setting: `contentBlocker.allowedSites`
+
+Mandatory, the list replaces the one of people and they cannot change it, also not with the switches of the shield and of site information or an import of settings; `[]` allows no site. Recommended, it is the list that people start from.
+
+Linux, in a file in `/etc/astela/policies/managed/` or `/etc/astela/policies/recommended/`:
+
+```json
+{
+  "ContentBlockerAllowedSites": ["intranet.example.com"]
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela\ContentBlockerAllowedSites" /v 1 /t REG_SZ /d "intranet.example.com" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>ContentBlockerAllowedSites</key>
+<array>
+  <string>intranet.example.com</string>
+</array>
 ```
 
 ## ContentBlockerAnnoyancesEnabled
@@ -372,38 +408,38 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 
 The search address of the address bar and the new tab page.
 
-- Value: string (at most 2048 characters; must be an https URL with %s)
+- Value: string (at most 2048 characters; must be an https URL with {searchTerms} or %s)
 - Levels: mandatory only
 - Sensitive: yes, applies only from machine-wide mandatory sources
 - Restart needed: no
 - Setting: `search.urlTemplate`
 
-An https address with `%s` where the search terms go, such as `https://search.example.com/search?q=%s`. Chrome's `{searchTerms}` is not supported.
+An https address with `{searchTerms}`, as in Chrome, or `%s` where the search terms go, such as `https://search.example.com/search?q={searchTerms}`. Chrome's other parameters, such as `{inputEncoding}`, are not replaced.
 
 Linux, in a file in `/etc/astela/policies/managed/`:
 
 ```json
 {
-  "DefaultSearchProviderSearchURL": "https://search.example.com/search?q=%s"
+  "DefaultSearchProviderSearchURL": "https://search.example.com/search?q={searchTerms}"
 }
 ```
 
 Windows:
 
 ```bat
-reg add "HKLM\SOFTWARE\Policies\Astela" /v DefaultSearchProviderSearchURL /t REG_SZ /d "https://search.example.com/search?q=%s" /f
+reg add "HKLM\SOFTWARE\Policies\Astela" /v DefaultSearchProviderSearchURL /t REG_SZ /d "https://search.example.com/search?q={searchTerms}" /f
 ```
 
 macOS, in a configuration profile for `io.github.secoolioo.astela`:
 
 ```xml
 <key>DefaultSearchProviderSearchURL</key>
-<string>https://search.example.com/search?q=%s</string>
+<string>https://search.example.com/search?q={searchTerms}</string>
 ```
 
 ## DeveloperToolsAvailability
 
-`2` keeps the developer tools closed: F12, Inspect in the context menu and the menu items do nothing. `0` and `1` allow them for web pages, as in Chromium.
+`2` keeps the developer tools closed: Inspect in the context menu does nothing, the menus have no Developer tools or grey it out, and F12 and the other keys of the developer tools reach the page. `0` and `1` allow them for web pages, as in Chromium.
 
 - Value: integer (one of `0`, `1`, `2`)
 - Levels: mandatory only
@@ -504,13 +540,13 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 
 The folder where downloads are saved; empty for the downloads folder of the system.
 
-- Value: string (at most 4096 characters; must be an absolute path)
+- Value: string (at most 4096 characters; must be an absolute path; must use only known variables)
 - Levels: mandatory or recommended
 - Sensitive: no
 - Restart needed: no
 - Setting: `downloads.folder`
 
-Unlike in Chromium, variables such as `${user_home}` are not replaced.
+The browser replaces `${user_name}` and `${machine_name}`, as Chrome does on Linux, such as in `/home/${user_name}/Downloads`. It refuses the value with any other variable, such as `${user_home}` or the variables of Chrome on Windows and macOS (`${documents}`, `${users}`).
 
 Linux, in a file in `/etc/astela/policies/managed/` or `/etc/astela/policies/recommended/`:
 
@@ -537,11 +573,13 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 
 The page of the home button and of its shortcut, as an http or https address; empty for the new tab page.
 
-- Value: empty or string (at most 8192 characters; must be a web address)
+- Value: empty or string (at most 8192 characters; must be an http or https address, or one without a scheme)
 - Levels: mandatory or recommended
 - Sensitive: no
 - Restart needed: no
 - Setting: `home.page`
+
+An address without a scheme, such as `intranet.example.com`, gets `https://`.
 
 Linux, in a file in `/etc/astela/policies/managed/` or `/etc/astela/policies/recommended/`:
 
@@ -708,7 +746,7 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 - Restart needed: no
 - Setting: none
 
-Chrome's `2`, which makes every window private, is not supported and not valid.
+With `1`, the menus have no New private window or grey it out, and its shortcut reaches the page. Chrome's `2`, which makes every window private, is not supported and not valid.
 
 Linux, in a file in `/etc/astela/policies/managed/`:
 
@@ -830,11 +868,13 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 
 The pages that open at the start when `RestoreOnStartup` is `4`, in this order.
 
-- Value: list of strings (each at most 8192 characters; each must be a web address; at most 100 entries)
+- Value: list of strings (each at most 8192 characters; each must be an http or https address, or one without a scheme; at most 100 entries)
 - Levels: mandatory or recommended
 - Sensitive: no
 - Restart needed: no
 - Setting: `startup.urls`
+
+An address without a scheme, such as `intranet.example.com`, gets `https://`. As in Chrome, the value is a list, also for one page.
 
 Linux, in a file in `/etc/astela/policies/managed/` or `/etc/astela/policies/recommended/`:
 
@@ -1087,7 +1127,7 @@ The update channel. The beta channel also receives the stable releases.
 - Value: string (one of `stable`, `beta`)
 - Levels: mandatory only
 - Sensitive: no
-- Restart needed: yes
+- Restart needed: no
 - Setting: none
 
 A switch from beta to stable never installs an older version; the browser stays on its version until a stable release overtakes it.
@@ -1120,7 +1160,7 @@ Installs only versions that start with this prefix, such as `0.1`: the highest v
 - Value: string (must be a version prefix)
 - Levels: mandatory only
 - Sensitive: no
-- Restart needed: yes
+- Restart needed: no
 - Setting: none
 
 Linux, in a file in `/etc/astela/policies/managed/`:
@@ -1184,10 +1224,10 @@ How the browser updates itself: `0` not at all, `1` by itself, `2` only when peo
 - Value: integer (one of `0`, `1`, `2`)
 - Levels: mandatory only
 - Sensitive: no
-- Restart needed: yes
+- Restart needed: no
 - Setting: none
 
-This version has no way to ask for an update yet, so `2` works like `0`. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves.
+With `2`, people check for updates in About, which also shows the state of the updates. A change applies at once: `0` stops the checks, cancels a download that runs and drops an update that is ready. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves.
 
 Linux, in a file in `/etc/astela/policies/managed/`:
 
@@ -1217,7 +1257,7 @@ The address of an organization mirror of the update feed, instead of the website
 - Value: string (must be a URL; must be an http or https URL)
 - Levels: mandatory only
 - Sensitive: yes, applies only from machine-wide mandatory sources
-- Restart needed: yes
+- Restart needed: no
 - Setting: none
 
 The browser reads `updates/v1/index.json` and `updates/v1/releases/<version>.json` below this address and checks their signatures as on the website.

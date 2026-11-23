@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import { brand } from '../../shared/brand.ts';
 import type { MessageKey, Translator } from '../i18n/i18n.ts';
+import { lockIcon, lockStyles } from './lock-icon.ts';
 import type { PageBridge } from './settings-client.ts';
 
 type Outcome = 'done' | 'settings' | 'failed';
@@ -20,6 +21,7 @@ export class DefaultBrowser extends LitElement {
 
   /** Styles of the row, scoped to its shadow root. */
   static override styles = css`
+    ${lockStyles}
     :host {
       display: flex;
       align-items: center;
@@ -98,7 +100,7 @@ export class DefaultBrowser extends LitElement {
               : this.t('defaultBrowser.not');
     return html`<span class="label">
         <span>${this.t('defaultBrowser.title')}</span>
-        <span class="note" role="status">${note}</span>
+        <span class="note" role="status">${this.allowed ? nothing : lockIcon}${note}</span>
       </span>
       ${
         this.allowed && this.supported && !this.isDefault

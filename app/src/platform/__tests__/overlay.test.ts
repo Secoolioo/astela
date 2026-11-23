@@ -154,6 +154,7 @@ const shield: OverlayContent = {
   blocked: 2,
   on: true,
   available: true,
+  managed: false,
   failed: false,
 };
 

@@ -14,6 +14,7 @@ import * as prettier from 'prettier';
 import type { PolicyDefinition } from '../../app/src/domain/policy/policy.ts';
 import { coreSettings } from '../../app/src/main/core-settings.ts';
 import { allPolicies } from '../../app/src/main/policy-definitions.ts';
+import { policyInputs } from '../../app/src/main/policy-inputs.ts';
 import { policyNotes, type PolicyNote } from './notes.ts';
 
 /** The names that the policy sources derive from, as in `brand.json`. */
@@ -106,13 +107,18 @@ export function patternOf(regex: RegExp): string {
 
 /**
  * Describes the value that a Valibot schema accepts. Transformations change only what the
- * browser makes of a value, so they do not count.
+ * browser makes of a value, so they do not count, and neither does what follows them, which
+ * checks the value that the browser made; `policy-inputs.ts` describes the values of the
+ * policies whose conversion matters, such as a search address with `{searchTerms}`.
  * @param schema - A schema, or a part of one.
  * @throws Error for a kind of schema or check that the reference does not know yet.
  */
 export function shapeOf(schema: object): ValueShape {
   const [base, ...actions] = parts(field(schema, 'pipe'));
-  if (base !== undefined) return actions.reduce(withAction, shapeOf(base));
+  if (base !== undefined) {
+    const made = actions.findIndex((action) => field(action, 'type') === 'transform');
+    return actions.slice(0, made === -1 ? undefined : made).reduce(withAction, shapeOf(base));
+  }
   const type = field(schema, 'type');
   switch (type) {
     case 'boolean':
@@ -200,8 +206,6 @@ function withAction(shape: ValueShape, action: object): ValueShape {
     case 'check':
       if (message === undefined) throw new Error('A check of a policy needs a message');
       return add({}, message);
-    case 'transform':
-      return shape;
     default:
       throw new Error(`The policy reference does not know checks of the type ${String(type)}`);
   }
@@ -247,12 +251,15 @@ export function exampleOf(
   if (example === undefined) {
     throw new Error(`${policy.name} needs an example in tools/policies/notes.ts`);
   }
-  const result = policy.schema['~standard'].validate(example);
-  if (result instanceof Promise) throw new Error(`${policy.name} checks its value asynchronously`);
-  if (result.issues !== undefined) {
-    throw new Error(
-      `The example of ${policy.name} is not valid: ${result.issues[0]?.message ?? ''}`,
-    );
+  for (const schema of [policy.schema, policyInputs.get(policy.name)]) {
+    const result = schema?.['~standard'].validate(example);
+    if (result instanceof Promise)
+      throw new Error(`${policy.name} checks its value asynchronously`);
+    if (result?.issues !== undefined) {
+      throw new Error(
+        `The example of ${policy.name} is not valid: ${result.issues[0]?.message ?? ''}`,
+      );
+    }
   }
   return example;
 }
@@ -339,10 +346,11 @@ function entriesOf(
     .toSorted((a, b) => a.name.localeCompare(b.name, 'en'))
     .map((policy) => {
       const note = noteOf(policy, notes);
+      // Where the browser converts a value first, the reference describes what it takes.
       return {
         policy,
         note,
-        shape: shapeOf(policy.schema),
+        shape: shapeOf(policyInputs.get(policy.name) ?? policy.schema),
         example: exampleOf(policy, note, defaults),
       };
     });

@@ -6,7 +6,12 @@ import type {
 } from '../platform/electron/browser-window.ts';
 import { acceleratorOf, shortcutsOf } from '../shared/menu-shortcuts.ts';
 import type { WindowCommand } from '../shared/shortcuts.ts';
-import { translatorFor } from './i18n/i18n.ts';
+import type { PolicyService } from '../domain/policy/policy-service.ts';
+import type { UpdateController } from '../domain/updates/update-controller.ts';
+import type { UpdateState } from '../domain/updates/update-service.ts';
+import type { Disposable } from '../shared/disposable.ts';
+import type { Translator } from '../shared/i18n/i18n.ts';
+import { translatorFor, type MessageKey } from './i18n/i18n.ts';
 
 /** The shortcut of a command that a menu shows: the first that Electron can write. */
 function acceleratorFor(
@@ -20,20 +25,127 @@ function acceleratorFor(
   return undefined;
 }
 
+/** What About shows of the updates and the check that it can start. */
+export type AboutUpdates = Pick<UpdateController, 'state' | 'check' | 'onDidChange'>;
+
 /**
- * Tells the version of the browser and of what it is built on.
- * @param window - The window whose menu or shortcut asked.
+ * The reasons of the codes of a failed check, those of the signed feed; every other code, such
+ * as one of electron-updater or of the network, gets a reason of its own.
  */
-export function showAbout(window: BrowserWindowController): void {
+const failureReasons: ReadonlyMap<string, MessageKey> = new Map([
+  ['unavailable', 'dialog.updateFailedUnavailable'],
+  ['signature', 'dialog.updateFailedSignature'],
+  ['expired', 'dialog.updateFailedExpired'],
+  ['rollback', 'dialog.updateFailedRollback'],
+  ['invalid', 'dialog.updateFailedInvalid'],
+  ['mismatch', 'dialog.updateFailedMismatch'],
+  ['no-artifact', 'dialog.updateFailedNoArtifact'],
+]);
+
+/**
+ * The line of About on the updates, in the language of the browser.
+ * @param i18n - The translator.
+ * @param state - The state of the updates.
+ */
+function updateLine(i18n: Translator<MessageKey>, state: UpdateState): string {
+  const name = app.getName();
+  if (state.kind === 'disabled') {
+    return i18n.t(
+      state.reason === 'policy'
+        ? 'dialog.updatesOffByPolicy'
+        : state.reason === 'install-type'
+          ? 'dialog.updatesFromSystem'
+          : 'dialog.updatesNoKeys',
+    );
+  }
+  if (state.kind === 'idle') {
+    if (state.lastCheckAt === undefined) return i18n.t('dialog.updatesNotChecked', { name });
+    const time = new Intl.DateTimeFormat(uiLocale(), {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(state.lastCheckAt);
+    return i18n.t('dialog.updatesUpToDate', { name, time });
+  }
+  if (state.kind === 'checking') return i18n.t('dialog.updatesChecking');
+  if (state.kind === 'downloading') {
+    return i18n.t('dialog.updatesDownloading', {
+      version: state.version,
+      percent: String(state.percent),
+    });
+  }
+  if (state.kind === 'ready')
+    return i18n.t('dialog.updatesReady', { version: state.version, name });
+  // The message of the error is for the log, in English; About tells the reason of its code.
+  return i18n.t('dialog.updatesFailed', {
+    reason: i18n.t(failureReasons.get(state.code) ?? 'dialog.updateFailedOther'),
+  });
+}
+
+/** The windows that show About now, and the key of an About without a window. */
+const showingAbout = new WeakSet<object>();
+const withoutWindow = {};
+
+/**
+ * Tells the version of the browser and of what it is built on, and the state of the updates.
+ * A window shows one About at a time. While nothing runs, About offers to check for updates,
+ * which a policy that wants updates only on request needs; a check shows About again at once,
+ * which says that it checks and shows again with the answer as soon as there is one.
+ * @param window - The window whose menu or shortcut asked; without one, as from the menu bar
+ *   of macOS while no window is open, About shows on its own.
+ * @param updates - The updates, once they have started after the first window.
+ */
+export function showAbout(
+  window: BrowserWindowController | undefined,
+  updates?: AboutUpdates,
+): void {
+  const parent = window?.window;
+  const key = parent ?? withoutWindow;
+  if (showingAbout.has(key)) return;
+  showingAbout.add(key);
   const i18n = translatorFor(uiLocale(), process.platform);
-  void dialog.showMessageBox(window.window, {
+  const state = updates?.state;
+  const offersCheck = state?.kind === 'idle' || state?.kind === 'failed';
+  // A message box cannot change, so the answer of a check closes it and shows About again. On
+  // macOS, a box without a window cannot be closed so; the answer shows once it is closed.
+  const answered = new AbortController();
+  let listener: Disposable | undefined;
+  if (state?.kind === 'checking') {
+    listener = updates?.onDidChange((next) => {
+      if (next.kind !== 'checking') answered.abort();
+    });
+  }
+  const options: Electron.MessageBoxOptions = {
     type: 'info',
     message: i18n.t('dialog.about', { name: app.getName(), version: app.getVersion() }),
     detail: [
+      ...(state === undefined ? [] : [updateLine(i18n, state), '']),
       `Electron ${process.versions.electron}`,
       `Chromium ${process.versions.chrome}`,
       `Node.js ${process.versions.node}`,
     ].join('\n'),
+    signal: answered.signal,
+    ...(offersCheck
+      ? {
+          buttons: [i18n.t('dialog.ok'), i18n.t('dialog.checkForUpdates')],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        }
+      : {}),
+  };
+  void (
+    parent === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(parent, options)
+  ).then(({ response }) => {
+    listener?.dispose();
+    showingAbout.delete(key);
+    if (parent?.isDestroyed() === true || updates === undefined) return;
+    if (answered.signal.aborted) {
+      showAbout(window, updates);
+    } else if (offersCheck && response === 1) {
+      // The check says so at once, so About shows that it checks.
+      void updates.check();
+      showAbout(window, updates);
+    }
   });
 }
 
@@ -57,15 +169,17 @@ export function showBlockerSaveError(window: BrowserWindowController, managed: b
  * page and the focus goes where the command puts it; the suggestions of the address bar stay.
  * A popover may take the command first, as it takes its shortcut, such as the command palette
  * its own commands. With no window open, a command that opens a window opens only that window,
- * and any other command runs in a new window.
+ * About shows on its own, and any other command runs in a new window.
  * @param windows - The browser's windows.
  * @param command - The command.
  * @param openPrivateWindow - Opens a private window, if people may.
+ * @param updates - The updates, once they have started, which About shows without a window.
  */
 export function runFromMenuBar(
   windows: Pick<WindowManager, 'lastUsed' | 'open'>,
   command: WindowCommand,
   openPrivateWindow: () => void,
+  updates: () => AboutUpdates | undefined,
 ): void {
   const front = windows.lastUsed;
   if (front !== undefined) {
@@ -77,6 +191,8 @@ export function runFromMenuBar(
     front.execute(command);
   } else if (command === 'window.newPrivate') {
     openPrivateWindow();
+  } else if (command === 'app.about') {
+    showAbout(undefined, updates());
   } else {
     const opened = windows.open();
     if (command !== 'window.new' && command !== 'tab.new') opened.execute(command);
@@ -91,7 +207,9 @@ export function runFromMenuBar(
  * @param run - Runs a command in the frontmost window.
  * @param table - The keyboard shortcuts of the windows, which the items show.
  * @param options - Whether the command palette, split view, the reader view and picture in
- *   picture are on; their items are missing while they are off.
+ *   picture are on; their items are missing while they are off. The policies, which can turn
+ *   private windows and the developer tools off; their items are greyed out then, as in Chrome,
+ *   and the table has no shortcut for them.
  */
 export function macMenuBar(
   run: (command: WindowCommand) => void,
@@ -101,9 +219,12 @@ export function macMenuBar(
     readonly splitView?: boolean;
     readonly reader?: boolean;
     readonly pictureInPicture?: boolean;
+    readonly policies?: Pick<PolicyService, 'getMandatory'>;
   } = { palette: true },
 ): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
+  const privateWindows = options.policies?.getMandatory('PrivateModeAvailability')?.value !== 1;
+  const developerTools = options.policies?.getMandatory('DeveloperToolsAvailability')?.value !== 2;
   // The window handles the keys itself, also while a page has the focus.
   const keys = (name: WindowCommand): Electron.MenuItemConstructorOptions => {
     const accelerator = acceleratorFor(table, name);
@@ -112,9 +233,11 @@ export function macMenuBar(
   const command = (
     label: Parameters<typeof i18n.t>[0],
     name: WindowCommand,
+    enabled = true,
   ): Electron.MenuItemConstructorOptions => ({
     label: i18n.t(label),
     ...keys(name),
+    ...(enabled ? {} : { enabled }),
     click: () => run(name),
   });
   return Menu.buildFromTemplate([
@@ -122,7 +245,8 @@ export function macMenuBar(
       role: 'appMenu',
       // Roles name their items in English, so every item gets the text of the catalog.
       submenu: [
-        { role: 'about', label: i18n.t('menu.about') },
+        // About shows the state of the updates and can start a check, as the browser menu's.
+        command('menu.about', 'app.about'),
         { type: 'separator' },
         command('menu.settings', 'settings.open'),
         { type: 'separator' },
@@ -140,7 +264,7 @@ export function macMenuBar(
       submenu: [
         command('menu.newTab', 'tab.new'),
         command('menu.newWindow', 'window.new'),
-        command('menu.newPrivateWindow', 'window.newPrivate'),
+        command('menu.newPrivateWindow', 'window.newPrivate', privateWindows),
         { type: 'separator' },
         // As in every app of macOS, Close Window closes the key window, which can also be one of
         // the developer tools, and a browser window closes as with its close button. With no key
@@ -192,7 +316,7 @@ export function macMenuBar(
           : [command('menu.pictureInPicture', 'media.pictureInPicture')]),
         { type: 'separator' },
         command('menu.viewSource', 'page.source'),
-        command('menu.developerTools', 'devtools.toggle'),
+        command('menu.developerTools', 'devtools.toggle', developerTools),
       ],
     },
     {

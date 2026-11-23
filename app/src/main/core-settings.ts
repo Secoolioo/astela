@@ -49,9 +49,14 @@ import {
 } from '../shared/workspaces.ts';
 import { zoomFactors } from '../shared/zoom.ts';
 
-/** The search address of an engine: https, with `%s` for the query. */
+/**
+ * The search address of an engine: https, with `%s` for the query. Chrome's `{searchTerms}`
+ * becomes `%s`, so that its policy files and search addresses work as they are; the policy
+ * reference describes the values that its policy takes (policy-inputs.ts).
+ */
 const SearchAddress = v.pipe(
   v.string(),
+  v.transform((url) => url.replaceAll('{searchTerms}', '%s')),
   v.maxLength(2048),
   v.regex(/^https:\/\/[^\s]+%s[^\s]*$/, 'Must be an https URL with %s'),
 );
@@ -273,7 +278,10 @@ export const ContentBlockerSetting = defineSetting<boolean>({
   ui: { section: 'privacy', control: 'toggle', order: 1 },
 });
 
-/** Sites, by host name or domain, on which the content blocker is off; a domain covers its hosts. */
+/**
+ * Sites, by host name or domain, on which the content blocker is off; a domain covers its hosts.
+ * A mandatory policy sets the list and keeps people from changing it, also from the shield.
+ */
 export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   key: 'contentBlocker.allowedSites',
   schema: v.pipe(
@@ -282,6 +290,7 @@ export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   ),
   default: [],
   scope: 'global',
+  policy: { name: 'ContentBlockerAllowedSites', recommended: true },
   ui: { section: 'privacy', control: 'list', order: 4 },
 });
 
@@ -370,9 +379,15 @@ export const SitePermissionsSetting = defineSetting<SitePermissions>({
   ui: { section: 'privacy', control: 'list', order: 5 },
 });
 
-/** A web address, such as a page to open at start. */
+/**
+ * A web address, such as a page to open at start. One without a scheme gets `https://`, as
+ * the settings page and Chrome's policies fix up `example.com`; another scheme than http and
+ * https stays and is refused. A scheme followed by a port number, as in `intranet:8080`, is a
+ * host (policy-inputs.ts).
+ */
 const WebAddress = v.pipe(
   v.string(),
+  v.transform((address) => (/^\w[\w+.-]*:(?!\d)/.test(address) ? address : `https://${address}`)),
   v.maxLength(8192),
   v.regex(/^https?:\/\/\S+$/i, 'Must be a web address'),
 );
@@ -543,14 +558,19 @@ export const HomePageSetting = defineSetting<string>({
   ui: { section: 'startup', control: 'text', order: 4 },
 });
 
-/** The folder where downloads are saved; empty for the downloads folder of the system. */
+/**
+ * The folder where downloads are saved; empty for the downloads folder of the system. A
+ * relative path would land wherever the browser was started from. Of Chrome's variables, it
+ * takes those that every system knows, which the browser replaces where it uses the folder
+ * (download-folder.ts); another variable refuses the folder.
+ */
 export const DownloadFolderSetting = defineSetting<string>({
   key: 'downloads.folder',
-  // A relative path would land wherever the browser was started from.
   schema: v.pipe(
     v.string(),
     v.maxLength(4096),
     v.check((folder) => folder === '' || isAbsolute(folder), 'Must be an absolute path'),
+    v.regex(/^(?!.*\$\{(?!(user_name|machine_name)\}))/, 'Must use only known variables'),
   ),
   default: '',
   scope: 'global',

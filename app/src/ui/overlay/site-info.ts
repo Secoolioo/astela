@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import type { CertificateSummary, SiteInformation } from '../../shared/ipc/overlay-contracts.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import { switchStyles } from '../ui-kit/choice-styles.ts';
@@ -455,7 +456,10 @@ export class SiteInfoPopover extends LitElement {
     </div>`;
   }
 
-  /** The switch of the content blocker for the site, and what it blocked on the page. */
+  /**
+   * The switch of the content blocker for the site, which a policy that sets the sites without
+   * blocking locks, and what it blocked on the page.
+   */
   private renderBlocker(content: SiteInformation): TemplateResult | typeof nothing {
     const blocker = content.blocker;
     if (blocker === null) return nothing;
@@ -466,8 +470,8 @@ export class SiteInfoPopover extends LitElement {
         <input
           type="checkbox"
           role="switch"
-          .checked=${blocker.on}
-          ?disabled=${!blocker.available}
+          .checked=${live(blocker.on)}
+          ?disabled=${!blocker.available || blocker.managed}
           @change=${() => this.invoke('overlay.toggleSiteBlocking', { id: content.id })}
         />
       </label>
@@ -477,9 +481,11 @@ export class SiteInfoPopover extends LitElement {
       ${
         blocker.failed
           ? html`<p class="note" role="alert">${this.t('settings.contentBlockerFailed')}</p>`
-          : blocker.available
-            ? nothing
-            : html`<p class="note">${this.t('overlay.blockerOff')}</p>`
+          : !blocker.available
+            ? html`<p class="note">${this.t('overlay.blockerOff')}</p>`
+            : blocker.managed
+              ? html`<p class="note">${this.t('settings.managed')}</p>`
+              : nothing
       }
     </div>`;
   }

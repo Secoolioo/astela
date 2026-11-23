@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import type { MessageKey, Translator } from '../i18n/i18n.ts';
+import { lockIcon, lockStyles } from './lock-icon.ts';
 import type { PageBridge } from './settings-client.ts';
 
 /** A profile of another browser, as the browser process reports it. */
@@ -53,6 +54,7 @@ export class BrowserImport extends LitElement {
 
   /** Styles of the list, scoped to its shadow root. */
   static override styles = css`
+    ${lockStyles}
     :host {
       display: block;
     }
@@ -143,7 +145,7 @@ export class BrowserImport extends LitElement {
 
   protected override render(): TemplateResult | typeof nothing {
     if (this.profiles === undefined) return nothing;
-    if (!this.enabled) return html`<p class="note">${this.t('import.managed')}</p>`;
+    if (!this.enabled) return html`<p class="note">${lockIcon}${this.t('import.managed')}</p>`;
     if (this.profiles.length === 0) return html`<p class="note">${this.t('import.none')}</p>`;
     const tabs = this.profiles.some((profile) => profile.tabs);
     return html`<div class="kinds" role="group" aria-label=${this.t('import.what')}>

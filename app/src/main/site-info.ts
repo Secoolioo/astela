@@ -279,7 +279,8 @@ function connect(deps: SiteInfoDependencies): void {
     window?.openPage('settings', `#${SitePermissionsSetting.key}`);
     return null;
   });
-  // The switch of the content blocker acts only while the popover shows the site of the page.
+  // The switch of the content blocker acts only while the popover shows the site of the page;
+  // a refused change sends the popover again, so that its switch goes back.
   connectBlockerSwitch('site', deps, {
     allows: (window, overlay, id) => {
       const state = opened.get(overlay);
@@ -320,15 +321,16 @@ function connect(deps: SiteInfoDependencies): void {
 /**
  * Shows what is true now in open site information, or closes it once the tab no longer shows
  * the site that it opened for.
+ * @param again - Sends it also when it did not change, as after a refused change.
  */
-function refresh(window: BrowserWindowController, overlay: WindowOverlay): void {
+function refresh(window: BrowserWindowController, overlay: WindowOverlay, again = false): void {
   const shown = overlay.content;
   const state = opened.get(overlay);
   if (shown?.kind !== 'site' || state === undefined || shown.id !== state.id) return;
   if (dependencies === undefined) return;
   const next = contentOf(dependencies, window, state);
   if (next === undefined) overlay.close();
-  else if (JSON.stringify(next) !== JSON.stringify(shown)) overlay.update(next);
+  else if (again || JSON.stringify(next) !== JSON.stringify(shown)) overlay.update(next);
 }
 
 /** Whether the window's active tab still shows the site that site information opened for. */

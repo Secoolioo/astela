@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing, svg, type TemplateResult } from 'lit';
+import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { bangs } from '../../shared/bangs.ts';
@@ -31,6 +31,7 @@ import { catalogs, isMessageKey, type MessageKey, type Translator } from '../i18
 import { choiceStyles, switchStyles } from '../ui-kit/choice-styles.ts';
 import { keyNamesOf } from '../ui-kit/key-names.ts';
 import { layoutPreview, layoutPreviewStyles } from '../ui-kit/layout-previews.ts';
+import { lockIcon, lockStyles } from '../ui-kit/lock-icon.ts';
 import {
   SettingsClient,
   paintSwatches,
@@ -91,6 +92,7 @@ export class SettingsPage extends LitElement {
     choiceStyles,
     switchStyles,
     layoutPreviewStyles,
+    lockStyles,
     css`
       :host {
         display: grid;
@@ -403,12 +405,6 @@ export class SettingsPage extends LitElement {
         border-radius: var(--radius-2);
         background: var(--surface-raised);
       }
-      .lock {
-        width: 12px;
-        height: 12px;
-        margin-right: var(--space-1);
-        vertical-align: -1px;
-      }
       dialog {
         max-width: 420px;
         border: 1px solid var(--line-1);
@@ -598,6 +594,8 @@ export class SettingsPage extends LitElement {
   private client: SettingsClient | undefined;
   /** Stops listening for recorded shortcuts. */
   private unsubscribeShortcuts: (() => void) | undefined;
+  /** Stops listening for shortcuts that changed without a change of a setting. */
+  private unsubscribeShortcutChanges: (() => void) | undefined;
   /** Stops listening for the browser's requests to show a row again. */
   private unsubscribeReveal: (() => void) | undefined;
   /** The value of the shortcut setting, as JSON, that the shortcuts were loaded for. */
@@ -642,6 +640,12 @@ export class SettingsPage extends LitElement {
       'settings.shortcutRecorded',
       (payload) => void this.takeShortcut(payload),
     );
+    // A policy can turn commands off, and with them their shortcuts, without a change of a
+    // setting.
+    this.unsubscribeShortcutChanges = this.bridge.on('settings.shortcutsChanged', () => {
+      this.shortcutsLoaded = undefined;
+      this.loadShortcuts();
+    });
     // The browser opens the address that the page shows already, such as from a link to a
     // row: no change of the address tells the page, so the browser does.
     this.unsubscribeReveal = this.bridge.on('settings.reveal', (payload) => {
@@ -676,6 +680,7 @@ export class SettingsPage extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.unsubscribeShortcuts?.();
+    this.unsubscribeShortcutChanges?.();
     this.unsubscribeReveal?.();
     removeEventListener('hashchange', this.onHashChange);
     removeEventListener('scroll', this.onScroll);
@@ -1346,9 +1351,11 @@ export class SettingsPage extends LitElement {
     return html`<div class="row stack">
       <span class="label">
         <span id="allowed-sites">${t('settings.allowedSites')}</span>
-        <span class="note">
-          ${setting?.locked === true ? t('settings.managed') : t('settings.allowedSitesNote')}
-        </span>
+        ${
+          this.isManaged(setting)
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.allowedSitesNote')}</span>`
+        }
       </span>
       ${
         sites.length === 0
@@ -1400,9 +1407,11 @@ export class SettingsPage extends LitElement {
     return html`<div class="row stack">
       <span class="label">
         <span id="site-permissions">${t('settings.sitePermissions')}</span>
-        <span class="note">
-          ${setting?.locked === true ? t('settings.managed') : t('settings.sitePermissionsNote')}
-        </span>
+        ${
+          this.isManaged(setting)
+            ? this.managedNote(setting)
+            : html`<span class="note">${t('settings.sitePermissionsNote')}</span>`
+        }
       </span>
       ${
         origins.length === 0
@@ -2093,13 +2102,10 @@ export class SettingsPage extends LitElement {
     return html`<div class="row">
       <span class="label">
         <span>${this.t('settings.downloadFolder')}</span>
-        ${
-          this.isManaged(setting)
-            ? this.managedNote(setting)
-            : html`<span class="note path">
-                ${folder === '' ? this.t('settings.downloadFolderSystem') : folder}
-              </span>`
-        }
+        <span class="note path">
+          ${folder === '' ? this.t('settings.downloadFolderSystem') : folder}
+        </span>
+        ${this.managedNote(setting)}
       </span>
       <button
         type="button"
@@ -3085,12 +3091,6 @@ export class SettingsPage extends LitElement {
  * `https://www.example.com/page` without its `www.`; `undefined` when it is no site name.
  * @param input - The text of the field.
  */
-/** The mark of values that the organization sets. */
-const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
-  <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5" />
-</svg>`;
-
 /** The note of a setting whose value of the organization does not apply, by the reason. */
 const policyIgnoredNotes = {
   invalid: 'settings.policyIgnored.invalid',

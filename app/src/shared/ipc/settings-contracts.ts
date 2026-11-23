@@ -212,6 +212,17 @@ export const ShortcutRecorded = defineEvent({
   capability: 'page:settings',
 });
 
+/**
+ * Sent to the settings page when the shortcuts of the windows changed without a change of a
+ * setting, as when a policy turns private windows or the developer tools off; the page reads
+ * them again.
+ */
+export const ShortcutsChanged = defineEvent({
+  channel: 'settings.shortcutsChanged',
+  payload: v.strictObject({}),
+  capability: 'page:settings',
+});
+
 /** Saves the colors of the custom theme in a file that the user picks. */
 export const ExportTheme = defineRequest({
   channel: 'settings.exportTheme',

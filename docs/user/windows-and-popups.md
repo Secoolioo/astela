@@ -45,4 +45,4 @@ The list belongs to the page and empties when the page goes to another one. You 
 - Links, popups and tabs that a page of a private window opens stay private.
 - Private windows have no [workspaces](workspaces.md).
 
-A private window does not make you anonymous: the sites you visit, your network and your organization can still see what you load. Your organization can turn private windows off; see the policy [`PrivateModeAvailability`](../admin/policies.md#privatemodeavailability) in the admin guide.
+A private window does not make you anonymous: the sites you visit, your network and your organization can still see what you load. Your organization can turn private windows off; their shortcut then reaches the page, and the keyboard shortcuts in the settings show none for them. See the policy [`PrivateModeAvailability`](../admin/policies.md#privatemodeavailability) in the admin guide.

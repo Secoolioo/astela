@@ -64,7 +64,8 @@ function connect(deps: ShieldPopoverDependencies): void {
   const { router, windows } = deps;
   const windowOf = (overlay: WindowOverlay): BrowserWindowController | undefined =>
     windowOfOverlay(windows.all, overlay);
-  // The switch for the site acts for the active tab, whose state the popover shows.
+  // The switch for the site acts for the active tab, whose state the popover shows; a refused
+  // change sends the popover again, so that its switch goes back.
   connectBlockerSwitch('shield', deps, { allows: () => true, refresh });
   router.handle(OpenBlockerSettings, (_request, { sender }) => {
     const overlay = overlayBySender(sender.id);
@@ -100,11 +101,14 @@ function shieldOf(
   return state === undefined ? undefined : { kind: 'shield', anchor, ...state };
 }
 
-/** Shows the current state of the active tab in an open popover, or closes it. */
-function refresh(window: BrowserWindowController, overlay: WindowOverlay): void {
+/**
+ * Shows the current state of the active tab in an open popover, or closes it.
+ * @param again - Sends the state also when it did not change, as after a refused change.
+ */
+function refresh(window: BrowserWindowController, overlay: WindowOverlay, again = false): void {
   const shown = overlay.content;
   if (shown?.kind !== 'shield' || dependencies === undefined) return;
   const next = shieldOf(dependencies, window, shown.anchor);
   if (next === undefined) overlay.close();
-  else if (JSON.stringify(next) !== JSON.stringify(shown)) overlay.update(next);
+  else if (again || JSON.stringify(next) !== JSON.stringify(shown)) overlay.update(next);
 }
