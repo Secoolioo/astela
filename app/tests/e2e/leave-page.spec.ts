@@ -73,12 +73,19 @@ async function answer(browser: Browser, button: number): Promise<void> {
 
 /**
  * Types text into the field of a page, after a click into it, as a person does: into a page that
- * has the focus. The browser gives the page of a new tab the focus a moment after it has loaded,
- * and the keys wait for that, as in dialogs.spec.ts. Should the text still not arrive, the error
- * tells what the page saw of the click and the keys.
+ * has the focus and shows. The browser gives the page of a new tab the focus a moment after it has
+ * loaded, as in dialogs.spec.ts, and the input waits until the page has painted for the first
+ * time: on macOS, a page that had the focus once got none of the input that came right after it
+ * had loaded. Should the text still not arrive, the error tells what the page saw of the click and
+ * the keys.
  */
 async function typeInto(browser: Browser, url: string, text: string): Promise<void> {
   await expect.poll(() => focusedView(browser)).toBe(url);
+  await expect
+    .poll(() =>
+      runIn(browser, url, `performance.getEntriesByName('first-contentful-paint').length`),
+    )
+    .toBe(1);
   await runIn(
     browser,
     url,
@@ -101,7 +108,7 @@ async function typeInto(browser: Browser, url: string, text: string): Promise<vo
     const seen = await runIn(
       browser,
       url,
-      `JSON.stringify({ seen: Reflect.get(window, 'typedSeen'), active: document.activeElement?.id || document.activeElement?.nodeName, focus: document.hasFocus() })`,
+      `JSON.stringify({ seen: Reflect.get(window, 'typedSeen'), active: document.activeElement?.id || document.activeElement?.nodeName, focus: document.hasFocus(), visible: document.visibilityState, paints: performance.getEntriesByType('paint').map((entry) => entry.name) })`,
     );
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
