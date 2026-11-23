@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { FixtureServer, launch, pageReport } from './harness.ts';
+import { clickNative, openTab, stateOf } from './native.ts';
 
 test('fails a test with a report of the browser process when the shell stops answering', async () => {
   const browser = await launch();
@@ -192,6 +193,23 @@ test('records how far the browser got with a view whose first page does not come
     expect(text).toMatch(/^Pages of the browser:$/m);
   } finally {
     release();
+    await server.stop();
+  }
+});
+
+test('clicks a page with native input once it has painted, as Chromium drops the input before', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/late-paint.html`;
+    await openTab(browser, url);
+    const count = (await stateOf(browser)).tabs.length;
+    // The page has loaded, but paints its first content only a while later.
+    await clickNative(browser, url, `document.querySelector('#open')`);
+    await expect.poll(async () => (await stateOf(browser)).tabs.length).toBe(count + 1);
+  } finally {
+    await browser.close();
     await server.stop();
   }
 });

@@ -169,7 +169,41 @@ export async function dialogWith(
 }
 
 /**
- * Clicks an element of a view with native mouse events, at its middle.
+ * Waits until a web page has painted its first content: Chromium drops the native input for a
+ * page until then, and on a slow machine, as on macOS in CI, that can come well after the page
+ * has loaded. The browser's own views, such as the overlay, load before they show and so report
+ * no first paint; a test waits for what they show before it clicks it.
+ * @param browser - The running browser.
+ * @param prefix - The start of the address of the view, or the whole address of a web page.
+ */
+async function painted(browser: Browser, prefix: string): Promise<void> {
+  if (prefix.startsWith('app://')) return;
+  await expect
+    .poll(
+      () =>
+        browser.main.evaluate(async ({ webContents }, at) => {
+          const view = webContents
+            .getAllWebContents()
+            .find(
+              (contents) =>
+                !contents.isDestroyed() &&
+                (at.startsWith('app://')
+                  ? contents.getURL().startsWith(at)
+                  : contents.getURL() === at),
+            );
+          if (view === undefined) throw new Error(`No view at ${at}`);
+          return (await view.executeJavaScript(
+            `performance.getEntriesByName('first-contentful-paint').length > 0`,
+          )) as boolean;
+        }, prefix),
+      { message: `The page at ${prefix} has not painted its first content`, timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
+/**
+ * Clicks an element of a view with native mouse events, at its middle, once the view has
+ * painted its first content.
  * @param browser - The running browser.
  * @param prefix - The start of the address of the view.
  * @param element - A script that gives the element, such as `document.querySelector('a')`.
@@ -179,6 +213,7 @@ export async function clickNative(
   prefix: string,
   element: string,
 ): Promise<void> {
+  await painted(browser, prefix);
   await browser.main.evaluate(
     async ({ webContents }, { at, code }) => {
       const view = webContents
@@ -205,12 +240,14 @@ export async function clickNative(
 }
 
 /**
- * Types text into the focused field of a view with native keys, as a person does.
+ * Types text into the focused field of a view with native keys, as a person does, once the view
+ * has painted its first content.
  * @param browser - The running browser.
  * @param prefix - The start of the address of the view.
  * @param text - The text.
  */
 export async function typeNative(browser: Browser, prefix: string, text: string): Promise<void> {
+  await painted(browser, prefix);
   await browser.main.evaluate(
     ({ webContents }, { at, keys }) => {
       const view = webContents
