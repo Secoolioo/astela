@@ -66,7 +66,7 @@ const keptAnswers = 4;
 /** How many visited pages the browser process reads, before it leaves out repeated addresses. */
 const historyReads = { all: 12, history: 60 } as const;
 /** The content of the overlay that a site's question shows, which the palette never replaces. */
-const questions = new Set<string>(['permission', 'login', 'screen']);
+const questions = new Set<string>(['permission', 'login', 'screen', 'dialog']);
 /** An answer that names nothing, for a palette that closed or opened again meanwhile. */
 const noAnswer = { answer: 0, typed: '', enter: false, items: [] } as const;
 

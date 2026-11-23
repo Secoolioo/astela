@@ -4,12 +4,13 @@ import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import type { BlockerFrames } from '../blocker-frames.ts';
 
-type FrameListener = (event: IpcMainEvent) => void;
+type FrameListener = (event: IpcMainEvent, ...args: unknown[]) => void;
 type ElementsHandler = (event: IpcMainInvokeEvent, payload: unknown) => Promise<unknown>;
 type KeyListener = (event: IpcMainEvent, kind: unknown, request: unknown) => void;
 type MediaListener = (event: IpcMainEvent, keySystem: unknown) => void;
 const channels: {
   frame?: FrameListener;
+  prompt?: FrameListener;
   elements?: ElementsHandler;
   keys?: KeyListener;
   media?: MediaListener;
@@ -21,6 +22,7 @@ vi.mock('electron', () => ({
       if (channel === 'blocker.frame') channels.frame = listener;
       if (channel === 'webauthn.request') channels.keys = listener;
       if (channel === 'media.protected') channels.media = listener;
+      if (channel === 'page.prompt') channels.prompt = listener;
     },
     handle: (channel: string, handler: ElementsHandler) => {
       if (channel === 'blocker.elements') channels.elements = handler;
@@ -44,7 +46,12 @@ function frameRequest(): IpcMainEvent & { returnValue: unknown } {
 describe('listenToFrames', () => {
   it('lets a frame that asks while the answers load wait for them', async () => {
     const { promise: loading, resolve: loaded } = Promise.withResolvers<BlockerFrames>();
-    const addPreload = listenToFrames(() => loading, '/app/frame.cjs', logger().logger);
+    const addPreload = listenToFrames(
+      () => loading,
+      '/app/frame.cjs',
+      logger().logger,
+      () => undefined,
+    );
     const request = frameRequest();
     channels.frame?.(request);
     const report = channels.elements?.({} as IpcMainInvokeEvent, { classes: ['ad'] });
@@ -83,6 +90,7 @@ describe('listenToFrames', () => {
       () => Promise.reject(new Error('unused')),
       '/app/frame.cjs',
       logger().logger,
+      () => undefined,
       { report, chooseAccount, protectedMedia },
     );
     const frame = { origin: 'https://example.com' };
@@ -123,11 +131,29 @@ describe('listenToFrames', () => {
 
   it('answers frames without rules when the answers cannot load, so no page waits forever', async () => {
     const { logger: log, sink } = logger();
-    listenToFrames(() => Promise.reject(new Error('missing chunk')), '/app/frame.cjs', log);
+    listenToFrames(
+      () => Promise.reject(new Error('missing chunk')),
+      '/app/frame.cjs',
+      log,
+      () => undefined,
+    );
     const request = frameRequest();
     channels.frame?.(request);
     await vi.waitFor(() => expect(request.returnValue).toBeNull());
     expect(await channels.elements?.({} as IpcMainInvokeEvent, { classes: [] })).toBe('');
     expect(sink.records.some((record) => record.level === 'error')).toBe(true);
+  });
+
+  it('hands the prompt() of a frame over with what the frame sent', () => {
+    const prompts: unknown[][] = [];
+    listenToFrames(
+      () => Promise.reject(new Error('unused')),
+      '/app/frame.cjs',
+      logger().logger,
+      (event, message, value) => prompts.push([event, message, value]),
+    );
+    const request = frameRequest();
+    channels.prompt?.(request, 'Your name?', 'x');
+    expect(prompts).toEqual([[request, 'Your name?', 'x']]);
   });
 });

@@ -159,6 +159,17 @@ const shield: OverlayContent = {
 
 const suggestions: OverlayContent = { kind: 'suggestions', items: [], selected: -1 };
 
+const dialog: OverlayContent = {
+  kind: 'dialog',
+  id: 1,
+  type: 'alert',
+  site: 'example.com',
+  embedded: false,
+  message: 'Hello',
+  value: '',
+  stop: false,
+};
+
 /** A key press as Electron reports it before the page sees it. */
 function key(name: string, type: Input['type'] = 'keyDown', more: Partial<Input> = {}): Input {
   return {
@@ -367,6 +378,96 @@ describe('WindowOverlay', () => {
     overlay.close();
     vi.runAllTimers();
     expect(calls).toEqual([null]);
+  });
+
+  it('lies over a part of the window for a question of a page, follows it and takes the focus', () => {
+    const { window, overlay, children, focus, emit } = windowOf();
+    let area = { x: 0, y: 80, width: 1200, height: 720 };
+    const closed: string[] = [];
+    overlay.onDidClose(() => void closed.push('closed'));
+    overlay.open(dialog, { sheet: () => area });
+    expect(children[0]?.bounds).toEqual(area);
+    expect(children[0]?.webContents.focused).toBe(true);
+    // The shell stays with people: the top row still moves the window.
+    expect(overlay.coversWindow).toBe(false);
+    expect(window.overlay).toBe(overlay);
+    // A change of size or of the layout moves the question with the page instead of closing it.
+    area = { x: 600, y: 80, width: 600, height: 720 };
+    emit('resize');
+    overlay.place();
+    expect(children[0]?.bounds).toEqual(area);
+    expect(overlay.content).toBe(dialog);
+    // Other content in its place is no close; a close is, and the focus goes back to the page.
+    overlay.open(shield);
+    expect(closed).toEqual([]);
+    overlay.close('now');
+    expect(closed).toEqual(['closed']);
+    expect(focus).toEqual(['content']);
+    // Nothing to place while the overlay is closed.
+    overlay.place();
+    expect(children).toHaveLength(0);
+  });
+
+  it('keeps a question over a page for a shortcut of the window, which runs, and leaves people the focus', () => {
+    const { overlay, children, executed, focus } = windowOf();
+    const area = { x: 0, y: 80, width: 1200, height: 720 };
+    overlay.open(dialog, {
+      sheet: () => area,
+      keys: { onCommand: (command) => command === 'palette.open' },
+    });
+    expect(overlay.overPage).toBe(true);
+    // The address bar takes the focus, and the question stays over the page.
+    expect(press(children[0], key('l', 'keyDown', { control: true, code: 'KeyL' }))).toBe(false);
+    expect(executed).toEqual(['omnibox.focus']);
+    expect(overlay.content).toBe(dialog);
+    // A shortcut that the question takes still does nothing.
+    expect(press(children[0], key('k', 'keyDown', { control: true, code: 'KeyK' }))).toBe(false);
+    expect(executed).toEqual(['omnibox.focus']);
+    // Once the focus is elsewhere, a close leaves it there.
+    const view = children[0];
+    if (view === undefined) throw new Error('No view');
+    view.webContents.focused = false;
+    overlay.close('now');
+    expect(focus).toEqual([]);
+    expect(overlay.overPage).toBe(false);
+    // A question that has the focus gives it back to the page.
+    overlay.open(dialog, { sheet: () => area });
+    overlay.close('now');
+    expect(focus).toEqual(['content']);
+  });
+
+  it('shows a question again without the focus when asked to, and gives none back', () => {
+    const { overlay, children, focus, emit } = windowOf();
+    overlay.open(dialog, { sheet: () => ({ x: 0, y: 80, width: 600, height: 720 }), focus: false });
+    expect(children[0]?.webContents.focused).toBe(false);
+    emit('focus');
+    expect(children[0]?.webContents.focused).toBe(false);
+    overlay.close('now');
+    expect(focus).toEqual([]);
+  });
+
+  it('gives a question that opened while its window had no focus the focus with the window', () => {
+    const { overlay, children, emit, windowFocus } = windowOf();
+    windowFocus.focused = false;
+    overlay.open(dialog, { sheet: () => ({ x: 0, y: 80, width: 1200, height: 720 }) });
+    const view = children[0];
+    expect(view?.webContents.focused).toBe(false);
+    windowFocus.focused = true;
+    emit('focus');
+    expect(view?.webContents.focused).toBe(true);
+    // Once it had the focus, the window leaves the focus where people put it.
+    if (view === undefined) throw new Error('No view');
+    view.webContents.focused = false;
+    emit('blur');
+    emit('focus');
+    expect(view.webContents.focused).toBe(false);
+    // Nothing takes the focus after the question closed.
+    overlay.close('now');
+    windowFocus.focused = false;
+    overlay.open(suggestions, { bounds: { x: 0, y: 40, width: 600, height: 300 } });
+    windowFocus.focused = true;
+    emit('focus');
+    expect(view.webContents.focused).toBe(false);
   });
 
   it('calls what the content asked for once, when it closes or something takes its place', () => {

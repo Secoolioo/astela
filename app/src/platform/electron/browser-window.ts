@@ -569,7 +569,11 @@ export interface WindowCommands {
   ): void;
 }
 
-/** An item of the menu of a tab that the window runs, or the close of a tab with a key. */
+/**
+ * An item of the menu of a tab that the window runs, or the close of a tab that people start,
+ * with its button, its menu, the shortcut or a key of the tab strip, whose web page may ask to
+ * stay first.
+ */
 export type TabAction =
   | 'newTabRight'
   | 'duplicate'
@@ -636,6 +640,8 @@ function isLaterCommand(command: WindowCommand): command is LaterCommand {
 export interface OverlayHandle {
   /** Whether the overlay covers the whole window, rather than a list below the address bar. */
   readonly coversWindow: boolean;
+  /** Whether the overlay shows a question over a page, which stays while that page shows. */
+  readonly overPage: boolean;
   /** The popover of a button of the shell that the overlay shows, or `null`. */
   readonly popover: ShellPopover | null;
   /**
@@ -645,6 +651,8 @@ export interface OverlayHandle {
   close(how?: 'animate' | 'now'): void;
   /** Puts the overlay above the other views of the window again, after one of them was added. */
   raise(): void;
+  /** Puts a question over a part of the window, such as a page, where that part lies now. */
+  place(): void;
   /**
    * Offers a command to what the overlay shows, as its shortcut does.
    * @returns Whether the popover took it, so that the command does not run.
@@ -1340,8 +1348,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.layout();
       return;
     }
-    // A change of the active tab, or of the pages that show, closes a popover or a question.
-    this.overlay?.close();
+    // A change of the active tab, or of the pages that show, closes a popover or a question; a
+    // question over a page stays when people only move to the other side of its split view.
+    if (!samePair || !sameViews || this.overlay?.overPage !== true) this.overlay?.close();
     // The find bar belongs to the active tab and closes when another one becomes active.
     if (before !== undefined && before !== id) this.closeFind(before);
     for (const previous of this.shownTabs()) {
@@ -2165,6 +2174,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
               nodeIntegration: false,
               // Lets the content blocker's frame preload run in iframes; Node stays off.
               nodeIntegrationInSubFrames: true,
+              // Only if the browser could not take the dialogs of pages from Electron (ADR 0060):
+              // Electron's own box then offers to stop the dialogs of a site.
+              safeDialogs: true,
               spellcheck: false,
               // The window takes the screen for a page in full screen itself, so the page
               // leaves full screen at once and never waits for the window's animation.
@@ -2754,6 +2766,8 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       view.setBounds(panes === undefined ? area : id === split?.start ? panes.start : panes.end);
       view.setVisible(this.problemOf(id) === null && (covering === undefined || covering === id));
     }
+    // A dialog of a page lies over the page wherever it is now.
+    this.overlay?.place();
   }
 
   private schedulePublish(): void {

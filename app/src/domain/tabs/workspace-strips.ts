@@ -2,6 +2,7 @@ import { defaultWorkspaceId } from '../../shared/workspaces.ts';
 import { GroupedTabStrip } from './tab-groups.ts';
 import type { RestoredWindow } from '../session/session.ts';
 import type { Tab, TabId, TabService } from './tab-service.ts';
+import type { TabHistory } from './view-history.ts';
 import {
   TabStrip,
   type ClosedTab,
@@ -194,8 +195,12 @@ export class WorkspaceStrips<T extends StripTab> extends TabStrip<T> {
     return strip !== undefined && strip.activate(id) && strip === this.shownStrip;
   }
 
-  override close(id: string, keep?: boolean): ClosedTab<T> | undefined {
-    return this.stripOf(id)?.close(id, keep);
+  override close(id: string, keep?: boolean, history?: TabHistory): ClosedTab<T> | undefined {
+    return this.stripOf(id)?.close(id, keep, history);
+  }
+
+  override forgetHistories(): void {
+    for (const strip of this.byWorkspace.values()) strip.forgetHistories();
   }
 
   override reopenWith(open: (url: string, place: ReopenPlace) => string): string | undefined {

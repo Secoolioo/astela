@@ -152,7 +152,7 @@ export function tabMenuTemplate(
       label: i18n.t('tabMenu.close'),
       ...ofTab('tab.close'),
       registerAccelerator: false,
-      click: whileOpen(() => window.tabs.close(tabId)),
+      click: whileOpen(() => window.tabAction(tabId, 'close')),
     },
     {
       label: i18n.t('tabMenu.closeOthers'),

@@ -86,6 +86,11 @@ class FakeViews implements TabViewPort {
   readonly log: string[] = [];
   /** The histories that tabs were made with, by tab. */
   readonly histories = new Map<string, TabHistory>();
+  /** The histories that the views of tabs have now, by tab. */
+  readonly now = new Map<string, TabHistory>();
+  historyOf(id: string): TabHistory | undefined {
+    return this.now.get(id);
+  }
   create(id: string, url: string, lazy?: boolean, history?: TabHistory): void {
     this.log.push(`create ${id} ${url}${lazy === true ? ' lazy' : ''}`);
     if (history !== undefined) this.histories.set(id, history);
@@ -200,6 +205,59 @@ describe('TabService', () => {
     expect(tabs.canReopen).toBe(true);
     tabs.reopenClosed();
     expect(tabs.canReopen).toBe(false);
+  });
+
+  it('reopens a closed tab with its history within the limits of a session', () => {
+    const views = new FakeViews();
+    const tabs = new TabService(views, 'about:blank');
+    const id = tabs.open('https://b.example/');
+    // An old entry holds more page state than the session keeps of one; the page that shows
+    // holds what was typed into it.
+    const big = 'A'.repeat(40 * 1024);
+    views.now.set(id, {
+      views: [
+        {
+          entries: [
+            { url: 'https://a.example/', title: 'A', pageState: big },
+            { url: 'https://b.example/', title: 'B', pageState: 'dHlwZWQ=' },
+          ],
+          index: 1,
+        },
+      ],
+      view: 0,
+    });
+    tabs.close(id);
+    const again = tabs.reopenClosed() ?? '';
+    expect(views.histories.get(again)).toEqual({
+      views: [
+        {
+          entries: [
+            { url: 'https://a.example/', title: 'A' },
+            { url: 'https://b.example/', title: 'B', pageState: 'dHlwZWQ=' },
+          ],
+          index: 1,
+        },
+      ],
+      view: 0,
+    });
+    expect(tabs.get(again)).toMatchObject({ url: 'https://b.example/', canGoBack: true });
+  });
+
+  it('forgets the histories of closed tabs when the whole history is cleared', () => {
+    const views = new FakeViews();
+    const tabs = new TabService(views, 'about:blank');
+    const id = tabs.open('https://b.example/');
+    views.now.set(id, {
+      views: [
+        { entries: [{ url: 'https://b.example/', title: 'B', pageState: 'eA==' }], index: 0 },
+      ],
+      view: 0,
+    });
+    tabs.close(id);
+    tabs.edit((strip) => strip.forgetHistories());
+    const again = tabs.reopenClosed() ?? '';
+    expect(tabs.get(again)?.url).toBe('https://b.example/');
+    expect(views.histories.has(again)).toBe(false);
   });
 
   it('forwards navigation and actions and applies view updates', () => {

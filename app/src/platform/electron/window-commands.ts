@@ -25,6 +25,7 @@ import type { TabHistory } from '../../domain/tabs/view-history.ts';
 import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { ShellCommand } from '../../shared/ipc/shell-contracts.ts';
+import { isLeaving, unloading, waitsForAnswer } from './unload.ts';
 
 /**
  * The commands of the windows that load later: those of the tabs, the pages and the browser
@@ -64,7 +65,7 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
   const index = active === undefined ? -1 : listed.indexOf(active);
   switch (command) {
     case 'tab.close':
-      if (active !== undefined) window.tabs.close(active.id);
+      if (active !== undefined) tabAction(host, active.id, 'close');
       break;
     case 'tab.reopen':
       window.tabs.reopenClosed();
@@ -197,6 +198,8 @@ function run(host: WindowHost, command: LaterWindowCommand): void {
       const printed = command === 'page.print' || command === 'page.savePdf';
       if (command === 'page.reloadHard') {
         window.uncover(active.id, 'reloaded');
+        // A page that asks to stay is asked whether to reload.
+        unloading(contents, 'reload');
         contents.reloadIgnoringCache();
       } else {
         options.onPageCommand?.(
@@ -372,6 +375,8 @@ function pageAction(
       else host.restore(id, entry, entry.history.goForward(host.snapshot(entry)));
       break;
     case 'reload':
+      // A page that asks to stay is asked whether to reload.
+      if (entry.page === undefined) unloading(contents, 'reload');
       contents.reload();
       break;
     case 'stop':
@@ -486,10 +491,11 @@ function revealPlace(host: WindowHost, id: TabId, page: TabPage, fragment: strin
 
 /**
  * Forgets the back and forward history of every tab, as when the whole history is cleared:
- * each tab keeps only the entry that it shows.
+ * each tab keeps only the entry that it shows, and the tabs that closed only their address.
  * @param host - The window.
  */
 function forgetHistories(host: WindowHost): void {
+  host.window.tabs.edit((strip) => strip.forgetHistories());
   for (const [id, entry] of host.entries) {
     entry.history.clear();
     entry.cache = undefined;
@@ -510,6 +516,34 @@ function forgetHistories(host: WindowHost): void {
 }
 
 /**
+ * Asks the web page of a tab that people close whether it may close, as Chromium does with a
+ * page that people typed into since it loaded: the page may ask to stay, and its tab closes
+ * through its view once the page agreed. Any other page closes without being asked, as the
+ * browser closes pages itself: Electron would give a page that it asks the gesture of a person
+ * that nobody made (ADR 0053, ADR 0060). So does a page whose dialog waits for its answer,
+ * which could not answer, so that a page that asks in a loop never keeps its tab open.
+ * @param host - The window.
+ * @param id - The tab.
+ * @returns Whether the page was asked.
+ */
+function askToClose(host: WindowHost, id: TabId): boolean {
+  const contents = host.webContentsOf(id);
+  if (
+    contents === undefined ||
+    isLeaving(contents) ||
+    waitsForAnswer(contents) ||
+    host.options.activity?.()?.typed(contents) !== true
+  ) {
+    return false;
+  }
+  // The tab opens again with what its page holds now, also once the page has gone.
+  host.window.historyOf(id, true);
+  unloading(contents, 'close');
+  contents.close({ waitForBeforeUnload: true });
+  return true;
+}
+
+/**
  * Runs an item of the menu of a tab.
  * @param host - The window.
  * @param id - The tab.
@@ -527,7 +561,7 @@ function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
       tabs.open(tab.url, { after: id, title: tab.title });
       break;
     case 'close':
-      tabs.close(id);
+      if (!askToClose(host, id)) tabs.close(id);
       break;
     case 'closeOthers':
     case 'closeRight': {

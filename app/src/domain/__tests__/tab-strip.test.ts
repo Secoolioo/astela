@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TabService, type TabViewPort } from '../tabs/tab-service.ts';
-import { TabStrip, type StripTab } from '../tabs/tab-strip.ts';
+import { TabStrip, type ReopenPlace, type StripTab } from '../tabs/tab-strip.ts';
+import type { TabHistory } from '../tabs/view-history.ts';
+import { WorkspaceStrips } from '../tabs/workspace-strips.ts';
 
 const tab = (id: string, pinned = false): StripTab => ({
   id,
@@ -18,6 +20,11 @@ function stripOf(...tabs: StripTab[]): TabStrip<StripTab> {
 }
 
 const ids = (strip: TabStrip<StripTab>): string[] => strip.all.map((each) => each.id);
+
+/** The history of a tab that shows one page. */
+function history(url: string): TabHistory {
+  return { views: [{ entries: [{ url, title: '' }], index: 0 }], view: 0 };
+}
 
 describe('TabStrip', () => {
   it('lists every tab, shows the active one, and moves each tab as a unit of its own', () => {
@@ -205,5 +212,39 @@ describe('TabService and its strip', () => {
     expect([changes, kept]).toEqual([1, 1]);
     expect(() => tabs.step('t999', 1)).toThrow('Unknown tab t999');
     expect(() => tabs.open('https://c.example/', { after: 't999' })).toThrow('Unknown tab t999');
+  });
+
+  it('keeps the history of a closed tab for reopening it, until the histories are forgotten', () => {
+    const strips = new WorkspaceStrips(stripOf(tab('a'), tab('b'), tab('c')));
+    strips.show('w1');
+    strips.insert(tab('d'), { activate: true });
+    strips.show('default');
+    strips.close('a', true, history('https://a.example/'));
+    strips.close('b');
+    strips.close('d', true, history('https://d.example/'));
+    const opened: [string, ReopenPlace][] = [];
+    const open = (url: string, place: ReopenPlace): string => {
+      opened.push([url, place]);
+      return url;
+    };
+    strips.reopenWith(open);
+    // Clearing the whole history forgets the histories of every workspace's closed tabs.
+    strips.forgetHistories();
+    strips.reopenWith(open);
+    strips.show('w1');
+    strips.reopenWith(open);
+    expect(opened).toEqual([
+      ['https://b.example/', { history: undefined }],
+      ['https://a.example/', { history: undefined }],
+      ['https://d.example/', { history: undefined }],
+    ]);
+    const kept = new TabStrip<StripTab>();
+    kept.insert(tab('e'), { activate: true });
+    kept.close('e', true, history('https://e.example/'));
+    kept.reopenWith(open);
+    expect(opened.at(-1)).toEqual([
+      'https://e.example/',
+      { history: history('https://e.example/') },
+    ]);
   });
 });

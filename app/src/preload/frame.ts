@@ -12,16 +12,16 @@ import { startOver, watchTabOut } from './tab-out.ts';
 /**
  * Runs in every frame of web pages, top frames and iframes alike. It first keeps the frame
  * from marking parts of the window that move it, whether the content blocker is on or not,
- * and then applies the content blocker's rules for the frame's address: element hiding rules
- * as a style sheet, and scriptlets in the page's own world before the page's scripts run.
- * Rules that depend on the page's elements follow once the document exists and whenever new
- * elements appear. On Linux and macOS, where Electron shows nothing while a site waits for a
- * security key, requests of security keys and passkeys tell the browser that they start and end,
- * and end when the browser cancels them (`page-world.ts`); Windows shows its own dialog. A
- * request for protected playback that fails tells the browser once, which says why the site
- * cannot play its video or music. In the top frame, Tab past the end of the page, or Shift+Tab
- * past its start, tells the browser, which moves the focus on to the toolbar (`tab-out.ts`). The
- * script exposes nothing to the page.
+ * gives the page a `prompt()` that asks the browser, and then applies the content blocker's
+ * rules for the frame's address: element hiding rules as a style sheet, and scriptlets in the
+ * page's own world before the page's scripts run. Rules that depend on the page's elements
+ * follow once the document exists and whenever new elements appear. On Linux and macOS, where
+ * Electron shows nothing while a site waits for a security key, requests of security keys and
+ * passkeys tell the browser that they start and end, and end when the browser cancels them
+ * (`page-world.ts`); Windows shows its own dialog. A request for protected playback that fails
+ * tells the browser once, which says why the site cannot play its video or music. In the top
+ * frame, Tab past the end of the page, or Shift+Tab past its start, tells the browser, which
+ * moves the focus on to the toolbar (`tab-out.ts`). The script exposes nothing else to the page.
  */
 
 /** A procedural rule: the elements of its selector are hidden or changed by its directive. */
@@ -92,6 +92,39 @@ const cookieGuard = `(() => {
 // Before the page has styles or scripts: a page that marks a region with app-region would
 // move the window from the tabs, the address bar or a question above it.
 webFrame.insertCSS(noAppRegionCss, { cssOrigin: 'user' });
+
+/**
+ * Asks the browser the question of a page's `prompt()` over the page of its tab, and waits for
+ * the answer, as the page does in other browsers: the text, or `null` for Cancel.
+ */
+const askPrompt = (message: string, value: string): string | null => {
+  const answer: unknown = ipcRenderer.sendSync('page.prompt', message, value);
+  return typeof answer === 'string' ? answer : null;
+};
+
+/**
+ * Puts that `prompt()` in the page's own world in place of Electron's, which only throws. A
+ * document without a preload, such as an iframe of `about:blank`, keeps Electron's (ADR 0060).
+ */
+const installPrompt = (): void => {
+  contextBridge.executeInMainWorld({
+    func: (ask: (message: string, value: string) => string | null) => {
+      const prompt = (message: unknown = '', value: unknown = ''): string | null =>
+        ask(String(message), String(value));
+      Object.defineProperty(window, 'prompt', {
+        value: prompt,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    },
+    args: [askPrompt],
+  });
+};
+installPrompt();
+// Electron sets its own prompt() again in an iframe after the preload ran, before the document.
+const preloadEvents: NodeJS.EventEmitter = process;
+preloadEvents.once('document-start', installPrompt);
 
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');
 if (isFrameRules(rules)) {

@@ -9,6 +9,7 @@ import {
   type StripTab,
   type TabGroup,
 } from './tab-strip.ts';
+import type { TabHistory } from './view-history.ts';
 
 export type { TabGroup } from './tab-strip.ts';
 
@@ -21,17 +22,25 @@ export interface GroupedTab extends StripTab {
   readonly group: TabGroup | null;
 }
 
-/** What a strip with groups keeps of a tab, or of a whole group, that closed. */
+/**
+ * What a strip with groups keeps of a tab, or of a whole group, that closed, each tab with its
+ * back and forward history.
+ */
 type ClosedEntry =
   | {
       readonly kind: 'tab';
       readonly url: string;
       readonly group: TabGroup | null;
+      readonly history: TabHistory | undefined;
     }
   | {
       readonly kind: 'group';
       readonly group: TabGroup;
-      readonly tabs: readonly { readonly url: string; readonly title: string }[];
+      readonly tabs: readonly {
+        readonly url: string;
+        readonly title: string;
+        readonly history: TabHistory | undefined;
+      }[];
     };
 
 /** What a group of tabs is called and how it looks, without its id. */
@@ -103,8 +112,8 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
   constructor(from?: TabStrip<T>) {
     super();
     if (from !== undefined) Object.assign(this, from);
-    for (const url of this.closed.splice(0))
-      this.reopenable.push({ kind: 'tab', url, group: null });
+    for (const { url, history } of this.closed.splice(0))
+      this.reopenable.push({ kind: 'tab', url, group: null, history });
   }
 
   /** The groups of the strip, in the order of their first tabs. */
@@ -157,12 +166,15 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
     if (!options.activate) this.openedInBackground.add(tab.id);
   }
 
-  override close(id: string, keep = true): ClosedTab<T> | undefined {
+  override close(id: string, keep = true, history?: TabHistory): ClosedTab<T> | undefined {
     const index = this.indexOf(id);
     // The strip keeps the tab with its group instead of the address alone.
     const closed = super.close(id, false);
     if (closed === undefined) return undefined;
-    if (keep) this.remember({ kind: 'tab', url: closed.tab.url, group: closed.tab.group });
+    if (keep) {
+      const { url, group } = closed.tab;
+      this.remember({ kind: 'tab', url, group, history });
+    }
     // The other side of a split view shows; else the nearest tab that the strip shows.
     if (!closed.active || closed.pair !== undefined) return closed;
     return { ...closed, next: this.shownFrom(index, 1) ?? this.shownFrom(index - 1, -1) };
@@ -174,15 +186,27 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
     if (entry.kind === 'tab') {
       // A tab goes back into its group while the group is there.
       const group = entry.group === null ? undefined : this.group(entry.group.id);
-      return open(entry.url, group === undefined ? {} : { group });
+      const { history } = entry;
+      return open(entry.url, group === undefined ? { history } : { group, history });
     }
     // A group comes back with its name and color, its first tab in front and loaded.
     const group = { ...entry.group, id: this.newGroupId(), collapsed: false };
     const [first, ...rest] = entry.tabs;
     if (first === undefined) return undefined;
-    const id = open(first.url, { group });
-    for (const tab of rest) open(tab.url, { group, activate: false, lazy: true, title: tab.title });
+    const id = open(first.url, { group, history: first.history });
+    for (const tab of rest) {
+      open(tab.url, { group, activate: false, lazy: true, title: tab.title, history: tab.history });
+    }
     return id;
+  }
+
+  override forgetHistories(): void {
+    const forgotten = this.reopenable.map((entry): ClosedEntry =>
+      entry.kind === 'tab'
+        ? { ...entry, history: undefined }
+        : { ...entry, tabs: entry.tabs.map((tab) => ({ ...tab, history: undefined })) },
+    );
+    this.reopenable.splice(0, this.reopenable.length, ...forgotten);
   }
 
   override pin(id: string, pinned: boolean): void {
@@ -409,9 +433,10 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
    * opens again with its name and color. The active tab in the group makes way for the nearest
    * tab after the group, or else the one before it.
    * @param groupId - The group.
+   * @param historyOf - The history of a tab as it closes.
    * @returns The tabs that closed.
    */
-  closeGroup(groupId: string): T[] {
+  closeGroup(groupId: string, historyOf?: (id: string) => TabHistory | undefined): T[] {
     const [start, end] = this.spanOf(groupId);
     const members = this.tabs.slice(start, end);
     const group = members[0]?.group;
@@ -429,7 +454,11 @@ export class GroupedTabStrip<T extends GroupedTab> extends TabStrip<T> {
     this.remember({
       kind: 'group',
       group,
-      tabs: members.map(({ url, title }) => ({ url, title })),
+      tabs: members.map(({ id, url, title }) => ({
+        url,
+        title,
+        history: historyOf?.(id),
+      })),
     });
     return members;
   }
@@ -637,13 +666,14 @@ export function editGroups<R>(
 }
 
 /**
- * Closes the tabs of a group of a window, which the window can open again as a group.
+ * Closes the tabs of a group of a window, which the window can open again as a group, each tab
+ * with its history.
  * @param tabs - The tabs of the window.
  * @param groupId - The group.
  */
 export function closeGroup(tabs: TabService, groupId: string): void {
   const strip = groupedStrip(tabs);
-  tabs.edit(() => strip.closeGroup(groupId));
+  tabs.edit(() => strip.closeGroup(groupId, (id) => tabs.historyOf(id)));
 }
 
 /**

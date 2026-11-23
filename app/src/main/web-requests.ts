@@ -29,6 +29,7 @@ import type { PermissionHandler } from '../platform/electron/session-security.ts
 import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import { blockerFrames, type BlockerFrames } from './blocker-frames.ts';
+import { watchPageQuestions } from './page-questions.ts';
 import { chosenToSave } from './save-as.ts';
 import { listenToFrames, type FrameReports } from './web-frames.ts';
 import type { ProtectedMedia } from './protected-media.ts';
@@ -121,8 +122,8 @@ export interface PermissionStore {
 /**
  * The code for the requests of web pages: the steps of the request pipeline, HTTPS-First,
  * the third-party cookies and the content blocker, with the exceptions for certificates and
- * the answers to the frames of web pages, the logins that sites ask for, the downloads and
- * the pages that scripts open. It loads with the code for web pages, before the first web
+ * the answers to the frames of web pages, the logins that sites ask for, the dialogs of pages
+ * and their questions to stay, the downloads and the pages that scripts open. It loads with the code for web pages, before the first web
  * page loads, or with the first request or frame of a web page; the browser's own pages need
  * none of it.
  */
@@ -285,12 +286,22 @@ export function webRequests(options: WebRequestOptions): WebRequests {
       );
     },
   };
+  // The dialogs of web pages and their questions to stay, from the first web page on.
+  const questions = watchPageQuestions({
+    app: options.app,
+    windows: options.windows,
+    router: options.router,
+    overlay: options.overlay,
+    isWebSession: options.isWebSession,
+    logger: options.logger,
+  });
   // The frames of web pages ask for their rules as they start, which they can only once this
-  // code has loaded, before the first web page.
+  // code has loaded, before the first web page; so do their calls of `prompt()`.
   const protect = listenToFrames(
     () => Promise.resolve(frames),
     options.framePreload,
     options.logger,
+    (event, message, value) => questions.prompt(event, message, value),
     reports,
   );
   for (const s of options.webSessions) protect(s);
