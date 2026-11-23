@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
+import { settingUi } from './setting-ui.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import * as v from 'valibot';
 import { brand } from '../shared/brand.ts';
@@ -61,7 +62,7 @@ export async function exportSettings(
   const values: Record<string, unknown> = {};
   for (const definition of definitions) {
     // A folder belongs to this computer, and its path names the account.
-    if (definition.ui?.control === 'folder') continue;
+    if (settingUi.get(definition.key)?.control === 'folder') continue;
     const { userValue } = settings.inspect(definition);
     if (userValue !== undefined) values[definition.key] = userValue;
   }
@@ -133,7 +134,7 @@ export async function importSettings(
     }
     // A folder of another computer has no place here, and files of this browser leave it
     // out; only the system's dialog sets one.
-    if (definition?.ui?.control === 'folder') continue;
+    if (definition !== undefined && settingUi.get(key)?.control === 'folder') continue;
     if (
       definition !== undefined &&
       (key !== NewTabBackgroundSetting.key || imageHere(value, newTabFolder)) &&

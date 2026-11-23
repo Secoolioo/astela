@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import { ContentBlocker } from '../blocker/content-blocker.ts';
-import { resourceUrl } from '../blocker/resource-protocol.ts';
+import { resourceUrl } from '../blocker/resource-answers.ts';
 import {
   addHeaders,
   RequestPipeline,

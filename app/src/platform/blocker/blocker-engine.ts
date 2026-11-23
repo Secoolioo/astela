@@ -14,7 +14,8 @@ import type {
   FrameElements,
   FrameRules,
 } from './blocker-types.ts';
-import { resourceUrl, type ReplacementResource } from './resource-protocol.ts';
+import type { ReplacementResource } from './resource-protocol.ts';
+import { resourceUrl } from './resource-answers.ts';
 import { withoutRemovedParameters } from '../../domain/blocker/parameters.ts';
 import { documentOf } from '../../domain/blocker/document-requests.ts';
 

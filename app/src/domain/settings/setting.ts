@@ -23,7 +23,10 @@ export interface SettingPolicy {
   readonly schema?: v.GenericSchema<unknown, unknown>;
 }
 
-/** How the settings page presents a setting. Texts come from the module's locale catalog. */
+/**
+ * How the settings page presents a setting, in `settingUi` of `main/setting-ui.ts`, which loads
+ * with the page. Texts come from the module's locale catalog.
+ */
 export interface SettingUi {
   /** Section id on the settings page, such as `appearance`. */
   readonly section: string;
@@ -43,8 +46,9 @@ export interface SettingUi {
 }
 
 /**
- * Declares one setting. It is the single source for the settings page, the policy
- * templates, the JSON schema and the documentation.
+ * Declares one setting. It is the single source for the settings file, the policy templates,
+ * the JSON schema and the documentation; its row on the settings page is in `settingUi`
+ * (`main/setting-ui.ts`), by its key, which loads with the page and not with every start.
  */
 export interface SettingDefinition<T> {
   /** Dotted key, such as `tabs.position`. Never renamed without a migration. */
@@ -55,7 +59,6 @@ export interface SettingDefinition<T> {
   readonly default: T;
   readonly scope: SettingScope;
   readonly policy?: SettingPolicy;
-  readonly ui?: SettingUi;
   /** Whether a change only takes effect after a restart. */
   readonly restartRequired?: boolean;
 }

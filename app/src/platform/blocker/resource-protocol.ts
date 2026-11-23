@@ -1,36 +1,13 @@
 import type { Session } from 'electron';
+import { resourceScheme, type ReplacementResource } from './resource-scheme.ts';
 
-/**
- * The scheme of the replacement resources that `$redirect` filters serve. A script that is
- * redirected to a `data:` address does not run in Chromium, so the resources come from a
- * privileged scheme of their own, on web sessions only.
- */
-export const resourceScheme = 'astela-resource';
-
-/** A replacement resource; the body is Base64 when the content type ends in `;base64`. */
-export interface ReplacementResource {
-  readonly body: string;
-  readonly contentType: string;
-}
-
-/**
- * A secret part of the addresses of this run: only pages whose requests the blocker
- * redirected learn it, so other pages cannot load a stand-in to find out that the browser
- * blocks.
- */
-const runSecret = crypto.randomUUID();
-
-/**
- * The address under which a resource is served.
- * @param name - The resource's file name.
- */
-export function resourceUrl(name: string): string {
-  return `${resourceScheme}://resource/${runSecret}/${encodeURIComponent(name)}`;
-}
+export { resourceScheme, type ReplacementResource } from './resource-scheme.ts';
 
 /**
  * Serves the replacement resources on a web session. Every page may load them, because a
- * redirected request keeps the origin of the page that made it.
+ * redirected request keeps the origin of the page that made it. The answers come from the
+ * code that makes their addresses (`resource-answers.ts`), which the content blocker's engine
+ * loads before any page can learn one.
  * @param session - A session of web content.
  * @param lookup - Finds a resource by its file name; `undefined` if there is none.
  */
@@ -38,24 +15,7 @@ export function serveResources(
   session: Session,
   lookup: (name: string) => ReplacementResource | undefined,
 ): void {
-  session.protocol.handle(resourceScheme, (request) => {
-    const url = new URL(request.url);
-    const prefix = `/${runSecret}/`;
-    const resource =
-      url.hostname === 'resource' && url.pathname.startsWith(prefix)
-        ? lookup(decodeURIComponent(url.pathname.slice(prefix.length)))
-        : undefined;
-    if (resource === undefined) return new Response(null, { status: 404 });
-    const base64 = resource.contentType.endsWith(';base64');
-    const body = base64 ? Buffer.from(resource.body, 'base64') : resource.body;
-    return new Response(body, {
-      headers: {
-        'content-type': base64
-          ? resource.contentType.slice(0, -';base64'.length)
-          : resource.contentType,
-        'access-control-allow-origin': '*',
-        'cache-control': 'no-store',
-      },
-    });
-  });
+  session.protocol.handle(resourceScheme, (request) =>
+    import('./resource-answers.ts').then(({ answer }) => answer(request, lookup)),
+  );
 }

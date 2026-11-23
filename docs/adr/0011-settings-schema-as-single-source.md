@@ -23,7 +23,6 @@ export const tabsPosition = defineSetting({
   default: 'top',
   scope: 'global',
   policy: { name: 'TabStripPosition', recommendedAllowed: true },
-  ui: { section: 'tabs', control: 'select', keywords: ['tab bar', 'vertical tabs'] },
   restartRequired: false,
 });
 ```
@@ -33,7 +32,7 @@ export const tabsPosition = defineSetting({
 - The scope is `global` or `workspace`.
 - **Resolution order:** default < recommended policy < user value < workspace override < mandatory policy. `inspect(key)` returns the effective value, its source and whether it is locked.
 - **Policies:** every setting with a `policy` attribute is automatically a policy. Locked values cannot be changed through the UI or the API, and the UI shows them with a lock and the label "Managed by your organization".
-- **Settings page:** generated from the schema, with search over titles, descriptions, keywords and synonyms in English and German, deep links such as `app://settings/#tabs.position`, and a "Modified" view that lists differences from the defaults.
+- **Settings page:** generated from the schema, with search over titles, descriptions, keywords and synonyms in English and German, deep links such as `app://settings/#tabs.position`, and a "Modified" view that lists differences from the defaults. Where the page shows a setting, its section, control and order, is not part of the definition but a table by the key of the setting (`app/src/main/setting-ui.ts`), which loads with the page, the command palette and the settings file, so that every start reads the definitions without it ([performance](../architecture/performance.md)).
 - **Storage:** user values live in `settings.json` with a `$schemaVersion`. Writes are debounced and atomic (temporary file, `fsync`, rename). Invalid keys are moved to `settings.rejected.json`; nothing is deleted.
 - **Export and import:** JSON with version and schema checks, never containing secrets.
 - **Generated artifacts:** `settings.schema.json`, typed keys, the settings reference in the documentation, ADMX/ADML in English (`en-US`) and German (`de-DE`), a `.mobileconfig` example, and the schema and an example for the Linux `policies.json`; a Jamf JSON schema follows in M2.
@@ -51,7 +50,7 @@ Positive:
 Negative:
 
 - The generators are significant infrastructure that the team builds and maintains, with tests for each output format.
-- Settings that need a custom control still need hand-written UI code, registered through the `ui` metadata.
+- Settings that need a custom control still need hand-written UI code, registered through their row in `app/src/main/setting-ui.ts`.
 - Policy names become a public interface: once released, a policy name cannot be changed without a migration path for administrators.
 
 ## Alternatives considered

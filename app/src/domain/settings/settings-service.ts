@@ -80,13 +80,6 @@ export interface SettingsStore {
   save(settings: StoredSettings, rejected: readonly RejectedSetting[]): Promise<void>;
 }
 
-/** Result of importing a settings file. */
-export interface SettingsImportReport {
-  readonly applied: readonly string[];
-  readonly rejected: readonly RejectedSetting[];
-  readonly locked: readonly string[];
-}
-
 /** Token for the {@link SettingsService}. */
 export const SettingsServiceToken: Token<SettingsService> =
   token<SettingsService>('SettingsService');
@@ -347,46 +340,6 @@ export class SettingsService implements Disposable {
     this.workspaces.delete(workspaceId);
     this.unknownWorkspaces = others;
     if (keys.length > 0 || unknown !== undefined) this.changed(keys);
-  }
-
-  /** User values that differ from the defaults, sorted by key, for export. Never contains secrets. */
-  exportUserSettings(): Record<string, unknown> {
-    return Object.fromEntries([...this.user].toSorted(([a], [b]) => a.localeCompare(b)));
-  }
-
-  /**
-   * Imports user values from an exported object. Unknown keys are ignored, invalid values
-   * are reported, locked settings are skipped.
-   * @param data - Parsed JSON object.
-   */
-  importUserSettings(data: unknown): Result<SettingsImportReport, string> {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-      return err('Expected an object of setting values');
-    }
-    const applied: string[] = [];
-    const rejected: RejectedSetting[] = [];
-    const locked: string[] = [];
-    for (const [key, value] of Object.entries(data)) {
-      const definition = this.definitions.get(key);
-      if (definition === undefined) {
-        continue;
-      }
-      if (this.policies.isLocked(key)) {
-        locked.push(key);
-        continue;
-      }
-      const checked = validateSetting(definition, value);
-      if (checked.ok) {
-        this.user.set(key, checked.value);
-        applied.push(key);
-      } else {
-        rejected.push({ key, value, message: checked.error });
-      }
-    }
-    if (applied.length > 0) {
-      this.changed(applied);
-    }
-    return ok({ applied, rejected, locked });
   }
 
   /** Stored values that failed validation at load time. */

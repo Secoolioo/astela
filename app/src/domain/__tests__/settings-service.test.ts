@@ -20,7 +20,6 @@ const TabPosition = defineSetting({
   default: 'top',
   scope: 'workspace',
   policy: { name: 'TabStripPosition', recommended: true },
-  ui: { section: 'tabs', control: 'select' },
 });
 const Density = defineSetting({
   key: 'appearance.density',
@@ -418,51 +417,6 @@ describe('SettingsService', () => {
       workspaces: { w1: { 'future.ws': 1, 'tabs.position': 'right' } },
     });
     expect(store.saved?.rejected).toHaveLength(2);
-  });
-
-  it('exports and imports user values', async () => {
-    const { settings, provider, policies } = setup();
-    settings.set(TabPosition, 'right');
-    settings.set(Density, 'compact');
-    const exported = settings.exportUserSettings();
-    expect(Object.keys(exported)).toEqual(['appearance.density', 'tabs.position']);
-    provider.result = {
-      values: [
-        {
-          name: 'TabStripPosition',
-          value: 'top',
-          level: 'mandatory',
-          scope: 'machine',
-          source: 'test',
-        },
-      ],
-      errors: [],
-    };
-    await policies.refresh();
-    const fresh = setup();
-    fresh.provider.result = provider.result;
-    await fresh.policies.refresh();
-    const report = fresh.settings.importUserSettings({
-      ...exported,
-      'appearance.density': 'huge',
-      unknown: 1,
-    });
-    expect(report).toEqual({
-      ok: true,
-      value: {
-        applied: [],
-        rejected: [{ key: 'appearance.density', value: 'huge', message: expect.any(String) }],
-        locked: ['tabs.position'],
-      },
-    });
-    expect(setup().settings.importUserSettings(exported)).toMatchObject({
-      ok: true,
-      value: { applied: ['appearance.density', 'tabs.position'] },
-    });
-    expect(fresh.settings.importUserSettings([1])).toEqual({
-      ok: false,
-      error: expect.any(String),
-    });
   });
 
   it('logs failed saves', async () => {
