@@ -3305,7 +3305,10 @@ export class AppShell extends LitElement {
           title=${this.tp('shell.pictureInPicture')}
           aria-label=${this.tp('shell.pictureInPicture')}
           aria-pressed=${active.pictureInPicture === 'open' ? 'true' : 'false'}
-          @click=${() => void this.bridge?.invoke('shell.togglePictureInPicture', {})}
+          @click=${() =>
+            void this.bridge?.invoke('shell.togglePictureInPicture', {
+              pressed: active.pictureInPicture === 'open',
+            })}
         >
           ${icons.pictureInPicture}
         </button>`;

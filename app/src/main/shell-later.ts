@@ -110,14 +110,15 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   });
   router.handle(StopFinding, ({ tabId }, { sender }) => (windowOf(sender).stopFind(tabId), null));
   router.handle(ResetZoom, ({ tabId }, { sender }) => (windowOf(sender).zoom(tabId, 0), null));
-  // The buttons of the reader view and of picture in picture run their commands, as the keys do.
+  // The button of the reader view runs its command, as its key does. The button of picture in
+  // picture tells whether it showed itself pressed, so that the click does what it showed.
   router.handle(
     ToggleReader,
     (_request, { sender }) => (windowOf(sender).execute('reader.toggle'), null),
   );
   router.handle(
     TogglePictureInPicture,
-    (_request, { sender }) => (windowOf(sender).execute('media.pictureInPicture'), null),
+    ({ pressed }, { sender }) => (windowOf(sender).togglePictureInPicture(pressed), null),
   );
   // What holds the rows that hide open in the shell: the pointer over them, and the focus.
   router.handle(HoldTopRows, (holds, { sender }) => (windowOf(sender).rows?.hold(holds), null));

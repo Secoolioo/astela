@@ -281,11 +281,13 @@ export const ToggleReader = defineRequest({
 
 /**
  * Shows a video of the active tab in picture in picture, or ends picture in picture, as the
- * button next to the address bar says.
+ * button next to the address bar showed when it was clicked: `pressed`, it ends picture in
+ * picture. The browser may have learned meanwhile that the page ended or started picture in
+ * picture itself, which the shell has not shown yet; the click still does what it showed.
  */
 export const TogglePictureInPicture = defineRequest({
   channel: 'shell.togglePictureInPicture',
-  request: Empty,
+  request: v.strictObject({ pressed: v.boolean() }),
   response: Done,
   capability: 'shell',
 });
