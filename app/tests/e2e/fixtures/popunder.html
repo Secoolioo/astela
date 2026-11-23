@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture popunder</title>
+  </head>
+  <body>
+    <button id="two">Open two</button>
+    <button id="later">Open later</button>
+    <a id="again" href="?ways=inline,onload">The page with its pop-ups</a>
+    <iframe id="frame" title="Frame of another site"></iframe>
+    <script>
+      // Opens windows without a click in the ways that the address names, by default in all
+      // six of them: ?ways=inline,onload,timer,link,form,frame; the way `long` opens an address
+      // of more than 9000 characters, and `delay` sets the time of the timer in milliseconds.
+      const params = new URLSearchParams(location.search);
+      const asked = params.get('ways');
+      const ways =
+        asked === null ? ['inline', 'onload', 'timer', 'link', 'form', 'frame'] : asked.split(',');
+      const target = (name) => `/opened.html?${name}`;
+      if (ways.includes('inline')) window.open(target('inline'));
+      if (ways.includes('onload'))
+        window.addEventListener('load', () => window.open(target('onload')));
+      if (ways.includes('timer'))
+        setTimeout(() => window.open(target('timer')), Number(params.get('delay') ?? 1500));
+      if (ways.includes('long')) window.open(`${target('long')}&${'x'.repeat(9000)}`);
+      if (ways.includes('link')) {
+        const link = document.createElement('a');
+        link.href = target('link');
+        link.target = '_blank';
+        document.body.append(link);
+        link.click();
+      }
+      if (ways.includes('form')) {
+        const form = document.createElement('form');
+        form.action = '/opened.html';
+        form.target = '_blank';
+        const field = document.createElement('input');
+        field.type = 'hidden';
+        field.name = 'form';
+        field.value = '1';
+        form.append(field);
+        document.body.append(form);
+        form.submit();
+      }
+      // localhost and 127.0.0.1 are other sites to each other; the frame's timer opens a window
+      // when the page asks it to.
+      const other = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+      document.getElementById('frame').src =
+        `http://${other}:${location.port}/popunder-frame.html${ways.includes('frame') ? '?timer' : ''}`;
+      // One click opens one window: the second one of the same click does not open.
+      document.getElementById('two').addEventListener('click', () => {
+        window.open(target('first'));
+        window.open(target('second'));
+      });
+      // A window that opens long after the click opens without one.
+      document.getElementById('later').addEventListener('click', () => {
+        setTimeout(() => window.open(target('later')), 6000);
+      });
+    </script>
+  </body>
+</html>

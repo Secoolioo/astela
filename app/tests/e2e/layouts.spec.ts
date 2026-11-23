@@ -699,10 +699,10 @@ test('never hides the rows of a popup window', async () => {
     const popupShell = shells()[0];
     if (popupShell === undefined) throw new Error('No shell of the popup');
     await popupShell.waitForSelector('app-shell');
-    await expect.poll(() => rowsOf(popupShell)).toEqual({ toolbar: 'tab-row', hiding: null });
-    // The popup's page starts below its rows, which always show: the popup of 520 px is too
-    // narrow for the one row, so its tab lies in a row of its own above the toolbar.
-    await expect(popupShell.locator('app-shell')).toHaveAttribute('data-narrow', '');
+    await expect.poll(() => rowsOf(popupShell)).toEqual({ toolbar: 'own-row', hiding: null });
+    // The popup's page starts below its toolbar, which always shows: a popup has no tab strip, so
+    // its toolbar keeps a row of its own, also where the settings put it in the row of the tabs.
+    await expect(popupShell.getByRole('tablist')).toHaveCount(0);
     const popupId = await browser.main.evaluate(({ BaseWindow }) =>
       Math.max(...BaseWindow.getAllWindows().map((window) => window.id)),
     );
@@ -712,7 +712,7 @@ test('never hides the rows of a popup window', async () => {
           (await tabViews(browser, popupId)).find((view) => view.url.endsWith('/opened.html'))
             ?.bounds.y,
       )
-      .toBe(80);
+      .toBe(41);
     // The rows of the window that opened it still hide.
     expect((await shellState(browser.shell)).layout.hiding).not.toBe(null);
   } finally {

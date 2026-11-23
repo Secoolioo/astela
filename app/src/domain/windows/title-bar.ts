@@ -6,9 +6,15 @@ export type Density = 'compact' | 'normal' | 'comfortable';
 /** Where the tab strip is. */
 export type TabStripSide = 'top' | 'bottom' | 'left' | 'right';
 
-/** Where the tab strip is, and where the toolbar is. */
+/**
+ * Where the tab strip of a window is, or `none` in a popup, which shows only its page and has
+ * no tab strip: its top row is the toolbar.
+ */
+export type StripSide = TabStripSide | 'none';
+
+/** Where the tab strip is, if the window has one, and where the toolbar is. */
 export interface RowLayout {
-  readonly side: TabStripSide;
+  readonly side: StripSide;
   readonly toolbar: ToolbarPlacement;
 }
 
@@ -24,11 +30,11 @@ const sidebarWidth = 240;
 
 /**
  * Where the toolbar is: in the row of the tabs only with the tab strip at the top, and in a row
- * of its own otherwise.
- * @param side - Where the tab strip is.
+ * of its own otherwise, also in a popup, which has no tab strip.
+ * @param side - Where the tab strip is, if the window has one.
  * @param placement - Where the settings put the toolbar.
  */
-export function toolbarRow(side: TabStripSide, placement: ToolbarPlacement): ToolbarPlacement {
+export function toolbarRow(side: StripSide, placement: ToolbarPlacement): ToolbarPlacement {
   return side === 'top' ? placement : 'own-row';
 }
 
@@ -96,7 +102,7 @@ export interface ControlsOverlay {
 export function controlsOverlay(
   area: TitleBarArea,
   colors: { readonly window: string; readonly toolbar: string },
-  side: TabStripSide,
+  side: StripSide,
 ): ControlsOverlay {
   const color = side === 'top' ? colors.window : colors.toolbar;
   return { color, symbolColor: isDark(color) ? '#e8eaed' : '#1f2329', height: area.height };
@@ -112,7 +118,9 @@ function isDark(color: string): boolean {
 
 /**
  * Where the content area of a new window starts, until the shell reports where it is: below
- * the row of the tabs and the toolbar, or below the one row that holds both.
+ * the row of the tabs and the toolbar, or below the one row that holds both, or next to a
+ * vertical tab strip. A popup has only its toolbar, which is also the room that its window
+ * takes around the page that it asked for.
  * @param density - The density of the interface.
  * @param layout - Where the tab strip and the toolbar are.
  */

@@ -10,11 +10,18 @@ export const sitePermissions: readonly SitePermission[] = [
   'clipboard',
 ];
 
+/**
+ * What the user decides for a site: a permission that it asks for, or `popups`, whether its
+ * pages may open windows without a click, which no site asks for: people allow it in the
+ * popover of the pop-up blocker.
+ */
+export type DecidedPermission = SitePermission | 'popups';
+
 /** What the user decided about a permission for a site. */
 export type PermissionDecision = 'allow' | 'block';
 
 /** The decisions of one site. */
-export type SiteDecisions = Readonly<Partial<Record<SitePermission, PermissionDecision>>>;
+export type SiteDecisions = Readonly<Partial<Record<DecidedPermission, PermissionDecision>>>;
 
 /** The decisions of all sites, by origin, such as `https://meet.example`. */
 export type SitePermissions = Readonly<Record<string, SiteDecisions>>;
@@ -121,22 +128,33 @@ export function isGranted(
 }
 
 /**
+ * Whether the pages of a site may open windows without a click, which the pop-up blocker
+ * otherwise blocks: only when people allowed it. A site that people blocked opens windows after
+ * a click, as one without a decision does.
+ * @param sites - The decisions of all sites.
+ * @param origin - The origin of the page.
+ */
+export function allowsPopups(sites: SitePermissions, origin: string): boolean {
+  return Object.hasOwn(sites, origin) && sites[origin]?.popups === 'allow';
+}
+
+/**
  * Records a decision of the user for some permissions of a site.
  * @param sites - The decisions of all sites.
  * @param origin - The origin of the page.
- * @param permissions - The permissions that were asked for.
+ * @param permissions - The permissions that were asked for, or `popups`.
  * @param decision - The answer.
  * @returns The new decisions, or the old ones when no further site fits.
  */
 export function decide(
   sites: SitePermissions,
   origin: string,
-  permissions: readonly SitePermission[],
+  permissions: readonly DecidedPermission[],
   decision: PermissionDecision,
 ): SitePermissions {
   const known = Object.hasOwn(sites, origin);
   if (!known && Object.keys(sites).length >= maxSites) return sites;
-  const decisions: Partial<Record<SitePermission, PermissionDecision>> = {
+  const decisions: Partial<Record<DecidedPermission, PermissionDecision>> = {
     ...(known ? sites[origin] : {}),
   };
   for (const permission of permissions) decisions[permission] = decision;
@@ -153,7 +171,7 @@ export function decide(
 export function forget(
   sites: SitePermissions,
   origin: string,
-  permission: SitePermission,
+  permission: DecidedPermission,
 ): SitePermissions {
   if (!Object.hasOwn(sites, origin)) return sites;
   const { [permission]: _forgotten, ...rest } = sites[origin] ?? {};

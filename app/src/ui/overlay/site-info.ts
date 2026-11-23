@@ -38,13 +38,14 @@ const reasons = {
   other: 'overlay.site.reason.other',
 } as const satisfies Record<NonNullable<SiteInformation['reason']>, MessageKey>;
 
-/** The names of the permissions, as the settings page names them. */
+/** The names of the permissions and of pop-ups, as the settings page names them. */
 const permissionNames = {
   camera: 'settings.permission.camera',
   microphone: 'settings.permission.microphone',
   location: 'settings.permission.location',
   notifications: 'settings.permission.notifications',
   clipboard: 'settings.permission.clipboard',
+  popups: 'settings.permission.popups',
 } as const satisfies Record<SiteInformation['permissions'][number]['name'], MessageKey>;
 
 /**
@@ -363,7 +364,7 @@ export class SiteInfoPopover extends LitElement {
       }`;
   }
 
-  /** The permissions that were decided for the site, each with its switch. */
+  /** The permissions that were decided for the site, and its pop-ups, each with its switch. */
   private renderPermissions(content: SiteInformation): TemplateResult {
     const id = content.id;
     return html`<div class="part">

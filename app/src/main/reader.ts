@@ -22,6 +22,7 @@ import type {
   TabCover,
   WindowManager,
 } from '../platform/electron/browser-window.ts';
+import { followActivation } from '../platform/electron/page-activation.ts';
 import { builtInThemes, themeColors } from '../shared/themes.ts';
 import { zoomFactors } from '../shared/zoom.ts';
 import {
@@ -355,6 +356,9 @@ export class ReaderController {
       view.setBackgroundColor(windowBackground(window.isPrivate));
       const reader = view.webContents;
       this.views.set(reader, address);
+      // A click into the reader view lets it open its link in a new tab, as a click into the page
+      // does; the pop-up blocker blocks what opens without one.
+      followActivation(reader);
       const cover = new ReaderCover(this, { window, id, page: contents, view, address, asked });
       // A link of the reader opens in its tab, which ends the reader view; a middle click and
       // the context menu open it in a new tab next to it, as links of the page do.

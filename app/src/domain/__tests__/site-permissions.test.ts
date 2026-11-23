@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allowsPopups,
   answer,
   canLocate,
   decide,
@@ -132,6 +133,25 @@ describe('decide and forget', () => {
         location: 'block',
       },
     );
+  });
+});
+
+describe('allowsPopups', () => {
+  it('lets only the sites that people allowed open windows without a click', () => {
+    let sites: SitePermissions = decide({}, meet, ['camera'], 'allow');
+    expect(allowsPopups(sites, meet)).toBe(false);
+    sites = decide(sites, meet, ['popups'], 'allow');
+    expect(allowsPopups(sites, meet)).toBe(true);
+    expect(allowsPopups(sites, 'https://other.example')).toBe(false);
+    expect(allowsPopups(decide(sites, meet, ['popups'], 'block'), meet)).toBe(false);
+    expect(allowsPopups(forget(sites, meet, 'popups'), meet)).toBe(false);
+    // The pop-up blocker is no permission that a page could ask for or check.
+    expect(isGranted(sites, meet, 'popups')).toBe(false);
+  });
+
+  it('ignores names that every object has', () => {
+    expect(allowsPopups({}, '__proto__')).toBe(false);
+    expect(allowsPopups({}, 'constructor')).toBe(false);
   });
 });
 

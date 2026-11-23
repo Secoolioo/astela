@@ -944,17 +944,22 @@ test('keeps what pages of an isolated workspace open in its partition, guards it
       document.cookie = 'bank=1; max-age=3600';
     });
     expect(await storageOf(browser, fixture('opener.html'))).toMatch(partitionPath(id));
-    // A popup of a page of the workspace, and the next tab of the popup, use its partition.
+    // A popup of a page of the workspace uses its partition, and so does the next tab of the
+    // popup, which opens in the window of the workspace, as a popup shows only its page.
     await opener.getByRole('button', { name: 'Open a popup' }).click();
     const popup = await waitForPage(browser, (url) => url === fixture('opened.html'));
     expect(await popup.evaluate(() => document.cookie)).toBe('bank=1');
     expect(await storageOf(browser, fixture('opened.html'))).toMatch(partitionPath(id));
     const popupShell = await otherShell(browser);
     await pressNative(browser, 'T', ['primary'], fixture('opened.html'));
-    await newTabShown(browser, 2, popupShell);
-    const next = await open(browser, fixture('second.html'), popupShell);
+    await newTabShown(browser, 2);
+    await expect(popupShell.getByRole('tab')).toHaveCount(0);
+    const next = await open(browser, fixture('second.html'));
     expect(await next.evaluate(() => document.cookie)).toBe('bank=1');
     expect(await storageOf(browser, fixture('second.html'))).toMatch(partitionPath(id));
+    // The pages below load in the tab of the opener, which leaves that tab as it is.
+    await tab(browser, 'Fixture opener').click();
+    await expect(tab(browser, 'Fixture opener')).toHaveAttribute('aria-selected', 'true');
     // Its pages are guarded as all others: the content blocker counts what it blocks there, and
     // its pages reach none of the browser's own pages.
     await open(browser, fixture('blocker.html'));

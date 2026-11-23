@@ -3,6 +3,7 @@ import type { PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
   FindInPage,
   OpenBlockerPopover,
+  OpenPopupsPopover,
   OpenBookmarkFolder,
   OpenBookmarkPopover,
   OpenDownloads,
@@ -304,6 +305,15 @@ export function registerLaterShellHandlers(dependencies: LaterShellDependencies)
   router.handle(OpenSiteInfo, async (anchor, { sender }) => {
     const window = windows.forShell(sender);
     if (window !== undefined) await dependencies.openSiteInfo(window, anchor);
+    return null;
+  });
+  // The pop-up blocker is part of the code for web pages, which has loaded before it blocked
+  // anything that its popover could list.
+  router.handle(OpenPopupsPopover, async (anchor, { sender }) => {
+    const window = windows.forShell(sender);
+    if (window === undefined) return null;
+    const { openPopupsPopover } = await import('./popup-blocker.ts');
+    openPopupsPopover(window, anchor);
     return null;
   });
 }

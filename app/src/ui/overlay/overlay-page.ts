@@ -39,6 +39,15 @@ interface Shield {
   readonly failed: boolean;
 }
 
+/** The pop-ups that the pop-up blocker blocked on the page of the active tab. */
+interface Popups {
+  readonly kind: 'popups';
+  readonly anchor: Shield['anchor'];
+  readonly site: string;
+  readonly popups: readonly string[];
+  readonly allowed: boolean;
+}
+
 /** The side of a split view that a question of a page shows over, in CSS pixels. */
 interface Pane {
   readonly x: number;
@@ -137,6 +146,7 @@ interface Suggestions {
 
 type Content =
   | Shield
+  | Popups
   | Login
   | Permission
   | SecurityKey
@@ -172,6 +182,7 @@ const isContent = (value: unknown): value is Content =>
   'kind' in value &&
   [
     'shield',
+    'popups',
     'login',
     'permission',
     'securityKey',
@@ -525,6 +536,34 @@ export class OverlayPage extends LitElement {
         gap: var(--space-1);
       }
       .downloads .actions button {
+        width: auto;
+        margin: 0;
+        padding: 2px var(--space-2);
+      }
+      .popups {
+        max-height: 40vh;
+        margin: var(--space-2) 0 0;
+        padding: 0;
+        overflow-y: auto;
+        list-style: none;
+      }
+      .popups li {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-1) 0;
+        border-top: 1px solid var(--line-1);
+      }
+      .popups .address {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--text-2);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .popups button {
+        flex: none;
         width: auto;
         margin: 0;
         padding: 2px var(--space-2);
@@ -896,6 +935,7 @@ export class OverlayPage extends LitElement {
     if (content.kind === 'dialog') return this.renderDialog(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
+    if (content.kind === 'popups') return this.renderPopups(content);
     // A press in the room around the suggestions, where the page would have got it, closes
     // them, and the page gets the focus back.
     if (content.kind === 'suggestions') {
@@ -1295,6 +1335,57 @@ export class OverlayPage extends LitElement {
         <button type="button" @click=${this.openDownloadsFolder}>
           ${this.t('overlay.downloadsFolder')}
         </button>
+      </section>`;
+  }
+
+  /**
+   * The popover of the pop-up blocker: the windows that the page opened without a click, each
+   * of which opens in a tab, and the choice to let the site open pop-ups from now on.
+   */
+  private renderPopups(content: Popups): TemplateResult {
+    const site = { site: content.site };
+    return html`<div class="backdrop" @click=${this.close}></div>
+      <section
+        class="popover wide"
+        role="dialog"
+        aria-labelledby="popups-title"
+        data-surface
+        data-anchor=${anchorText(content.anchor)}
+        data-align="end"
+      >
+        <h2 id="popups-title" class="site">${this.t('overlay.popups')}</h2>
+        ${
+          // Addresses too long for the list only count.
+          content.popups.length === 0
+            ? html`<p class="note">${this.t('overlay.popupsUnlisted')}</p>`
+            : html`<p class="note">${this.t('overlay.popupsNote')}</p>
+                <ul class="popups">
+                  ${content.popups.map(
+                    (url) =>
+                      html`<li>
+                        <span class="address" title=${url}>${url}</span>
+                        <button
+                          type="button"
+                          aria-label=${this.t('overlay.popupOpenFor', { url })}
+                          @click=${() =>
+                            void this.bridge?.invoke('overlay.openBlockedPopup', { url })}
+                        >
+                          ${this.t('overlay.popupOpen')}
+                        </button>
+                      </li>`,
+                  )}
+                </ul>`
+        }
+        ${
+          content.allowed
+            ? html`<p class="note" role="status">${this.t('overlay.popupsAllowed', site)}</p>`
+            : html`<button
+                type="button"
+                @click=${() => void this.bridge?.invoke('overlay.allowPopups', {})}
+              >
+                ${this.t('overlay.popupsAllow', site)}
+              </button>`
+        }
       </section>`;
   }
 

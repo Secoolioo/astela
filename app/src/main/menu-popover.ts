@@ -17,6 +17,7 @@ import type {
 } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
+import { openForPopup } from '../platform/electron/popup-windows.ts';
 import { bookmarkRoots } from '../shared/bookmarks.ts';
 import type { OverlayAnchor, PopoverAnchor } from '../shared/ipc/overlay-anchor.ts';
 import {
@@ -306,7 +307,9 @@ function connect(deps: MenuPopoverDependencies): void {
       return null;
     }
     const active = window.tabs.active;
-    if (newTab || active === undefined) window.tabs.open(action.url);
+    // A popup shows only its page: a bookmark for a new tab opens in a regular window.
+    if (newTab && window.popup) openForPopup(window, action.url, true);
+    else if (newTab || active === undefined) window.tabs.open(action.url);
     else window.tabs.navigate(active.id, action.url);
     return null;
   });

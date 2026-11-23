@@ -341,7 +341,9 @@ const maxSites = 10_000;
 
 /**
  * What sites may use after the user answered their question, by origin, such as
- * `{"https://meet.example": {"camera": "allow", "notifications": "block"}}`.
+ * `{"https://meet.example": {"camera": "allow", "notifications": "block"}}`, and whether their
+ * pages may open pop-ups without a click (`popups`), which people allow from the popover of the
+ * pop-up blocker.
  */
 export const SitePermissionsSetting = defineSetting<SitePermissions>({
   key: 'permissions.sites',
@@ -358,6 +360,7 @@ export const SitePermissionsSetting = defineSetting<SitePermissions>({
         location: PermissionDecision,
         notifications: PermissionDecision,
         clipboard: PermissionDecision,
+        popups: PermissionDecision,
       }),
     ),
     v.check((sites) => Object.keys(sites).length <= maxSites, 'Too many sites'),

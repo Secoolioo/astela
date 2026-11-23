@@ -106,6 +106,20 @@ describe('title bar', () => {
     });
   });
 
+  it('gives a popup without a tab strip only its toolbar, which is its top row', () => {
+    const popup = { side: 'none', toolbar: 'own-row' } as const;
+    expect(startInsets('normal', popup)).toEqual({ top: 40, right: 0, bottom: 0, left: 0 });
+    expect(startInsets('compact', popup)).toEqual({ top: 32, right: 0, bottom: 0, left: 0 });
+    expect(titleBarArea('linux', 'normal', popup)).toEqual({ side: 'end', size: 138, height: 40 });
+    const colors = { window: '#f5f7f9', toolbar: '#fdfdff' };
+    expect(controlsOverlay(titleBarArea('win32', 'normal', popup), colors, 'none').color).toBe(
+      '#fdfdff',
+    );
+    // The toolbar of a popup keeps a row of its own, also where the settings put it in the row of
+    // the tabs.
+    expect(toolbarRow('none', 'tab-row')).toBe('own-row');
+  });
+
   it('gives the window controls the color and the height of the row that they sit on', () => {
     const light = { window: '#f5f7f9', toolbar: '#fdfdff' };
     const dark = { window: '#14161a', toolbar: '#1f2226' };

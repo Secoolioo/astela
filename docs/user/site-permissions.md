@@ -25,9 +25,11 @@ What does not work yet on Linux and macOS: keys that need their PIN, signing in 
 
 The settings page lists every site that you answered under **Privacy**, **Site permissions**, with what it may use. There you can change an answer from allowed to blocked or back, or remove it; the site then asks again the next time.
 
+From 0.1.0-beta.7, the list also shows **Pop-ups** for the sites that you always allowed to open windows without a click, from the chip of the pop-up blocker in the address bar; see [Blocked pop-ups](windows-and-popups.md#blocked-pop-ups). No site asks for it. Blocked, or removed, the site opens windows only right after a click again.
+
 ## In site information
 
-From 0.1.0-beta.7, a click on the connection in the [address bar](address-bar.md#site-information) shows the permissions that you answered for the site, each with a switch: on allows it, off blocks it. A site that asked for nothing yet shows none. **Reset permissions** forgets every answer of the site, which then asks again. A change counts at once for what the site asks next; what it uses already, such as a camera that runs, changes once the page loads again, and **Reload** does that.
+From 0.1.0-beta.7, a click on the connection in the [address bar](address-bar.md#site-information) shows the permissions that you answered for the site, and **Pop-ups** when you allowed or blocked them for the site, each with a switch: on allows it, off blocks it. A site that asked for nothing yet shows none. **Reset permissions** forgets every answer of the site, which then asks again, and its pop-ups open only after a click again. A change counts at once for what the site asks next and for its pop-ups; what it uses already, such as a camera that runs, changes once the page loads again, and **Reload** does that.
 
 In a private window, site information shows and changes the answers of the private windows, which never reach the settings and which they forget when the last private window closes.
 

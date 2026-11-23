@@ -3144,13 +3144,17 @@ interface PageSection extends Omit<SettingsSection, 'rows'> {
   readonly rows: readonly PageRow[];
 }
 
-/** The permissions that sites ask for, and their names on the page. */
+/**
+ * The permissions that sites ask for, and whether they may open pop-ups without a click, which
+ * people allow in the popover of the pop-up blocker, and their names on the page.
+ */
 const permissionLabels = {
   camera: 'settings.permission.camera',
   microphone: 'settings.permission.microphone',
   location: 'settings.permission.location',
   notifications: 'settings.permission.notifications',
   clipboard: 'settings.permission.clipboard',
+  popups: 'settings.permission.popups',
 } as const satisfies Record<string, MessageKey>;
 
 type PermissionName = keyof typeof permissionLabels;
@@ -3161,6 +3165,7 @@ const permissionNames: readonly PermissionName[] = [
   'location',
   'notifications',
   'clipboard',
+  'popups',
 ];
 
 /** What the user decided for each site, by origin. */

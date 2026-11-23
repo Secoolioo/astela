@@ -23,6 +23,7 @@ const tab = (id: string): TabView => ({
   canGoBack: false,
   canGoForward: false,
   blocked: 0,
+  popups: 0,
   blocking: 'on',
   bookmarked: false,
   problem: null,

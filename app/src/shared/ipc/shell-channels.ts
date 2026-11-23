@@ -3,6 +3,7 @@ export const shellLaterChannels = [
   'tabs.reopenClosed',
   'shell.openMenu',
   'shell.openBlockerPopover',
+  'shell.openPopups',
   'shell.openDownloads',
   'tabs.proceedUnsafely',
   'tabs.proceedInsecurely',

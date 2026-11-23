@@ -230,7 +230,14 @@ test('keeps web content away from internal APIs and pages', async () => {
 test('opens new windows from pages as tabs', async () => {
   await navigate(`${server.origin}/index.html`);
   const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));
-  await page.evaluate((url) => window.open(url), `${server.origin}/second.html`);
+  // A page opens windows after a click; the browser blocks those that no click opened.
+  await page.evaluate((url) => {
+    const button = document.createElement('button');
+    button.textContent = 'Open a window';
+    button.addEventListener('click', () => window.open(url));
+    document.body.append(button);
+  }, `${server.origin}/second.html`);
+  await page.getByRole('button', { name: 'Open a window' }).click();
   await expect(browser.shell.getByRole('tab')).toHaveCount(2);
   expect(await browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)).toBe(
     1,

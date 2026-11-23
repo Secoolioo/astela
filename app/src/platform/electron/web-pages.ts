@@ -2,7 +2,9 @@ import type { Input, WebContents, WebContentsView } from 'electron';
 import type { TabId, TabProblem } from '../../domain/tabs/tab-service.ts';
 import { noAppRegionCss } from '../../shared/app-region.ts';
 import { sameZoom, zoomFactors } from '../../shared/zoom.ts';
+import { activates } from '../../domain/navigation/popup-activation.ts';
 import type { CoverEnd, TabCover, WindowHost, WebPages } from './browser-window.ts';
+import { followActivation, pageActivations } from './page-activation.ts';
 import { typesText } from './tab-activity.ts';
 
 /**
@@ -38,6 +40,8 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   const contents = view.webContents;
   // What a web page does that keeps it awake, such as media that play.
   options.activity?.()?.watch(contents);
+  // The input that people give the page lets it open a window.
+  followActivation(contents);
   // The frame preload keeps every document that a web page loads from moving the window. A
   // page that a script opened shows what the script wrote into its first, empty document,
   // in which no preload runs, and every document gets the style sheet again once it is
@@ -319,13 +323,15 @@ async function loadFavicon(
 }
 
 /**
- * Takes note of a key that reaches a web page and types text into it: the page may hold
- * changes that it has not saved yet, which keep its tab awake.
+ * Takes note of a key that reaches a web page, and no shortcut of the browser took: it lets the
+ * page open a window, and one that types text means that the page may hold changes that it has
+ * not saved yet, which keep its tab awake.
  * @param host - The window.
  * @param contents - The web page.
  * @param input - The key, as `before-input-event` gives it.
  */
 function typed(host: WindowHost, contents: WebContents, input: Input): void {
+  if (activates(input)) pageActivations.activate(contents);
   if (typesText(input)) host.options.activity?.()?.typing(contents);
 }
 

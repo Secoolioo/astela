@@ -10,8 +10,14 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Blocking } from '../domain/blocker/blocking.ts';
 import { freeName, pathKey } from '../domain/downloads/downloads.ts';
-import { storageAccessOpen, type SitePermissions } from '../domain/permissions/site-permissions.ts';
-import { popupBounds } from '../domain/windows/popup-bounds.ts';
+import {
+  allowsPopups,
+  decide,
+  originOf,
+  storageAccessOpen,
+  type SitePermissions,
+} from '../domain/permissions/site-permissions.ts';
+import { fittedPopup, popupBounds, popupFrame } from '../domain/windows/popup-bounds.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import { ContentBlocker } from '../platform/blocker/content-blocker.ts';
@@ -25,11 +31,14 @@ import { HttpsFirst } from '../platform/electron/https-first.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions } from '../platform/electron/overlay.ts';
 import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
+import { pageActivations } from '../platform/electron/page-activation.ts';
+import { tabWindowOf } from '../platform/electron/popup-windows.ts';
 import type { PermissionHandler } from '../platform/electron/session-security.ts';
 import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import { blockerFrames, type BlockerFrames } from './blocker-frames.ts';
 import { watchPageQuestions } from './page-questions.ts';
+import { popupBlocker } from './popup-blocker.ts';
 import { chosenToSave } from './save-as.ts';
 import { listenToFrames, type FrameReports } from './web-frames.ts';
 import type { ProtectedMedia } from './protected-media.ts';
@@ -40,6 +49,7 @@ import {
   BlockerCookieNoticesSetting,
   BlockThirdPartyCookiesSetting,
   ContentBlockerSetting,
+  DensitySetting,
   DownloadFolderSetting,
   HttpAllowlistSetting,
   HttpsFirstSetting,
@@ -148,11 +158,18 @@ export interface WebRequests {
   saveDownload(item: DownloadItem, from: Session): void;
   /**
    * Takes the page that a script opened into a window: a popup with a size or position gets a
-   * window of its own, anything else a tab, in the background when the user asked for that.
-   * What a page of a private window opens stays private.
+   * window of its own, whose page has the size that it asked for, anything else a tab, in the
+   * background when the user asked for that. A popup shows only its page, so the tabs that its
+   * page opens open in a regular window of its workspace. What a page of a private window opens
+   * stays private.
    */
   openWindow(contents: WebContents, opener: WebContents, opening: WindowOpening): void;
-  /** Whether the filter lists name a popup, which then does not open and counts as blocked. */
+  /**
+   * Whether a window that a page opens is blocked: the filter lists name it, and it counts as
+   * blocked by the content blocker; or no click opened it, and its site may not open pop-ups,
+   * and the tab of the page lists it as a blocked pop-up. Every window that a page opens uses
+   * the input that a person gave the page up, so that one click opens one window.
+   */
   blocksPopup(url: string, opener: WebContents): boolean;
   /**
    * The permissions of the pages of a session, as their kind of window decides them: a private
@@ -364,25 +381,43 @@ export function webRequests(options: WebRequestOptions): WebRequests {
       private: options.isPrivate(opener.session),
       workspace: window?.tabs.workspaceOf(window.tabIdOf(opener) ?? ''),
     };
-    // A popup opens where and as large as the page asked.
+    // A popup opens where the page asked, and its page as large as the page asked: its window
+    // has only a toolbar around it.
     if (disposition === 'new-window' && features !== '') {
+      const areas = screen.getAllDisplays().map((display) => display.workArea);
       const bounds = popupBounds(
         features,
         window?.window.getBounds() ?? { x: 100, y: 100, width: 1280, height: 820 },
-        screen.getAllDisplays().map((display) => display.workArea),
+        areas,
+        popupFrame(settings.get(DensitySetting)),
       );
-      windows.openWith(contents, url, { ...place, bounds, popup: true });
+      const popup = windows.openWith(contents, url, { ...place, bounds, popup: true }).window;
+      // The title bar of the system adds to the size of the page; the window still fits.
+      const outer = popup.getBounds();
+      const fitted = fittedPopup(outer, areas);
+      if (JSON.stringify(fitted) !== JSON.stringify(outer)) popup.setBounds(fitted);
       return;
     }
+    // A popup shows only its page: what its page opens in a tab opens in a regular window.
+    const activate = disposition !== 'background-tab';
     const target =
-      disposition === 'new-window' ? undefined : (window ?? windows.lastUsedOf(place.private));
+      disposition === 'new-window'
+        ? undefined
+        : window?.popup === true
+          ? tabWindowOf(window)
+          : (window ?? windows.lastUsedOf(place.private));
     if (target === undefined) windows.openWith(contents, url, place);
-    else target.adopt(contents, url, disposition !== 'background-tab', opener);
+    else target.adopt(contents, url, activate, opener);
+    // The regular window comes to the front of the popup, for the tab that opened in front.
+    if (activate && window?.popup === true) target?.window.focus();
   };
   const blocksPopup = (url: string, opener: WebContents): boolean => {
-    const blocked = blocker.blocksPopup(url, opener.getURL());
-    if (blocked) windows.countBlocked(opener.id);
-    return blocked;
+    const activated = pageActivations.consume(opener);
+    if (blocker.blocksPopup(url, opener.getURL())) {
+      windows.countBlocked(opener.id);
+      return true;
+    }
+    return !activated && popups.block(url, opener);
   };
   // Web pages ask before they use the camera, the microphone, the location and the like; the
   // question loads with the first one.
@@ -485,6 +520,24 @@ export function webRequests(options: WebRequestOptions): WebRequests {
       private: options.isPrivate(s),
       setting: settings.get(BlockThirdPartyCookiesSetting),
     });
+  // Pages open windows after a click, and those of the sites that people allowed also without
+  // one, in the store of the decisions of their kind of window.
+  const popups = popupBlocker({
+    windows,
+    router: options.router,
+    overlay: options.overlay,
+    allows: (contents) => {
+      const origin = originOf(contents.getURL());
+      return (
+        origin !== undefined && allowsPopups(permissionStore(contents.session).sites(), origin)
+      );
+    },
+    allow: (contents) => {
+      const origin = originOf(contents.getURL());
+      const store = permissionStore(contents.session);
+      if (origin !== undefined) store.save(decide(store.sites(), origin, ['popups'], 'allow'));
+    },
+  });
   // A page that got a camera, a microphone or the screen stays awake.
   const permissions = (s: Session): PermissionHandler => {
     const handler = handlerOf(s);

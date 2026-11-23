@@ -6,7 +6,9 @@ import {
   type ContextMenuAction,
   type ContextMenuEntry,
 } from '../domain/context-menu/context-menu.ts';
+import { mayOpenInNewTab } from '../domain/navigation/new-tab.ts';
 import type { ContextMenuRequest } from '../platform/electron/browser-window.ts';
+import { openForPopup } from '../platform/electron/popup-windows.ts';
 import { contextMenuLabels } from './context-menu-labels.ts';
 import { saveAs } from './save-as.ts';
 
@@ -125,7 +127,9 @@ function run(
   }
   switch (action.kind) {
     case 'openTab':
-      deps.openTab(action.url, contents, action.activate);
+      if (!window.popup) deps.openTab(action.url, contents, action.activate);
+      // A popup shows only its page: the tab opens in a regular window, on the same terms.
+      else if (mayOpenInNewTab(action.url)) openForPopup(window, action.url, action.activate);
       break;
     case 'download':
       saveAs(contents, action.url);

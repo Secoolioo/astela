@@ -55,6 +55,7 @@ import {
   windowButtonsAt,
   type ControlsOverlay,
   type Density,
+  type StripSide,
   type TitleBarArea,
 } from '../../domain/windows/title-bar.ts';
 import type { RowsHiding } from '../../domain/windows/top-rows.ts';
@@ -815,10 +816,15 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private readonly triedAt = new Map<TabId, number>();
   /** The page that a script opened, which the next new tab shows instead of a new page. */
   private adopting: WebContents | undefined;
-  /** Whether the window is a popup that a page opened. */
+  /**
+   * Whether the window is a popup that a page opened, which shows only that page, without a tab
+   * strip: what would open in another tab of it opens in a regular window (`popup-windows.ts`).
+   */
   readonly popup: boolean;
   /** Whether the window is a private window. */
   readonly isPrivate: boolean;
+  /** The windows of the browser, among them the one that takes the tabs of a popup. */
+  readonly windows: WindowManager | undefined;
   /**
    * The views of the pages that the content area shows, attached to the window, from left to
    * right.
@@ -857,11 +863,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private hidesUntilClosed = false;
   private readonly options: BrowserWindowOptions;
 
-  /** @param options - Environment of the window. */
-  constructor(options: BrowserWindowOptions, place: WindowPlace = {}) {
+  /**
+   * @param options - Environment of the window.
+   * @param place - Where the window opens, and what kind of window it is.
+   * @param windows - The windows of the browser, which the window joins.
+   */
+  constructor(options: BrowserWindowOptions, place: WindowPlace = {}, windows?: WindowManager) {
     this.options = options;
     this.popup = place.popup === true;
     this.isPrivate = place.private === true;
+    this.windows = windows;
     const titleBar = options.titleBar?.();
     this.integrated = titleBar?.integrated === true;
     const area = this.titleBarArea(titleBar?.density ?? 'normal');
@@ -869,6 +880,9 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     if (overlay !== undefined) this.overlayKey = JSON.stringify(overlay);
     this.window = new BaseWindow({
       ...(place.bounds ?? { width: 1280, height: 820 }),
+      // A popup is as large as its page asked for, with its toolbar: a frame of the system adds
+      // to it.
+      useContentSize: this.popup,
       minWidth: 480,
       minHeight: 320,
       // Shown at once in the theme's background color: Chromium lowers the priority of the
@@ -879,7 +893,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     });
     this.titleBarShown = area;
     this.insets = startInsets(titleBar?.density ?? 'normal', {
-      side: options.tabStripPosition(),
+      side: this.stripSide,
       toolbar: this.toolbarPlace(),
     });
     this.shell = new WebContentsView({
@@ -1085,6 +1099,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
           canGoBack,
           canGoForward,
           blocked,
+          popups: tab.popups,
           blocking: this.options.blocking(url),
           bookmarked: this.options.isBookmarked?.(url) ?? false,
           problem,
@@ -1103,6 +1118,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       ),
       activeTabId: active?.id ?? null,
       tabStrip: this.options.tabStripPosition(),
+      popup: this.popup,
       bookmarksBar: this.options.bookmarksBar?.() ?? null,
       find: this.finding,
       downloads: this.options.downloads?.(this.isPrivate) ?? null,
@@ -1121,12 +1137,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     };
   }
 
-  /** Where the toolbar is: in the row of the tabs only with the tab strip at the top. */
+  /**
+   * Where the toolbar is: in the row of the tabs only with the tab strip at the top, and in a
+   * row of its own in a popup, which has no tab strip.
+   */
   private toolbarPlace(): ToolbarPlacement {
-    return toolbarRow(
-      this.options.tabStripPosition(),
-      this.options.toolbarPlacement?.() ?? 'own-row',
-    );
+    return toolbarRow(this.stripSide, this.options.toolbarPlacement?.() ?? 'own-row');
   }
 
   /**
@@ -1170,11 +1186,16 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     return contents !== undefined && this.options.certificateException?.(contents, url) === true;
   }
 
+  /** Where the tab strip is: a popup has none, and its toolbar is the top row. */
+  private get stripSide(): StripSide {
+    return this.popup ? 'none' : this.options.tabStripPosition();
+  }
+
   /** The area of the window controls in the top row, or `null` with the system's title bar. */
   private titleBarArea(density: Density): TitleBarArea | null {
     return this.integrated
       ? titleBarArea(process.platform, density, {
-          side: this.options.tabStripPosition(),
+          side: this.stripSide,
           toolbar: this.toolbarPlace(),
         })
       : null;
@@ -1184,7 +1205,7 @@ export class BrowserWindowController implements Disposable, TabViewPort {
   private controlsOverlay(area: TitleBarArea): ControlsOverlay {
     const window = this.options.backgroundColor(this.isPrivate);
     const toolbar = this.options.toolbarColor?.(this.isPrivate) ?? window;
-    return controlsOverlay(area, { window, toolbar }, this.options.tabStripPosition());
+    return controlsOverlay(area, { window, toolbar }, this.stripSide);
   }
 
   /**
@@ -1705,6 +1726,11 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     const active = this.tabs.active;
     switch (command) {
       case 'tab.new':
+        // A popup shows only its page: its new tab opens in a regular window.
+        if (this.popup) {
+          this.openPage('newtab');
+          break;
+        }
         this.tabs.open();
         // The shell learns of the new tab before its address bar takes the focus, so that the
         // keys typed right away go to the new tab and not to the tab that was active.
@@ -1752,9 +1778,12 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     }
   }
 
-  /** Whether the window may show two tabs side by side, which a setting or a policy can turn off. */
+  /**
+   * Whether the window may show two tabs side by side, which a setting or a policy can turn off;
+   * a popup, which shows only its page, never does.
+   */
   splitView(): boolean {
-    return this.options.splitView?.() ?? true;
+    return !this.popup && (this.options.splitView?.() ?? true);
   }
 
   /**
@@ -2261,10 +2290,10 @@ export class BrowserWindowController implements Disposable, TabViewPort {
         this.layout();
       });
     }
-    // The count of blocked requests belongs to one page.
+    // The counts of blocked requests and pop-ups belong to one page.
     contents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument && this.entries.get(id)?.view === view) {
-        this.tabs.update(id, { blocked: 0 });
+        this.tabs.update(id, { blocked: 0, popups: 0 });
       }
     });
     // A tab keeps its sound muted when it changes between web pages and the browser's own.
@@ -2978,7 +3007,7 @@ export class WindowManager implements Disposable {
   }
 
   private add(place?: WindowPlace): BrowserWindowController {
-    const controller = new BrowserWindowController(this.options, place);
+    const controller = new BrowserWindowController(this.options, place, this);
     this.windows.add(controller);
     const listener = controller.tabs.onDidChange(() => this.changeEmitter.fire());
     const kept = controller.tabs.onDidChangeKept((change) => this.keptEmitter.fire(change));
