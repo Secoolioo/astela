@@ -71,7 +71,6 @@ export const SearchUrlTemplate = defineSetting({
   default: 'https://duckduckgo.com/?q=%s',
   scope: 'global',
   policy: { name: 'DefaultSearchProviderSearchURL', sensitive: true },
-  ui: { section: 'search', control: 'text' },
 });
 
 /**
@@ -97,7 +96,6 @@ export const SearchEnginesSetting = defineSetting<CustomSearchEngine[]>({
   ),
   default: [],
   scope: 'global',
-  ui: { section: 'search', control: 'list', order: 2 },
 });
 
 /** Whether a `!bang` at the start or the end of a search, such as `!w`, searches its site. */
@@ -106,7 +104,6 @@ export const SearchBangsSetting = defineSetting<boolean>({
   schema: v.boolean(),
   default: true,
   scope: 'global',
-  ui: { section: 'search', control: 'toggle', order: 3 },
 });
 
 /** Whether the browser follows the system's light or dark mode, or always uses one. */
@@ -115,7 +112,6 @@ export const ColorModeSetting = defineSetting<ColorMode>({
   schema: v.picklist(colorModes),
   default: 'system',
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 1 },
 });
 
 /** Accent color: a preset such as `blue`, or a custom `#rrggbb` color. */
@@ -127,7 +123,6 @@ export const AccentSetting = defineSetting({
   ]),
   default: 'astela',
   scope: 'global',
-  ui: { section: 'appearance', control: 'color', order: 2 },
 });
 
 /** The colors of the browser's own views: a built-in theme, or the colors that people chose. */
@@ -136,7 +131,6 @@ export const ThemeSetting = defineSetting<ThemeChoice>({
   schema: v.picklist([...themeIds, 'custom']),
   default: 'astela',
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 2 },
 });
 
 /** The colors of the custom theme, by color mode and token; others keep Astela's. */
@@ -145,7 +139,6 @@ export const CustomThemeSetting = defineSetting<CustomThemeColors>({
   schema: CustomTheme,
   default: { light: {}, dark: {} },
   scope: 'global',
-  ui: { section: 'appearance', control: 'color', order: 2 },
 });
 
 /** Size of the toolbar and the tabs. */
@@ -154,7 +147,6 @@ export const DensitySetting = defineSetting<Density>({
   schema: v.picklist(densities),
   default: 'normal',
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 3 },
 });
 
 /** A font, by the name of its family; empty for the default. */
@@ -166,7 +158,6 @@ export const TextSizeSetting = defineSetting<TextSize>({
   schema: v.picklist(textSizes),
   default: 'medium',
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 6 },
 });
 
 /** The font of the browser's own UI, by its name; empty keeps the font of the system. */
@@ -175,7 +166,6 @@ export const UiFontSetting = defineSetting<string>({
   schema: FontName,
   default: '',
   scope: 'global',
-  ui: { section: 'appearance', control: 'text', order: 7 },
 });
 
 /** The fonts of web pages that name none; new tabs use them. */
@@ -189,7 +179,6 @@ export const WebFontsSetting = defineSetting<WebFonts>({
   }),
   default: { standard: '', serif: '', sansSerif: '', fixed: '' },
   scope: 'global',
-  ui: { section: 'appearance', control: 'text', order: 9 },
 });
 
 /** The size of the text of web pages that set none, in CSS pixels; new tabs use it. */
@@ -198,7 +187,6 @@ export const WebTextSizeSetting = defineSetting<number>({
   schema: v.pipe(v.number(), v.integer(), v.minValue(6), v.maxValue(72)),
   default: 16,
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 8 },
 });
 
 /** The buttons of the toolbar that show next to the address bar, in their order. */
@@ -210,7 +198,6 @@ export const ToolbarItemsSetting = defineSetting<ToolbarItem[]>({
   ),
   default: [...toolbarItems],
   scope: 'global',
-  ui: { section: 'appearance', control: 'list', order: 11 },
 });
 
 /** Where the tab strip is; vertical positions show the tabs as a list at the side. */
@@ -220,7 +207,6 @@ export const TabStripPositionSetting = defineSetting<TabStripPosition>({
   default: 'top',
   scope: 'global',
   policy: { name: 'TabStripPosition', recommended: true },
-  ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
 /**
@@ -234,7 +220,6 @@ export const ToolbarPlacementSetting = defineSetting<ToolbarPlacement>({
   default: 'own-row',
   scope: 'global',
   policy: { name: 'ToolbarPlacement', recommended: true },
-  ui: { section: 'appearance', control: 'select', order: 4 },
 });
 
 /**
@@ -250,7 +235,6 @@ export const ToolbarAutoHideSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'AutoHideToolbar', recommended: true },
-  ui: { section: 'appearance', control: 'toggle', order: 4 },
 });
 
 /** Where the window controls are: in the row of the tabs, or in a title bar of the system. */
@@ -265,7 +249,6 @@ export const TitleBarSetting = defineSetting<TitleBar>({
   default: 'integrated',
   scope: 'global',
   restartRequired: true,
-  ui: { section: 'appearance', control: 'select', order: 5 },
 });
 
 /** Whether the content blocker blocks ads, trackers and what pages load from known malware hosts. */
@@ -275,7 +258,6 @@ export const ContentBlockerSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'ContentBlockerEnabled', recommended: true },
-  ui: { section: 'privacy', control: 'toggle', order: 1 },
 });
 
 /**
@@ -291,7 +273,6 @@ export const BlockerAllowedSitesSetting = defineSetting<string[]>({
   default: [],
   scope: 'global',
   policy: { name: 'ContentBlockerAllowedSites', recommended: true },
-  ui: { section: 'privacy', control: 'list', order: 4 },
 });
 
 /** Whether the content blocker also hides cookie notices, with the optional lists for them. */
@@ -301,7 +282,6 @@ export const BlockerCookieNoticesSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'ContentBlockerCookieNoticesEnabled', recommended: true },
-  ui: { section: 'privacy', control: 'toggle', order: 2 },
 });
 
 /**
@@ -314,7 +294,6 @@ export const BlockerAnnoyancesSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'ContentBlockerAnnoyancesEnabled', recommended: true },
-  ui: { section: 'privacy', control: 'toggle', order: 3 },
 });
 
 /** The zoom of pages whose site has no zoom of its own, as a factor of their size. */
@@ -323,7 +302,6 @@ export const DefaultZoomSetting = defineSetting<number>({
   schema: v.picklist(zoomFactors),
   default: 1,
   scope: 'global',
-  ui: { section: 'appearance', control: 'select', order: 10 },
 });
 
 /** The zoom factor of each site whose zoom someone changed, by host name. */
@@ -376,7 +354,6 @@ export const SitePermissionsSetting = defineSetting<SitePermissions>({
   ),
   default: {},
   scope: 'global',
-  ui: { section: 'privacy', control: 'list', order: 5 },
 });
 
 /**
@@ -409,7 +386,6 @@ export const StartupSetting = defineSetting<'restore' | 'newtab' | 'pages'>({
       v.transform((value) => (value === 1 ? 'restore' : value === 4 ? 'pages' : 'newtab')),
     ),
   },
-  ui: { section: 'startup', control: 'select', order: 1 },
 });
 
 /** The pages that open at start when `startup.page` is `pages`, in this order. */
@@ -419,7 +395,6 @@ export const StartupPagesSetting = defineSetting<string[]>({
   default: [],
   scope: 'global',
   policy: { name: 'RestoreOnStartupURLs', recommended: true },
-  ui: { section: 'startup', control: 'list', order: 2 },
 });
 
 /** Whether the browser loads sites over HTTPS and warns before an insecure connection. */
@@ -436,7 +411,6 @@ export const HttpsFirstSetting = defineSetting<boolean>({
       v.transform((value) => value !== 'disallowed'),
     ),
   },
-  ui: { section: 'privacy', control: 'toggle', order: 6 },
 });
 
 /** Hosts that HTTPS-First leaves on their insecure address, such as sites of an intranet. */
@@ -459,7 +433,6 @@ export const SecureDnsSetting = defineSetting<SecureDnsMode>({
   scope: 'global',
   // A policy of the user could send every look-up elsewhere, so only the machine's counts.
   policy: { name: 'DnsOverHttpsMode', sensitive: true },
-  ui: { section: 'privacy', control: 'select', order: 7 },
 });
 
 /** The addresses of the DNS over HTTPS services, separated by spaces; empty for the system's. */
@@ -473,7 +446,6 @@ export const SecureDnsTemplatesSetting = defineSetting<string>({
   default: '',
   scope: 'global',
   policy: { name: 'DnsOverHttpsTemplates', sensitive: true },
-  ui: { section: 'privacy', control: 'text', order: 8 },
 });
 
 /**
@@ -487,7 +459,6 @@ export const CommandPaletteSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'CommandPaletteEnabled', recommended: true },
-  ui: { section: 'shortcuts', control: 'toggle', order: 0 },
 });
 
 /** The keyboard shortcuts that people chose, by command; other commands keep their defaults. */
@@ -508,7 +479,6 @@ export const ShortcutsSetting = defineSetting<ShortcutOverrides>({
   ),
   default: {},
   scope: 'global',
-  ui: { section: 'shortcuts', control: 'list', order: 1 },
 });
 
 /**
@@ -521,9 +491,6 @@ export const AltOpensMenuSetting = defineSetting<boolean>({
   schema: v.boolean(),
   default: true,
   scope: 'global',
-  ...(process.platform === 'darwin'
-    ? {}
-    : { ui: { section: 'shortcuts', control: 'toggle', order: 2 } as const }),
 });
 
 /** Whether pages keep the cookies of other sites away, in requests, responses and frames. */
@@ -533,7 +500,6 @@ export const BlockThirdPartyCookiesSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'BlockThirdPartyCookies', recommended: true },
-  ui: { section: 'privacy', control: 'toggle', order: 9 },
   // Chromium reads its own blocking as it starts; see cookie-blocking.ts.
   restartRequired: true,
 });
@@ -545,7 +511,6 @@ export const HomeButtonSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'ShowHomeButton', recommended: true },
-  ui: { section: 'startup', control: 'toggle', order: 3 },
 });
 
 /** The page of the home button; empty for the new tab page. */
@@ -555,7 +520,6 @@ export const HomePageSetting = defineSetting<string>({
   default: '',
   scope: 'global',
   policy: { name: 'HomepageLocation', recommended: true },
-  ui: { section: 'startup', control: 'text', order: 4 },
 });
 
 /**
@@ -575,7 +539,6 @@ export const DownloadFolderSetting = defineSetting<string>({
   default: '',
   scope: 'global',
   policy: { name: 'DownloadDirectory', recommended: true },
-  ui: { section: 'downloads', control: 'folder', order: 1 },
 });
 
 /** Whether the browser asks where to save each download. */
@@ -585,7 +548,6 @@ export const AskDownloadSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'PromptForDownloadLocation', recommended: true },
-  ui: { section: 'downloads', control: 'toggle', order: 2 },
 });
 
 /**
@@ -599,7 +561,6 @@ export const TabSleepSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'SleepingTabsEnabled', recommended: true },
-  ui: { section: 'performance', control: 'toggle', order: 1 },
 });
 
 /**
@@ -613,7 +574,6 @@ export const TabSleepAfterSetting = defineSetting<SleepAfter>({
   default: 3600,
   scope: 'global',
   policy: { name: 'SleepingTabsTimeout', recommended: true },
-  ui: { section: 'performance', control: 'select', order: 2 },
 });
 
 /** Whether the new tab page shows the search field. */
@@ -622,7 +582,6 @@ export const NewTabSearchSetting = defineSetting<boolean>({
   schema: v.boolean(),
   default: true,
   scope: 'global',
-  ui: { section: 'newtab', control: 'toggle', order: 1 },
 });
 
 /** Whether the new tab page shows a clock. */
@@ -631,7 +590,6 @@ export const NewTabClockSetting = defineSetting<boolean>({
   schema: v.boolean(),
   default: false,
   scope: 'global',
-  ui: { section: 'newtab', control: 'toggle', order: 2 },
 });
 
 /** The tiles of the new tab page: web pages with a title, in their order. */
@@ -648,7 +606,6 @@ export const NewTabTilesSetting = defineSetting<{ title: string; url: string }[]
   ),
   default: [],
   scope: 'global',
-  ui: { section: 'newtab', control: 'list', order: 3 },
 });
 
 /** Whether the new tab page shows the sites opened most often, from the history. */
@@ -657,7 +614,6 @@ export const NewTabMostVisitedSetting = defineSetting<boolean>({
   schema: v.boolean(),
   default: false,
   scope: 'global',
-  ui: { section: 'newtab', control: 'toggle', order: 4 },
 });
 
 /** The background of the new tab page. */
@@ -666,7 +622,6 @@ export const NewTabBackgroundSetting = defineSetting<NewTabBackgroundValue>({
   schema: NewTabBackground,
   default: { kind: 'none' },
   scope: 'global',
-  ui: { section: 'newtab', control: 'color', order: 5 },
 });
 
 /** Whether this profile has shown the setup guide; it opens once per profile. */
@@ -684,7 +639,6 @@ export const BookmarksBarSetting = defineSetting<boolean>({
   default: false,
   scope: 'global',
   policy: { name: 'BookmarkBarEnabled', recommended: true },
-  ui: { section: 'appearance', control: 'toggle', order: 5 },
 });
 
 /**
@@ -697,7 +651,6 @@ export const SplitViewSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'SplitViewEnabled', recommended: true },
-  ui: { section: 'appearance', control: 'toggle', order: 6 },
 });
 
 /**
@@ -724,7 +677,6 @@ export const WorkspacesEnabledSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'WorkspacesEnabled', recommended: true },
-  ui: { section: 'appearance', control: 'toggle', order: 7 },
 });
 
 /**
@@ -738,7 +690,6 @@ export const ReaderEnabledSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'ReaderViewEnabled', recommended: true },
-  ui: { section: 'pageTools', control: 'toggle', order: 1 },
 });
 
 /** The font of the reader view: that of the browser, or the serif font of web pages. */
@@ -747,7 +698,6 @@ export const ReaderFontSetting = defineSetting<ReaderFont>({
   schema: v.picklist(readerFonts),
   default: 'browser',
   scope: 'global',
-  ui: { section: 'pageTools', control: 'select', order: 2 },
 });
 
 /**
@@ -764,7 +714,6 @@ export const PictureInPictureEnabledSetting = defineSetting<boolean>({
   default: true,
   scope: 'global',
   policy: { name: 'PictureInPictureEnabled', recommended: true },
-  ui: { section: 'pageTools', control: 'toggle', order: 3 },
 });
 
 /**
@@ -792,7 +741,6 @@ export const LanguageSetting = defineSetting<string>({
   scope: 'global',
   policy: { name: 'ApplicationLocaleValue', recommended: true },
   restartRequired: true,
-  ui: { section: 'languages', control: 'select', order: 1 },
 });
 
 /** Settings that exist before any feature module contributes its own. */
