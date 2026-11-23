@@ -69,7 +69,10 @@ interface Opened {
   readonly tab: TabId;
   readonly origin: string;
   readonly anchor: OverlayAnchor;
-  /** Whether a permission changed, which a reload of the page applies. */
+  /**
+   * Whether a permission that the site asked for changed, which a reload of the page applies;
+   * the page follows a decision about its pop-ups at once.
+   */
   changed: boolean;
   /** Whether the cookies and data of the site were deleted. */
   cleared: boolean;
@@ -207,7 +210,7 @@ function connect(deps: SiteInfoDependencies): void {
     if (store.managed()) return null;
     const sites = store.sites();
     const next = setPermission(sites, found.state.origin, permission, allowed);
-    if (next !== sites && store.save(next)) found.state.changed = true;
+    if (next !== sites && store.save(next) && permission !== 'popups') found.state.changed = true;
     refresh(found.window, found.overlay);
     return null;
   });
@@ -218,7 +221,10 @@ function connect(deps: SiteInfoDependencies): void {
     if (store.managed()) return null;
     const sites = store.sites();
     const next = resetPermissions(sites, found.state.origin);
-    if (next !== sites && store.save(next)) found.state.changed = true;
+    const asked = permissionRows(decisionsOf(sites, found.state.origin)).some(
+      ({ name }) => name !== 'popups',
+    );
+    if (next !== sites && store.save(next) && asked) found.state.changed = true;
     refresh(found.window, found.overlay);
     return null;
   });

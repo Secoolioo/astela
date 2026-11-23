@@ -17,6 +17,7 @@ import type {
 } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions, WindowOverlay } from '../platform/electron/overlay.ts';
+import { openForPopup } from '../platform/electron/popup-windows.ts';
 import {
   ChoosePaletteItem,
   GetPaletteFavicon,
@@ -342,9 +343,14 @@ function revealTab(from: BrowserWindowController, tab: PaletteTab, windows: Wind
 
 /**
  * Opens a page, a search or an address from the palette: in a new tab after the active one,
- * or in the tab of the new tab page, which waits for an address.
+ * or in the tab of the new tab page, which waits for an address. A popup shows only its page, so
+ * the tab opens in a regular window.
  */
 function openAddress(window: BrowserWindowController, url: string, newTabUrl: string): void {
+  if (window.popup) {
+    openForPopup(window, url, true);
+    return;
+  }
   const active = window.tabs.active;
   if (active?.url === newTabUrl) window.tabs.navigate(active.id, url);
   else window.tabs.open(url, active === undefined ? {} : { after: active.id });

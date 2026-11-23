@@ -105,6 +105,29 @@ describe('permissions of a site', () => {
     });
     expect(resetPermissions(sites, 'https://new.example')).toBe(sites);
   });
+
+  it('shows, changes and forgets the decision about pop-ups like the others, after them', () => {
+    const popups: SitePermissions = {
+      ...sites,
+      [origin]: { popups: 'allow', notifications: 'block' },
+      'https://ads.example': { popups: 'allow' },
+    };
+    expect(permissionRows(decisionsOf(popups, origin))).toEqual([
+      { name: 'notifications', allowed: false },
+      { name: 'popups', allowed: true },
+    ]);
+    expect(setPermission(popups, origin, 'popups', false)[origin]).toEqual({
+      popups: 'block',
+      notifications: 'block',
+    });
+    // Nobody decided about the pop-ups of the site, which stay blocked unless a click opens them.
+    expect(setPermission(sites, origin, 'popups', true)).toBe(sites);
+    expect(resetPermissions(popups, origin)).toEqual({
+      'https://other.example': { microphone: 'allow' },
+      'https://ads.example': { popups: 'allow' },
+    });
+    expect(resetPermissions(popups, 'https://ads.example')['https://ads.example']).toBeUndefined();
+  });
 });
 
 describe('cookies of a site', () => {

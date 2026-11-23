@@ -359,8 +359,15 @@ test('shows an element of a page that another page opened in full screen as for 
   try {
     try {
       const opener = await open(browser, `${server.origin}/opener.html`);
-      // The page opens in a tab of its own, as from a link with target="_blank".
-      await opener.evaluate((address) => void window.open(address), url);
+      // The page opens in a tab of its own, as from a link with target="_blank", after a click:
+      // the browser blocks the windows that no click opened.
+      await opener.evaluate((address) => {
+        const button = document.createElement('button');
+        button.textContent = 'Open a window';
+        button.addEventListener('click', () => void window.open(address));
+        document.body.append(button);
+      }, url);
+      await opener.getByRole('button', { name: 'Open a window' }).click();
       const page = await waitForPage(browser, (address) => address === url);
       await page.getByRole('button', { name: 'Full screen' }).click();
       await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('player');
@@ -601,13 +608,20 @@ test('names the site of a page that another page wrote, and only the way out for
   try {
     const page = await open(browser, `${server.origin}/notices.html`);
     const host = new URL(server.origin).host;
-    // A page that a script opened empty and wrote itself belongs to the site of its opener.
+    // A page that a script opened empty and wrote itself belongs to the site of its opener. A
+    // click opens it, as the browser blocks the windows that no click opened.
     await page.evaluate(() => {
-      const written = window.open('about:blank');
-      written?.document.write(
-        '<button onclick="document.body.requestFullscreen()">Written full screen</button>',
-      );
+      const button = document.createElement('button');
+      button.textContent = 'Open a written page';
+      button.addEventListener('click', () => {
+        const written = window.open('about:blank');
+        written?.document.write(
+          '<button onclick="document.body.requestFullscreen()">Written full screen</button>',
+        );
+      });
+      document.body.append(button);
     });
+    await page.getByRole('button', { name: 'Open a written page' }).click();
     await expect(browser.shell.getByRole('tab')).toHaveCount(2);
     const written = await waitForPage(browser, (address) => address === 'about:blank');
     await written.getByRole('button', { name: 'Written full screen' }).click();

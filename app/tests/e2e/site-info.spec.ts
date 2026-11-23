@@ -380,6 +380,43 @@ test('changes and resets the permissions of a site from site information', async
   }
 });
 
+test('changes and resets the decision about the pop-ups of a site from site information', async () => {
+  const browser = await launch([], {
+    settings: { 'permissions.sites': { [server.origin]: { popups: 'allow' } } },
+  });
+  try {
+    const url = `${server.origin}/permissions.html`;
+    await open(browser, url);
+    await waitForPage(browser, (current) => current === url);
+    const dialog = await siteInfo(browser, 'Page on this computer');
+    const popups = dialog.getByRole('switch', { name: 'Pop-ups' });
+    await expect(popups).toBeChecked();
+    await popups.click();
+    await expect(popups).not.toBeChecked();
+    await expect.poll(() => savedSites(browser)[server.origin]).toEqual({ popups: 'block' });
+    // The page follows a decision about its pop-ups without a reload.
+    await expect(dialog).not.toContainText('Reload the page to use the changed permissions.');
+    await popups.click();
+    await expect.poll(() => savedSites(browser)[server.origin]).toEqual({ popups: 'allow' });
+
+    // Resetting forgets the decision, and the site's windows need a click again.
+    await dialog.getByRole('button', { name: 'Reset permissions' }).click();
+    await expect(dialog).toContainText('This site has not asked for permissions yet.');
+    await expect(popups).toHaveCount(0);
+    await expect.poll(() => savedSites(browser)[server.origin]).toBeUndefined();
+    await expect(dialog).not.toContainText('Reload the page to use the changed permissions.');
+    await dialog.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    await open(browser, `${server.origin}/popunder.html?ways=onload`);
+    await expect(
+      browser.shell.getByRole('button', { name: 'Pop-up blocked', exact: true }),
+    ).toBeVisible();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('keeps Tab and Shift+Tab inside site information', async () => {
   const browser = await launch();
   try {

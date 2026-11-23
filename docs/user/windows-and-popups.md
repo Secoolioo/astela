@@ -15,9 +15,23 @@ From 0.1.0-beta.7, `Ctrl+Shift+W` (`Command+Shift+W` on macOS), or Close window 
 - From 0.1.0-beta.7, a tab that a page of a [tab group](tab-groups.md) opens in this way joins the group.
 - From 0.1.0-beta.7, what a page opens, a popup included, stays in the [workspace](workspaces.md) of that page, with its cookies and sign-ins, also while the window shows another workspace. A link from another app opens in the workspace that the window shows.
 - A click with Shift opens the link in a new window.
-- A popup that a page opens with a size, such as a sign-in or payment window, gets a window of its own. It stays connected to the page that opened it, so it can send its result back and close itself when it is done. Popups are not restored at the next start. A popup lies on a screen and is at most as large as it, whatever size and position the page asks for.
+- A popup that a page opens with a size, such as a sign-in or payment window, gets a window of its own. It stays connected to the page that opened it, so it can send its result back and close itself when it is done. Popups are not restored at the next start. A popup lies on a screen and is at most as large as it, whatever size and position the page asks for, also with the title bar of the system.
+- From 0.1.0-beta.7, the page in a popup gets the size that it asked for, as in other browsers, and the popup shows only that page with its toolbar: it has no tabs, no New tab button and no bookmarks bar, also when the tabs are at a side, and its address shows where the page is but cannot be edited. A tab that the popup would open, from a link of its page, `Ctrl+T` (`Command+T` on macOS), **Duplicate the tab** in the command palette, the context menu or the browser menu, opens in your regular window instead, or in a private one for a private popup, and that window comes to the front. Such tabs are restored at the next start like any other.
 
 The content blocker keeps popups that its filter lists name from opening; see [Content blocker](content-blocker.md).
+
+## Blocked pop-ups
+
+From 0.1.0-beta.7, a page opens a new tab, window or popup only right after you clicked, pressed a key or tapped in it: within five seconds, and one for each click or key. A page that opens windows by itself, such as when it loads or from a timer, or that opens a second window for the same click, gets nothing, as in other browsers. The same goes for the page that a click of yours led to in the same tab, and for the keys of shortcuts, such as `Ctrl` or `Alt` before `Ctrl+T` or `Alt+Tab`. This also holds while the content blocker is off.
+
+A click of a screen reader or of voice control counts as yours, also in embedded frames. In the embedded frames of a page that a page opened, such as a sign-in popup that embeds another site, it does not; there, open the site's windows from the chip, or always allow the site.
+
+When a page was blocked, the address bar shows **Pop-up blocked**, or how many were blocked. Click it to see the addresses the page tried to open:
+
+- **Open** opens one of them in a tab next to the page. An address longer than 8192 characters is counted but not listed.
+- **Always allow pop-ups from** the site lets it open windows without a click from now on, the next time it tries. Reload the page if it opens its windows as it loads.
+
+The list belongs to the page and empties when the page goes to another one. You can change or remove the decision for a site on the settings page, under **Privacy**, **Site permissions**, as **Pop-ups**, and in [site information](site-permissions.md#in-site-information) of its pages; see [Site permissions](site-permissions.md). In a private window, Astela forgets it when the last private window closes.
 
 ## Private windows
 

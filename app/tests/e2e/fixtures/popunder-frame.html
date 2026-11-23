@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture popunder frame</title>
+  </head>
+  <body>
+    <button id="open">Open from the frame</button>
+    <script>
+      // The windows open on the site of the page that embeds this frame.
+      const other = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+      const target = (name) => `http://${other}:${location.port}/opened.html?${name}`;
+      document
+        .getElementById('open')
+        .addEventListener('click', () => window.open(target('frame-click')));
+      if (location.search === '?timer') setTimeout(() => window.open(target('frame-timer')), 1500);
+    </script>
+  </body>
+</html>

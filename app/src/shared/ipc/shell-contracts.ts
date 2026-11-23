@@ -47,9 +47,13 @@ export const TabGroupView = v.strictObject({
   collapsed: v.boolean(),
 });
 
+/** A count, such as of the requests that the content blocker blocked. */
+const Count = v.pipe(v.number(), v.integer(), v.minValue(0));
+
 /**
  * One tab as the shell displays it. `blocked` counts the requests that the content blocker
- * blocked on the current page; `blocking` tells whether the blocker works on the page, with
+ * blocked on the current page, and `popups` the pop-ups that the pop-up blocker blocked there, as
+ * no click opened them; `blocking` tells whether the blocker works on the page, with
  * `none` for pages it never touches; `bookmarked` tells whether the page has a bookmark;
  * `problem` why the tab shows no page, which the shell then shows in its place;
  * `certificateException` whether the page is from a site whose certificate was not trusted
@@ -71,7 +75,8 @@ export const TabView = v.strictObject({
   loading: v.boolean(),
   canGoBack: v.boolean(),
   canGoForward: v.boolean(),
-  blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  blocked: Count,
+  popups: Count,
   blocking: v.picklist(['on', 'off', 'none', 'failed']),
   bookmarked: v.boolean(),
   problem: v.nullable(TabProblem),
@@ -132,7 +137,7 @@ const TitleBarArea = v.strictObject({
  * or `null` while a size is unknown. The button shows once the browser downloaded something.
  */
 const DownloadsSummary = v.strictObject({
-  active: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  active: Count,
   progress: v.nullable(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
 });
 
@@ -141,9 +146,9 @@ const DownloadsSummary = v.strictObject({
  * open: the browser menu, the menu of a folder of the bookmarks bar with the folder's id (that
  * of the bookmarks bar itself for its » button), the popover of the bookmark star, the shield's,
  * the list of downloads, the list of the workspaces, the popover of a group of tabs at its
- * chip, site information at the chip of the connection and the popover of the sign of
- * protected media. `folder` is `null` for all but folders. Rows that hide show while one is
- * open.
+ * chip, site information at the chip of the connection, the popover of the sign of protected
+ * media and the pop-ups that the pop-up blocker blocked. `folder` is `null` for all but
+ * folders. Rows that hide show while one is open.
  */
 export const ShellPopover = v.strictObject({
   kind: v.picklist([
@@ -156,6 +161,7 @@ export const ShellPopover = v.strictObject({
     'group',
     'site',
     'protectedMedia',
+    'popups',
   ]),
   folder: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
@@ -181,6 +187,8 @@ export const TopRowsView = v.strictObject({
 
 /**
  * Everything the shell renders. Sent as a whole after changes, at most once per frame.
+ * `popup` tells whether the window is a popup that a page opened, which shows only that page:
+ * the shell leaves out the tab strip and the bookmarks bar, and its address cannot be edited.
  * `bookmarksBar` is `null` while the bookmarks bar is hidden, `find` while the find bar is
  * closed, and `downloads` until the browser downloaded something; `private` tells whether
  * the window is a private window, `home` whether the toolbar has a home button,
@@ -198,6 +206,7 @@ export const ShellState = v.strictObject({
   tabs: v.array(TabView),
   activeTabId: v.nullable(TabId),
   tabStrip: v.picklist(tabStripPositions),
+  popup: v.boolean(),
   bookmarksBar: v.nullable(v.array(BarItem)),
   find: v.nullable(FindState),
   downloads: v.nullable(DownloadsSummary),

@@ -7,8 +7,8 @@ import {
   decide,
   forget,
   sitePermissions,
+  type DecidedPermission,
   type SiteDecisions,
-  type SitePermission,
   type SitePermissions,
 } from '../permissions/site-permissions.ts';
 
@@ -68,19 +68,26 @@ export function certificateReason(code: string): CertificateReason {
   }
 }
 
-/** A permission that was decided for a site, and whether it is allowed. */
+/**
+ * What site information shows and changes of the decisions of a site, in the order of the
+ * settings page: the permissions that sites ask for, then whether the site's pages may open
+ * pop-ups without a click.
+ */
+const decidedPermissions: readonly DecidedPermission[] = [...sitePermissions, 'popups'];
+
+/** A permission that was decided for a site, or its pop-ups, and whether it is allowed. */
 export interface PermissionRow {
-  readonly name: SitePermission;
+  readonly name: DecidedPermission;
   readonly allowed: boolean;
 }
 
 /**
  * The permissions that were decided for a site, in the order in which prompts and the settings
- * page name them.
+ * page name them, and its pop-ups last.
  * @param decisions - The decisions of the site, if it has any.
  */
 export function permissionRows(decisions: SiteDecisions | undefined): PermissionRow[] {
-  return sitePermissions.flatMap((name) => {
+  return decidedPermissions.flatMap((name) => {
     const decision = decisions?.[name];
     return decision === undefined ? [] : [{ name, allowed: decision === 'allow' }];
   });
@@ -96,17 +103,18 @@ export function decisionsOf(sites: SitePermissions, origin: string): SiteDecisio
 }
 
 /**
- * Allows or blocks a permission that was decided for a site. A permission that the site never
- * asked for is not decided here: the site asks for it as before.
+ * Allows or blocks a permission that was decided for a site, or its pop-ups. A permission that
+ * the site never asked for is not decided here: the site asks for it as before, and pop-ups
+ * that nobody allowed or blocked stay blocked unless a click opens them.
  * @param sites - The decisions of all sites.
  * @param origin - The origin of the site.
- * @param permission - The permission.
+ * @param permission - The permission, or `popups`.
  * @param allowed - Whether the site may use it.
  */
 export function setPermission(
   sites: SitePermissions,
   origin: string,
-  permission: SitePermission,
+  permission: DecidedPermission,
   allowed: boolean,
 ): SitePermissions {
   if (decisionsOf(sites, origin)?.[permission] === undefined) return sites;
@@ -114,12 +122,13 @@ export function setPermission(
 }
 
 /**
- * Forgets every decision of a site, so that it asks again.
+ * Forgets every decision of a site, so that it asks again and its pages open pop-ups only
+ * after a click.
  * @param sites - The decisions of all sites.
  * @param origin - The origin of the site.
  */
 export function resetPermissions(sites: SitePermissions, origin: string): SitePermissions {
-  return sitePermissions.reduce((kept, permission) => forget(kept, origin, permission), sites);
+  return decidedPermissions.reduce((kept, permission) => forget(kept, origin, permission), sites);
 }
 
 /**

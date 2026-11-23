@@ -25,6 +25,7 @@ import type { TabHistory } from '../../domain/tabs/view-history.ts';
 import type { SleepCandidate } from '../../domain/tabs/tab-sleep.ts';
 import { pageUrl, tabPageOf, type TabPage } from '../../shared/internal-pages.ts';
 import { ShellCommand } from '../../shared/ipc/shell-contracts.ts';
+import { openForPopup, tabWindowOf } from './popup-windows.ts';
 import { isLeaving, unloading, waitsForAnswer } from './unload.ts';
 
 /**
@@ -432,15 +433,32 @@ function context(host: WindowHost): CommandContext {
 /**
  * Shows an internal page: the tab that already shows it, or else the active tab if it
  * shows the new tab page, or else a new tab. A fragment names a place of the page, such as
- * a row of the settings, which the page shows also when its tab is open already.
+ * a row of the settings, which the page shows also when its tab is open already. A popup shows
+ * only its page, so the regular window that takes its tabs shows the page, and a new tab page
+ * from a popup is a new tab there, as the shortcut opens it.
  * @param host - The window.
  * @param page - The page.
  * @param fragment - `#` and the name of the place, such as `#tabs.position`; without it,
  *   a tab that shows the page stays where it is.
  */
 function openPage(host: WindowHost, page: TabPage, fragment: string): void {
-  const { tabs } = host.window;
+  const { window } = host;
   const url = pageUrl(page) + fragment;
+  if (window.popup) {
+    const target = tabWindowOf(window);
+    if (target === undefined) {
+      window.windows?.open(page === 'newtab' ? undefined : url, {
+        private: window.isPrivate,
+        workspace: window.tabs.workspace,
+      });
+      return;
+    }
+    target.window.focus();
+    if (page === 'newtab') target.execute('tab.new');
+    else target.openPage(page, fragment);
+    return;
+  }
+  const { tabs } = window;
   const open = tabs.all.find((tab) => tabPageOf(tab.url) === page);
   const active = tabs.active;
   if (open !== undefined) {
@@ -553,12 +571,16 @@ function tabAction(host: WindowHost, id: TabId, action: TabAction): void {
   const { tabs } = host.window;
   const tab = tabs.get(id);
   if (tab === undefined) return;
+  // A popup shows only its page: the tabs that it would open open in a regular window.
+  const popup = host.window.popup;
   switch (action) {
     case 'newTabRight':
-      tabs.open(host.options.newTabUrl, { after: id });
+      if (popup) openPage(host, 'newtab', '');
+      else tabs.open(host.options.newTabUrl, { after: id });
       break;
     case 'duplicate':
-      tabs.open(tab.url, { after: id, title: tab.title });
+      if (popup) openForPopup(host.window, tab.url, true);
+      else tabs.open(tab.url, { after: id, title: tab.title });
       break;
     case 'close':
       if (!askToClose(host, id)) tabs.close(id);

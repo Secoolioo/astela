@@ -78,6 +78,11 @@ export class AppShell extends LitElement {
     :host([data-tabs='bottom']) {
       grid-template: 'nav' auto 'bar' auto 'find' auto 'content' 1fr 'tabs' auto / 1fr;
     }
+    /* A popup has no tab strip. Its window is as narrow as its page asked for, which the toolbar
+       does not widen: the address gives way. */
+    :host([data-tabs='none']) {
+      grid-template-columns: minmax(0, 1fr);
+    }
     :host([data-tabs='left']) {
       grid-template:
         'nav nav' auto 'bar bar' auto 'find find' auto 'tabs content' 1fr / var(
@@ -1052,6 +1057,39 @@ export class AppShell extends LitElement {
     button.security[data-kind='insecure'][aria-expanded='true'] {
       background: var(--surface-hover);
     }
+    /* The chip of the pop-up blocker, at the end of the address bar. */
+    .popups {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex: none;
+      max-width: 50%;
+      height: var(--control-small);
+      margin-inline-end: var(--space-1);
+      padding: 0 var(--space-2);
+      border: 0;
+      border-radius: var(--radius-1);
+      background: var(--surface-1);
+      color: var(--text-2);
+      font: inherit;
+      font-size: var(--font-size-small);
+      white-space: nowrap;
+      transition: background-color var(--motion-instant) var(--ease-standard);
+    }
+    .popups span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .popups svg {
+      flex: none;
+      width: 16px;
+      height: 16px;
+    }
+    .popups:hover,
+    .popups[aria-expanded='true'] {
+      background: var(--surface-hover);
+      color: var(--text-1);
+    }
     /* The loading of the active tab, along the bottom of the toolbar. */
     .progress {
       position: absolute;
@@ -1396,6 +1434,7 @@ export class AppShell extends LitElement {
       tabs: [],
       activeTabId: null,
       tabStrip: 'top',
+      popup: false,
       bookmarksBar: null,
       find: null,
       downloads: null,
@@ -1503,7 +1542,8 @@ export class AppShell extends LitElement {
       ) {
         this.dropSplitDrag();
       }
-      this.dataset['tabs'] = this.state.tabStrip;
+      // A popup has no tab strip: its toolbar is its top row.
+      this.dataset['tabs'] = this.state.popup ? 'none' : this.state.tabStrip;
       this.placeRows();
       // The shell keeps the icons of its tabs only.
       this.favicons.keep(this.state.tabs.flatMap((tab) => tab.favicon ?? []));
@@ -1633,14 +1673,19 @@ export class AppShell extends LitElement {
     const t = (key: Parameters<Translator['t']>[0]): string => this.i18n?.t(key) ?? key;
     const tabRow = this.state.layout.toolbar === 'tab-row';
     const hiding = this.state.layout.hiding;
-    // In one row, the toolbar comes first, as it shows, and the keys reach it in that order.
-    const rows = tabRow
-      ? html`${this.renderToolbar(t, true)}${this.renderTabStrip(t, true)}`
-      : html`${this.renderTabStrip(t, false)}${this.renderToolbar(t, false)}`;
+    // A popup shows only its page, with the toolbar as its top row: it has no tab strip, no New
+    // tab button and no bookmarks bar. In one row, the toolbar comes first, as it shows, and the
+    // keys reach it in that order.
+    const popup = this.state.popup;
+    const rows = popup
+      ? this.renderToolbar(t, false)
+      : tabRow
+        ? html`${this.renderToolbar(t, true)}${this.renderTabStrip(t, true)}`
+        : html`${this.renderTabStrip(t, false)}${this.renderToolbar(t, false)}`;
     // The two ends of the shell hand Tab and Shift+Tab on to the page, whichever row comes first.
     return html`
       <span class="visually-hidden" tabindex="0" @focus=${this.leaveShell}></span>
-      ${rows} ${this.renderBookmarksBar(t)} ${this.renderFind()}
+      ${rows} ${popup ? nothing : this.renderBookmarksBar(t)} ${this.renderFind()}
       <div class="visually-hidden" role="status">${this.workspaceShown}</div>
       <div class="content">
         ${
@@ -1718,7 +1763,7 @@ export class AppShell extends LitElement {
     const active = this.active;
     return html`
       <nav
-        class=${tabRow || this.state.tabStrip !== 'top' ? 'top-row' : ''}
+        class=${tabRow || this.state.popup || this.state.tabStrip !== 'top' ? 'top-row' : ''}
         aria-label=${t('shell.toolbar')}
       >
         <button
@@ -3064,6 +3109,7 @@ export class AppShell extends LitElement {
           autocomplete="off"
           aria-label=${t('shell.address')}
           placeholder=${t('shell.addressPlaceholder')}
+          ?readonly=${this.state.popup}
           .value=${draft ?? shown}
           @focus=${(e: FocusEvent) => {
             this.addressFocused = true;
@@ -3093,7 +3139,34 @@ export class AppShell extends LitElement {
               </div>`
         }
       </div>
+      ${this.renderPopupsChip(tab)}
     </div>`;
+  }
+
+  /**
+   * The chip of the pop-up blocker, while the page of the tab blocked windows that no click
+   * opened; its popover lists them, opens them and allows them for the site.
+   */
+  private renderPopupsChip(tab: TabView | undefined): TemplateResult | typeof nothing {
+    if (tab === undefined || tab.popups === 0 || !/^https?:/i.test(tab.url)) return nothing;
+    const label =
+      tab.popups === 1
+        ? this.tp('shell.popupBlocked')
+        : this.tp('shell.popupsBlocked', { count: String(tab.popups) });
+    return html`<button
+      class="popups"
+      title=${label}
+      aria-haspopup="dialog"
+      aria-expanded=${this.state.popover?.kind === 'popups' ? 'true' : 'false'}
+      @click=${(event: MouseEvent) => {
+        const button = event.currentTarget;
+        if (button instanceof HTMLElement) {
+          void this.bridge?.invoke('shell.openPopups', anchorOf(button, event.detail === 0));
+        }
+      }}
+    >
+      ${icons.popupBlocked}<span>${label}</span>
+    </button>`;
   }
 
   /** The icon of a tab: a turning ring while it loads, else its page's icon. */
@@ -3726,7 +3799,8 @@ export class AppShell extends LitElement {
 
   private readonly onAddressKey = (event: KeyboardEvent): void => {
     const input = inputOf(event);
-    if (input === undefined) {
+    // The address of a popup shows where its page is, and opens nothing.
+    if (input === undefined || this.state.popup) {
       return;
     }
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && this.suggesting) {
@@ -4368,6 +4442,11 @@ const icons = {
     <path
       d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
     />
+  </svg>`,
+  popupBlocked: html`<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect width="18" height="16" x="3" y="4" rx="2" />
+    <path d="M3 9h18" />
+    <path d="m10 12.5 4 4m0-4-4 4" />
   </svg>`,
   shield: html`<svg viewBox="0 0 24 24" aria-hidden="true">
     <path

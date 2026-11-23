@@ -35,6 +35,8 @@ export interface Tab {
   readonly canGoForward: boolean;
   /** Requests that the content blocker blocked on the current page. */
   readonly blocked: number;
+  /** Pop-ups that the pop-up blocker blocked on the current page, as no click opened them. */
+  readonly popups: number;
   /** Why the tab shows no page, or `null` when it shows one. */
   readonly problem: TabProblem | null;
   /** The zoom factor of the page, 1 for 100 %. */
@@ -151,6 +153,7 @@ const tabFields = [
   'canGoBack',
   'canGoForward',
   'blocked',
+  'popups',
   'problem',
   'zoom',
   'favicon',
@@ -376,6 +379,7 @@ export class TabService implements Disposable {
       canGoBack: moves?.back ?? false,
       canGoForward: moves?.forward ?? false,
       blocked: 0,
+      popups: 0,
       problem: null,
       zoom: 1,
       favicon: null,

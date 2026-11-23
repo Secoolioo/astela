@@ -106,6 +106,14 @@ export const OpenSiteInfo = defineRequest({
   capability: 'shell',
 });
 
+/** Opens the popover of the pop-up blocker for the active tab at its chip in the address bar. */
+export const OpenPopupsPopover = defineRequest({
+  channel: 'shell.openPopups',
+  request: PopoverAnchor,
+  response: Done,
+  capability: 'shell',
+});
+
 /** Opens a menu in the overlay with the contents of a folder of the bookmarks bar at its button. */
 export const OpenBookmarkFolder = defineRequest({
   channel: 'shell.openBookmarkFolder',
@@ -365,6 +373,7 @@ export const shellLaterRequests: readonly RequestContract<unknown, unknown>[] = 
   ProceedInsecurely,
   OpenDownloads,
   OpenBlockerPopover,
+  OpenPopupsPopover,
   OpenBookmarkFolder,
   OpenBookmarkPopover,
   PrepareOverlay,

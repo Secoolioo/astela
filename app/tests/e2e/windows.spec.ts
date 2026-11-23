@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -8,6 +8,8 @@ import {
   FixtureServer,
   launch,
   openBrowserMenu,
+  overlayAttached,
+  overlayPage,
   pressNative,
   removeAfterExit,
   shellState,
@@ -192,12 +194,11 @@ test('opens a popup with a size in a window of its own, which closes with its pa
     const opener = await open(browser, `${server.origin}/opener.html`);
     await opener.getByRole('button', { name: 'Open a popup' }).click();
     await expect.poll(() => windowCount(browser)).toBe(2);
-    const size = await browser.main.evaluate(({ BaseWindow }) =>
-      BaseWindow.getAllWindows().map((window) => window.getBounds().width),
-    );
-    expect(size).toContain(520);
     const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
     await expect(popup).toHaveTitle('Fixture opened by a page');
+    // The page gets the size that it asked for, as in other browsers; the window is larger by
+    // its toolbar.
+    await expect.poll(() => popup.evaluate(() => [innerWidth, innerHeight])).toEqual([520, 420]);
     await popup.getByRole('button', { name: 'Reply' }).click();
     await expect(opener.locator('#message')).toHaveText('Hello from the opened page');
     await popup.evaluate(() => void setTimeout(() => window.close(), 50));
@@ -207,13 +208,139 @@ test('opens a popup with a size in a window of its own, which closes with its pa
   }
 });
 
+test('gives a popup the size it asks for when the tab strip is at a side', async () => {
+  const browser = await launch([], { settings: { 'tabs.position': 'left' } });
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('button', { name: 'Open a popup' }).click();
+    const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
+    await expect.poll(() => popup.evaluate(() => [innerWidth, innerHeight])).toEqual([520, 420]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('shows a popup with its page and toolbar only, and an address that cannot be edited', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('button', { name: 'Open a popup' }).click();
+    const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
+    const shell = await otherShell(browser);
+    await expect(shell.getByRole('navigation', { name: 'Navigation' })).toBeVisible();
+    await expect(shell.getByRole('tablist')).toHaveCount(0);
+    await expect(shell.getByRole('button', { name: 'New tab' })).toHaveCount(0);
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await expect(address).toHaveValue(/127\.0\.0\.1:\d+\/opened\.html$/);
+    await expect(address).not.toBeEditable();
+    // The page keeps the size that it asked for.
+    await expect.poll(() => popup.evaluate(() => [innerWidth, innerHeight])).toEqual([520, 420]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens the new tab of a popup in the regular window', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('button', { name: 'Open a popup' }).click();
+    const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
+    await expect(popup).toHaveTitle('Fixture opened by a page');
+    const shell = await otherShell(browser);
+    await pressNative(browser, 'T', ['primary'], popup.url());
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/opener.html`, 'app://newtab/']);
+    expect((await shellState(shell)).tabs.map((tab) => tab.url)).toEqual([
+      `${server.origin}/opened.html`,
+    ]);
+    expect(await windowCount(browser)).toBe(2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('duplicates the tab of a popup in the regular window', async () => {
+  const browser = await launch();
+  try {
+    const opener = await open(browser, `${server.origin}/opener.html`);
+    await opener.getByRole('button', { name: 'Open a popup' }).click();
+    const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
+    await expect(popup).toHaveTitle('Fixture opened by a page');
+    const shell = await otherShell(browser);
+    // The command palette of the popup, in its own overlay.
+    const others = browser.cdp
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => page.url().startsWith('app://overlay'));
+    await pressNative(browser, 'K', ['primary'], popup.url());
+    const overlay = await overlayPage(browser, others);
+    const palette = overlay.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    await palette.getByRole('combobox').fill('duplicate');
+    await expect(palette.getByRole('option').first()).toHaveAccessibleName(/^Duplicate the tab/);
+    await palette.getByRole('combobox').press('Enter');
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual([`${server.origin}/opener.html`, `${server.origin}/opened.html`]);
+    expect((await shellState(shell)).tabs.map((tab) => tab.url)).toEqual([
+      `${server.origin}/opened.html`,
+    ]);
+    expect(await windowCount(browser)).toBe(2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens the links of a popup in the regular window, which keeps them at the next start', async () => {
+  const browser = await launch();
+  const { profile } = browser;
+  try {
+    try {
+      const opener = await open(browser, `${server.origin}/opener.html`);
+      await opener.getByRole('button', { name: 'Open a popup' }).click();
+      const popup = await waitForPage(browser, (url) => url.endsWith('/opened.html'));
+      const shell = await otherShell(browser);
+      await popup.getByRole('link', { name: 'A link in a new tab' }).click();
+      await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+      await expect
+        .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+        .toEqual([`${server.origin}/opener.html`, `${server.origin}/second.html`]);
+      expect((await shellState(shell)).tabs).toHaveLength(1);
+      await expect
+        .poll(() => {
+          const file = join(profile, 'data', 'session.json');
+          if (!existsSync(file)) return [];
+          const session = JSON.parse(readFileSync(file, 'utf8')) as {
+            windows: { tabs: { url: string }[] }[];
+          };
+          return session.windows.map((window) => window.tabs.map((tab) => tab.url));
+        })
+        .toEqual([[`${server.origin}/opener.html`, `${server.origin}/second.html`]]);
+    } finally {
+      await browser.close({ keepProfile: true });
+    }
+    const again = await launch([], { profile });
+    try {
+      await expect
+        .poll(async () => (await shellState(again.shell)).tabs.map((tab) => tab.url))
+        .toEqual([`${server.origin}/opener.html`, `${server.origin}/second.html`]);
+    } finally {
+      await again.close();
+    }
+  } finally {
+    removeAfterExit(profile);
+  }
+});
+
 test('keeps a popup that a page asks to be larger than the screen on the screen', async () => {
   const browser = await launch();
   try {
     const opener = await open(browser, `${server.origin}/opener.html`);
-    await opener.evaluate(
-      () => void window.open('/opened.html', '', 'popup,width=6000,height=6000,left=40,top=0'),
-    );
+    await opener.getByRole('button', { name: 'Open a large popup' }).click();
     await expect.poll(() => windowCount(browser)).toBe(2);
     // The popup is the newer window.
     const fits = await browser.main.evaluate(({ BaseWindow, screen }) => {
@@ -228,6 +355,221 @@ test('keeps a popup that a page asks to be larger than the screen on the screen'
       );
     });
     expect(fits).toBe(true);
+  } finally {
+    await browser.close();
+  }
+});
+
+/** The addresses of the tabs of the first window and how many pop-ups each one blocked. */
+async function blockedByTab(browser: Browser): Promise<[string, number][]> {
+  return (await shellState(browser.shell)).tabs.map((tab) => [tab.url, tab.popups]);
+}
+
+/** The chip of the pop-up blocker in the address bar, by what it says. */
+function popupChip(browser: Browser, name: string): Locator {
+  return browser.shell.getByRole('button', { name, exact: true });
+}
+
+test('blocks the windows that a page opens without a click, and counts them in the address bar', async () => {
+  const browser = await launch();
+  try {
+    // An inline script, the load event, a timer, a link and a form that scripts click and
+    // submit, and a timer in a frame of another site.
+    await open(browser, `${server.origin}/popunder.html`);
+    await expect(popupChip(browser, 'Pop-ups blocked: 6')).toBeVisible({ timeout: 10_000 });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    expect(await windowCount(browser)).toBe(1);
+    // The count belongs to the page: another page starts without one.
+    await open(browser, `${server.origin}/index.html`);
+    await expect(browser.shell.getByRole('button', { name: /^Pop-ups? blocked/ })).toHaveCount(0);
+    expect(await blockedByTab(browser)).toEqual([[`${server.origin}/index.html`, 0]]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lets one click open one window, and blocks the second one of the same click', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=`;
+    const page = await open(browser, url);
+    await page.getByRole('button', { name: 'Open two' }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    // The page's tab, now in the background, counts the second window.
+    await expect
+      .poll(() => blockedByTab(browser))
+      .toEqual([
+        [url, 1],
+        [`${server.origin}/opened.html?first`, 0],
+      ]);
+    expect(await windowCount(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('blocks a window that a page opens long after the click', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/popunder.html?ways=`);
+    await page.getByRole('button', { name: 'Open later' }).click();
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible({ timeout: 15_000 });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lets a click in a frame of another site open one window, and blocks its timer', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/popunder.html?ways=frame`);
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible({ timeout: 10_000 });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    await page.frameLocator('#frame').getByRole('button', { name: 'Open from the frame' }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await waitForPage(browser, (url) => url === `${server.origin}/opened.html?frame-click`);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lets the page that a click led to in the same tab open no window by itself', async () => {
+  const browser = await launch();
+  try {
+    const page = await open(browser, `${server.origin}/popunder.html?ways=`);
+    // The click on the link belongs to the page before; the next one opens its windows as it
+    // loads.
+    await page.getByRole('link', { name: 'The page with its pop-ups' }).click();
+    const url = `${server.origin}/popunder.html?ways=inline,onload`;
+    await expect(popupChip(browser, 'Pop-ups blocked: 2')).toBeVisible({ timeout: 10_000 });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    expect(await blockedByTab(browser)).toEqual([[url, 2]]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('gives a page no input to open a window with for the modifier key of a shortcut', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=timer&delay=3000`;
+    await open(browser, url);
+    // The address bar's shortcut as people press it: the modifier first, which no shortcut
+    // takes, then L, which the window takes.
+    await pressNative(browser, process.platform === 'darwin' ? 'Meta' : 'Control', [], url);
+    await pressNative(browser, 'L', ['primary'], url);
+    await expect(
+      browser.shell.getByRole('textbox', { name: 'Address and search bar' }),
+    ).toBeFocused();
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible({ timeout: 10_000 });
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    expect(await windowCount(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lets a click that only the page sees open one window, as a screen reader clicks', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=`;
+    const page = await open(browser, url);
+    // Playwright runs the script with an activation of the page, as an action of a screen reader
+    // gives one, without an input event of the browser process; the button gets a click.
+    await page.evaluate(() => document.getElementById('two')?.click());
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    // The click opens its first window only.
+    await expect
+      .poll(() => blockedByTab(browser))
+      .toEqual([
+        [url, 1],
+        [`${server.origin}/opened.html?first`, 0],
+      ]);
+    expect(await windowCount(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('counts a blocked pop-up whose address is too long to list, and offers to allow its site', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=long`;
+    await open(browser, url);
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible();
+    await popupChip(browser, 'Pop-up blocked').click();
+    const overlay = await overlayPage(browser);
+    const popover = overlay.getByRole('dialog', { name: 'Pop-ups blocked on this page' });
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(
+      'The page tried to open windows without a click. Their addresses are too long to list here.',
+    );
+    await expect(popover.getByRole('listitem')).toHaveCount(0);
+    const site = new URL(server.origin).host;
+    await expect(
+      popover.getByRole('button', { name: `Always allow pop-ups from ${site}` }),
+    ).toBeVisible();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opens a blocked pop-up in a tab from the popover of its chip', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=onload`;
+    await open(browser, url);
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible();
+    await popupChip(browser, 'Pop-up blocked').click();
+    const overlay = await overlayPage(browser);
+    const popover = overlay.getByRole('dialog', { name: 'Pop-ups blocked on this page' });
+    await expect(popover).toBeVisible();
+    const blocked = `${server.origin}/opened.html?onload`;
+    await expect(popover.getByRole('listitem')).toHaveText([`${blocked} Open`]);
+    await popover.getByRole('button', { name: `Open ${blocked}` }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await waitForPage(browser, (current) => current === blocked);
+    // What opened is no longer blocked.
+    await expect
+      .poll(() => blockedByTab(browser))
+      .toEqual([
+        [url, 0],
+        [blocked, 0],
+      ]);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('lets a site open pop-ups without a click once people always allow it', async () => {
+  const browser = await launch();
+  try {
+    const url = `${server.origin}/popunder.html?ways=onload`;
+    await open(browser, url);
+    await expect(popupChip(browser, 'Pop-up blocked')).toBeVisible();
+    await popupChip(browser, 'Pop-up blocked').click();
+    const overlay = await overlayPage(browser);
+    const site = new URL(server.origin).host;
+    await overlay.getByRole('button', { name: `Always allow pop-ups from ${site}` }).click();
+    await expect(overlay.getByRole('status')).toHaveText(
+      `Pop-ups from ${site} are allowed. They open the next time the page opens them.`,
+    );
+    await overlay.keyboard.press('Escape');
+    await expect.poll(() => overlayAttached(browser)).toBe(false);
+    // The settings keep the decision for the site, and the page's next load opens its window.
+    const saved = (): unknown => {
+      try {
+        const file = readFileSync(join(browser.profile, 'data', 'settings.json'), 'utf8');
+        return (JSON.parse(file) as { user?: Record<string, unknown> }).user?.['permissions.sites'];
+      } catch {
+        return undefined;
+      }
+    };
+    await expect.poll(saved).toEqual({ [server.origin]: { popups: 'allow' } });
+    await browser.shell.getByRole('button', { name: 'Reload', exact: true }).click();
+    await expect(browser.shell.getByRole('tab')).toHaveCount(2);
+    await waitForPage(browser, (current) => current === `${server.origin}/opened.html?onload`);
   } finally {
     await browser.close();
   }

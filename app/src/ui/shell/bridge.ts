@@ -17,6 +17,7 @@ import type {
 import type {
   FindInPage,
   OpenBlockerPopover,
+  OpenPopupsPopover,
   OpenBookmarkFolder,
   OpenBookmarkPopover,
   OpenDownloads,
@@ -61,6 +62,7 @@ interface Requests {
   'shell.openProtectedMedia': typeof OpenProtectedMedia;
   'shell.openMenu': typeof OpenMenu;
   'shell.openBlockerPopover': typeof OpenBlockerPopover;
+  'shell.openPopups': typeof OpenPopupsPopover;
   'shell.openDownloads': typeof OpenDownloads;
   'tabs.proceedUnsafely': typeof ProceedUnsafely;
   'tabs.proceedInsecurely': typeof ProceedInsecurely;

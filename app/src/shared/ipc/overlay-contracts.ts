@@ -25,6 +25,29 @@ const ShieldPopover = v.strictObject({
   failed: v.boolean(),
 });
 
+/** Most pop-ups that the popover of the pop-up blocker lists for a page: the latest ones. */
+export const blockedPopupLimit = 20;
+
+/** The longest address of a pop-up that the popover lists, in characters; longer ones only count. */
+export const blockedPopupLength = 8192;
+
+/**
+ * The popover of the pop-up blocker for the active tab: the host of its site, with the port if
+ * it has one, the addresses of the pop-ups that the page opened without a click, in the order in
+ * which they were blocked, which leave out those too long to list, and whether people allowed the
+ * site to open pop-ups since.
+ */
+const PopupsPopover = v.strictObject({
+  kind: v.literal('popups'),
+  anchor: OverlayAnchor,
+  site: v.pipe(v.string(), v.maxLength(300)),
+  popups: v.pipe(
+    v.array(v.pipe(v.string(), v.maxLength(blockedPopupLength))),
+    v.maxLength(blockedPopupLimit),
+  ),
+  allowed: v.boolean(),
+});
+
 /**
  * A site, or a proxy, that asks for a user name and password: its host, the realm that it
  * names, and whether the connection is encrypted. In a split view, `pane` is the side of the
@@ -432,9 +455,12 @@ export type CertificateSummary = v.InferOutput<typeof CertificateSummary>;
 /** The number of the time that site information opened, which its requests name. */
 const SiteInfoId = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
 
-/** A permission of a site that it asked for and that was decided, and whether it is allowed. */
+/**
+ * A permission of a site that it asked for and that was decided, or whether its pages may open
+ * pop-ups without a click, and whether it is allowed.
+ */
 const SitePermissionRow = v.strictObject({
-  name: v.picklist(['camera', 'microphone', 'location', 'notifications', 'clipboard']),
+  name: v.picklist(['camera', 'microphone', 'location', 'notifications', 'clipboard', 'popups']),
   allowed: v.boolean(),
 });
 
@@ -462,7 +488,7 @@ const SiteInformation = v.strictObject({
   certificate: v.nullable(CertificateSummary),
   page: v.boolean(),
   private: v.boolean(),
-  permissions: v.pipe(v.array(SitePermissionRow), v.maxLength(5)),
+  permissions: v.pipe(v.array(SitePermissionRow), v.maxLength(6)),
   managed: v.boolean(),
   changed: v.boolean(),
   cookies: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0))),
@@ -487,6 +513,7 @@ export type SiteInformation = v.InferOutput<typeof SiteInformation>;
 export const OverlayContent = v.nullable(
   v.union([
     ShieldPopover,
+    PopupsPopover,
     LoginPrompt,
     PermissionPrompt,
     SecurityKeyPrompt,
@@ -629,6 +656,25 @@ export const ChooseSuggestion = defineRequest({
 export const ToggleSiteBlocking = defineRequest({
   channel: 'overlay.toggleSiteBlocking',
   request: v.strictObject({ id: v.optional(SiteInfoId) }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Opens a pop-up that the pop-up blocker blocked on the page of the active tab, by its address,
+ * in a new tab next to the page.
+ */
+export const OpenBlockedPopup = defineRequest({
+  channel: 'overlay.openBlockedPopup',
+  request: v.strictObject({ url: v.pipe(v.string(), v.maxLength(blockedPopupLength)) }),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/** Lets the site of the active tab open pop-ups without a click from now on. */
+export const AllowPopups = defineRequest({
+  channel: 'overlay.allowPopups',
+  request: v.strictObject({}),
   response: v.null(),
   capability: 'overlay',
 });

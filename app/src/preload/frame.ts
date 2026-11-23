@@ -21,7 +21,8 @@ import { startOver, watchTabOut } from './tab-out.ts';
  * (`page-world.ts`); Windows shows its own dialog. A request for protected playback that fails
  * tells the browser once, which says why the site cannot play its video or music. In the top
  * frame, Tab past the end of the page, or Shift+Tab past its start, tells the browser, which
- * moves the focus on to the toolbar (`tab-out.ts`). The script exposes nothing else to the page.
+ * moves the focus on to the toolbar (`tab-out.ts`). It also tells the browser of the clicks that
+ * activate the page, for its pop-up blocker. The script exposes nothing else to the page.
  */
 
 /** A procedural rule: the elements of its selector are hidden or changed by its directive. */
@@ -125,6 +126,25 @@ installPrompt();
 // Electron sets its own prompt() again in an iframe after the preload ran, before the document.
 const preloadEvents: NodeJS.EventEmitter = process;
 preloadEvents.once('document-start', installPrompt);
+
+/**
+ * Tells the browser of a click that gave the page an activation, as the frame knows it, so that
+ * the page may open a window for it (ADR 0061): screen readers and voice control click through
+ * the accessibility of a page, which no input event of the browser process shows. A page cannot
+ * claim one by itself, as only the input of a person activates a frame, and a window that it
+ * opens uses the activation up. The browser hears of it at most every 100 ms.
+ */
+let activatedAt = -Infinity;
+window.addEventListener(
+  'click',
+  () => {
+    const now = performance.now();
+    if (now - activatedAt < 100 || !navigator.userActivation.isActive) return;
+    activatedAt = now;
+    ipcRenderer.send('page.activation');
+  },
+  { capture: true },
+);
 
 const rules: unknown = ipcRenderer.sendSync('blocker.frame');
 if (isFrameRules(rules)) {
