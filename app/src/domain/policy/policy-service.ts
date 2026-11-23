@@ -105,15 +105,25 @@ export class PolicyService implements Disposable {
     reporter: PolicyReporter,
     cache?: PolicyCache,
   ) {
+    this.define(definitions);
+    this.providers = providers;
+    this.reporter = reporter;
+    this.cache = cache;
+  }
+
+  /**
+   * Adds policies whose definitions load apart from the service, such as those of the network
+   * (`main/network-policies.ts`). Their values apply from the next read of the sources on, so
+   * the browser adds them before its first read.
+   * @param definitions - The policies.
+   */
+  define(definitions: readonly PolicyDefinition<unknown>[]): void {
     for (const definition of definitions) {
       this.definitions.set(definition.name, definition);
       if (definition.setting !== undefined) {
         this.bySetting.set(definition.setting, definition);
       }
     }
-    this.providers = providers;
-    this.reporter = reporter;
-    this.cache = cache;
   }
 
   /**

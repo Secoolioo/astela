@@ -63,6 +63,8 @@ function matches(node: unknown, value: unknown): boolean {
         return !Array.isArray(value) || value.length <= Number(rule);
       case 'maxLength':
         return typeof value !== 'string' || value.length <= Number(rule);
+      case 'minLength':
+        return typeof value !== 'string' || value.length >= Number(rule);
       case 'minimum':
         return typeof value !== 'number' || value >= Number(rule);
       case 'maximum':
@@ -230,6 +232,21 @@ describe('the policy reference', () => {
       type: 'integer',
       rules: ['at least 60', 'at most 43200'],
     });
+    // A string that may not be empty says so, and a single one takes no plural.
+    const server = allPolicies.find((policy) => policy.name === 'ProxyServer');
+    assert.ok(server !== undefined);
+    assert.deepEqual(shapeOf(server.schema).rules, ['not empty', 'at most 2048 characters']);
+    assert.deepEqual(
+      shapeOf({
+        type: 'array',
+        pipe: [
+          { type: 'array', item: { type: 'string' } },
+          { kind: 'validation', type: 'min_length', requirement: 2 },
+          { kind: 'validation', type: 'max_length', requirement: 1 },
+        ],
+      }).rules,
+      ['at least 2 entries', 'at most 1 entry'],
+    );
     assert.throws(() => shapeOf({ type: 'object' }), /does not know schemas of the type object/);
     assert.throws(
       () =>

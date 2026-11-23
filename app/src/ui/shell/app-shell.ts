@@ -3751,6 +3751,21 @@ export class AppShell extends LitElement {
         </button>
       </section>`;
     }
+    // A site that a policy blocks loads no better on a second try; the way on is back.
+    if (problem.code === 'ERR_BLOCKED_BY_ADMINISTRATOR') {
+      return html`<section class="problem" aria-labelledby=${title} tabindex="-1">
+        <h1 id=${title}>${this.tp('problem.blockedTitle')}</h1>
+        <p>${this.tp('problem.blocked', { site })}</p>
+        <p class="code">${this.tp('problem.code', { code: problem.code })}</p>
+        ${
+          tab.canGoBack
+            ? html`<button @click=${() => this.action('back', tab.id)}>
+                ${this.tp('problem.back')}
+              </button>`
+            : nothing
+        }
+      </section>`;
+    }
     const crashed = problem.kind === 'crashed';
     return html`<section class="problem" aria-labelledby=${title} tabindex="-1">
       <h1 id=${title}>${this.tp(crashed ? 'problem.crashedTitle' : 'problem.errorTitle')}</h1>

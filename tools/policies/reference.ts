@@ -180,12 +180,12 @@ function withAction(shape: ValueShape, action: object): ValueShape {
     case 'max_length':
       return add(
         list ? { maxItems: requirement } : { maxLength: requirement },
-        `at most ${String(requirement)} ${list ? 'entries' : 'characters'}`,
+        `at most ${amount(requirement, list)}`,
       );
     case 'min_length':
       return add(
         list ? { minItems: requirement } : { minLength: requirement },
-        `at least ${String(requirement)} ${list ? 'entries' : 'characters'}`,
+        requirement === 1 ? 'not empty' : `at least ${amount(requirement, list)}`,
       );
     case 'min_value':
       return add({ minimum: requirement }, `at least ${String(requirement)}`);
@@ -209,6 +209,12 @@ function withAction(shape: ValueShape, action: object): ValueShape {
     default:
       throw new Error(`The policy reference does not know checks of the type ${String(type)}`);
   }
+}
+
+/** A number of the entries of a list or of the characters of a string, such as `1 entry`. */
+function amount(requirement: unknown, list: boolean): string {
+  const one = requirement === 1;
+  return `${String(requirement)} ${list ? (one ? 'entry' : 'entries') : one ? 'character' : 'characters'}`;
 }
 
 /** A value shape in words, such as `string (at most 2048 characters)`. */

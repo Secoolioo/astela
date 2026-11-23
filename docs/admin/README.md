@@ -43,13 +43,20 @@ On Windows, Group Policy and Intune write the registry keys; `reg add` does the 
 - A **mandatory** value sets a setting and locks it: people cannot change it on the settings page, and the settings page says **Managed by your organization**.
 - A **recommended** value only sets the value that people start from; they may change it, and the settings page says **Recommended by your organization** while the recommended value applies. Policies that the reference marks as _mandatory only_ are ignored as recommended values.
 - Mandatory values win over recommended ones, and machine-wide values over the values of a user: `HKLM` over `HKCU`, and a profile for the computer over a profile for a user.
-- **Sensitive** policies, such as `UpdateURL`, `DefaultSearchProviderSearchURL` and the DNS over HTTPS policies, apply only from machine-wide mandatory sources: `HKLM`, a profile for the computer, or a file in `/etc/astela/policies/managed/`. A program that runs as the user can write to `HKCU`, but it cannot redirect updates, searches or name lookups that way.
+- **Sensitive** policies, such as `UpdateURL`, `DefaultSearchProviderSearchURL`, the DNS over HTTPS policies, the proxy policies and `AuthServerAllowlist`, apply only from machine-wide mandatory sources: `HKLM`, a profile for the computer, or a file in `/etc/astela/policies/managed/`. A program that runs as the user can write to `HKCU`, but it cannot redirect updates, searches, name lookups, the traffic of pages or the sign-in of the system that way.
 
 The browser reads the policies while it starts, again when one of its windows gets the focus, and every 15 minutes; a changed value applies then, except for the policies that need a restart.
 
 ### Checking that policies apply
 
 The browser never guesses: a value with the wrong type or format, an unknown policy name, a mandatory-only policy set as recommended and a sensitive policy from a source that may not set it are ignored, and every other value still applies. Each value that does not apply is written to the log once, as a `Policy value ignored` record with the policy name, the source, the level, the scope, the state (`unknown`, `invalid`, `not-allowed-as-recommended` or `sensitive-requires-machine`) and the reason. A source that cannot be read, such as a file that is not valid JSON, gives a `Policy source could not be read` record. The records are written again only when the set of problems changes, and each set starts with a `Policies read` record that counts the ignored values and the sources that could not be read, also when both are 0. So the records after the last `Policies read` are the problems that hold now, and a `Policies read` record with `"ignored":0` shows that the browser has read a fix.
+
+The policies of the network can apply and still do less than they say. What they do is written once for each change of it, also of an entry of `URLBlocklist` or `URLAllowlist`, and once they are gone, as a `Network policies applied` record with the mode of the proxy that they set (`none` without one), the number of values that do nothing (`unused`), the number of filters of each list that count (`blocklist` and `allowlist`) and the number of entries of the lists that are ignored (`ignoredEntries`), followed by a record for each of them:
+
+- `Policy value has no effect`, with the policy name and the reason, for a proxy policy that its `ProxyMode` does not use, such as a `ProxyServer` without `ProxyMode` or with `direct`.
+- `Policy entries ignored`, with the policy name, the positions of the entries in the list, from 1, and the reason, for entries of `URLBlocklist` and `URLAllowlist` that are no filters, such as `a b`, or come after the 1000th; the other entries apply.
+
+So the records of these two kinds after the last `Network policies applied` hold now.
 
 When the value of a policy of a setting is ignored, the settings page says so next to the setting, in the language of the browser, such as **Your organization's value for the policy ShowHomeButton is not valid and is ignored.** The reason is in the log. Policies without a setting, such as `PrivateModeAvailability` and the update policies, appear only in the log.
 
@@ -79,6 +86,39 @@ About, in the browser menu, shows the state of the updates: up to date with the 
 
 The browser checks the signatures of the feed with the keys it ships, so a mirror cannot change what it installs. The packages themselves still come from the address that the signed feed names, GitHub Releases for the releases of the project, so the browsers need to reach `github.com` and the hosts that it sends downloads to.
 
+## Network
+
+### Proxy
+
+Without proxy policies, the browser uses the proxy of the system, or the one of `--proxy-server`, `--proxy-pac-url` or `--no-proxy-server` when it was started with one. `ProxyMode` replaces both. For a proxy server, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "ProxyMode": "fixed_servers",
+  "ProxyServer": "proxy.example.com:3128",
+  "ProxyBypassList": "*.intranet.example.com,<local>"
+}
+```
+
+For a proxy script, `{ "ProxyMode": "pac_script", "ProxyPacUrl": "https://wpad.example.com/proxy.pac" }`. The proxy applies to every window, private windows and workspaces that keep their data apart included, and to the update checks. A change applies at the next read of the policies and closes the open connections; once the policies are gone, the browser goes back to the proxy that it started with. A proxy that asks for a user name and password asks in the window of the tab. The proxy policies are sensitive and apply only from the machine's mandatory sources.
+
+### Single sign-on
+
+`AuthServerAllowlist` names the servers that may get the sign-in of the system with Kerberos or NTLM, such as `"*.example.com,example.com"`. Without it, the browser leaves the choice to the system, such as the Intranet zone on Windows. A change applies at the next read of the policies, without a restart.
+
+### Blocked sites
+
+`URLBlocklist` lists the addresses that pages and frames may not open, and `URLAllowlist` the exceptions, in Chrome's filter format; the [policy reference](policies.md#urlblocklist) describes it. To allow only a few sites:
+
+```json
+{
+  "URLBlocklist": ["*"],
+  "URLAllowlist": ["intranet.example.com", "mail.example.com"]
+}
+```
+
+`*` also blocks local files, but never the browser's own pages, such as the settings, and, as in Chrome, not the internal pages of Chromium, such as its PDF viewer and the developer tools. A tab whose page is blocked says **This site is blocked** with the code `ERR_BLOCKED_BY_ADMINISTRATOR`, and the site never hears of the visit. Frames of blocked sites in other pages, also those of `<object>` and `<embed>`, stay empty. A page that a service worker of the site keeps, as web apps that work offline do, is replaced by **This site is blocked** as soon as it shows, in the same place of the history of the tab; the service worker of the site still sees the visit. Images, scripts and other parts of an allowed page are not checked, as in Chrome. A change applies to the next pages that load; open pages stay, and the `Network policies applied` record in the log tells when a change applies.
+
 ## Logs
 
 The browser writes its log to the folder `logs` of the profile, as JSON Lines: one JSON object per line with the time, the level, the part of the browser, the message and its fields.
@@ -94,7 +134,7 @@ At 5 MB, `main.log` becomes `main.1.log`, and the browser keeps two older files.
 To find the policy values that do not apply on Linux, read the records after the last `Policies read` record:
 
 ```sh
-grep -E '"(Policies read|Policy value ignored|Policy source could not be read)"' ~/.config/Astela/logs/main.log
+grep -E '"(Policies read|Policy value ignored|Policy source could not be read|Network policies applied|Policy value has no effect|Policy entries ignored)"' ~/.config/Astela/logs/main.log
 ```
 
 ## Outgoing connections
@@ -117,7 +157,5 @@ These parts of the [enterprise design](../architecture/enterprise.md) do not exi
 - The diagnostics page `app://diagnostics`, which will list every policy with its value, source and state. Until then, the log and the settings page show the values that do not apply.
 - ADMX and ADML templates for Group Policy and Intune, and a macOS configuration profile to start from.
 - Safe mode. `--safe-mode` has no effect and writes a warning to the log, and `SafeModeAvailability` is an unknown policy.
-- The proxy policies `ProxyMode`, `ProxyServer`, `ProxyPacUrl` and `ProxyBypassList`, and `AuthServerAllowlist` for single sign-on.
-- `URLBlocklist` and `URLAllowlist`.
 - The MSI properties `INSTALLDIR` and `DESKTOP_SHORTCUT`, and MSI packages of beta releases.
 - Chrome policies for features that Astela does not have: `DefaultSearchProviderEnabled`, `DefaultSearchProviderName`, `DefaultSearchProviderKeyword` and `DefaultSearchProviderSuggestURL` (there are no keywords or search suggestions of the search engine), `NewTabPageLocation` (no other new tab page) and `ManagedSettings`. The browser logs them as unknown.

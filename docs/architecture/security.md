@@ -90,7 +90,7 @@ Electron fuses will be set through electron-builder's `electronFuses` option and
 
 Chromium's HTTPS upgrades are not available in Electron (as of October 2026), so Astela implements HTTPS-First itself (from 0.1.0-beta.5):
 
-- The first step of the `RequestPipeline` sends a page's navigation to an `http://` address to its `https://` address. It changes only main frames; Chromium itself upgrades mixed content in pages.
+- After the addresses that the policies `URLBlocklist` and `URLAllowlist` block, which the pipeline asks first ([enterprise](enterprise.md#implementation-status)), the `RequestPipeline` sends a page's navigation to an `http://` address to its `https://` address. It changes only main frames; Chromium itself upgrades mixed content in pages.
 - When the secure address does not load, or redirects back to the insecure one, the tab shows a warning in place of the page. **Continue** allows the host's insecure address for the rest of the session, in the session of that page only, so private windows keep their own exceptions, until people choose **Use a secure connection again** in site information (`HttpsFirst.revoke`, [ADR 0059](../adr/0059-site-information-with-checked-certificates.md)).
 - Addresses with a port, IP addresses, names without a dot and names of local networks (`.local`, `.localhost`, `.internal`, `.lan`, `.home.arpa`, `.test`, `.example`, `.invalid`) keep their address, as do the hosts of the `HttpAllowlist` policy.
 - HTTPS-First is on by default; the setting `privacy.httpsFirst` and the `HttpsOnlyMode` policy turn it off.

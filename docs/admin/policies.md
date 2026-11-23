@@ -12,6 +12,7 @@ A policy that is not on this page is unknown to this version. The browser ignore
 | Policy                                                                    | Setting                          | Levels                   | Sensitive |
 | ------------------------------------------------------------------------- | -------------------------------- | ------------------------ | --------- |
 | [ApplicationLocaleValue](#applicationlocalevalue)                         | `i18n.language`                  | mandatory or recommended | no        |
+| [AuthServerAllowlist](#authserverallowlist)                               |                                  | mandatory only           | yes       |
 | [AutoHideToolbar](#autohidetoolbar)                                       | `toolbar.autoHide`               | mandatory or recommended | no        |
 | [AutoUpdateCheckPeriodMinutes](#autoupdatecheckperiodminutes)             |                                  | mandatory only           | no        |
 | [BlockThirdPartyCookies](#blockthirdpartycookies)                         | `privacy.blockThirdPartyCookies` | mandatory or recommended | no        |
@@ -34,6 +35,10 @@ A policy that is not on this page is unknown to this version. The browser ignore
 | [PictureInPictureEnabled](#pictureinpictureenabled)                       | `pictureInPicture.enabled`       | mandatory or recommended | no        |
 | [PrivateModeAvailability](#privatemodeavailability)                       |                                  | mandatory only           | no        |
 | [PromptForDownloadLocation](#promptfordownloadlocation)                   | `downloads.ask`                  | mandatory or recommended | no        |
+| [ProxyBypassList](#proxybypasslist)                                       |                                  | mandatory only           | yes       |
+| [ProxyMode](#proxymode)                                                   |                                  | mandatory only           | yes       |
+| [ProxyPacUrl](#proxypacurl)                                               |                                  | mandatory only           | yes       |
+| [ProxyServer](#proxyserver)                                               |                                  | mandatory only           | yes       |
 | [ReaderViewEnabled](#readerviewenabled)                                   | `reader.enabled`                 | mandatory or recommended | no        |
 | [RestoreOnStartup](#restoreonstartup)                                     | `startup.page`                   | mandatory or recommended | no        |
 | [RestoreOnStartupURLs](#restoreonstartupurls)                             | `startup.urls`                   | mandatory or recommended | no        |
@@ -49,6 +54,8 @@ A policy that is not on this page is unknown to this version. The browser ignore
 | [ToolbarPlacement](#toolbarplacement)                                     | `toolbar.placement`              | mandatory or recommended | no        |
 | [UpdatePolicy](#updatepolicy)                                             |                                  | mandatory only           | no        |
 | [UpdateURL](#updateurl)                                                   |                                  | mandatory only           | yes       |
+| [URLAllowlist](#urlallowlist)                                             |                                  | mandatory only           | no        |
+| [URLBlocklist](#urlblocklist)                                             |                                  | mandatory only           | no        |
 | [WorkspacesEnabled](#workspacesenabled)                                   | `workspaces.enabled`             | mandatory or recommended | no        |
 
 ## ApplicationLocaleValue
@@ -82,6 +89,39 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 ```xml
 <key>ApplicationLocaleValue</key>
 <string>de</string>
+```
+
+## AuthServerAllowlist
+
+The servers that may get the sign-in of the system for integrated authentication, with Kerberos (Negotiate) or NTLM, as a list separated by commas, such as `*.example.com,example.com`.
+
+- Value: string (at most 8192 characters)
+- Levels: mandatory only
+- Sensitive: yes, applies only from machine-wide mandatory sources
+- Restart needed: no
+- Setting: none
+
+A `*` stands for any start of a name. Without the policy, the browser answers such a request only where the system allows it, such as for the Intranet zone on Windows. A change applies at the next read of the policies.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "AuthServerAllowlist": "*.example.com,example.com"
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela" /v AuthServerAllowlist /t REG_SZ /d "*.example.com,example.com" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>AuthServerAllowlist</key>
+<string>*.example.com,example.com</string>
 ```
 
 ## AutoHideToolbar
@@ -800,6 +840,138 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 <true/>
 ```
 
+## ProxyBypassList
+
+The hosts that `ProxyMode` `fixed_servers` reaches without the proxy, separated by commas, such as `*.intranet.example.com,192.168.0.0/16`.
+
+- Value: string (at most 8192 characters)
+- Levels: mandatory only
+- Sensitive: yes, applies only from machine-wide mandatory sources
+- Restart needed: no
+- Setting: none
+
+Chromium's format: a `*` stands for any start of a name, `<local>` for names without a dot, and an address with `/` for a range of IP addresses. `localhost` and the loopback addresses never go through the proxy.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "ProxyBypassList": "*.intranet.example.com,<local>"
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela" /v ProxyBypassList /t REG_SZ /d "*.intranet.example.com,<local>" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>ProxyBypassList</key>
+<string>*.intranet.example.com,&lt;local&gt;</string>
+```
+
+## ProxyMode
+
+How the browser finds its proxy: `direct` uses none, `system` the settings of the system, `auto_detect` looks for a proxy script in the network (WPAD), `fixed_servers` uses `ProxyServer`, and `pac_script` the script at `ProxyPacUrl`.
+
+- Value: string (one of `direct`, `system`, `auto_detect`, `fixed_servers`, `pac_script`)
+- Levels: mandatory only
+- Sensitive: yes, applies only from machine-wide mandatory sources
+- Restart needed: no
+- Setting: none
+
+As in Chrome, the other proxy policies count only in the modes that use them: `ProxyServer` and `ProxyBypassList` with `fixed_servers`, `ProxyPacUrl` with `pac_script`. `fixed_servers` without `ProxyServer` and `pac_script` without `ProxyPacUrl` set no proxy; then, as without `ProxyMode`, the browser uses the settings of the system or the switches it was started with. A value that does nothing is logged as `Policy value has no effect`. A change applies to every window, private windows and workspaces that keep their data apart included, at the next read of the policies, and closes the open connections. Chrome's `ProxySettings` is not supported.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "ProxyMode": "fixed_servers"
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela" /v ProxyMode /t REG_SZ /d "fixed_servers" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>ProxyMode</key>
+<string>fixed_servers</string>
+```
+
+## ProxyPacUrl
+
+The address of the proxy script (PAC file) of `ProxyMode` `pac_script`, such as `https://wpad.example.com/proxy.pac`.
+
+- Value: string (at most 8192 characters; must be an http, https or data address)
+- Levels: mandatory only
+- Sensitive: yes, applies only from machine-wide mandatory sources
+- Restart needed: no
+- Setting: none
+
+A `data:` address that holds the script works too; a local file does not, as in Chrome.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "ProxyPacUrl": "https://wpad.example.com/proxy.pac"
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela" /v ProxyPacUrl /t REG_SZ /d "https://wpad.example.com/proxy.pac" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>ProxyPacUrl</key>
+<string>https://wpad.example.com/proxy.pac</string>
+```
+
+## ProxyServer
+
+The proxy of `ProxyMode` `fixed_servers`, as `host:port` or as an address such as `http://proxy.example.com:3128` or `socks5://proxy.example.com:1080`.
+
+- Value: string (not empty; at most 2048 characters)
+- Levels: mandatory only
+- Sensitive: yes, applies only from machine-wide mandatory sources
+- Restart needed: no
+- Setting: none
+
+Chromium's rules for each scheme work too, such as `http=proxy1:80;https=proxy2:443`.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "ProxyServer": "proxy.example.com:3128"
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela" /v ProxyServer /t REG_SZ /d "proxy.example.com:3128" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>ProxyServer</key>
+<string>proxy.example.com:3128</string>
+```
+
 ## ReaderViewEnabled
 
 Turns the reader view on or off. While it is off, the browser checks no page for an article.
@@ -1281,6 +1453,78 @@ macOS, in a configuration profile for `io.github.secoolioo.astela`:
 ```xml
 <key>UpdateURL</key>
 <string>https://updates.example.com/</string>
+```
+
+## URLAllowlist
+
+The exceptions of `URLBlocklist`, as filters of the same format, such as `mail.example.com` with a blocklist of `*`.
+
+- Value: list of strings
+- Levels: mandatory only
+- Sensitive: no
+- Restart needed: no
+- Setting: none
+
+Of the filters of both lists that match an address, the most specific decides: `*` counts least, a host with a leading `.` more than one with its subdomains, then the longer host, the longer path and the more parameters of the query; on a tie, the allowlist wins. The first 1000 entries count.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "URLAllowlist": ["mail.example.com"]
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela\URLAllowlist" /v 1 /t REG_SZ /d "mail.example.com" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>URLAllowlist</key>
+<array>
+  <string>mail.example.com</string>
+</array>
+```
+
+## URLBlocklist
+
+The addresses that pages and frames may not open, as filters such as `example.com`; such a tab says that the organization blocks the site.
+
+- Value: list of strings
+- Levels: mandatory only
+- Sensitive: no
+- Restart needed: no
+- Setting: none
+
+Chrome's filter format, `[scheme://][.]host[:port][/path][?query]`: a host also blocks its subdomains unless it starts with `.`, `*` blocks every address, `https://*` every address of a scheme and `*:8080` a port; a path blocks the addresses that start with it, and `?key=value` those with that parameter, with a final `*` for the start of a value. `file:///home/` blocks the local files below a folder, and on Windows `file:///C:/Users/`, also written with a lower-case drive or with `\`. As in Chrome, the first 1000 entries count; entries that are no filters and those after the 1000th are ignored and logged as `Policy entries ignored` with their positions. The browser's own pages are never blocked, and as in Chrome, `*` does not block the internal pages of Chromium, such as its PDF viewer and the developer tools, which `chrome-extension://*` and `devtools://*` block. A change applies to the next pages that load, at the next read of the policies.
+
+Linux, in a file in `/etc/astela/policies/managed/`:
+
+```json
+{
+  "URLBlocklist": ["example.com", "*:8080"]
+}
+```
+
+Windows:
+
+```bat
+reg add "HKLM\SOFTWARE\Policies\Astela\URLBlocklist" /v 1 /t REG_SZ /d "example.com" /f
+reg add "HKLM\SOFTWARE\Policies\Astela\URLBlocklist" /v 2 /t REG_SZ /d "*:8080" /f
+```
+
+macOS, in a configuration profile for `io.github.secoolioo.astela`:
+
+```xml
+<key>URLBlocklist</key>
+<array>
+  <string>example.com</string>
+  <string>*:8080</string>
+</array>
 ```
 
 ## WorkspacesEnabled

@@ -36,6 +36,13 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
       'A code without a translation shows English. Unlike in Chromium, a code with a region, such as `de-DE`, is not valid.',
     example: 'de',
   },
+  AuthServerAllowlist: {
+    summary:
+      'The servers that may get the sign-in of the system for integrated authentication, with Kerberos (Negotiate) or NTLM, as a list separated by commas, such as `*.example.com,example.com`.',
+    details:
+      'A `*` stands for any start of a name. Without the policy, the browser answers such a request only where the system allows it, such as for the Intranet zone on Windows. A change applies at the next read of the policies.',
+    example: '*.example.com,example.com',
+  },
   AutoHideToolbar: {
     summary:
       'Whether the tabs and the toolbar hide until they are needed, with the tab strip at the top and never in popups.',
@@ -142,6 +149,34 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
       "With `1`, the menus have no New private window or grey it out, and its shortcut reaches the page. Chrome's `2`, which makes every window private, is not supported and not valid.",
   },
   PromptForDownloadLocation: { summary: 'Whether the browser asks where to save each download.' },
+  ProxyBypassList: {
+    summary:
+      'The hosts that `ProxyMode` `fixed_servers` reaches without the proxy, separated by commas, such as `*.intranet.example.com,192.168.0.0/16`.',
+    details:
+      "Chromium's format: a `*` stands for any start of a name, `<local>` for names without a dot, and an address with `/` for a range of IP addresses. `localhost` and the loopback addresses never go through the proxy.",
+    example: '*.intranet.example.com,<local>',
+  },
+  ProxyMode: {
+    summary:
+      'How the browser finds its proxy: `direct` uses none, `system` the settings of the system, `auto_detect` looks for a proxy script in the network (WPAD), `fixed_servers` uses `ProxyServer`, and `pac_script` the script at `ProxyPacUrl`.',
+    details:
+      "As in Chrome, the other proxy policies count only in the modes that use them: `ProxyServer` and `ProxyBypassList` with `fixed_servers`, `ProxyPacUrl` with `pac_script`. `fixed_servers` without `ProxyServer` and `pac_script` without `ProxyPacUrl` set no proxy; then, as without `ProxyMode`, the browser uses the settings of the system or the switches it was started with. A value that does nothing is logged as `Policy value has no effect`. A change applies to every window, private windows and workspaces that keep their data apart included, at the next read of the policies, and closes the open connections. Chrome's `ProxySettings` is not supported.",
+    example: 'fixed_servers',
+  },
+  ProxyPacUrl: {
+    summary:
+      'The address of the proxy script (PAC file) of `ProxyMode` `pac_script`, such as `https://wpad.example.com/proxy.pac`.',
+    details:
+      'A `data:` address that holds the script works too; a local file does not, as in Chrome.',
+    example: 'https://wpad.example.com/proxy.pac',
+  },
+  ProxyServer: {
+    summary:
+      'The proxy of `ProxyMode` `fixed_servers`, as `host:port` or as an address such as `http://proxy.example.com:3128` or `socks5://proxy.example.com:1080`.',
+    details:
+      "Chromium's rules for each scheme work too, such as `http=proxy1:80;https=proxy2:443`.",
+    example: 'proxy.example.com:3128',
+  },
   ReaderViewEnabled: {
     summary:
       'Turns the reader view on or off. While it is off, the browser checks no page for an article.',
@@ -213,6 +248,20 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
     details:
       'The browser reads `updates/v1/index.json` and `updates/v1/releases/<version>.json` below this address and checks their signatures as on the website.',
     example: 'https://updates.example.com/',
+  },
+  URLAllowlist: {
+    summary:
+      'The exceptions of `URLBlocklist`, as filters of the same format, such as `mail.example.com` with a blocklist of `*`.',
+    details:
+      'Of the filters of both lists that match an address, the most specific decides: `*` counts least, a host with a leading `.` more than one with its subdomains, then the longer host, the longer path and the more parameters of the query; on a tie, the allowlist wins. The first 1000 entries count.',
+    example: ['mail.example.com'],
+  },
+  URLBlocklist: {
+    summary:
+      'The addresses that pages and frames may not open, as filters such as `example.com`; such a tab says that the organization blocks the site.',
+    details:
+      "Chrome's filter format, `[scheme://][.]host[:port][/path][?query]`: a host also blocks its subdomains unless it starts with `.`, `*` blocks every address, `https://*` every address of a scheme and `*:8080` a port; a path blocks the addresses that start with it, and `?key=value` those with that parameter, with a final `*` for the start of a value. `file:///home/` blocks the local files below a folder, and on Windows `file:///C:/Users/`, also written with a lower-case drive or with `\\`. As in Chrome, the first 1000 entries count; entries that are no filters and those after the 1000th are ignored and logged as `Policy entries ignored` with their positions. The browser's own pages are never blocked, and as in Chrome, `*` does not block the internal pages of Chromium, such as its PDF viewer and the developer tools, which `chrome-extension://*` and `devtools://*` block. A change applies to the next pages that load, at the next read of the policies.",
+    example: ['example.com', '*:8080'],
   },
   WorkspacesEnabled: {
     summary:

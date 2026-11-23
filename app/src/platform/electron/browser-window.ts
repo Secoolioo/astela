@@ -264,6 +264,11 @@ export interface BrowserWindowOptions {
    */
   readonly altOpensMenu?: () => boolean;
   /**
+   * Whether the policies of the organization block an address, so a page that the request
+   * pipeline stopped for it says so.
+   */
+  readonly blockedByPolicy?: ((url: string) => boolean) | undefined;
+  /**
    * The insecure address to offer in place of a page that did not load securely, when
    * HTTPS-First sent the page to the secure address.
    */

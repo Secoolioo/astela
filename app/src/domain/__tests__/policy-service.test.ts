@@ -313,6 +313,31 @@ describe('PolicyService', () => {
     expect(service().policies.applyCached()).toBe(false);
   });
 
+  it('applies the policies that it learns later from the next read on', async () => {
+    const ProxyMode = definePolicy({
+      name: 'ProxyMode',
+      schema: v.picklist(['direct', 'system']),
+      sensitive: true,
+    });
+    const Later = definePolicy({ name: 'LaterSetting', schema: v.boolean(), setting: 'later.on' });
+    const cache: PolicyCache = { read: () => [value('ProxyMode', 'direct')], write: vi.fn() };
+    const { policies, provider, sink } = service(cache);
+    policies.applyCached();
+    expect(policies.statuses()[0]?.state).toBe('unknown');
+    policies.define([ProxyMode, Later]);
+    provider.result = {
+      values: [value('ProxyMode', 'direct'), value('LaterSetting', true)],
+      errors: [],
+    };
+    expect(await policies.refresh()).toEqual(['ProxyMode', 'LaterSetting']);
+    expect(policies.mandatoryValue(ProxyMode)).toBe('direct');
+    expect(policies.isLocked('later.on')).toBe(true);
+    expect(policies.statuses().map((status) => status.state)).toEqual(['applied', 'applied']);
+    // The first read reports nothing as unknown.
+    expect(sink.records.map((record) => record.message)).not.toContain('Policy value ignored');
+    policies.dispose();
+  });
+
   it('reads asynchronous providers together and shares a running read', async () => {
     const sync = new FakeProvider();
     sync.result = { values: [value('UpdatePolicy', 1)], errors: [] };
