@@ -184,18 +184,22 @@ export class PictureInPictureController {
    * it. A page that ended or started picture in picture itself meanwhile only shows its state.
    * @param window - The window.
    * @param id - The tab.
+   * @param pressed - Whether the button showed itself pressed when it was clicked. The browser
+   *   may have looked at the page since, as after its media changed, and learned what the shell
+   *   did not show yet; the click does what it showed. Without it, as for the command, the
+   *   state of the tab counts once the click's turn comes.
    */
-  toggle(window: BrowserWindowController, id: TabId): Promise<void> {
+  toggle(window: BrowserWindowController, id: TabId, pressed?: boolean): Promise<void> {
     const contents = window.webContentsOf(id);
     if (!this.on() || contents === undefined) return Promise.resolve();
     return this.inTurn(contents, async () => {
-      const shown = window.tabs.get(id)?.pictureInPicture;
+      const open = pressed ?? window.tabs.get(id)?.pictureInPicture === 'open';
       // A look that tells nothing, as while the page loads, chooses no video either.
       const frames = await this.look(window, id, contents);
       const choice = frames === undefined ? undefined : chooseVideo(frames.map(reportOf));
       const target = choice === undefined ? undefined : frames?.[choice.frame];
       if (choice === undefined || target === undefined || !this.on()) return;
-      if ((choice.kind === 'exit') !== (shown === 'open')) return;
+      if ((choice.kind === 'exit') !== open) return;
       await this.act(
         contents,
         target,

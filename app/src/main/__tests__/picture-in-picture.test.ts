@@ -309,6 +309,32 @@ describe('PictureInPictureController', () => {
     expect(states(window)).toEqual(['open']);
   });
 
+  it('does what the button showed when it was clicked, also when a look changed the state of its tab meanwhile', async () => {
+    const { window, ids, pages } = windowWith(1);
+    const id = ids[0] ?? '';
+    const page = pages[0];
+    if (page === undefined) throw new Error('No page');
+    page.main.answer = (request) => {
+      if (request.kind === 'enter')
+        throw new Error('The button showed that it ends picture in picture');
+      return report([[true, true, false, 100]], false);
+    };
+    const { controller } = controllerOf([window]);
+    // The page ended picture in picture itself, and a look of the browser saw that before the
+    // shell showed it: the button that the click was on was still pressed.
+    window.tabs.update(id, { pictureInPicture: 'available' });
+    await controller.toggle(window as never, id, true);
+    expect(asked()).toEqual(['main probe']);
+    expect(states(window)).toEqual(['available']);
+    // The button that showed no picture in picture starts it, whatever the tab's state says.
+    scripts.calls.length = 0;
+    page.main.answer = (request) =>
+      request.kind === 'enter' ? { done: true } : report([[true, true, false, 100]], false);
+    window.tabs.update(id, { pictureInPicture: 'open' });
+    await controller.toggle(window as never, id, false);
+    expect(asked()).toEqual(['main probe', 'main enter with activation', 'main probe']);
+  });
+
   it('keeps one tab in picture in picture in all windows, and looks at the one that it replaced', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] });
     const first = windowWith(1);
