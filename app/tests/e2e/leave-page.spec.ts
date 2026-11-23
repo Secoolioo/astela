@@ -3,6 +3,7 @@ import { FixtureServer, launch, pressNative, type Browser } from './harness.ts';
 import {
   clickNative,
   closeButtonOf,
+  focusedView,
   loaded,
   openTab,
   runIn,
@@ -70,11 +71,46 @@ async function answer(browser: Browser, button: number): Promise<void> {
   }, button);
 }
 
-/** Types text into the field of a page, after a click into it, as a person does. */
+/**
+ * Types text into the field of a page, after a click into it, as a person does: into a page that
+ * has the focus. The browser gives the page of a new tab the focus a moment after it has loaded,
+ * and the keys wait for that, as in dialogs.spec.ts. Should the text still not arrive, the error
+ * tells what the page saw of the click and the keys.
+ */
 async function typeInto(browser: Browser, url: string, text: string): Promise<void> {
+  await expect.poll(() => focusedView(browser)).toBe(url);
+  await runIn(
+    browser,
+    url,
+    `(() => {
+      const seen = [];
+      Reflect.set(window, 'typedSeen', seen);
+      for (const type of ['mousedown', 'focusin', 'keydown', 'input']) {
+        document.addEventListener(type, (event) => seen.push(type + ':' + (event.target.id || event.target.nodeName)), true);
+      }
+      return true;
+    })()`,
+  );
   await clickNative(browser, url, `document.querySelector('#text')`);
   await typeNative(browser, url, text);
-  await expect.poll(() => runIn(browser, url, `document.querySelector('#text').value`)).toBe(text);
+  try {
+    await expect
+      .poll(() => runIn(browser, url, `document.querySelector('#text').value`))
+      .toBe(text);
+  } catch (error) {
+    const seen = await runIn(
+      browser,
+      url,
+      `JSON.stringify({ seen: Reflect.get(window, 'typedSeen'), active: document.activeElement?.id || document.activeElement?.nodeName, focus: document.hasFocus() })`,
+    );
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message}\nThe page saw ${String(seen)}; the focus: ${await focusedView(browser)}`,
+      {
+        cause: error,
+      },
+    );
+  }
 }
 
 /** Goes to an address with the address bar and Enter, as a person does. */
