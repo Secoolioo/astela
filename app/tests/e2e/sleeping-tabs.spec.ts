@@ -17,6 +17,7 @@ import {
   waitForPage,
   type Browser,
 } from './harness.ts';
+import { typeNative } from './native.ts';
 
 const mac = process.platform === 'darwin';
 /** The item of the tab menu, as it shows without the mark of its access key. */
@@ -74,25 +75,6 @@ async function offersSleep(browser: Browser, tab: Locator): Promise<boolean> {
   const label = menu.items.find((item) => item.replaceAll('&', '') === sleepItem);
   expect(label).toBeDefined();
   return !menu.disabled.includes(label ?? '');
-}
-
-/**
- * Types text into the focused field of a page as native key presses, as a person does: the
- * browser sees them before the page, which Playwright's keyboard skips.
- */
-async function typeNative(browser: Browser, url: string, text: string): Promise<void> {
-  await browser.main.evaluate(
-    ({ webContents }, { address, keys }) => {
-      const contents = webContents.getAllWebContents().find((view) => view.getURL() === address);
-      if (contents === undefined) throw new Error(`No page at ${address}`);
-      for (const key of keys) {
-        contents.sendInputEvent({ type: 'keyDown', keyCode: key });
-        contents.sendInputEvent({ type: 'char', keyCode: key });
-        contents.sendInputEvent({ type: 'keyUp', keyCode: key });
-      }
-    },
-    { address: url, keys: text.split('') },
-  );
 }
 
 /** A slow download, a part every half second without an end, and the folder it goes to. */

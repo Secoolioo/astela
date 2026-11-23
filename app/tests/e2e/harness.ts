@@ -1240,6 +1240,44 @@ export async function shellState(shell: Page): Promise<ShellState> {
 }
 
 /**
+ * Waits until a web page has painted its first content: Chromium drops the native input for a
+ * page until then, and on a slow machine, as on macOS in CI, that can come well after the page
+ * has loaded. The browser's own views load before they show and report no first paint, so only
+ * pages of http and https are waited for, and a test waits for what the other views show. A
+ * page with nothing to paint, such as one with only a script, never reports a first paint
+ * either, and is not waited for.
+ * @param browser - The running browser.
+ * @param address - The address of the page, or the start of it.
+ */
+export async function untilPainted(browser: Browser, address: string): Promise<void> {
+  if (!/^https?:/.test(address)) return;
+  await expect
+    .poll(
+      () =>
+        browser.main.evaluate(async ({ webContents }, at) => {
+          const views = webContents.getAllWebContents().filter((view) => !view.isDestroyed());
+          const view =
+            views.find((each) => each.getURL() === at) ??
+            views.find((each) => each.getURL().startsWith(at));
+          if (view === undefined) return false;
+          return (await view.executeJavaScript(`(() => {
+            if (performance.getEntriesByName('first-contentful-paint').length > 0) return true;
+            const body = document.body;
+            if (body === null) return false;
+            const texts = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+            for (let node = texts.nextNode(); node !== null; node = texts.nextNode()) {
+              const hidden = node.parentElement?.closest('script, style, template, noscript');
+              if (node.textContent.trim() !== '' && !hidden) return false;
+            }
+            return body.querySelector('img, svg, canvas, video') === null;
+          })()`)) as boolean;
+        }, address),
+      { message: `The page at ${address} has not painted its first content`, timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
+/**
  * Presses a key as a native input event, so the browser's own shortcut handling sees it.
  * @param browser - The running browser.
  * @param keyCode - Electron key code, such as `T`.
@@ -1255,6 +1293,7 @@ export async function pressNative(
   const mapped = modifiers.map((m) =>
     m === 'primary' ? (process.platform === 'darwin' ? 'meta' : 'control') : m,
   );
+  await untilPainted(browser, target);
   await browser.main.evaluate(
     ({ webContents }, { keyCode: key, mapped: mods, target: prefix }) => {
       const view = webContents.getAllWebContents().find((w) => w.getURL().startsWith(prefix));
@@ -1280,6 +1319,14 @@ export async function pressFocused(
   const mapped = modifiers.map((m) =>
     m === 'primary' ? (process.platform === 'darwin' ? 'meta' : 'control') : m,
   );
+  const focused = await browser.main.evaluate(
+    ({ webContents }) =>
+      webContents
+        .getAllWebContents()
+        .find((contents) => contents.isFocused())
+        ?.getURL() ?? null,
+  );
+  if (focused !== null) await untilPainted(browser, focused);
   const sent = await browser.main.evaluate(
     ({ webContents }, { keyCode: key, mapped: mods }) => {
       const view = webContents.getAllWebContents().find((contents) => contents.isFocused());
