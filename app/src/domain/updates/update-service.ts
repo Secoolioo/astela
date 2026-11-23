@@ -43,6 +43,17 @@ export type UpdateState =
       readonly at: number;
     };
 
+/** Tells work that runs for a service that it should stop, because the service was disposed. */
+export interface Cancellation {
+  /** Whether the work should stop. */
+  isCancelled(): boolean;
+  /**
+   * Fires once, when the work should stop; work that starts later asks
+   * {@link Cancellation.isCancelled} first.
+   */
+  readonly onCancel: Event<void>;
+}
+
 /** Finds, downloads and installs verified updates; electron-updater in the browser. */
 export interface UpdateEngine {
   /**
@@ -53,8 +64,9 @@ export interface UpdateEngine {
   /**
    * Downloads the update found by the last check and verifies it.
    * @param onProgress - Receives the progress in percent.
+   * @param cancellation - Stops the download, which then rejects.
    */
-  download(onProgress: (percent: number) => void): Promise<void>;
+  download(onProgress: (percent: number) => void, cancellation: Cancellation): Promise<void>;
   /**
    * Starts the silent installation of the downloaded update. Called while the browser
    * exits, after everything is saved.
@@ -68,8 +80,9 @@ export interface UpdateHooks {
    * Runs after a download while the browser keeps running, such as fetching the package of
    * the running version. A failure is logged; the update still installs.
    * @param version - The downloaded version.
+   * @param cancellation - Stops the work, such as a download, when the service is disposed.
    */
-  afterDownload(version: string): Promise<void>;
+  afterDownload(version: string, cancellation: Cancellation): Promise<void>;
   /**
    * Runs right before the installation starts, while the browser exits.
    * @param version - The version being installed.
@@ -101,7 +114,9 @@ const offlineRetry = 15 * minute;
 
 /**
  * Checks for updates on a schedule and downloads them in the background. A downloaded
- * update installs when the browser quits. The service never shows a dialog.
+ * update installs when the browser quits. The service never shows a dialog. Disposing it
+ * stops its work: the download and the preparation of the rollback are cancelled, and an
+ * update that it downloaded no longer installs.
  */
 export class UpdateService implements Disposable {
   private readonly engine: UpdateEngine;
@@ -113,6 +128,12 @@ export class UpdateService implements Disposable {
   private current: UpdateState;
   private timer: Disposable | undefined;
   private running: Promise<UpdateState> | undefined;
+  private disposed = false;
+  private readonly stopped = new Emitter<void>();
+  private readonly cancellation: Cancellation = {
+    isCancelled: () => this.disposed,
+    onCancel: this.stopped.event,
+  };
 
   /** Fires whenever {@link UpdateService.state} changes. */
   readonly onDidChange: Event<UpdateState> = this.changed.event;
@@ -155,7 +176,7 @@ export class UpdateService implements Disposable {
    * @returns The state after the run.
    */
   check(): Promise<UpdateState> {
-    if (this.current.kind === 'disabled' || this.current.kind === 'ready') {
+    if (this.disposed || this.current.kind === 'disabled' || this.current.kind === 'ready') {
       return Promise.resolve(this.current);
     }
     this.running ??= this.run().finally(() => {
@@ -169,20 +190,29 @@ export class UpdateService implements Disposable {
    * @returns Whether an installation started.
    */
   installOnExit(): boolean {
-    if (this.current.kind !== 'ready') return false;
+    if (this.disposed || this.current.kind !== 'ready') return false;
     this.logger.info('Installing update', { version: this.current.version });
     this.options.hooks?.beforeInstall(this.current.version);
     this.engine.install();
     return true;
   }
 
-  /** Cancels the schedule. */
+  /**
+   * Stops the service for good: it cancels the schedule, a download that runs and the
+   * preparation of the rollback. A check that still runs finishes, but downloads nothing and
+   * schedules no other.
+   */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.timer?.dispose();
+    this.stopped.fire();
+    this.stopped.dispose();
     this.changed.dispose();
   }
 
   private schedule(delayMs: number): void {
+    if (this.disposed) return;
     this.timer?.dispose();
     this.timer = this.clock.setTimeout(() => {
       this.timer = undefined;
@@ -209,19 +239,24 @@ export class UpdateService implements Disposable {
         this.logger.info('No update available');
         return this.set({ kind: 'idle', lastCheckAt: this.clock.wallTime() });
       }
+      if (this.disposed) return this.stoppedRun(version);
       this.logger.info('Downloading update', { version });
       this.set({ kind: 'downloading', version, percent: 0 });
       await this.engine.download((percent) => {
         this.set({ kind: 'downloading', version, percent: Math.round(percent) });
-      });
+      }, this.cancellation);
       try {
-        await this.options.hooks?.afterDownload(version);
+        await this.options.hooks?.afterDownload(version, this.cancellation);
       } catch (error) {
-        this.logger.warn('The rollback could not be prepared', { message: String(error) });
+        if (!this.disposed) {
+          this.logger.warn('The rollback could not be prepared', { message: String(error) });
+        }
       }
+      if (this.disposed) return this.stoppedRun(version);
       this.logger.info('Update ready; it installs when the browser quits', { version });
       return this.set({ kind: 'ready', version });
     } catch (error) {
+      if (this.disposed) return this.stoppedRun();
       const code =
         typeof error === 'object' &&
         error !== null &&
@@ -237,6 +272,18 @@ export class UpdateService implements Disposable {
         at: this.clock.wallTime(),
       });
     }
+  }
+
+  /**
+   * Ends a run that the disposal of the service stopped; nothing of it installs.
+   * @param version - The version that the run found, if it got so far.
+   */
+  private stoppedRun(version?: string): UpdateState {
+    this.logger.info(
+      'Update stopped; the service was disposed',
+      version === undefined ? {} : { version },
+    );
+    return this.current;
   }
 
   private set(state: UpdateState): UpdateState {

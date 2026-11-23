@@ -1,12 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   chooseMenuItem,
   FixtureServer,
   launch,
+  overlayAttached,
   overlayPage,
   pressNative,
   recordMenus,
@@ -99,14 +102,6 @@ test('reads the policies again when a window gets the focus', async () => {
 type PolicyValues = Readonly<Record<string, boolean | number | string>>;
 
 const sleepFile = `/etc/${brand.slug}/policies/managed/e2e-sleep.json`;
-
-/** A value of a policy in a property list of macOS. */
-function plistValue(value: boolean | number | string): string {
-  if (typeof value === 'boolean') return `<${String(value)}/>`;
-  return typeof value === 'number'
-    ? `<integer>${String(value)}</integer>`
-    : `<string>${value}</string>`;
-}
 
 /**
  * Sets mandatory policies of the system: in the registry, the managed preferences or a file.
@@ -328,7 +323,7 @@ test('saves an image from its menu into the folder that a policy sets, without a
 });
 
 /** A policy value as a test sets it, also a wrong one. */
-type PolicyValue = string | number | boolean;
+type PolicyValue = string | number | boolean | readonly string[];
 
 /** Mandatory and recommended values that a test sets as an administrator. */
 interface LeveledValues {
@@ -342,6 +337,19 @@ const linuxPolicyFolders = {
 } as const;
 const linuxIgnoredFile = 'e2e-ignored.json';
 
+/** Text in a property list, with the characters that XML reserves written as entities. */
+function plistText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** The value of a property list. */
+function plistValue(value: PolicyValue): string {
+  if (typeof value === 'boolean') return `<${String(value)}/>`;
+  if (typeof value === 'number') return `<integer>${String(value)}</integer>`;
+  if (typeof value === 'string') return `<string>${plistText(value)}</string>`;
+  return `<array>${value.map((item) => `<string>${plistText(item)}</string>`).join('')}</array>`;
+}
+
 /**
  * Sets policies of the system with the types they have, also wrong ones: in the registry of the
  * user, in the managed preferences, which hold only mandatory values, or in a file of each folder.
@@ -353,6 +361,24 @@ function setTypedPolicies(values: LeveledValues, created: string[]): void {
     for (const level of ['mandatory', 'recommended'] as const) {
       const key = level === 'mandatory' ? windowsKey : `${windowsKey}\\Recommended`;
       for (const [name, value] of Object.entries(values[level])) {
+        // A list is a subkey named after the policy, with the values 1, 2, ... in order.
+        if (Array.isArray(value)) {
+          execFileSync('reg', ['add', `${key}\\${name}`, '/f']);
+          for (const [index, item] of value.entries()) {
+            execFileSync('reg', [
+              'add',
+              `${key}\\${name}`,
+              '/v',
+              String(index + 1),
+              '/t',
+              'REG_SZ',
+              '/d',
+              String(item),
+              '/f',
+            ]);
+          }
+          continue;
+        }
         const typed =
           typeof value === 'string'
             ? ['REG_SZ', value]
@@ -401,10 +427,16 @@ function removeTypedPolicies(values: LeveledValues, created: readonly string[]):
     if (process.platform === 'win32') {
       for (const level of ['mandatory', 'recommended'] as const) {
         const key = level === 'mandatory' ? windowsKey : `${windowsKey}\\Recommended`;
-        for (const name of Object.keys(values[level])) {
+        for (const [name, value] of Object.entries(values[level])) {
           // A value that is not set makes reg fail; the others must still go.
           try {
-            execFileSync('reg', ['delete', key, '/v', name, '/f'], { stdio: 'ignore' });
+            execFileSync(
+              'reg',
+              Array.isArray(value)
+                ? ['delete', `${key}\\${name}`, '/f']
+                : ['delete', key, '/v', name, '/f'],
+              { stdio: 'ignore' },
+            );
           } catch {
             // This value was not set.
           }
@@ -626,6 +658,293 @@ test('words the note of an ignored policy value in the language of the browser',
     }
   } finally {
     removeTypedPolicies(policies, created);
+  }
+});
+
+test("takes Chrome's formats of the search address, the home page and the download folder", async () => {
+  test.skip(process.env['CI'] === undefined, 'Changes the policies of the system');
+  // The registry of the user may not set the sensitive search address.
+  test.skip(process.platform === 'win32', 'Needs a machine-wide source for the search address');
+  const server = createServer((request, response) => {
+    if (request.url === '/report.txt') {
+      response.writeHead(200, {
+        'content-type': 'text/plain',
+        'content-disposition': 'attachment; filename="report.txt"',
+      });
+      response.end('Fixture report\n');
+    } else {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<!doctype html><title>Fixture</title><a href="/report.txt">Report</a>');
+    }
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+  const policies: LeveledValues = {
+    mandatory: {
+      DefaultSearchProviderSearchURL: 'https://search.example/?q={searchTerms}&ie=utf-8',
+      HomepageLocation: 'example.com',
+      ShowHomeButton: true,
+      DownloadDirectory: join(tmpdir(), 'e2e-${user_name}', 'dl'),
+    },
+    recommended: {},
+  };
+  const folder = join(tmpdir(), `e2e-${userInfo().username}`);
+  const literal = join(tmpdir(), 'e2e-${user_name}');
+  const created: string[] = [];
+  try {
+    setTypedPolicies(policies, created);
+    const browser = await launch();
+    try {
+      // The searches and the home page would leave the computer; they are noted and cancelled.
+      await browser.main.evaluate(({ session }) => {
+        const asked: string[] = [];
+        Reflect.set(globalThis, 'asked', asked);
+        session
+          .fromPartition('persist:default')
+          .webRequest.onBeforeRequest(
+            { urls: ['https://search.example/*', 'https://example.com/*'] },
+            (details, callback) => {
+              asked.push(details.url);
+              callback({ cancel: true });
+            },
+          );
+      });
+      const asked = (): Promise<string[]> =>
+        browser.main.evaluate(() => Reflect.get(globalThis, 'asked') as string[]);
+      await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+      const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill('astela policy');
+      await address.press('Enter');
+      await expect.poll(asked).toEqual(['https://search.example/?q=astela%20policy&ie=utf-8']);
+      await browser.shell.getByRole('button', { name: 'Home', exact: true }).click();
+      await expect.poll(asked).toContain('https://example.com/');
+
+      await address.fill(`${origin}/`);
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url === `${origin}/`);
+      await page.getByRole('link', { name: 'Report' }).click();
+      await expect.poll(() => existsSync(join(folder, 'dl', 'report.txt'))).toBe(true);
+      expect(existsSync(literal)).toBe(false);
+
+      await address.fill('app://settings/#search.urlTemplate');
+      await address.press('Enter');
+      const settings = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+      await expect(settings.getByRole('combobox', { name: 'Search engine' })).toBeDisabled();
+      const home = settings.getByRole('textbox', { name: 'Home page' });
+      await expect(home).toHaveValue('https://example.com');
+      await expect(home).toBeDisabled();
+      // The folder shows as downloads use it.
+      await expect(
+        settings
+          .locator('.row')
+          .filter({ hasText: 'Save downloads in' })
+          .getByText(join(folder, 'dl'), { exact: true }),
+      ).toBeVisible();
+      for (const label of ['Search engine', 'Home page', 'Save downloads in']) {
+        await expect(
+          settings
+            .locator('.row')
+            .filter({ hasText: label })
+            .getByText('Managed by your organization'),
+        ).toBeVisible();
+      }
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    removeTypedPolicies(policies, created);
+    rmSync(folder, { recursive: true, force: true });
+    rmSync(literal, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise((done) => server.close(done));
+  }
+});
+
+test('locks the sites without blocking by policy, in the shield, the settings and an import', async () => {
+  test.skip(process.env['CI'] === undefined, 'Changes the policies of the system');
+  const server = new FixtureServer();
+  await server.start();
+  const policies: LeveledValues = {
+    mandatory: { ContentBlockerEnabled: true, ContentBlockerAllowedSites: ['intranet.example'] },
+    recommended: {},
+  };
+  const folder = mkdtempSync(join(tmpdir(), 'settings-file-'));
+  const created: string[] = [];
+  try {
+    setTypedPolicies(policies, created);
+    const browser = await launch();
+    try {
+      await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+      const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill(`${server.origin}/blocker.html`);
+      await address.press('Enter');
+      await waitForPage(browser, (url) => url.endsWith('/blocker.html'));
+      await browser.shell.getByRole('button', { name: 'Content blocker: 2 blocked' }).click();
+      const overlay = await overlayPage(browser);
+      const popover = overlay.getByRole('dialog', { name: 'Content blocker' });
+      const blockHere = popover.getByRole('switch', { name: 'Block ads on 127.0.0.1' });
+      await expect(blockHere).toBeChecked();
+      await expect(blockHere).toBeDisabled();
+      await expect(popover.getByText('Managed by your organization')).toBeVisible();
+      await overlay.keyboard.press('Escape');
+      await expect.poll(() => overlayAttached(browser)).toBe(false);
+      // Site information has the same switch, which the policy locks as well.
+      await browser.shell
+        .getByRole('button', { name: 'Page on this computer', exact: true })
+        .click();
+      const siteInfo = (await overlayPage(browser)).getByRole('dialog', {
+        name: 'Site information',
+      });
+      const siteSwitch = siteInfo.getByRole('switch', { name: 'Block ads on 127.0.0.1' });
+      await expect(siteSwitch).toBeChecked();
+      await expect(siteSwitch).toBeDisabled();
+      await expect(siteInfo.getByText('Managed by your organization')).toBeVisible();
+      await siteInfo.press('Escape');
+      await expect.poll(() => overlayAttached(browser)).toBe(false);
+
+      await address.fill('app://settings/#contentBlocker.allowedSites');
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url.startsWith('app://settings'));
+      const row = page.locator('.row').filter({ has: page.locator('#allowed-sites') });
+      await expect(row.getByText('Managed by your organization')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Remove intranet.example' })).toBeDisabled();
+      await expect(page.getByRole('textbox', { name: 'Site to add' })).toBeDisabled();
+      await expect(row.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
+      // An import may not turn the blocker off for every site of a top-level domain.
+      const file = join(folder, 'settings.json');
+      writeFileSync(
+        file,
+        JSON.stringify({
+          $schemaVersion: 1,
+          system: process.platform === 'darwin' ? 'macos' : 'pc',
+          settings: { 'contentBlocker.allowedSites': ['com'], 'tabs.position': 'left' },
+        }),
+      );
+      await browser.main.evaluate(({ dialog }, path) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [path] });
+      }, file);
+      await page.getByRole('button', { name: 'Import settings…' }).click();
+      await expect(page.getByRole('status').filter({ hasText: 'Imported settings' })).toHaveText(
+        'Imported settings: 1. Skipped, as your organization manages them or they are not valid here: 1',
+      );
+      await expect(page.getByRole('list', { name: 'Sites without blocking' })).toHaveText(
+        /^\s*intranet\.example\s*Remove\s*$/,
+      );
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    removeTypedPolicies(policies, created);
+    rmSync(folder, { recursive: true, force: true });
+    await server.stop();
+  }
+});
+
+test('shows the managed download folder and leaves the keys of what a policy turns off to the page', async () => {
+  test.skip(process.env['CI'] === undefined, 'Changes the policies of the system');
+  const server = new FixtureServer();
+  await server.start();
+  const folder = join(tmpdir(), 'e2e-dl');
+  const policies: LeveledValues = {
+    mandatory: {
+      DownloadDirectory: folder,
+      PrivateModeAvailability: 1,
+      DeveloperToolsAvailability: 2,
+    },
+    recommended: {},
+  };
+  const created: string[] = [];
+  try {
+    setTypedPolicies(policies, created);
+    const browser = await launch();
+    try {
+      const settings = await openSetting(browser, 'downloads.folder');
+      const row = settings.locator('.row').filter({ hasText: 'Save downloads in' });
+      // The folder that applies shows, with the lock of the organization.
+      await expect(row.getByText(folder, { exact: true })).toBeVisible();
+      await expect(row.getByText('Managed by your organization')).toBeVisible();
+      await expect(row.locator('svg.lock')).toBeVisible();
+      for (const command of ['window.newPrivate', 'devtools.toggle']) {
+        await expect(settings.locator(`[data-command="${command}"]`)).toContainText('No shortcut');
+      }
+
+      const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill(`${server.origin}/index.html`);
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url === `${server.origin}/index.html`);
+      await page.evaluate(() => {
+        const codes: string[] = [];
+        Reflect.set(globalThis, 'codes', codes);
+        addEventListener('keydown', (event) => codes.push(event.code));
+      });
+      const mac = process.platform === 'darwin';
+      // F12 elsewhere, Command+Option+I on macOS, and the keys of a new private window.
+      await pressNative(browser, mac ? 'I' : 'F12', mac ? ['primary', 'alt'] : [], server.origin);
+      await pressNative(browser, 'N', ['primary', 'shift'], server.origin);
+      await expect
+        .poll(() => page.evaluate(() => Reflect.get(globalThis, 'codes') as string[]))
+        .toEqual([mac ? 'KeyI' : 'F12', 'KeyN']);
+      expect(
+        await browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length),
+      ).toBe(1);
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    removeTypedPolicies(policies, created);
+    await server.stop();
+  }
+});
+
+test('leaves the keys of private windows and the developer tools to the page once a policy turns them off', async () => {
+  test.skip(process.env['CI'] === undefined, 'Changes the policies of the system');
+  const server = new FixtureServer();
+  await server.start();
+  const policies: LeveledValues = {
+    mandatory: { PrivateModeAvailability: 1, DeveloperToolsAvailability: 2 },
+    recommended: {},
+  };
+  const created: string[] = [];
+  try {
+    const browser = await launch();
+    try {
+      const settings = await openSetting(browser, 'commandPalette.enabled');
+      const rows = ['window.newPrivate', 'devtools.toggle'].map((command) =>
+        settings.locator(`[data-command="${command}"]`),
+      );
+      for (const row of rows) await expect(row).not.toContainText('No shortcut');
+      // An administrator turns both off while the browser runs; it reads the policies again
+      // when one of its windows gets the focus, and the open settings page follows.
+      setTypedPolicies(policies, created);
+      await browser.main.evaluate(({ BaseWindow }) => {
+        BaseWindow.getAllWindows()[0]?.emit('focus');
+      });
+      for (const row of rows) await expect(row).toContainText('No shortcut');
+
+      const address = browser.shell.getByRole('textbox', { name: 'Address and search bar' });
+      await address.fill(`${server.origin}/index.html`);
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url === `${server.origin}/index.html`);
+      await page.evaluate(() => {
+        const codes: string[] = [];
+        Reflect.set(globalThis, 'codes', codes);
+        addEventListener('keydown', (event) => codes.push(event.code));
+      });
+      const mac = process.platform === 'darwin';
+      await pressNative(browser, mac ? 'I' : 'F12', mac ? ['primary', 'alt'] : [], server.origin);
+      await pressNative(browser, 'N', ['primary', 'shift'], server.origin);
+      await expect
+        .poll(() => page.evaluate(() => Reflect.get(globalThis, 'codes') as string[]))
+        .toEqual([mac ? 'KeyI' : 'F12', 'KeyN']);
+      expect(
+        await browser.main.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length),
+      ).toBe(1);
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    removeTypedPolicies(policies, created);
+    await server.stop();
   }
 });
 

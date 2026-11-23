@@ -4,13 +4,34 @@ import {
   type AppUpdater,
   type ProgressInfo,
   type ResolvedUpdateFileInfo,
+  type UpdateDownloadedEvent,
   type UpdateInfo,
 } from 'electron-updater';
 import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Provider';
-import type { CustomPublishOptions } from 'builder-util-runtime';
+import {
+  CancellationError,
+  CancellationToken,
+  type CustomPublishOptions,
+} from 'builder-util-runtime';
 import type { Logger } from '../../kernel/logging/logger.ts';
 import { SignedFeed, type AvailableUpdate, type ReleaseQuery } from '../../domain/updates/feed.ts';
 import type { UpdateEngine } from '../../domain/updates/update-service.ts';
+
+// electron-updater has one updater for the whole process, and it hands a check or a download
+// that still runs to whoever asks next, with the version and the file of the feed that it
+// asked. An engine made for new update policies therefore waits until the work of the engines
+// before it has ended; their services cancel a download when they are disposed.
+let previousWork: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs work on the updater once the work that was started before has ended.
+ * @param work - The work, which may use the updater alone.
+ */
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const result = previousWork.then(work);
+  previousWork = result.catch(() => undefined);
+  return result;
+}
 
 /** What the provider needs; passed through electron-updater's custom provider options. */
 interface SignedFeedOptions {
@@ -90,36 +111,65 @@ export function createElectronUpdaterEngine(
 ): UpdateEngine {
   const updater = autoUpdater;
   const log = options.logger;
-  updater.logger = {
-    info: (message?: unknown) => log.debug(String(message)),
-    warn: (message?: unknown) => log.warn(String(message)),
-    error: (message?: unknown) => log.error(String(message)),
-    debug: (message?: unknown) => log.trace(String(message)),
+  // The updater asks the feed of this engine from its first check on.
+  const configure = (): void => {
+    updater.logger = {
+      info: (message?: unknown) => log.debug(String(message)),
+      warn: (message?: unknown) => log.warn(String(message)),
+      error: (message?: unknown) => log.error(String(message)),
+      debug: (message?: unknown) => log.trace(String(message)),
+    };
+    updater.autoDownload = false;
+    updater.autoInstallOnAppQuit = false;
+    updater.allowDowngrade = false;
+    updater.disableWebInstaller = true;
+    updater.setFeedURL({
+      provider: 'custom',
+      updateProvider: SignedFeedProvider,
+      feed: options.feed,
+      query: options.query,
+      feedBase: options.feedBase,
+    });
   };
-  updater.autoDownload = false;
-  updater.autoInstallOnAppQuit = false;
-  updater.allowDowngrade = false;
-  updater.disableWebInstaller = true;
-  updater.setFeedURL({
-    provider: 'custom',
-    updateProvider: SignedFeedProvider,
-    feed: options.feed,
-    query: options.query,
-    feedBase: options.feedBase,
-  });
+  let found: string | undefined;
   return {
-    async check(): Promise<string | undefined> {
-      const result = await updater.checkForUpdates();
-      return result?.isUpdateAvailable === true ? result.updateInfo.version : undefined;
-    },
-    async download(onProgress: (percent: number) => void): Promise<void> {
-      const listener = (progress: ProgressInfo): void => onProgress(progress.percent);
-      updater.on('download-progress', listener);
-      try {
-        await updater.downloadUpdate();
-      } finally {
-        updater.off('download-progress', listener);
-      }
+    check: () =>
+      inTurn(async () => {
+        configure();
+        const result = await updater.checkForUpdates();
+        found = result?.isUpdateAvailable === true ? result.updateInfo.version : undefined;
+        return found;
+      }),
+    download: (onProgress, cancellation) => {
+      const progress = (info: ProgressInfo): void => onProgress(info.percent);
+      return inTurn(async () => {
+        if (cancellation.isCancelled()) throw new CancellationError();
+        const token = new CancellationToken();
+        const cancelled = cancellation.onCancel(() => token.cancel());
+        let downloaded: string | undefined;
+        const done = (event: UpdateDownloadedEvent): void => {
+          downloaded = event.version;
+        };
+        updater.on('download-progress', progress);
+        updater.on('update-downloaded', done);
+        try {
+          await updater.downloadUpdate(token);
+        } finally {
+          updater.off('download-progress', progress);
+          updater.off('update-downloaded', done);
+          cancelled.dispose();
+          token.dispose();
+        }
+        // Only the file of the version that this engine found may install.
+        if (downloaded !== found) {
+          throw Object.assign(
+            new Error(
+              `The updater downloaded ${downloaded ?? 'nothing'} instead of ${String(found)}`,
+            ),
+            { code: 'mismatch' },
+          );
+        }
+      });
     },
     install(): void {
       // Windows and Linux updaters install from here; on macOS, Squirrel applies the

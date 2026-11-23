@@ -58,6 +58,13 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
     summary:
       'Turns the command palette and tab search on or off. While it is off, their shortcuts reach web pages.',
   },
+  ContentBlockerAllowedSites: {
+    summary:
+      'The sites on which the content blocker is off, by host name or domain, such as `intranet.example.com`; a domain covers its hosts.',
+    details:
+      'Mandatory, the list replaces the one of people and they cannot change it, also not with the switches of the shield and of site information or an import of settings; `[]` allows no site. Recommended, it is the list that people start from.',
+    example: ['intranet.example.com'],
+  },
   ContentBlockerAnnoyancesEnabled: {
     summary: 'Turns the optional list of the content blocker against annoyances on or off.',
   },
@@ -72,12 +79,12 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
   DefaultSearchProviderSearchURL: {
     summary: 'The search address of the address bar and the new tab page.',
     details:
-      "An https address with `%s` where the search terms go, such as `https://search.example.com/search?q=%s`. Chrome's `{searchTerms}` is not supported.",
-    example: 'https://search.example.com/search?q=%s',
+      "An https address with `{searchTerms}`, as in Chrome, or `%s` where the search terms go, such as `https://search.example.com/search?q={searchTerms}`. Chrome's other parameters, such as `{inputEncoding}`, are not replaced.",
+    example: 'https://search.example.com/search?q={searchTerms}',
   },
   DeveloperToolsAvailability: {
     summary:
-      '`2` keeps the developer tools closed: F12, Inspect in the context menu and the menu items do nothing. `0` and `1` allow them for web pages, as in Chromium.',
+      '`2` keeps the developer tools closed: Inspect in the context menu does nothing, the menus have no Developer tools or grey it out, and F12 and the other keys of the developer tools reach the page. `0` and `1` allow them for web pages, as in Chromium.',
     details: 'The pages of the browser itself never get the developer tools.',
   },
   DnsOverHttpsMode: {
@@ -95,13 +102,15 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
   },
   DownloadDirectory: {
     summary: 'The folder where downloads are saved; empty for the downloads folder of the system.',
-    details: 'Unlike in Chromium, variables such as `${user_home}` are not replaced.',
+    details:
+      'The browser replaces `${user_name}` and `${machine_name}`, as Chrome does on Linux, such as in `/home/${user_name}/Downloads`. It refuses the value with any other variable, such as `${user_home}` or the variables of Chrome on Windows and macOS (`${documents}`, `${users}`).',
     example: '/srv/downloads',
     windowsExample: 'D:\\Downloads',
   },
   HomepageLocation: {
     summary:
       'The page of the home button and of its shortcut, as an http or https address; empty for the new tab page.',
+    details: 'An address without a scheme, such as `intranet.example.com`, gets `https://`.',
     example: 'https://intranet.example.com/',
   },
   HttpAllowlist: {
@@ -129,7 +138,8 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
   },
   PrivateModeAvailability: {
     summary: '`1` keeps people from opening private windows; `0` allows them.',
-    details: "Chrome's `2`, which makes every window private, is not supported and not valid.",
+    details:
+      "With `1`, the menus have no New private window or grey it out, and its shortcut reaches the page. Chrome's `2`, which makes every window private, is not supported and not valid.",
   },
   PromptForDownloadLocation: { summary: 'Whether the browser asks where to save each download.' },
   ReaderViewEnabled: {
@@ -145,6 +155,8 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
   },
   RestoreOnStartupURLs: {
     summary: 'The pages that open at the start when `RestoreOnStartup` is `4`, in this order.',
+    details:
+      'An address without a scheme, such as `intranet.example.com`, gets `https://`. As in Chrome, the value is a list, also for one page.',
     example: ['https://intranet.example.com/', 'https://mail.example.com/'],
   },
   SetupGuideEnabled: {
@@ -192,7 +204,7 @@ export const policyNotes: Readonly<Record<string, PolicyNote>> = {
     summary:
       'How the browser updates itself: `0` not at all, `1` by itself, `2` only when people ask for it.',
     details:
-      'This version has no way to ask for an update yet, so `2` works like `0`. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves.',
+      'With `2`, people check for updates in About, which also shows the state of the updates. A change applies at once: `0` stops the checks, cancels a download that runs and drops an update that is ready. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves.',
     example: 0,
   },
   UpdateURL: {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { paperSizeFor } from '../domain/page-tools/paper-size.ts';
 import type { Logger } from '../kernel/logging/logger.ts';
 import type { BrowserWindowController, PageCommand } from '../platform/electron/browser-window.ts';
+import { expandFolder } from './download-folder.ts';
 import { translatorFor } from './i18n/i18n.ts';
 
 /** What the tools of a web page need from the browser process. */
@@ -42,7 +43,7 @@ export async function runPageCommand(
       const i18n = translatorFor(uiLocale(), process.platform);
       const name = `${safeFileName(contents.getTitle()) || 'page'}.html`;
       const { canceled, filePath } = await dialog.showSaveDialog(window.window, {
-        defaultPath: join(deps.downloadFolder(), name),
+        defaultPath: join(expandFolder(deps.downloadFolder()), name),
         filters: [{ name: i18n.t('dialog.webPage'), extensions: ['html', 'htm'] }],
       });
       if (!canceled && filePath !== undefined && !contents.isDestroyed()) {

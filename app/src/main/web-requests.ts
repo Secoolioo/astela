@@ -38,6 +38,7 @@ import type { PermissionHandler } from '../platform/electron/session-security.ts
 import type { TabActivity } from '../platform/electron/tab-activity.ts';
 import { ThirdPartyCookies } from '../platform/electron/third-party-cookies.ts';
 import { blockerFrames, type BlockerFrames } from './blocker-frames.ts';
+import { expandFolder } from './download-folder.ts';
 import { watchPageQuestions } from './page-questions.ts';
 import { popupBlocker } from './popup-blocker.ts';
 import { chosenToSave } from './save-as.ts';
@@ -337,7 +338,7 @@ export function webRequests(options: WebRequestOptions): WebRequests {
   const reservedPaths = new Set<string>();
   const saveDownload = (item: DownloadItem, from: Session): void => {
     const privateWindow = options.isPrivate(from);
-    const folder = options.downloadFolder();
+    const folder = expandFolder(options.downloadFolder());
     // A file that people chose to save from a context menu asks where, as in other browsers,
     // unless a mandatory policy sets the folder, which then holds it, as in Chrome.
     const chosen = chosenToSave(item.getURLChain()[0]);

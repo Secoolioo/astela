@@ -18,6 +18,7 @@ import {
   type UpdateEngine,
   type UpdateHooks,
 } from '../domain/updates/update-service.ts';
+import { UpdateController } from '../domain/updates/update-controller.ts';
 import { parseVersion } from '../domain/updates/version.ts';
 import { Ed25519Verifier } from '../platform/updates/ed25519-verifier.ts';
 import { JsonFeedStateStore } from '../platform/updates/feed-state.ts';
@@ -36,6 +37,15 @@ export interface UpdateDependencies {
   readonly userData: string;
   /** The boot guard and rollback of this start. */
   readonly boot: BootCheck;
+}
+
+/**
+ * Starts the updates of the browser, which follow the update policies while it runs: a change
+ * of any of them at a refresh of the policies makes the service again.
+ * @param deps - Policies, clock, logger and the profile folder.
+ */
+export function startUpdates(deps: UpdateDependencies): UpdateController {
+  return new UpdateController(deps.policies, () => createUpdateService(deps));
 }
 
 /**
@@ -79,17 +89,18 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
     // large module, is loaded only to download an update it found.
     check: async () =>
       (await feed.findUpdate(query)) === undefined ? undefined : (await load()).check(),
-    download: async (onProgress) => (await load()).download(onProgress),
+    download: async (onProgress, cancellation) => (await load()).download(onProgress, cancellation),
     install: () => engine?.install(),
   };
 
-  // Streams a package of the feed, such as the installer of the running version.
-  const download: PackageDownloader = async (version) => {
+  // Streams a package of the feed, such as the installer of the running version, until the
+  // signal stops it.
+  const download = async (version: string, signal: AbortSignal): ReturnType<PackageDownloader> => {
     const manifest = await feed.manifest(version);
     const artifact = manifest.artifacts[query.artifactKey];
     if (artifact === undefined) throw new Error(`No package of ${version} for this platform`);
     const url = new URL(artifact.file, new URL(manifest.downloadBase, feedBase));
-    const response = await net.fetch(url.href);
+    const response = await net.fetch(url.href, { signal });
     if (!response.ok || response.body === null) {
       throw new Error(`${url.href} answered ${response.status}`);
     }
@@ -99,10 +110,18 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
   // download of what it needs failed.
   let rollback: Rollback | undefined;
   const hooks: UpdateHooks = {
-    afterDownload: async () => {
+    afterDownload: async (_version, cancellation) => {
       const { rollbackFor } = await import('../platform/updates/rollback.ts');
       rollback ??= rollbackFor(installType, boot.rollback);
-      await rollback?.prepare(currentVersion, download);
+      // A change of the update policies disposes the service, which stops this download too.
+      const stop = new AbortController();
+      const cancelled = cancellation.onCancel(() => stop.abort());
+      try {
+        if (cancellation.isCancelled()) return;
+        await rollback?.prepare(currentVersion, (version) => download(version, stop.signal));
+      } finally {
+        cancelled.dispose();
+      }
     },
     beforeInstall: (version) => {
       rollback?.keep();
@@ -110,8 +129,9 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
     },
   };
 
+  const mode = updateMode(policies.mandatoryValue(UpdatePolicy));
   const service = new UpdateService(lazyEngine, clock, logger.child('updates'), {
-    mode: updateMode(policies.mandatoryValue(UpdatePolicy)),
+    mode,
     installType,
     hasKeys: verifier.hasKeys,
     periodMinutes:
@@ -123,6 +143,7 @@ export function createUpdateService(deps: UpdateDependencies): UpdateService {
   logger.info('Update service', {
     installType,
     state: service.state.kind,
+    mode,
     channel: query.channel,
     feed: feedBase.href,
   });

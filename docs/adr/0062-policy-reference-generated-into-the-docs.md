@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amends [ADR 0011](0011-settings-schema-as-single-source.md): the policy reference and the JSON Schema of the policy files of Linux are written into `docs/admin/` and kept in the repository, and `pnpm verify` checks that they match the policy definitions. The other artifacts of ADR 0011, such as the ADMX and ADML templates and the configuration profile for macOS, are not built yet; they are to come from the same tool.
+Accepted. Amends [ADR 0011](0011-settings-schema-as-single-source.md): the policy reference and the JSON Schema of the policy files of Linux are written into `docs/admin/` and kept in the repository, and `pnpm verify` checks that they match the policy definitions. The other artifacts of ADR 0011, such as the ADMX and ADML templates and the configuration profile for macOS, are not built yet; they are to come from the same tool. Amended by [ADR 0063](0063-chrome-policy-formats-converted-by-the-settings.md): for the policies whose values the browser converts, such as Chrome's formats, the reference describes the values that the policy takes from `app/src/main/policy-inputs.ts`.
 
 ## Date
 

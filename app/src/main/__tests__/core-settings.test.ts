@@ -1,3 +1,4 @@
+import { hostname, userInfo } from 'node:os';
 import * as v from 'valibot';
 import { describe, expect, it, vi } from 'vitest';
 import type { PolicyLevel, PolicyProvider, PolicyReadResult } from '../../domain/policy/policy.ts';
@@ -9,14 +10,18 @@ import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import {
   AltOpensMenuSetting,
+  BlockerAllowedSitesSetting,
   CommandPaletteSetting,
   coreSettings,
   DownloadFolderSetting,
+  HomePageSetting,
   PictureInPictureEnabledSetting,
   ReaderEnabledSetting,
   ReaderFontSetting,
+  SearchUrlTemplate,
   ShortcutsSetting,
   SplitViewSetting,
+  StartupPagesSetting,
   StartupSetting,
   TabSleepAfterSetting,
   TabSleepSetting,
@@ -30,6 +35,8 @@ import {
 } from '../core-settings.ts';
 import { sleepAfterSeconds } from '../../shared/tab-sleep.ts';
 import { layoutKeys, layoutPresetIds, layoutPresets } from '../../shared/layout-presets.ts';
+import { expandFolder } from '../download-folder.ts';
+import { policyInputs } from '../policy-inputs.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -39,9 +46,160 @@ describe('DownloadFolderSetting', () => {
   it('takes an absolute folder or none, and refuses a relative path', () => {
     expect(valid('')).toBe(true);
     expect(valid(process.platform === 'win32' ? 'D:\\Downloads' : '/srv/downloads')).toBe(true);
-    // Chromium's variables are not replaced, so they would make a relative path.
+    // Chrome's variable of the home folder is not one that every system knows, and it would
+    // make a relative path.
     expect(valid('${user_home}/Downloads')).toBe(false);
     expect(valid('Downloads')).toBe(false);
+  });
+});
+
+/** What a policy makes of a value, or `undefined` when it refuses the value. */
+function policyValue(
+  setting: { readonly policy?: { readonly name: string } },
+  value: unknown,
+): unknown {
+  const policy = settingPolicies(coreSettings).find(({ name }) => name === setting.policy?.name);
+  if (policy === undefined) throw new Error('The setting has no policy');
+  const parsed = v.safeParse(policy.schema, value);
+  return parsed.success ? parsed.output : undefined;
+}
+
+describe("the policies of settings with Chrome's formats", () => {
+  it("take the search address of Chrome, with {searchTerms} for the query, and Astela's", () => {
+    expect(
+      policyValue(SearchUrlTemplate, 'https://www.google.com/search?q={searchTerms}&ie=utf-8'),
+    ).toBe('https://www.google.com/search?q=%s&ie=utf-8');
+    expect(policyValue(SearchUrlTemplate, 'https://search.example/?q=%s')).toBe(
+      'https://search.example/?q=%s',
+    );
+    for (const refused of [
+      'http://search.example/?q={searchTerms}',
+      'https://search.example/',
+      'https://{searchTerms}',
+      'https://search.example/?q={searchterms}',
+    ]) {
+      expect({ refused, value: policyValue(SearchUrlTemplate, refused) }).toEqual({
+        refused,
+        value: undefined,
+      });
+    }
+  });
+
+  it('give a web address without a scheme https, and keep refusing other schemes', () => {
+    expect(policyValue(HomePageSetting, 'example.com')).toBe('https://example.com');
+    expect(policyValue(HomePageSetting, 'intranet:8080/start')).toBe('https://intranet:8080/start');
+    expect(policyValue(HomePageSetting, 'http://intranet/')).toBe('http://intranet/');
+    expect(policyValue(HomePageSetting, '')).toBe('');
+    for (const refused of [
+      'javascript:alert(1)',
+      'file:///etc/passwd',
+      'mailto:it@example.com',
+      'example .com',
+      'ftp://example.com/',
+    ]) {
+      expect({ refused, value: policyValue(HomePageSetting, refused) }).toEqual({
+        refused,
+        value: undefined,
+      });
+    }
+    expect(policyValue(StartupPagesSetting, ['a.example', 'https://b.example/'])).toEqual([
+      'https://a.example',
+      'https://b.example/',
+    ]);
+    expect(policyValue(StartupPagesSetting, ['a.example', 'javascript:alert(1)'])).toBeUndefined();
+    // A single address, not a list, stays refused, as in Chromium.
+    expect(policyValue(StartupPagesSetting, 'https://a.example/')).toBeUndefined();
+    // Every converted value is a value of the setting.
+    for (const value of [policyValue(HomePageSetting, 'example.com')]) {
+      expect(v.safeParse(HomePageSetting.schema, value).success).toBe(true);
+    }
+  });
+
+  it("keep Chrome's user and machine names in the download folder and refuse other variables", () => {
+    const home = process.platform === 'win32' ? 'C:\\Users' : '/home';
+    const sep = process.platform === 'win32' ? '\\' : '/';
+    // A share of the computer, as administrators write it on Windows, or a folder of it.
+    const share = process.platform === 'win32' ? '\\\\server' : '/srv';
+    for (const folder of [
+      `${home}${sep}\${user_name}${sep}Downloads`,
+      `${share}${sep}\${machine_name}${sep}\${user_name}`,
+      `${home}${sep}dl`,
+    ]) {
+      expect(policyValue(DownloadFolderSetting, folder)).toBe(folder);
+    }
+    for (const refused of [
+      '${user_home}/Downloads',
+      `${home}${sep}\${user_home}`,
+      `${home}${sep}\${documents}`,
+      'Downloads',
+    ]) {
+      expect({ refused, value: policyValue(DownloadFolderSetting, refused) }).toEqual({
+        refused,
+        value: undefined,
+      });
+    }
+  });
+
+  it('take what their reference describes, and nothing else', () => {
+    const samples: Record<string, readonly unknown[]> = {
+      DefaultSearchProviderSearchURL: [
+        'https://www.google.com/search?q={searchTerms}',
+        'https://search.example/?q=%s',
+        'https://search.example/?q={searchTerms}&ie={inputEncoding}',
+        'http://search.example/?q=%s',
+        'https://search.example/',
+        'https://{searchTerms}',
+        'https://search.example/?q={searchterms}',
+        'https://search.example/ ?q=%s',
+        5,
+      ],
+      HomepageLocation: [
+        '',
+        'example.com',
+        'intranet:8080/start',
+        'http://intranet/',
+        'HTTPS://EXAMPLE.COM/',
+        'javascript:alert(1)',
+        'my_scheme:x',
+        'mailto:it@example.com',
+        'example .com',
+        'ftp://example.com/',
+        'https://',
+        true,
+      ],
+      RestoreOnStartupURLs: [
+        ['a.example', 'https://b.example/'],
+        ['a.example', 'javascript:alert(1)'],
+        [''],
+        'https://a.example/',
+        [],
+      ],
+    };
+    for (const [name, input] of policyInputs) {
+      const policy = settingPolicies(coreSettings).find((candidate) => candidate.name === name);
+      expect({ name, found: policy !== undefined }).toEqual({ name, found: true });
+      for (const value of samples[name] ?? []) {
+        const takes = v.safeParse(input, value).success;
+        expect({ name, value, takes }).toEqual({
+          name,
+          value,
+          takes: policy !== undefined && v.safeParse(policy.schema, value).success,
+        });
+      }
+    }
+  });
+});
+
+describe('expandFolder', () => {
+  it("replaces Chrome's user and machine names, as downloads use the folder", () => {
+    expect(expandFolder('/home/${user_name}/Downloads')).toBe(
+      `/home/${userInfo().username}/Downloads`,
+    );
+    expect(expandFolder('/srv/${machine_name}/${user_name}')).toBe(
+      `/srv/${hostname()}/${userInfo().username}`,
+    );
+    expect(expandFolder('/srv/downloads')).toBe('/srv/downloads');
+    expect(expandFolder('')).toBe('');
   });
 });
 
@@ -276,6 +434,35 @@ async function settingsWith(
   await settings.load();
   return settings;
 }
+
+describe('BlockerAllowedSitesSetting', () => {
+  it('follows a mandatory policy, which locks the sites without blocking, also an empty list', async () => {
+    expect(settingPolicies(coreSettings)).toContainEqual(
+      expect.objectContaining({
+        name: 'ContentBlockerAllowedSites',
+        setting: 'contentBlocker.allowedSites',
+        recommended: true,
+      }),
+    );
+    const managed = await settingsWith(
+      [{ name: 'ContentBlockerAllowedSites', value: [], level: 'mandatory' }],
+      { 'contentBlocker.allowedSites': ['example.com'] },
+    );
+    expect(managed.get(BlockerAllowedSitesSetting)).toEqual([]);
+    expect(managed.inspect(BlockerAllowedSitesSetting).locked).toBe(true);
+    expect(managed.set(BlockerAllowedSitesSetting, ['com']).ok).toBe(false);
+    expect(managed.get(BlockerAllowedSitesSetting)).toEqual([]);
+    // A recommended list is where people start from.
+    const suggested = await settingsWith([
+      { name: 'ContentBlockerAllowedSites', value: ['intranet.example'], level: 'recommended' },
+    ]);
+    expect(suggested.get(BlockerAllowedSitesSetting)).toEqual(['intranet.example']);
+    expect(suggested.inspect(BlockerAllowedSitesSetting).locked).toBe(false);
+    expect(suggested.set(BlockerAllowedSitesSetting, ['intranet.example', 'a.example']).ok).toBe(
+      true,
+    );
+  });
+});
 
 describe('ReaderEnabledSetting and ReaderFontSetting', () => {
   it('offer the reader view in the font of the browser by default, in the section of page tools', () => {

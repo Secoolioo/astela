@@ -17,7 +17,7 @@
       "examples": [true]
     },
     "AutoUpdateCheckPeriodMinutes": {
-      "description": "The minutes between two automatic checks for updates. Without the policy, the browser checks every 240 minutes. Mandatory only. Takes effect after a restart.",
+      "description": "The minutes between two automatic checks for updates. Without the policy, the browser checks every 240 minutes. Mandatory only.",
       "type": "integer",
       "minimum": 60,
       "maximum": 43200,
@@ -37,6 +37,13 @@
       "description": "Turns the command palette and tab search on or off. While it is off, their shortcuts reach web pages.",
       "type": "boolean",
       "examples": [false]
+    },
+    "ContentBlockerAllowedSites": {
+      "description": "The sites on which the content blocker is off, by host name or domain, such as intranet.example.com; a domain covers its hosts. Mandatory, the list replaces the one of people and they cannot change it, also not with the switches of the shield and of site information or an import of settings; [] allows no site. Recommended, it is the list that people start from.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9.:[\\]-]{1,253}$" },
+      "maxItems": 10000,
+      "examples": [["intranet.example.com"]]
     },
     "ContentBlockerAnnoyancesEnabled": {
       "description": "Turns the optional list of the content blocker against annoyances on or off.",
@@ -59,14 +66,14 @@
       "examples": [false]
     },
     "DefaultSearchProviderSearchURL": {
-      "description": "The search address of the address bar and the new tab page. An https address with %s where the search terms go, such as https://search.example.com/search?q=%s. Chrome's {searchTerms} is not supported. Mandatory only. Sensitive: applies only from managed/.",
+      "description": "The search address of the address bar and the new tab page. An https address with {searchTerms}, as in Chrome, or %s where the search terms go, such as https://search.example.com/search?q={searchTerms}. Chrome's other parameters, such as {inputEncoding}, are not replaced. Mandatory only. Sensitive: applies only from managed/.",
       "type": "string",
       "maxLength": 2048,
-      "pattern": "^https:\\/\\/[^\\s]+%s[^\\s]*$",
-      "examples": ["https://search.example.com/search?q=%s"]
+      "pattern": "^https:\\/\\/\\S+(%s|\\{searchTerms\\})\\S*$",
+      "examples": ["https://search.example.com/search?q={searchTerms}"]
     },
     "DeveloperToolsAvailability": {
-      "description": "2 keeps the developer tools closed: F12, Inspect in the context menu and the menu items do nothing. 0 and 1 allow them for web pages, as in Chromium. The pages of the browser itself never get the developer tools. Mandatory only.",
+      "description": "2 keeps the developer tools closed: Inspect in the context menu does nothing, the menus have no Developer tools or grey it out, and F12 and the other keys of the developer tools reach the page. 0 and 1 allow them for web pages, as in Chromium. The pages of the browser itself never get the developer tools. Mandatory only.",
       "type": "integer",
       "enum": [0, 1, 2],
       "examples": [2]
@@ -84,16 +91,21 @@
       "examples": ["https://dns.example.com/dns-query{?dns}"]
     },
     "DownloadDirectory": {
-      "description": "The folder where downloads are saved; empty for the downloads folder of the system. Unlike in Chromium, variables such as ${user_home} are not replaced.",
+      "description": "The folder where downloads are saved; empty for the downloads folder of the system. The browser replaces ${user_name} and ${machine_name}, as Chrome does on Linux, such as in /home/${user_name}/Downloads. It refuses the value with any other variable, such as ${user_home} or the variables of Chrome on Windows and macOS (${documents}, ${users}).",
       "type": "string",
       "maxLength": 4096,
+      "pattern": "^(?!.*\\$\\{(?!(user_name|machine_name)\\}))",
       "examples": ["/srv/downloads"]
     },
     "HomepageLocation": {
-      "description": "The page of the home button and of its shortcut, as an http or https address; empty for the new tab page.",
+      "description": "The page of the home button and of its shortcut, as an http or https address; empty for the new tab page. An address without a scheme, such as intranet.example.com, gets https://.",
       "anyOf": [
         { "const": "" },
-        { "type": "string", "maxLength": 8192, "pattern": "^[hH][tT][tT][pP][sS]?:\\/\\/\\S+$" }
+        {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^([hH][tT][tT][pP][sS]?:\\/\\/\\S+|(?!\\w[\\w+.-]*:(?!\\d))\\S+)$"
+        }
       ],
       "examples": ["https://intranet.example.com/"]
     },
@@ -124,7 +136,7 @@
       "examples": [false]
     },
     "PrivateModeAvailability": {
-      "description": "1 keeps people from opening private windows; 0 allows them. Chrome's 2, which makes every window private, is not supported and not valid. Mandatory only.",
+      "description": "1 keeps people from opening private windows; 0 allows them. With 1, the menus have no New private window or grey it out, and its shortcut reaches the page. Chrome's 2, which makes every window private, is not supported and not valid. Mandatory only.",
       "type": "integer",
       "enum": [0, 1],
       "examples": [1]
@@ -146,12 +158,12 @@
       "examples": [4]
     },
     "RestoreOnStartupURLs": {
-      "description": "The pages that open at the start when RestoreOnStartup is 4, in this order.",
+      "description": "The pages that open at the start when RestoreOnStartup is 4, in this order. An address without a scheme, such as intranet.example.com, gets https://. As in Chrome, the value is a list, also for one page.",
       "type": "array",
       "items": {
         "type": "string",
         "maxLength": 8192,
-        "pattern": "^[hH][tT][tT][pP][sS]?:\\/\\/\\S+$"
+        "pattern": "^([hH][tT][tT][pP][sS]?:\\/\\/\\S+|(?!\\w[\\w+.-]*:(?!\\d))\\S+)$"
       },
       "maxItems": 100,
       "examples": [["https://intranet.example.com/", "https://mail.example.com/"]]
@@ -194,13 +206,13 @@
       "examples": ["left"]
     },
     "TargetChannel": {
-      "description": "The update channel. The beta channel also receives the stable releases. A switch from beta to stable never installs an older version; the browser stays on its version until a stable release overtakes it. Mandatory only. Takes effect after a restart.",
+      "description": "The update channel. The beta channel also receives the stable releases. A switch from beta to stable never installs an older version; the browser stays on its version until a stable release overtakes it. Mandatory only.",
       "type": "string",
       "enum": ["stable", "beta"],
       "examples": ["stable"]
     },
     "TargetVersionPrefix": {
-      "description": "Installs only versions that start with this prefix, such as 0.1: the highest version of the feed that matches. Mandatory only. Takes effect after a restart.",
+      "description": "Installs only versions that start with this prefix, such as 0.1: the highest version of the feed that matches. Mandatory only.",
       "type": "string",
       "pattern": "^\\d+(\\.\\d+){0,2}\\.?$",
       "examples": ["0.1"]
@@ -212,13 +224,13 @@
       "examples": ["tab-row"]
     },
     "UpdatePolicy": {
-      "description": "How the browser updates itself: 0 not at all, 1 by itself, 2 only when people ask for it. This version has no way to ask for an update yet, so 2 works like 0. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves. Mandatory only. Takes effect after a restart.",
+      "description": "How the browser updates itself: 0 not at all, 1 by itself, 2 only when people ask for it. With 2, people check for updates in About, which also shows the state of the updates. A change applies at once: 0 stops the checks, cancels a download that runs and drops an update that is ready. Installations that the system or IT updates, such as the deb, rpm and MSI packages, never update themselves. Mandatory only.",
       "type": "integer",
       "enum": [0, 1, 2],
       "examples": [0]
     },
     "UpdateURL": {
-      "description": "The address of an organization mirror of the update feed, instead of the website of the project. The browser reads updates/v1/index.json and updates/v1/releases/<version>.json below this address and checks their signatures as on the website. Mandatory only. Sensitive: applies only from managed/. Takes effect after a restart.",
+      "description": "The address of an organization mirror of the update feed, instead of the website of the project. The browser reads updates/v1/index.json and updates/v1/releases/<version>.json below this address and checks their signatures as on the website. Mandatory only. Sensitive: applies only from managed/.",
       "type": "string",
       "format": "uri",
       "pattern": "^[hH][tT][tT][pP][sS]?:\\/\\/",

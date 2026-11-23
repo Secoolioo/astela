@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
@@ -12,11 +13,20 @@ import {
   type ReleaseQuery,
   type SignatureVerifier,
 } from '../updates/feed.ts';
-import { updatePolicies } from '../updates/update-policies.ts';
+import { definePolicy, type PolicyProvider, type PolicyReadResult } from '../policy/policy.ts';
+import { PolicyService } from '../policy/policy-service.ts';
+import { UpdateController } from '../updates/update-controller.ts';
+import {
+  AutoUpdateCheckPeriodMinutes,
+  UpdatePolicy,
+  UpdateURL,
+  updatePolicies,
+} from '../updates/update-policies.ts';
 import {
   UpdateService,
   updateMode,
   updatesItself,
+  type Cancellation,
   type UpdateEngine,
   type UpdateServiceOptions,
   type UpdateState,
@@ -233,20 +243,37 @@ class FakeEngine implements UpdateEngine {
   checks = 0;
   installs = 0;
   error: Error | undefined;
+  /** Keeps the downloads running until a test ends them, or their service cancels them. */
+  holdDownloads = false;
+  /** Ends the download that runs. */
+  finishDownload: () => void = () => undefined;
+  cancelledDownloads = 0;
   check(): Promise<string | undefined> {
     this.checks += 1;
     if (this.error !== undefined) return Promise.reject(this.error);
     return Promise.resolve(this.available);
   }
-  download(onProgress: (percent: number) => void): Promise<void> {
+  download(onProgress: (percent: number) => void, cancellation: Cancellation): Promise<void> {
     onProgress(50.4);
-    onProgress(100);
-    return Promise.resolve();
+    if (!this.holdDownloads) {
+      onProgress(100);
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      this.finishDownload = resolve;
+      cancellation.onCancel(() => {
+        this.cancelledDownloads += 1;
+        reject(new Error('cancelled'));
+      });
+    });
   }
   install(): void {
     this.installs += 1;
   }
 }
+
+/** What a check that has not started yet would answer. */
+const noAnswer = (): void => undefined;
 
 // The domain has no host timers; flushing the microtask queue lets a check finish.
 const settle = async (): Promise<void> => {
@@ -368,6 +395,242 @@ describe('UpdateService', () => {
     const [first, second] = await Promise.all([service.check(), service.check()]);
     expect(first).toBe(second);
     expect(engine.checks).toBe(1);
+  });
+
+  it('cancels its download and the preparation of the rollback when it is disposed', async () => {
+    let rollbackCancelled = false;
+    const { service, engine } = make({
+      hooks: {
+        afterDownload: (_version, cancellation) =>
+          new Promise((resolve) => {
+            cancellation.onCancel(() => {
+              rollbackCancelled = true;
+              resolve();
+            });
+          }),
+        beforeInstall: () => undefined,
+      },
+    });
+    const run = service.check();
+    await settle();
+    expect(service.state).toEqual({ kind: 'downloading', version: '0.2.0', percent: 100 });
+    service.dispose();
+    expect(rollbackCancelled).toBe(true);
+    expect(await run).toEqual({ kind: 'downloading', version: '0.2.0', percent: 100 });
+    expect(service.installOnExit()).toBe(false);
+    expect(engine.installs).toBe(0);
+
+    const held = make();
+    held.engine.holdDownloads = true;
+    const download = held.service.check();
+    await settle();
+    held.service.dispose();
+    expect(held.engine.cancelledDownloads).toBe(1);
+    expect(await download).toEqual({ kind: 'downloading', version: '0.2.0', percent: 50 });
+    expect(held.service.installOnExit()).toBe(false);
+  });
+
+  it('schedules nothing after dispose, also when a check was still running', async () => {
+    const { service, engine, clock } = make();
+    engine.available = undefined;
+    let answer: (version: string | undefined) => void = noAnswer;
+    engine.check = () => {
+      engine.checks += 1;
+      return new Promise((resolve) => {
+        answer = resolve;
+      });
+    };
+    service.start();
+    clock.advance(45_000);
+    expect(engine.checks).toBe(1);
+    service.dispose();
+    answer(undefined);
+    await settle();
+    clock.advance(24 * 60 * minute);
+    await settle();
+    expect(engine.checks).toBe(1);
+  });
+});
+
+/** The engine of one service, which notes the feed that each check asks. */
+class FeedEngine extends FakeEngine {
+  private readonly feed: string;
+  private readonly asked: string[];
+  constructor(feed: string, asked: string[]) {
+    super();
+    this.feed = feed;
+    this.asked = asked;
+  }
+  override check(): Promise<string | undefined> {
+    this.asked.push(this.feed);
+    return super.check();
+  }
+}
+
+/** Policies whose values tests change, and updates that follow them as the browser's do. */
+function followed(): {
+  controller: UpdateController;
+  set: (values: Record<string, unknown>) => Promise<void>;
+  asked: string[];
+  clock: ManualClock;
+  created: () => number;
+  engines: FakeEngine[];
+  /** What the hooks of the services did, such as `after 0.2.0`. */
+  hooked: string[];
+} {
+  const clock = new ManualClock(0, 1_000_000);
+  const logger = new SinkLogger(new RingBufferLogSink(50), clock, { scope: 'test' });
+  let result: PolicyReadResult = { values: [], errors: [] };
+  const provider: PolicyProvider = { name: 'test', load: () => Promise.resolve(result) };
+  const other = definePolicy({ name: 'BookmarkBarEnabled', schema: v.boolean() });
+  const policies = new PolicyService([...updatePolicies, other], [provider], {
+    report: () => undefined,
+  });
+  const asked: string[] = [];
+  const engines: FakeEngine[] = [];
+  const hooked: string[] = [];
+  let made = 0;
+  const controller = new UpdateController(policies, () => {
+    made += 1;
+    const engine = new FeedEngine(policies.mandatoryValue(UpdateURL) ?? 'default', asked);
+    engines.push(engine);
+    return new UpdateService(engine, clock, logger, {
+      mode: updateMode(policies.mandatoryValue(UpdatePolicy)),
+      installType: 'appimage',
+      hasKeys: true,
+      periodMinutes: policies.mandatoryValue(AutoUpdateCheckPeriodMinutes) ?? 240,
+      isOnline: () => true,
+      random: () => 0.5,
+      hooks: {
+        afterDownload: (version) => {
+          hooked.push(`after ${version}`);
+          return Promise.resolve();
+        },
+        beforeInstall: (version) => hooked.push(`before ${version}`),
+      },
+    });
+  });
+  const set = async (values: Record<string, unknown>): Promise<void> => {
+    result = {
+      values: Object.entries(values).map(([name, value]) => ({
+        name,
+        value,
+        level: 'mandatory',
+        scope: 'machine',
+        source: 'test',
+      })),
+      errors: [],
+    };
+    await policies.refresh();
+  };
+  return { controller, set, asked, clock, created: () => made, engines, hooked };
+}
+
+describe('UpdateController', () => {
+  const minute = 60_000;
+
+  it('turns updates off at once and drops a ready update, so that nothing installs on quit', async () => {
+    const { controller, set, asked, clock } = followed();
+    const states: string[] = [];
+    controller.onDidChange((state) => states.push(state.kind));
+    clock.advance(45_000);
+    await settle();
+    expect(controller.state).toEqual({ kind: 'ready', version: '0.2.0' });
+    await set({ UpdatePolicy: 0 });
+    expect(controller.state).toEqual({ kind: 'disabled', reason: 'policy' });
+    expect(states.at(-1)).toBe('disabled');
+    expect(controller.installOnExit()).toBe(false);
+    expect(await controller.check()).toEqual({ kind: 'disabled', reason: 'policy' });
+    clock.advance(48 * 60 * minute);
+    await settle();
+    expect(asked).toEqual(['default']);
+    controller.dispose();
+  });
+
+  it('stops the checks that a service scheduled before the change', async () => {
+    const { controller, set, asked, clock } = followed();
+    await set({ UpdatePolicy: 0 });
+    clock.advance(48 * 60 * minute);
+    await settle();
+    expect(asked).toEqual([]);
+    // Without the policy, the updates start again, 30 to 60 seconds later.
+    await set({});
+    expect(controller.state).toEqual({ kind: 'idle' });
+    clock.advance(45_000);
+    await settle();
+    expect(asked).toEqual(['default']);
+    controller.dispose();
+  });
+
+  it('asks the new mirror from the next check, with the new period', async () => {
+    const { controller, set, asked, clock, created, engines } = followed();
+    await set({ UpdateURL: 'https://a.example/' });
+    await set({ UpdateURL: 'https://b.example/', AutoUpdateCheckPeriodMinutes: 60 });
+    expect(created()).toBe(3);
+    const engine = engines[2];
+    if (engine === undefined) throw new Error('No service for the new policies');
+    // The mirror has nothing newer at first, so the service checks again after the period of
+    // the policy, which the random number of the tests puts in the middle of the jitter.
+    engine.available = undefined;
+    clock.advance(45_000);
+    await settle();
+    expect(asked).toEqual(['https://b.example/']);
+    clock.advance(59 * minute);
+    await settle();
+    expect(asked).toEqual(['https://b.example/']);
+    engine.available = '0.2.0';
+    clock.advance(minute);
+    await settle();
+    expect(asked).toEqual(['https://b.example/', 'https://b.example/']);
+    // A change of another policy keeps the service and its update.
+    await set({
+      UpdateURL: 'https://b.example/',
+      AutoUpdateCheckPeriodMinutes: 60,
+      BookmarkBarEnabled: true,
+    });
+    expect(created()).toBe(3);
+    expect(controller.state).toEqual({ kind: 'ready', version: '0.2.0' });
+    expect(controller.installOnExit()).toBe(true);
+    controller.dispose();
+  });
+
+  it('cancels a download that runs when a policy changes, and prepares no rollback for it', async () => {
+    const { controller, set, clock, engines, hooked } = followed();
+    const first = engines[0];
+    if (first === undefined) throw new Error('No service at the start');
+    first.holdDownloads = true;
+    clock.advance(45_000);
+    await settle();
+    expect(controller.state).toEqual({ kind: 'downloading', version: '0.2.0', percent: 50 });
+    await set({ TargetChannel: 'stable' });
+    await settle();
+    expect(first.cancelledDownloads).toBe(1);
+    // The new service finds its own update, from the next check on.
+    expect(controller.state).toEqual({ kind: 'idle' });
+    expect(controller.installOnExit()).toBe(false);
+    clock.advance(45_000);
+    await settle();
+    expect(controller.state).toEqual({ kind: 'ready', version: '0.2.0' });
+    expect(hooked).toEqual(['after 0.2.0']);
+    expect(controller.installOnExit()).toBe(true);
+    expect(first.installs).toBe(0);
+    expect(engines[1]?.installs).toBe(1);
+    controller.dispose();
+  });
+
+  it('checks on request in manual mode and checks nothing after dispose', async () => {
+    const { controller, set, asked, clock } = followed();
+    await set({ UpdatePolicy: 2, UpdateURL: 'https://mirror.example/' });
+    clock.advance(60 * minute);
+    await settle();
+    expect(asked).toEqual([]);
+    expect(await controller.check()).toEqual({ kind: 'ready', version: '0.2.0' });
+    expect(asked).toEqual(['https://mirror.example/']);
+    controller.dispose();
+    await set({ UpdatePolicy: 1, UpdateURL: 'https://mirror.example/' });
+    clock.advance(60 * minute);
+    await settle();
+    expect(asked).toEqual(['https://mirror.example/']);
   });
 });
 

@@ -100,8 +100,8 @@ describe('the policy reference', () => {
     const markdown = referenceMarkdown(allPolicies, policyNotes, brand, defaults);
     const restart = (name: string): string | undefined =>
       new RegExp(`^## ${name}$[\\s\\S]*?^- Restart needed: (\\w+)$`, 'm').exec(markdown)?.[1];
-    // The update service reads its policies once, when it is created after the first window
-    // loads, so a running browser does not follow a change of them.
+    // A change of an update policy makes the update service again, so a running browser
+    // follows it at once.
     for (const name of [
       'UpdatePolicy',
       'TargetChannel',
@@ -109,10 +109,17 @@ describe('the policy reference', () => {
       'UpdateURL',
       'AutoUpdateCheckPeriodMinutes',
     ]) {
-      assert.equal(restart(name), 'yes', name);
-      assert.match(String(get(get(get(schema, 'properties'), name), 'description')), /restart/);
+      assert.equal(restart(name), 'no', name);
+      assert.doesNotMatch(
+        String(get(get(get(schema, 'properties'), name), 'description')),
+        /restart/,
+      );
     }
     assert.equal(restart('ApplicationLocaleValue'), 'yes');
+    assert.match(
+      String(get(get(get(schema, 'properties'), 'ApplicationLocaleValue'), 'description')),
+      /restart/,
+    );
     assert.equal(restart('ShowHomeButton'), 'no');
   });
 
@@ -155,6 +162,34 @@ describe('the policy reference', () => {
     }
   });
 
+  it("describes the values that a policy takes in Chrome's formats, not what the browser makes of them", () => {
+    for (const file of [
+      { DefaultSearchProviderSearchURL: 'https://www.google.com/search?q={searchTerms}' },
+      { HomepageLocation: 'intranet.example.com' },
+      { RestoreOnStartupURLs: ['intranet.example.com', 'https://mail.example.com/'] },
+      { DownloadDirectory: '/home/${user_name}/Downloads' },
+    ]) {
+      assert.equal(matches(schema, file), true, JSON.stringify(file));
+    }
+    for (const file of [
+      { DefaultSearchProviderSearchURL: 'https://search.example.com/' },
+      { HomepageLocation: 'mailto:it@example.com' },
+      { DownloadDirectory: '${user_home}/Downloads' },
+      { DownloadDirectory: '/home/${documents}' },
+    ]) {
+      assert.equal(matches(schema, file), false, JSON.stringify(file));
+    }
+    const search = allPolicies.find((policy) => policy.name === 'DefaultSearchProviderSearchURL');
+    assert.ok(search !== undefined);
+    // The rules end where the browser converts the value; the reference describes the values
+    // of the policy instead.
+    assert.deepEqual(shapeOf(search.schema).rules, []);
+    assert.match(
+      referenceMarkdown(allPolicies, policyNotes, brand, defaults),
+      /^- Value: string \(at most 2048 characters; must be an https URL with \{searchTerms\} or %s\)$/m,
+    );
+  });
+
   it('refuses a policy without texts, texts without a policy and an example that is not valid', () => {
     const [first] = allPolicies;
     assert.ok(first !== undefined);
@@ -181,7 +216,7 @@ describe('the policy reference', () => {
     const home = allPolicies.find((policy) => policy.name === 'HomepageLocation');
     assert.ok(home !== undefined);
     assert.throws(
-      () => exampleOf(home, { summary: 'x', example: 'intranet' }, defaults),
+      () => exampleOf(home, { summary: 'x', example: 'mailto:it@example.com' }, defaults),
       /The example of HomepageLocation is not valid/,
     );
     assert.throws(() => exampleOf(home, { summary: 'x' }, defaults), /needs an example/);

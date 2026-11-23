@@ -1,11 +1,16 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
+import type { PolicyService } from '../../domain/policy/policy-service.ts';
 import { shortcutTable } from '../../shared/shortcuts.ts';
 import { macMenuBar, runFromMenuBar } from '../browser-menu.ts';
 
+const { showMessageBox } = vi.hoisted(() => ({
+  showMessageBox: vi.fn((..._args: unknown[]) => new Promise(() => undefined)),
+}));
+
 vi.mock('electron', () => ({
-  app: { getLocale: () => 'de' },
-  dialog: {},
+  app: { getLocale: () => 'de', getName: () => 'Astela', getVersion: () => '0.7.4' },
+  dialog: { showMessageBox },
   Menu: { buildFromTemplate: (template: unknown) => template },
 }));
 
@@ -15,6 +20,21 @@ function items(template: readonly MenuItemConstructorOptions[]): MenuItemConstru
     item,
     ...(Array.isArray(item.submenu) ? items(item.submenu) : []),
   ]);
+}
+
+/** Mandatory policies with these values, as the menu bar reads them. */
+function mandatory(values: Readonly<Record<string, unknown>>): Pick<PolicyService, 'getMandatory'> {
+  return {
+    getMandatory: (name: string) => (name in values ? { value: values[name] } : undefined),
+  } as unknown as Pick<PolicyService, 'getMandatory'>;
+}
+
+/** The item of a menu with this text, without its access key. */
+function itemNamed(
+  list: readonly MenuItemConstructorOptions[],
+  label: string,
+): MenuItemConstructorOptions {
+  return list.find((entry) => entry.label?.replaceAll('&', '') === label) ?? {};
 }
 
 /** The shortcut that each item of the menu bar shows, by the item's text. */
@@ -44,6 +64,45 @@ describe('macMenuBar', () => {
       'Darstellung',
       'Fenster',
     ]);
+  });
+
+  it('opens the About of the browser, with the state of the updates, from the application menu', () => {
+    const run: string[] = [];
+    const template = macMenuBar(
+      (command) => run.push(command),
+      shortcutTable('darwin'),
+    ) as unknown as MenuItemConstructorOptions[];
+    const about = items(template).find((item) => item.label?.replaceAll('&', '') === 'Über Astela');
+    expect(about?.role).toBeUndefined();
+    (about?.click as (() => void) | undefined)?.();
+    expect(run).toEqual(['app.about']);
+  });
+
+  it('greys out new private windows and the developer tools while a policy turns them off', () => {
+    const allowed = items(
+      macMenuBar(
+        () => undefined,
+        shortcutTable('darwin'),
+      ) as unknown as MenuItemConstructorOptions[],
+    );
+    const forbidden = items(
+      macMenuBar(
+        () => undefined,
+        // The policies take their shortcuts out of the table, too.
+        shortcutTable('darwin', {}, ['window.newPrivate', 'devtools.toggle']),
+        {
+          palette: true,
+          policies: mandatory({ PrivateModeAvailability: 1, DeveloperToolsAvailability: 2 }),
+        },
+      ) as unknown as MenuItemConstructorOptions[],
+    );
+    for (const label of ['Neues privates Fenster', 'Entwicklertools']) {
+      expect(itemNamed(allowed, label)).not.toHaveProperty('enabled');
+      expect(itemNamed(allowed, label).accelerator).toBeDefined();
+      expect(itemNamed(forbidden, label)).toMatchObject({ enabled: false });
+      expect(itemNamed(forbidden, label).accelerator).toBeUndefined();
+    }
+    expect(itemNamed(forbidden, 'Neues Fenster')).not.toHaveProperty('enabled');
   });
 
   it('shows the shortcuts that the window uses, also those that people chose', () => {
@@ -168,22 +227,65 @@ function front(
 describe('runFromMenuBar', () => {
   it('closes a popover that covers the window before the command runs', () => {
     const { windows, done } = front(true);
-    runFromMenuBar(windows, 'find.open', () => undefined);
+    runFromMenuBar(
+      windows,
+      'find.open',
+      () => undefined,
+      () => undefined,
+    );
     expect(done).toEqual(['close', 'find.open']);
   });
 
   it('lets the popover take a command, as the palette takes its own, which then does not run', () => {
     const { windows, done } = front(true, ['palette.open']);
-    runFromMenuBar(windows, 'palette.open', () => undefined);
+    runFromMenuBar(
+      windows,
+      'palette.open',
+      () => undefined,
+      () => undefined,
+    );
     expect(done).toEqual(['took palette.open']);
-    runFromMenuBar(windows, 'find.open', () => undefined);
+    runFromMenuBar(
+      windows,
+      'find.open',
+      () => undefined,
+      () => undefined,
+    );
     expect(done).toEqual(['took palette.open', 'close', 'find.open']);
   });
 
   it('leaves the suggestions of the address bar, which cover only a part of the window', () => {
     const { windows, done } = front(false);
-    runFromMenuBar(windows, 'find.open', () => undefined);
+    runFromMenuBar(
+      windows,
+      'find.open',
+      () => undefined,
+      () => undefined,
+    );
     expect(done).toEqual(['find.open']);
+  });
+
+  it('shows About on its own while no window is open, and opens a window for other commands', () => {
+    const done: string[] = [];
+    const opened = { execute: (command: string) => void done.push(command) };
+    const windows = {
+      lastUsed: undefined,
+      open: () => (done.push('open'), opened),
+    } as unknown as Parameters<typeof runFromMenuBar>[0];
+    const run = (command: Parameters<typeof runFromMenuBar>[1]): void =>
+      runFromMenuBar(
+        windows,
+        command,
+        () => void done.push('private window'),
+        () => undefined,
+      );
+    run('app.about');
+    expect(done).toEqual([]);
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0]?.[0]).toMatchObject({ message: 'Astela 0.7.4' });
+    run('window.newPrivate');
+    run('find.open');
+    expect(done).toEqual(['private window', 'open', 'find.open']);
   });
 });
 

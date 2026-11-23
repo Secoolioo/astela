@@ -61,7 +61,7 @@ On macOS, Astela reopens its windows itself, as **Open** says, so macOS does not
 
 ## Downloads
 
-- **Save downloads in:** from 0.1.0-beta.5, the folder where downloads are saved; by default the downloads folder of the system. **Change…** picks another one in the dialog of the system.
+- **Save downloads in:** from 0.1.0-beta.5, the folder where downloads are saved; by default the downloads folder of the system. **Change…** picks another one in the dialog of the system. When your organization sets or recommends the folder, the row shows that folder with the note of the organization.
 - **Ask where to save each file:** asks before each download where to save it and suggests that folder. The download starts meanwhile under the name of the file with `.part` added; a cancelled question cancels it.
 
 ## Page tools
@@ -118,3 +118,7 @@ The language changes when the browser starts again. Until then, the settings pag
 - **Setup guide:** opens the [setup guide](setup-guide.md) again in a new tab.
 
 Settings that your organization manages are shown as such and cannot be changed.
+
+## About and updates
+
+**About Astela** in the browser menu, and on macOS in the application menu, shows the version of Astela and of what it is built on. From 0.1.0-beta.7, it also tells the state of the updates: up to date with the time of the last check, checking, downloading, ready to install when you quit Astela, the last check failed and why, or why Astela does not update itself, such as when your organization turned updates off or when your system or your IT department installs them. While no check runs, **Check for updates** checks at once: About says that it checks and shows again with the answer as soon as there is one; this is how updates come when your organization allows them only on request.

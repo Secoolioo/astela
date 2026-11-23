@@ -25,13 +25,15 @@ export interface SiteBlockingDependencies {
 /**
  * The content blocker on the page of a tab: the domain that an exception covers, such as
  * `example.com`, the requests blocked on the page, whether it blocks on the site, whether it
- * is on at all, and whether it has no usable filter data.
+ * is on at all, whether a policy sets the sites without blocking, so that the switch for the
+ * site cannot change them, and whether it has no usable filter data.
  */
 export interface BlockerState {
   readonly site: string;
   readonly blocked: number;
   readonly on: boolean;
   readonly available: boolean;
+  readonly managed: boolean;
   readonly failed: boolean;
 }
 
@@ -45,8 +47,12 @@ interface BlockerPopoverHooks {
    * shows the site of the active tab.
    */
   allows(window: BrowserWindowController, overlay: WindowOverlay, id: number | undefined): boolean;
-  /** Shows the new state in the popover. */
-  refresh(window: BrowserWindowController, overlay: WindowOverlay): void;
+  /**
+   * Shows the new state in the popover.
+   * @param again - Whether the change was refused, as by a policy or a full list: the popover
+   *   shows its state again, also when it did not change, so that its switch goes back.
+   */
+  refresh(window: BrowserWindowController, overlay: WindowOverlay, again: boolean): void;
 }
 
 const popovers = new Map<BlockerPopover, BlockerPopoverHooks>();
@@ -70,6 +76,8 @@ export function blockerStateOf(
     blocked: tab.blocked,
     on: deps.blocking(tab.url) !== 'off',
     available: deps.settings.get(ContentBlockerSetting),
+    // A policy that sets the sites without blocking leaves the switch to the organization.
+    managed: deps.settings.inspect(BlockerAllowedSitesSetting).locked,
     failed: deps.blocker.status === 'failed',
   };
 }
@@ -95,17 +103,20 @@ export function connectBlockerSwitch(
     const shown = overlay?.content?.kind;
     const popover = shown === 'shield' || shown === 'site' ? popovers.get(shown) : undefined;
     if (window === undefined || overlay === undefined || popover === undefined) return null;
-    if (popover.allows(window, overlay, id)) toggleBlocking(deps, window);
-    popover.refresh(window, overlay);
+    const saved = popover.allows(window, overlay, id) && toggleBlocking(deps, window);
+    popover.refresh(window, overlay, !saved);
     return null;
   });
 }
 
-/** Turns blocking off or on for the site of a window's active tab and reloads it. */
-function toggleBlocking(deps: SiteBlockingDependencies, window: BrowserWindowController): void {
+/**
+ * Turns blocking off or on for the site of a window's active tab and reloads it.
+ * @returns Whether the change was saved.
+ */
+function toggleBlocking(deps: SiteBlockingDependencies, window: BrowserWindowController): boolean {
   const tab = window.tabs.active;
   const site = siteOf(tab?.url ?? '');
-  if (tab === undefined || site === undefined) return;
+  if (tab === undefined || site === undefined) return false;
   const domain = deps.blocker.domainOf(tab.url) ?? site;
   const saved = deps.settings.set(
     BlockerAllowedSitesSetting,
@@ -118,4 +129,5 @@ function toggleBlocking(deps: SiteBlockingDependencies, window: BrowserWindowCon
       showBlockerSaveError(window, saved.error.kind === 'locked-by-policy'),
     );
   }
+  return saved.ok;
 }

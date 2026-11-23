@@ -102,5 +102,6 @@ Each rejected option as a bullet point with a short reason.
 | [0060](0060-page-dialogs-and-leave-questions-in-the-tab.md)            | Page dialogs and leave questions in the tab                               |
 | [0061](0061-pop-up-blocker-and-compact-popups.md)                      | Pop-up blocker and compact popups                                         |
 | [0062](0062-policy-reference-generated-into-the-docs.md)               | Policy reference generated into the docs                                  |
+| [0063](0063-chrome-policy-formats-converted-by-the-settings.md)        | Chrome's policy formats converted by the settings                         |
 | [0064](0064-web-features-that-electron-shows-no-ui-for.md)             | Web features that Electron shows no UI for                                |
 | [0065](0065-keyboard-focus-between-the-toolbar-and-the-page.md)        | Keyboard focus between the toolbar and the page                           |

@@ -28,6 +28,7 @@ import {
 import { quarantine } from '../platform/node/quarantine.ts';
 import { translatorFor } from './i18n/i18n.ts';
 import { uiLocale } from './ui-language.ts';
+import { expandFolder } from './download-folder.ts';
 
 /** What the list of downloads needs from the composition root. */
 export interface DownloadsDependencies {
@@ -105,7 +106,7 @@ export class Downloads {
     deps.router.handle(DownloadAction, ({ id, action }) => (this.act(id, action), null));
     deps.router.handle(OpenDownloadsFolder, (_request, { sender }) => {
       overlayBySender(sender.id)?.close();
-      void shell.openPath(this.deps.folder());
+      void shell.openPath(expandFolder(this.deps.folder()));
       return null;
     });
   }
@@ -397,7 +398,7 @@ export class Downloads {
         break;
       case 'folder':
         if (existsSync(entry.path)) shell.showItemInFolder(entry.path);
-        else void shell.openPath(this.deps.folder());
+        else void shell.openPath(expandFolder(this.deps.folder()));
         break;
       case 'retry':
         if (entry.state === 'cancelled' || entry.state === 'interrupted') {

@@ -1,5 +1,6 @@
 import { switchStyles } from '../ui-kit/choice-styles.ts';
 import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type {
   BookmarkEditor,
@@ -36,6 +37,7 @@ interface Shield {
   readonly blocked: number;
   readonly on: boolean;
   readonly available: boolean;
+  readonly managed: boolean;
   readonly failed: boolean;
 }
 
@@ -1015,8 +1017,8 @@ export class OverlayPage extends LitElement {
           <input
             type="checkbox"
             role="switch"
-            .checked=${content.on}
-            ?disabled=${!content.available}
+            .checked=${live(content.on)}
+            ?disabled=${!content.available || content.managed}
             @change=${this.toggle}
           />
         </label>
@@ -1025,9 +1027,11 @@ export class OverlayPage extends LitElement {
             ? html`<p class="note problem" role="alert">
                 ${this.t('settings.contentBlockerFailed')}
               </p>`
-            : content.available
-              ? nothing
-              : html`<p class="note">${this.t('overlay.blockerOff')}</p>`
+            : !content.available
+              ? html`<p class="note">${this.t('overlay.blockerOff')}</p>`
+              : content.managed
+                ? html`<p class="note">${this.t('settings.managed')}</p>`
+                : nothing
         }
         <button type="button" @click=${this.openSettings}>
           ${this.t('overlay.blockerSettings')}

@@ -6,7 +6,7 @@ import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingInspection, SettingsService } from '../domain/settings/settings-service.ts';
 import type { PolicyService, PolicyStatus } from '../domain/policy/policy-service.ts';
-import type { Disposable } from '../shared/disposable.ts';
+import { toDisposable, type Disposable } from '../shared/disposable.ts';
 import { layoutKeys, layoutPresets } from '../shared/layout-presets.ts';
 import {
   ApplyLayoutPreset,
@@ -25,6 +25,7 @@ import {
   RestartBrowser,
   SetSetting,
   SettingsChanged,
+  ShortcutsChanged,
   type PolicyIgnored,
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
@@ -37,6 +38,13 @@ import {
   type WindowCommand,
 } from '../shared/shortcuts.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
+import { expandFolder } from './download-folder.ts';
+
+/** The policies that turn commands off, and with them their shortcuts. */
+const shortcutPolicies: ReadonlySet<string> = new Set([
+  'PrivateModeAvailability',
+  'DeveloperToolsAvailability',
+]);
 
 /**
  * Whether a request comes from the settings page itself. The setup guide may use the settings
@@ -111,7 +119,8 @@ export function settingView(
  * place on the page, and hears about every change, wherever it came from.
  * @param router - IPC router.
  * @param settings - Loaded settings.
- * @param policies - The policy values of the last read, for the values that do not apply.
+ * @param policies - The policy values of the last read, for the values that do not apply, and
+ *   their changes, which can change the shortcuts that the page shows.
  * @param definitions - All settings; those with `ui` metadata appear on the page.
  * @param internal - Session of the browser's own views, whose pages receive changes.
  * @param startValues - The values, as JSON, that the settings which need a restart had when
@@ -126,7 +135,7 @@ export function settingView(
 export function connectSettingsPage(
   router: IpcRouter,
   settings: SettingsService,
-  policies: Pick<PolicyService, 'statuses'>,
+  policies: Pick<PolicyService, 'statuses' | 'onDidChange'>,
   definitions: readonly SettingDefinition<unknown>[],
   internal: Session,
   startValues: ReadonlyMap<string, string>,
@@ -145,13 +154,18 @@ export function connectSettingsPage(
   const shown = new Map(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
   );
-  const view = (definition: SettingDefinition<unknown>): SettingView =>
-    settingView(
+  const view = (definition: SettingDefinition<unknown>): SettingView => {
+    const shownView = settingView(
       definition,
       settings.inspect(definition),
       startValues,
       ignoredPolicyOf(policies.statuses(), definition.policy?.name),
     );
+    // The folder of downloads shows as downloads use it, with Chrome's variables replaced.
+    return definition.key === 'downloads.folder' && typeof shownView.value === 'string'
+      ? { ...shownView, value: expandFolder(shownView.value) }
+      : shownView;
+  };
   router.handle(GetSettings, () => ({
     settings: [...shown.values()].map(view),
     accents: accentPresets.map((id) => {
@@ -215,7 +229,9 @@ export function connectSettingsPage(
     const { chooseFolder } = await import('./settings-file.ts');
     const folder = await chooseFolder(
       sender,
-      typeof current === 'string' && current !== '' ? current : app.getPath('downloads'),
+      typeof current === 'string' && current !== ''
+        ? expandFolder(current)
+        : app.getPath('downloads'),
     );
     return { chosen: folder !== undefined && settings.set(definition, folder).ok };
   });
@@ -286,7 +302,12 @@ export function connectSettingsPage(
     app.quit();
     return null;
   });
-  return settings.onDidChange(({ keys }) => {
+  const toPages = (send: (contents: WebContents) => void): void => {
+    for (const contents of webContents.getAllWebContents()) {
+      if (contents.session === internal) send(contents);
+    }
+  };
+  const settingsListener = settings.onDidChange(({ keys }) => {
     const changed = keys.flatMap((key) => {
       const definition = shown.get(key);
       return definition === undefined ? [] : [view(definition)];
@@ -294,10 +315,16 @@ export function connectSettingsPage(
     if (changed.length === 0) {
       return;
     }
-    for (const contents of webContents.getAllWebContents()) {
-      if (contents.session === internal) {
-        router.publish(SettingsChanged, contents, { settings: changed });
-      }
-    }
+    toPages((contents) => router.publish(SettingsChanged, contents, { settings: changed }));
+  });
+  // A refresh of the policies can turn private windows or the developer tools off, or on
+  // again, which changes their shortcuts without a change of a setting.
+  const policyListener = policies.onDidChange((names) => {
+    if (!names.some((name) => shortcutPolicies.has(name))) return;
+    toPages((contents) => router.publish(ShortcutsChanged, contents, {}));
+  });
+  return toDisposable(() => {
+    settingsListener.dispose();
+    policyListener.dispose();
   });
 }

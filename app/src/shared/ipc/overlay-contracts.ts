@@ -22,6 +22,8 @@ const ShieldPopover = v.strictObject({
   blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
   on: v.boolean(),
   available: v.boolean(),
+  // A policy sets the sites without blocking, so the switch cannot change them.
+  managed: v.boolean(),
   failed: v.boolean(),
 });
 
@@ -500,6 +502,8 @@ const SiteInformation = v.strictObject({
       blocked: v.pipe(v.number(), v.integer(), v.minValue(0)),
       on: v.boolean(),
       available: v.boolean(),
+      // A policy sets the sites without blocking, as for the shield.
+      managed: v.boolean(),
       failed: v.boolean(),
     }),
   ),

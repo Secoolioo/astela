@@ -28,7 +28,7 @@ From 0.1.0-beta.7, **Save as PDF…** under More tools in the browser menu (also
 
 ## Developer tools
 
-`F12` or `Ctrl+Shift+I` (`Command+Option+I`) opens the developer tools of the page in a window of their own, and closes them again. Inspect at the end of the context menu opens them at the element you clicked. Organizations can turn the developer tools off with the policy `DeveloperToolsAvailability`, which also takes them out of the browser menu; see the [policy reference](../admin/policies.md#developertoolsavailability).
+`F12` or `Ctrl+Shift+I` (`Command+Option+I`) opens the developer tools of the page in a window of their own, and closes them again. Inspect at the end of the context menu opens them at the element you clicked. Organizations can turn the developer tools off with the policy `DeveloperToolsAvailability`, which also takes them out of the browser menu; their keys then reach the page, and the keyboard shortcuts in the settings show none for them. See the [policy reference](../admin/policies.md#developertoolsavailability).
 
 ## Reader view
 

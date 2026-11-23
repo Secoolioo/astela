@@ -57,15 +57,17 @@ When the value of a policy of a setting is ignored, the settings page says so ne
 
 Installations that update themselves, the setup program on Windows, macOS and the AppImage, check a signed update feed on the project website about a minute after the start and then every 4 hours. They download an update in the background and install it when the browser quits. The deb and rpm packages update with the system, and an MSI installation is updated by IT.
 
-| Policy                         | Effect                                                                                                                                                |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `UpdatePolicy`                 | `0` turns the updates of the browser off, `1` updates by itself, `2` only when people ask; this version has no way to ask yet, so `2` works like `0`. |
-| `TargetChannel`                | `stable` or `beta`; the beta channel also receives stable releases.                                                                                   |
-| `TargetVersionPrefix`          | Installs only versions with this prefix, such as `0.1`.                                                                                               |
-| `UpdateURL`                    | The address of a mirror of the update feed.                                                                                                           |
-| `AutoUpdateCheckPeriodMinutes` | Minutes between two checks, from 60 to 43200.                                                                                                         |
+| Policy                         | Effect                                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `UpdatePolicy`                 | `0` turns the updates of the browser off, `1` updates by itself, `2` only when people ask, with **Check for updates** in About. |
+| `TargetChannel`                | `stable` or `beta`; the beta channel also receives stable releases.                                                             |
+| `TargetVersionPrefix`          | Installs only versions with this prefix, such as `0.1`.                                                                         |
+| `UpdateURL`                    | The address of a mirror of the update feed.                                                                                     |
+| `AutoUpdateCheckPeriodMinutes` | Minutes between two checks, from 60 to 43200.                                                                                   |
 
-The update service reads these policies when the browser starts, so a change takes effect at the next start; the [policy reference](policies.md) marks them as needing a restart. Until then, a running browser keeps the values it started with: `UpdatePolicy` `0` set while it runs does not stop its checks, and an update that it downloaded still installs when it quits.
+A running browser follows a change of these policies when it reads the policies again, which it does when one of its windows gets the focus and every 15 minutes: `UpdatePolicy` `0` stops its checks, cancels a download that runs and drops an update that it already downloaded, so that nothing installs when it quits, and a new mirror, channel, prefix or period applies from the next check. A download that runs at the time of such a change stops as well; the next check downloads with the new values. Every change writes an `Update service` record to the log with the new state, such as `"state":"disabled"`.
+
+About, in the browser menu, shows the state of the updates: up to date with the time of the last check, checking, downloading, ready to install when the browser quits, the last check failed with the reason, or turned off with the reason, such as **Your organization turned off updates.** While no check runs, it offers **Check for updates**; About then says that it checks and shows the answer as soon as there is one. The reason of a failed check is in the language of the browser, such as _The update information is out of date._ for an expired feed; `logs/main.log` has the details of the error in an `Update failed` record.
 
 ### A mirror of the update feed
 
