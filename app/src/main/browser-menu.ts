@@ -105,17 +105,18 @@ export function macMenuBar(
 ): Menu {
   const i18n = translatorFor(uiLocale(), process.platform);
   // The window handles the keys itself, also while a page has the focus.
+  const keys = (name: WindowCommand): Electron.MenuItemConstructorOptions => {
+    const accelerator = acceleratorFor(table, name);
+    return accelerator === undefined ? {} : { accelerator, registerAccelerator: false };
+  };
   const command = (
     label: Parameters<typeof i18n.t>[0],
     name: WindowCommand,
-  ): Electron.MenuItemConstructorOptions => {
-    const accelerator = acceleratorFor(table, name);
-    return {
-      label: i18n.t(label),
-      ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
-      click: () => run(name),
-    };
-  };
+  ): Electron.MenuItemConstructorOptions => ({
+    label: i18n.t(label),
+    ...keys(name),
+    click: () => run(name),
+  });
   return Menu.buildFromTemplate([
     {
       role: 'appMenu',
@@ -141,7 +142,13 @@ export function macMenuBar(
         command('menu.newWindow', 'window.new'),
         command('menu.newPrivateWindow', 'window.newPrivate'),
         { type: 'separator' },
+        // As in every app of macOS, Close Window closes the key window, which can also be one of
+        // the developer tools, and a browser window closes as with its close button. With no key
+        // window, such as when every window is in the Dock, the item cannot be chosen.
+        { role: 'close', label: i18n.t('menu.closeWindow'), ...keys('window.close') },
+        { type: 'separator' },
         command('menu.savePage', 'page.save'),
+        command('menu.savePdf', 'page.savePdf'),
         command('menu.print', 'page.print'),
       ],
     },

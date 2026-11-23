@@ -203,6 +203,11 @@ export interface BrowserWindowOptions {
   readonly onLaterCommand?: (window: BrowserWindowController, command: LaterCommand) => void;
   /** Called after the last private window closed, to forget what private windows kept. */
   readonly onPrivateWindowsClosed?: () => void;
+  /**
+   * Whether a private window that is about to close stays open for now: the last private window
+   * asks first while downloads of private windows run, which closing it would cancel.
+   */
+  readonly holdsPrivateClose?: (window: BrowserWindowController) => boolean;
   /** Called when a window gets the focus. */
   readonly onFocus?: (window: BrowserWindowController) => void;
   /**
@@ -606,7 +611,8 @@ function laterCodeOf(options: BrowserWindowOptions): {
 }
 
 /** The commands that tools outside the window carry out on a web page. */
-export type PageCommand = 'page.print' | 'page.save' | 'page.source' | 'devtools.toggle';
+export type PageCommand =
+  'page.print' | 'page.save' | 'page.savePdf' | 'page.source' | 'devtools.toggle';
 
 /** The commands of the browser itself rather than of a window. */
 export type AppCommand = 'app.about' | 'app.quit';
@@ -903,11 +909,13 @@ export class BrowserWindowController implements Disposable, TabViewPort {
       this.setFullScreen(true, place.maximized === true);
       if (process.platform === 'darwin') this.askFullScreenAgain();
     }
-    // A popup closes with its last tab, as the page that closes itself expects.
+    // A popup closes with its last tab, as the page that closes itself expects, and so does a
+    // private window, as in other browsers: the private data goes with the last private
+    // window. Other windows keep a new tab.
     this.tabs = new TabService(
       this,
       options.newTabUrl,
-      this.popup ? () => this.window.close() : undefined,
+      this.popup || this.isPrivate ? () => this.window.close() : undefined,
       place.workspace,
     );
     this.subscriptions.add(this.tabs.onDidChange(() => this.schedulePublish()));
@@ -959,13 +967,20 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     // Alt held while the window loses the focus, as for Alt+Tab, opens nothing.
     this.window.on('blur', () => this.altTap.reset());
     this.window.on('closed', () => this.dispose());
+    // The last private window may stay open to ask first, as its downloads would end with it;
+    // the browser quits without closing its windows this way.
+    if (this.isPrivate) {
+      this.window.on('close', (event) => {
+        if (options.holdsPrivateClose?.(this) === true) event.preventDefault();
+      });
+    }
     // Electron on Linux can crash when a window closes while it still sets itself up after it
     // opened. A window that closes within its first second hides at once and closes when that
     // second is over; the browser quits without closing its windows this way.
     if (process.platform === 'linux') {
       const opened = performance.now();
       this.window.on('close', (event) => {
-        if (this.hidesUntilClosed) return;
+        if (this.hidesUntilClosed || event.defaultPrevented) return;
         const rest = settleTime - (performance.now() - opened);
         if (rest <= 0) return;
         event.preventDefault();

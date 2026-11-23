@@ -78,6 +78,7 @@ describe('browserMenu', () => {
       'newTab',
       'newWindow',
       'newPrivateWindow',
+      'closeWindow',
       '-',
       'zoom',
       '-',
@@ -105,15 +106,28 @@ describe('browserMenu', () => {
     expect(texts(mac.items)).toEqual([...order, 'quit']);
     // macOS quits with Command+Q, which its application menu gives the command.
     expect(entryOf(mac.items, 'quit')).toMatchObject({ shortcut: 'Cmd+Q', enabled: true });
+    // Closing the window has the shortcut of other browsers, and runs in every window.
+    expect(entryOf(mac.items, 'closeWindow')).toMatchObject({
+      shortcut: 'Shift+Cmd+W',
+      enabled: true,
+    });
+    expect(entryOf(browserMenu(input(), text).items, 'closeWindow')).toMatchObject({
+      shortcut: 'Ctrl+Shift+W',
+      enabled: true,
+    });
     expect(browserMenu(input(), text)).toMatchObject({ parent: -1, label: 'menu' });
   });
 
   it('leaves out New private window and Developer tools where a policy forbids them', () => {
     const closed = input({ context: context({ privateWindows: false, developerTools: false }) });
     expect(texts(browserMenu(closed, text).items)).not.toContain('newPrivateWindow');
-    expect(texts(moreTools(closed, text, 13).items)).toEqual(['viewSource']);
+    expect(texts(moreTools(closed, text, 13).items)).toEqual(['savePdf', 'viewSource']);
     expect(moreTools(input(), text, 13)).toMatchObject({ parent: 13, label: 'moreTools' });
-    expect(texts(moreTools(input(), text, 13).items)).toEqual(['viewSource', 'developerTools']);
+    expect(texts(moreTools(input(), text, 13).items)).toEqual([
+      'savePdf',
+      'viewSource',
+      'developerTools',
+    ]);
   });
 
   it('opens the command palette and tab search with their shortcuts, and has no items while the palette is off', () => {

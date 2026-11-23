@@ -90,6 +90,7 @@ describe('availableCommands', () => {
       'page.reloadHard',
       'page.print',
       'page.save',
+      'page.savePdf',
       'page.source',
       'zoom.in',
       'zoom.out',
@@ -160,6 +161,9 @@ describe('availableCommands', () => {
   it('follows the policies for private windows and developer tools', () => {
     expect(canRun('window.newPrivate', context())).toBe(true);
     expect(canRun('window.newPrivate', context({ privateWindows: false }))).toBe(false);
+    // Every window can close, also one without tabs or one that private windows are off for.
+    expect(canRun('window.close', context({ privateWindows: false }))).toBe(true);
+    expect(canRun('window.close', context({ tabs: [], activeIndex: -1 }))).toBe(true);
     expect(canRun('devtools.toggle', context({ developerTools: false }))).toBe(false);
   });
 

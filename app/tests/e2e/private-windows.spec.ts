@@ -17,15 +17,24 @@ let server: Server;
 let origin = '';
 /** How often the server was asked for the icon of the page with an icon. */
 let iconRequests = 0;
+/** Whether the browser still downloads the slow file, which never ends. */
+let slowRunning = false;
 const icon = readFileSync(join(import.meta.dirname, 'fixtures', 'image.png'));
 
 const pages: Readonly<Record<string, string>> = {
   '/regular': '<title>Fixture regular</title>',
   '/icon': '<title>Fixture icon</title><link rel="icon" href="/icon.png">',
-  '/private': '<title>Fixture private</title><a href="/report.txt">Report</a>',
+  '/private':
+    '<title>Fixture private</title><a href="/report.txt">Report</a> <a href="/slow.bin">Slow</a>',
   '/opener':
     '<title>Fixture private opener</title>' +
     `<button onclick="window.open('/private', 'popup', 'width=520,height=420')">Open a popup</button>`,
+  // A site that signs in and keeps a draft, as a shared computer would keep them for the next
+  // person.
+  '/sign-in':
+    '<title>Fixture sign in</title><script>' +
+    "document.cookie = 'signedIn=yes; max-age=3600';" +
+    "localStorage.setItem('draft', 'secret text');</script>",
 };
 
 test.beforeAll(async () => {
@@ -41,6 +50,24 @@ test.beforeAll(async () => {
         'content-disposition': 'attachment; filename="private-report.txt"',
       });
       response.end('Fixture report\n');
+    } else if (path === '/slow.bin') {
+      // A part of a large file, and then nothing until the browser stops the download.
+      response.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': 'attachment; filename="private-slow.bin"',
+        'content-length': String(1024 * 1024),
+      });
+      response.write(Buffer.alloc(64 * 1024));
+      slowRunning = true;
+      response.on('close', () => {
+        slowRunning = false;
+      });
+    } else if (path === '/signed-in') {
+      // What the site learns of a visitor: the cookies that the request brings.
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(
+        `<!doctype html><title>Fixture signed in</title><output>${(request.headers.cookie ?? '').replace(/[<&]/g, '')}</output>`,
+      );
     } else if (path === '/icon.png') {
       iconRequests += 1;
       response.writeHead(200, { 'content-type': 'image/png' });
@@ -231,6 +258,113 @@ test('keeps no history, session, cookies or answers of a private window', async 
     }
   } finally {
     removeAfterExit(profile);
+  }
+});
+
+test('closes a private window with its last tab, and the next one knows nothing of its sites', async () => {
+  const browser = await launch();
+  try {
+    await openIn(browser, browser.shell, '/regular');
+    const shell = await openPrivate(browser);
+    // The address bar of the new window types into its tab once it is the active tab.
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1);
+    const page = await openIn(browser, shell, '/sign-in');
+    expect(
+      await page.evaluate(() => ({
+        cookie: document.cookie,
+        draft: localStorage.getItem('draft'),
+      })),
+    ).toEqual({ cookie: 'signedIn=yes', draft: 'secret text' });
+    // Ctrl+W on the only tab of the private window closes the window, as in other browsers,
+    // and the private session ends with it.
+    await pressNative(browser, 'W', ['primary'], `${origin}/sign-in`);
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    await expect.poll(async () => (await shells(browser, true)).length).toBe(0);
+    const again = await openPrivate(browser);
+    await expect(again.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1);
+    const site = await openIn(browser, again, '/signed-in');
+    await expect(site.locator('output')).toHaveText('');
+    expect(
+      await site.evaluate(() => ({
+        cookie: document.cookie,
+        draft: localStorage.getItem('draft'),
+      })),
+    ).toEqual({ cookie: '', draft: null });
+    await pressNative(browser, 'W', ['primary'], `${origin}/signed-in`);
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    // A regular window keeps a new tab when its last tab closes.
+    await expect(browser.shell.getByRole('tab')).toHaveCount(1);
+    await pressNative(browser, 'W', ['primary']);
+    await expect
+      .poll(async () => (await shellState(browser.shell)).tabs.map((tab) => tab.url))
+      .toEqual(['app://newtab/']);
+    expect(await windowCount(browser)).toBe(1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('asks before the last private window cancels its downloads, also when its last tab closes', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'e2e-private-downloads-'));
+  const browser = await launch();
+  try {
+    await browser.main.evaluate(({ app }, path) => app.setPath('downloads', path), folder);
+    // The question gets the answer that the test sets, and keeps what it asked.
+    await browser.main.evaluate(({ dialog }) => {
+      const asked: unknown[] = [];
+      Reflect.set(globalThis, 'asked', asked);
+      Reflect.set(globalThis, 'answer', 0);
+      dialog.showMessageBox = ((_window: unknown, options: Electron.MessageBoxOptions) => {
+        asked.push({ message: options.message, buttons: options.buttons });
+        const response = Reflect.get(globalThis, 'answer') as number;
+        return Promise.resolve({ response, checkboxChecked: false });
+      }) as typeof dialog.showMessageBox;
+    });
+    const asked = (): Promise<unknown[]> =>
+      browser.main.evaluate(() => Reflect.get(globalThis, 'asked') as unknown[]);
+    const question = {
+      message: 'Cancel the private downloads?',
+      // The buttons of macOS name their actions in title case.
+      buttons:
+        process.platform === 'darwin'
+          ? ['Keep Downloading', 'Cancel Downloads']
+          : ['Keep downloading', 'Cancel downloads'],
+    };
+    await openIn(browser, browser.shell, '/regular');
+    const shell = await openPrivate(browser);
+    await expect(shell.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1);
+    const page = await openIn(browser, shell, '/private');
+    await page.getByRole('link', { name: 'Slow' }).click();
+    await expect.poll(async () => (await shellState(shell)).downloads?.active).toBe(1);
+    expect(slowRunning).toBe(true);
+    // Ctrl+W on the only tab asks first; Keep downloading keeps the window with a new tab page.
+    await pressNative(browser, 'W', ['primary'], `${origin}/private`);
+    await expect.poll(asked).toEqual([question]);
+    await expect
+      .poll(async () => (await shellState(shell)).tabs.map((tab) => tab.url))
+      .toEqual(['app://newtab/']);
+    expect(await windowCount(browser)).toBe(2);
+    expect((await shellState(shell)).downloads?.active).toBe(1);
+    expect(slowRunning).toBe(true);
+    // Closing the window asks again, and Cancel downloads closes it and ends the download. The
+    // keys go to the new tab page once it has loaded.
+    const kept = await waitForPage(browser, (url) => url.startsWith('app://newtab'));
+    await expect(kept.getByRole('searchbox')).toBeVisible();
+    await browser.main.evaluate(() => Reflect.set(globalThis, 'answer', 1));
+    await pressNative(browser, 'W', ['primary', 'shift'], 'app://newtab');
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    expect(await asked()).toEqual([question, question]);
+    await expect.poll(() => slowRunning).toBe(false);
+    // Without a download that runs, the next private window closes with its last tab at once.
+    const again = await openPrivate(browser);
+    await expect(again.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1);
+    await openIn(browser, again, '/private');
+    await pressNative(browser, 'W', ['primary'], `${origin}/private`);
+    await expect.poll(() => windowCount(browser)).toBe(1);
+    expect(await asked()).toHaveLength(2);
+  } finally {
+    await browser.close();
+    removeAfterExit(folder);
   }
 });
 

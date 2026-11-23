@@ -111,16 +111,17 @@ describe('the texts of the browser menu', () => {
   );
 
   it('use the agreed access keys, which other menus of the browser keep free', () => {
-    expect(keys('en-US', 'linux').join('')).toBe('twizhdbcrfpvosaq');
-    expect(keys('en-US', 'win32').join('')).toBe('twizhdbcrfpvosax');
-    expect(keys('de', 'linux').join('')).toBe('tfpzvdlarsuhweüb');
+    // Close window comes after the new windows, with L in English and C in German.
+    expect(keys('en-US', 'linux').join('')).toBe('twilzhdbcrfpvosaq');
+    expect(keys('en-US', 'win32').join('')).toBe('twilzhdbcrfpvosax');
+    expect(keys('de', 'linux').join('')).toBe('tfpczvdlarsuhweüb');
     // The reader view comes after Find, with E in English and N in German.
-    expect(keys('en-US', 'linux', true).join('')).toBe('twizhdbcrfepvosaq');
-    expect(keys('de', 'linux', true).join('')).toBe('tfpzvdlarsnuhweüb');
+    expect(keys('en-US', 'linux', true).join('')).toBe('twilzhdbcrfepvosaq');
+    expect(keys('de', 'linux', true).join('')).toBe('tfpczvdlarsnuhweüb');
     // Picture in picture comes after the reader view, with N in English and I in German.
-    expect(keys('en-US', 'linux', true, true).join('')).toBe('twizhdbcrfenpvosaq');
-    expect(keys('de', 'win32', true, true).join('')).toBe('tfpzvdlarsniuhweüb');
-    expect(keys('en-US', 'win32', false, true).join('')).toBe('twizhdbcrfnpvosax');
+    expect(keys('en-US', 'linux', true, true).join('')).toBe('twilzhdbcrfenpvosaq');
+    expect(keys('de', 'win32', true, true).join('')).toBe('tfpczvdlarsniuhweüb');
+    expect(keys('en-US', 'win32', false, true).join('')).toBe('twilzhdbcrfnpvosax');
   });
 
   it('write German without the marks of access keys on macOS', () => {
@@ -134,11 +135,13 @@ describe('the texts of the browser menu', () => {
       expect.arrayContaining([
         'Neuer Tab',
         'Neues Fenster',
+        'Fenster schließen',
         'Verlauf',
         'Seite speichern unter…',
         'Weitere Tools',
         'Beenden',
         'Quelltext anzeigen',
+        'Als PDF speichern…',
         'Leseansicht',
         'Bild im Bild',
       ]),
@@ -167,10 +170,12 @@ describe('the texts of the browser menu', () => {
       expect.arrayContaining([
         'New Tab',
         'New Private Window',
+        'Close Window',
         'Save Page As…',
         'More Tools',
         'Quit Astela',
         'Developer Tools',
+        'Save as PDF…',
         'Reader View',
         'Picture in Picture',
       ]),

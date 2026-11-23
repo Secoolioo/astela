@@ -6,6 +6,7 @@ import {
   FixtureServer,
   focusPage,
   launch,
+  overlayAttached,
   overlayPage,
   pressNative,
   shellState,
@@ -456,6 +457,181 @@ test('opens a suggestion that is clicked after the press moved the focus to the 
       'title',
       'Fixture home',
     );
+  } finally {
+    await browser.close();
+  }
+});
+
+/** Where the view of the overlay lies in the window, as the browser process placed it. */
+function overlayBounds(browser: Browser): Promise<Electron.Rectangle | undefined> {
+  return browser.main.evaluate(({ BaseWindow }) => {
+    const child = (BaseWindow.getAllWindows()[0]?.contentView.children ?? []).find(
+      (view) =>
+        'webContents' in view &&
+        (view as Electron.WebContentsView).webContents.getURL().startsWith('app://overlay'),
+    );
+    return child?.getBounds();
+  });
+}
+
+/**
+ * The gray levels of a row or a column of pixels of the window as it shows them, from its
+ * first pixel on: the overlay's pixels lie over those of the tab's page. Electron draws each
+ * view of the window on its own, so both are captured and put together here.
+ * @param browser - The running browser.
+ * @param area - The pixels, in the window: one column or one row.
+ */
+function windowPixels(browser: Browser, area: Electron.Rectangle): Promise<number[]> {
+  return browser.main.evaluate(async ({ BaseWindow }, rect) => {
+    const views = (BaseWindow.getAllWindows()[0]?.contentView.children ?? []).flatMap((view) =>
+      'webContents' in view ? [view as Electron.WebContentsView] : [],
+    );
+    const count = rect.width * rect.height;
+    /** The green channel and the alpha of each pixel of a view, none outside it. */
+    const capture = async (
+      view: Electron.WebContentsView | undefined,
+    ): Promise<(index: number) => readonly [number, number] | undefined> => {
+      if (view === undefined) return () => undefined;
+      const bounds = view.getBounds();
+      // The part of the area that lies inside the view, in the view.
+      const left = Math.max(rect.x, bounds.x);
+      const top = Math.max(rect.y, bounds.y);
+      const right = Math.min(rect.x + rect.width, bounds.x + bounds.width);
+      const end = Math.min(rect.y + rect.height, bounds.y + bounds.height);
+      if (right <= left || end <= top) return () => undefined;
+      const image = await view.webContents.capturePage({
+        x: left - bounds.x,
+        y: top - bounds.y,
+        width: right - left,
+        height: end - top,
+      });
+      const data = image.toBitmap();
+      // A screen with more pixels than CSS pixels gives more of them.
+      const scale = Math.max(
+        1,
+        Math.round(Math.sqrt(data.length / 4 / ((right - left) * (end - top)))),
+      );
+      const width = (right - left) * scale;
+      return (index) => {
+        const x = rect.x + (rect.width === 1 ? 0 : index);
+        const y = rect.y + (rect.height === 1 ? 0 : index);
+        if (x < left || x >= right || y < top || y >= end) return undefined;
+        const at = ((y - top) * scale * width + (x - left) * scale) * 4;
+        // The bitmap is BGRA, with its colors premultiplied by the alpha.
+        return [data[at + 1] ?? 0, data[at + 3] ?? 0];
+      };
+    };
+    const overlay = await capture(
+      views.find((view) => view.webContents.getURL().startsWith('app://overlay')),
+    );
+    const page = await capture(views.find((view) => view.webContents.getURL().startsWith('http')));
+    return Array.from({ length: count }, (_, index) => {
+      const below = page(index)?.[0] ?? 0;
+      const above = overlay(index);
+      return above === undefined ? below : Math.round(above[0] + (below * (255 - above[1])) / 255);
+    });
+  }, area);
+}
+
+test('gives the suggestions room for their shadow and shows an address once', async () => {
+  const browser = await launch([], { settings: { 'appearance.colorMode': 'dark' } });
+  try {
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    // A white page below the dark list shows its shadow most. It holds nothing, so that only the
+    // shadow changes its pixels beside the list: its heading, in the fonts of macOS, reaches the
+    // pixels that the test reads.
+    await open(browser, `${server.origin}/index.html`);
+    const page = await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await page.evaluate(() => document.body.replaceChildren());
+    await address.click();
+    await address.pressSequentially('example.com');
+    const overlay = await overlayPage(browser);
+    // Playwright gives the pages that it attaches to the light color scheme.
+    await overlay.emulateMedia({ colorScheme: 'dark' });
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    const row = list.locator('[role="option"][data-kind="url"]');
+    await expect(row).toBeVisible();
+    // The address that Enter opens is its own title, and shows once.
+    await expect(row).toHaveText(/^\s*https:\/\/example\.com\/?\s*$/);
+    // The list drops in from above; its pixels count once it is in place.
+    await list.evaluate((element) =>
+      Promise.all(element.getAnimations().map((motion) => motion.finished)),
+    );
+    const field = await shell.locator('.address').boundingBox();
+    if (field === null) throw new Error('The address bar is not laid out');
+    // The view of the overlay holds the list and 24 px beside it and 32 px below it, where the
+    // shadow fades out, and the list lines up with the address bar.
+    await expect
+      .poll(async () => {
+        const bounds = await overlayBounds(browser);
+        const box = await list.boundingBox();
+        const rows = await list.evaluate((element) =>
+          [...element.children].map((child) => child.getBoundingClientRect().bottom),
+        );
+        return bounds === undefined || box === null
+          ? undefined
+          : {
+              x: box.x,
+              y: box.y,
+              width: bounds.width - box.width,
+              height: bounds.height - box.height,
+              left: bounds.x + box.x,
+              // The list ends with its last row and its border.
+              after: box.y + box.height - (rows.at(-1) ?? 0),
+            };
+      })
+      .toEqual({ x: 24, y: 0, width: 48, height: 32, left: Math.round(field.x), after: 1 });
+    const bounds = await overlayBounds(browser);
+    if (bounds === undefined) throw new Error('The overlay is not part of the window');
+    // Across the bottom edge of the view and its side, the page is white again: the window
+    // shows no step where the view ends. The shadow is 2 of its blurs, 2 × 12 px, from there,
+    // where it has 2.3 % of its strength, about 2.5 levels in the dark mode, which the
+    // rendering of each system rounds; the 12 px of before left 41 levels.
+    const middle = bounds.x + Math.round(bounds.width / 2);
+    const bottom = await windowPixels(browser, {
+      x: middle,
+      y: bounds.y + bounds.height - 2,
+      width: 1,
+      height: 4,
+    });
+    expect(Math.abs((bottom[1] ?? 0) - (bottom[2] ?? 0)), bottom.join(' ')).toBeLessThanOrEqual(3);
+    expect(bottom[3]).toBe(255);
+    const side = await windowPixels(browser, {
+      x: bounds.x - 2,
+      y: bounds.y + Math.round(bounds.height / 2),
+      width: 4,
+      height: 1,
+    });
+    expect(Math.abs((side[1] ?? 0) - (side[2] ?? 0)), side.join(' ')).toBeLessThanOrEqual(3);
+    expect(side[0]).toBe(255);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('closes the suggestions on a press beside them and gives the focus to the page', async () => {
+  const browser = await launch();
+  try {
+    await useRealFocus(browser);
+    const shell = browser.shell;
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    await open(browser, `${server.origin}/index.html`);
+    await waitForPage(browser, (url) => url.endsWith('/index.html'));
+    await focusPage(browser, shell);
+    await address.click();
+    await address.pressSequentially('example.com');
+    const overlay = await overlayPage(browser);
+    const list = overlay.getByRole('listbox', { name: 'Suggestions' });
+    await expect(list).toBeVisible();
+    const box = await list.boundingBox();
+    if (box === null) throw new Error('The list is not laid out');
+    // A press gives the overlay the focus before the page in it sees the press.
+    await focusPage(browser, overlay);
+    await overlay.mouse.click(box.x + box.width / 2, box.y + box.height + 6);
+    await expect(list).toBeHidden();
+    await expect.poll(() => viewFocused(browser, server.origin)).toBe(true);
+    expect(await overlayAttached(browser)).toBe(false);
   } finally {
     await browser.close();
   }

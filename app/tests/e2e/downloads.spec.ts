@@ -40,6 +40,13 @@ test.beforeAll(async () => {
         'content-disposition': 'attachment; filename="report.txt"',
       });
       response.end('Fixture report\n');
+    } else if (path === '/note.txt') {
+      // 79 bytes: a size below a kilobyte.
+      response.writeHead(200, {
+        'content-type': 'text/plain',
+        'content-disposition': 'attachment; filename="note.txt"',
+      });
+      response.end(`Fixture note${'.'.repeat(66)}\n`);
     } else if (path === '/large.bin' || path === '/Large.bin') {
       response.writeHead(200, {
         'content-type': 'application/octet-stream',
@@ -61,7 +68,7 @@ test.beforeAll(async () => {
       response.end(
         '<!doctype html><title>Fixture downloads</title>' +
           '<a href="/report.txt">Report</a> <a href="/large.bin">Large</a> ' +
-          '<a href="/Large.bin">Second copy</a>',
+          '<a href="/Large.bin">Second copy</a> <a href="/note.txt">Note</a>',
       );
     } else if (path === '/icon') {
       response.writeHead(200, { 'content-type': 'text/html' });
@@ -162,6 +169,34 @@ test('saves downloads in the downloads folder under a free name and lists them',
   } finally {
     await browser.close();
     removeAfterExit(folder);
+  }
+});
+
+test('writes the size of a small download in bytes, in English and in German', async () => {
+  for (const [language, size, field] of [
+    ['en-US', '79 bytes', 'Address and search bar'],
+    ['de', '79 Byte', 'Adress- und Suchleiste'],
+  ] as const) {
+    const browser = await launch([`--lang=${language}`]);
+    const folder = mkdtempSync(join(tmpdir(), 'downloads-'));
+    try {
+      await useFolder(browser, folder);
+      const address = browser.shell.getByRole('textbox', { name: field });
+      await address.fill(`${origin}/`);
+      await address.press('Enter');
+      const page = await waitForPage(browser, (url) => url === `${origin}/`);
+      await page.getByRole('link', { name: 'Note' }).click();
+      await expect.poll(() => existsSync(join(folder, 'note.txt'))).toBe(true);
+      expect(statSync(join(folder, 'note.txt')).size).toBe(79);
+      await openList(browser);
+      const overlay = await waitForPage(browser, (url) => url.startsWith('app://overlay'));
+      await expect(overlay.getByRole('listitem').filter({ hasText: 'note.txt' })).toContainText(
+        size,
+      );
+    } finally {
+      await browser.close();
+      removeAfterExit(folder);
+    }
   }
 });
 

@@ -89,6 +89,7 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
   switch (command) {
     case 'tab.new':
     case 'window.new':
+    case 'window.close':
     case 'omnibox.focus':
     case 'focus.nextPane':
     case 'focus.previousPane':
@@ -202,6 +203,7 @@ export function canRun(command: WindowCommand, context: CommandContext): boolean
     case 'page.reloadHard':
     case 'page.print':
     case 'page.save':
+    case 'page.savePdf':
     case 'page.source':
     case 'zoom.in':
     case 'zoom.out':

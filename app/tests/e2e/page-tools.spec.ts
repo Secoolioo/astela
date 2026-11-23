@@ -674,6 +674,110 @@ test('reloads without the cache, prints, saves and shows the source of a page', 
   }
 });
 
+/** The size of each page of a PDF file in points, from its media boxes. */
+function pdfPages(file: string): { width: number; height: number }[] {
+  const text = readFileSync(file, 'latin1');
+  const pages = text.split(/\/Type\s*\/Page(?!s)/).slice(1);
+  return pages.map((page) => {
+    const box = /\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(
+      text.slice(text.indexOf(page) - 400, text.indexOf(page) + page.length),
+    );
+    return {
+      width: Number(box?.[3] ?? 0) - Number(box?.[1] ?? 0),
+      height: Number(box?.[4] ?? 0) - Number(box?.[2] ?? 0),
+    };
+  });
+}
+
+test('saves a page as PDF into the downloads folder, on the paper of the region', async () => {
+  // A4, 210 × 297 mm, and US Letter, 8.5 × 11 in.
+  const a4 = { width: 595, height: 842 };
+  const letter = { width: 612, height: 792 };
+  const german = { language: 'de', menu: 'Menü', tools: 'Weitere Tools' };
+  const english = { language: 'en-US', menu: 'Menu', tools: mac ? 'More Tools' : 'More tools' };
+  for (const { language, menu, tools: toolsName, system, paper } of [
+    // Without a region of the system, as with LANG=C, the language of the menus decides.
+    { ...german, system: 'C.UTF-8', paper: a4 },
+    { ...english, system: 'C.UTF-8', paper: letter },
+    // The region of the system decides, also where Chromium has no menus in its language and
+    // reports English of the United States: British English takes A4, and Canada Letter.
+    { ...english, system: 'en_GB.UTF-8', paper: a4 },
+    { ...german, system: 'en_CA.UTF-8', paper: letter },
+  ]) {
+    const itemName = language === 'de' ? 'Als PDF speichern…' : 'Save as PDF…';
+    // On Linux, the environment names the locale of the system; macOS and Windows take it from
+    // their settings.
+    const browser = await launch([`--lang=${language}`], {
+      env: { LANG: system, LC_ALL: system },
+    });
+    const folder = mkdtempSync(join(tmpdir(), 'saved-pdf-'));
+    try {
+      await browser.main.evaluate(
+        ({ app }, downloads) => app.setPath('downloads', downloads),
+        folder,
+      );
+      const url = `${server.origin}/find.html`;
+      await open(
+        browser,
+        url,
+        language === 'de' ? 'Adress- und Suchleiste' : 'Address and search bar',
+      );
+      const target = join(folder, 'saved.pdf');
+      await browser.main.evaluate(({ dialog }, path) => {
+        const asked: unknown[] = [];
+        Reflect.set(globalThis, 'askedToSave', asked);
+        dialog.showSaveDialog = (...args: unknown[]) => {
+          const options = args.at(-1) as Electron.SaveDialogOptions;
+          asked.push({ defaultPath: options.defaultPath, filters: options.filters });
+          return Promise.resolve({ canceled: false, filePath: path });
+        };
+      }, target);
+      await browser.shell.getByRole('button', { name: menu, exact: true }).click();
+      const overlay = await overlayPage(browser);
+      await overlay.getByRole('menuitem', { name: toolsName, exact: true }).click();
+      const item = overlay
+        .getByRole('menu', { name: toolsName, exact: true })
+        .getByRole('menuitem', { name: itemName, exact: true });
+      await expect(item).toBeVisible();
+      await expect(item).not.toHaveAttribute('aria-disabled', 'true');
+      await item.click();
+      // The dialog proposes the title of the page as the name, in the downloads folder.
+      await expect
+        .poll(() => browser.main.evaluate(() => Reflect.get(globalThis, 'askedToSave')))
+        .toEqual([
+          {
+            defaultPath: join(folder, 'Fixture find.pdf'),
+            filters: [
+              {
+                // The file dialogs of macOS name their types in title case.
+                name: language === 'de' ? 'PDF-Dokument' : mac ? 'PDF Document' : 'PDF document',
+                extensions: ['pdf'],
+              },
+            ],
+          },
+        ]);
+      await expect.poll(() => existsSync(target)).toBe(true);
+      await expect.poll(() => readFileSync(target).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+      // One page of the paper, within the rounding of Chromium's points; elsewhere than on
+      // Linux, the region of the machine decides between the two.
+      const pages = pdfPages(target);
+      expect(pages).toHaveLength(1);
+      const fits = (size: { width: number; height: number }): boolean =>
+        (['width', 'height'] as const).every(
+          (side) => Math.abs((pages[0]?.[side] ?? 0) - size[side]) <= 2,
+        );
+      const reported = await browser.main.evaluate(({ app }) => app.getSystemLocale());
+      expect(
+        process.platform === 'linux' ? fits(paper) : fits(a4) || fits(letter),
+        JSON.stringify({ pages, system: reported }),
+      ).toBe(true);
+    } finally {
+      await browser.close();
+      removeAfterExit(folder);
+    }
+  }
+});
+
 test('writes to the log that a page was not saved, instead of failing unnoticed', async () => {
   const browser = await launch();
   try {

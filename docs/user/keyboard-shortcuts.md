@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view, workspaces and the reader view, the moves of tabs into and out of groups, `F6` between the address bar and the page, Tab between the toolbar and the page, and the keys of the tab strip, from 0.1.0-beta.7.
+> **Status:** available from 0.1.0-beta.2; the shortcuts of the page tools and for new and private windows from 0.1.0-beta.4; your own shortcuts from 0.1.0-beta.5; the shortcuts that choose and move tabs from 0.1.0-beta.6; your own shortcuts for the commands of the menus, F10 and Alt for the browser menu, the shortcuts of the command palette, tab search, split view, workspaces and the reader view, the moves of tabs into and out of groups, `F6` between the address bar and the page, Tab between the toolbar and the page, the keys of the tab strip, the shortcut that closes the window, and saving a page as PDF, from 0.1.0-beta.7.
 
 Astela uses the shortcuts that are usual on each operating system. They work the same way in the address bar and in web pages. The tables below list the defaults.
 
@@ -12,7 +12,7 @@ A shortcut needs Ctrl or Alt, on macOS Control or Command, or it is a function k
 
 ## Commands without a shortcut
 
-Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **Picture in picture**, **Turn hiding the toolbar on or off**, **About Astela** and **Quit Astela**, and on macOS **Go to the next pane** and **Go to the previous pane**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
+Some commands have no shortcut until you give one to them: **Duplicate the tab**, **Close the other tabs**, **Close the tabs to the right** (**Close the tabs below** while the tab strip is at a side), **Pin or unpin the tab**, **Mute or unmute the tab**, **Swap the sides of the split view**, **Add the tab to a new group**, **Next workspace**, **Previous workspace**, **Show the workspaces**, **Picture in picture**, **Turn hiding the toolbar on or off**, **Save the page as PDF**, **About Astela** and **Quit Astela**, and on macOS **Go to the next pane** and **Go to the previous pane**. The commands of a tab act on the active tab, as the items of the [menu of a tab](tabs.md#the-menu-of-a-tab) act on their tab, and closing the other tabs or those to the right leaves pinned tabs open there too. Once a command has a shortcut, the menu of the active tab or the browser menu shows it next to the item. On macOS, `Command+Q` quits Astela in any case: the settings show it in the row of **Quit Astela**, where it stays next to a shortcut of your own.
 
 ## Windows and Linux
 
@@ -21,6 +21,7 @@ Some commands have no shortcut until you give one to them: **Duplicate the tab**
 | New tab                        | `Ctrl+T`                                        |
 | New window                     | `Ctrl+N`                                        |
 | New private window             | `Ctrl+Shift+N`                                  |
+| Close the window               | `Ctrl+Shift+W`                                  |
 | Close the tab                  | `Ctrl+W` or `Ctrl+F4`                           |
 | Reopen the last closed tab     | `Ctrl+Shift+T`                                  |
 | Next tab                       | `Ctrl+Tab` or `Ctrl+Page Down`                  |
@@ -71,6 +72,7 @@ None of these shortcuts combines Ctrl and Alt. Windows reports the AltGr key as 
 | New tab                        | `Command+T`                                                           |
 | New window                     | `Command+N`                                                           |
 | New private window             | `Command+Shift+N`                                                     |
+| Close the window               | `Command+Shift+W`                                                     |
 | Close the tab                  | `Command+W`                                                           |
 | Reopen the last closed tab     | `Command+Shift+T`                                                     |
 | Next tab                       | `Control+Tab`, `Command+Option+Right Arrow` or `Command+Shift+]`      |

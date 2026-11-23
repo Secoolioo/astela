@@ -26,6 +26,8 @@ import {
   track,
 } from './overlays.ts';
 import { quarantine } from '../platform/node/quarantine.ts';
+import { translatorFor } from './i18n/i18n.ts';
+import { uiLocale } from './ui-language.ts';
 
 /** What the list of downloads needs from the composition root. */
 export interface DownloadsDependencies {
@@ -91,6 +93,10 @@ export class Downloads {
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** The button that each window's panel opened at. */
   private readonly anchors = new WeakMap<BrowserWindowController, OverlayAnchor>();
+  /** The private windows that ask whether to cancel the downloads of private windows. */
+  private readonly asking = new WeakSet<BrowserWindowController>();
+  /** The private windows that close although downloads of private windows run. */
+  private readonly leaving = new WeakSet<BrowserWindowController>();
 
   /** @param deps - The data service, the windows and the overlay. */
   constructor(deps: DownloadsDependencies) {
@@ -255,6 +261,47 @@ export class Downloads {
     }
     this.shown.delete(true);
     this.changed();
+  }
+
+  /**
+   * Keeps the last private window open while downloads of private windows run, which closing it
+   * would cancel, and asks first, as Chrome does: Keep downloading leaves the window open, with
+   * a new tab page if its last tab closed, and Cancel downloads closes it.
+   * @param window - The private window that is about to close.
+   * @returns Whether the window stays open for now.
+   */
+  holdsPrivateClose(window: BrowserWindowController): boolean {
+    const running = this.entries.some((entry) => entry.privateWindow && entry.item !== undefined);
+    const last = !this.deps.windows.all.some(
+      (other) => other !== window && other.isPrivate && !other.closing,
+    );
+    if (!running || !last || window.closing || this.leaving.has(window)) return false;
+    if (this.asking.has(window)) return true;
+    this.asking.add(window);
+    if (window.tabs.all.length === 0) window.tabs.open();
+    const i18n = translatorFor(uiLocale(), process.platform);
+    dialog
+      .showMessageBox(window.window, {
+        type: 'warning',
+        message: i18n.t('dialog.privateDownloads'),
+        detail: i18n.t('dialog.privateDownloadsDetail'),
+        buttons: [i18n.t('dialog.keepDownloading'), i18n.t('dialog.cancelDownloads')],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      .then(({ response }) => {
+        if (response !== 1 || window.window.isDestroyed()) return;
+        this.leaving.add(window);
+        window.window.close();
+      })
+      .catch((error: unknown) => {
+        this.deps.logger.warn('The question about private downloads failed', {
+          error: String(error),
+        });
+      })
+      .finally(() => this.asking.delete(window));
+    return true;
   }
 
   /**

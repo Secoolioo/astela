@@ -217,7 +217,8 @@ function sizeText(bytes: number, language: string | undefined): string {
   return new Intl.NumberFormat(language, {
     style: 'unit',
     unit: units[unit],
-    unitDisplay: 'short',
+    // English writes bytes in full, 79 bytes, as its short form, byte, has no plural.
+    unitDisplay: unit === 0 ? 'long' : 'short',
     maximumFractionDigits: unit === 0 ? 0 : 1,
   }).format(value);
 }
@@ -252,11 +253,13 @@ export class OverlayPage extends LitElement {
         position: fixed;
         inset: 0;
       }
-      /* The suggestions fill the overlay, which lies below the address bar, with room for their
-       shadow; each row is as high as the shell asked for. */
+      /* The suggestions fill the overlay, which lies below the address bar, with room for
+       their shadow: the 24 px blur of --shadow-popover, 8 px lower than the list, fades out
+       within 24 px beside it and 32 px below it, as the browser process sizes the overlay
+       (main/suggestions.ts). Each row is as high as the shell asked for. */
       .suggestions {
         position: fixed;
-        inset: 0 12px 12px;
+        inset: 0 24px 32px;
         margin: 0;
         padding: 0;
         overflow: hidden;
@@ -806,7 +809,10 @@ export class OverlayPage extends LitElement {
                   ? this.t('overlay.suggestion.search')
                   : item.kind === 'tab'
                     ? this.t('overlay.suggestion.tab')
-                    : item.url
+                    : // An address that is its own title shows once.
+                      item.url === (item.title || item.url)
+                      ? nothing
+                      : item.url
               }</span
             >
           </li>`,
@@ -856,7 +862,12 @@ export class OverlayPage extends LitElement {
     if (content.kind === 'notice') return this.renderNotice(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
-    if (content.kind === 'suggestions') return this.renderSuggestions(content);
+    // A press in the room around the suggestions, where the page would have got it, closes
+    // them, and the page gets the focus back.
+    if (content.kind === 'suggestions') {
+      return html`<div class="backdrop" @mousedown=${this.close}></div>
+        ${this.renderSuggestions(content)}`;
+    }
     if (content.kind === 'menu') {
       return html`<div class="backdrop" @click=${this.close}></div>
         <overlay-menu

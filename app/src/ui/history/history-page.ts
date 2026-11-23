@@ -93,9 +93,12 @@ export class HistoryPage extends LitElement {
     li + li {
       border-top: 1px solid var(--line-1);
     }
+    /* Room for the widest times of the short style, such as 12:00 AM, on one line; a wider one
+       grows the column rather than wrapping. */
     time {
       flex: none;
-      width: 3.75em;
+      min-width: 5em;
+      white-space: nowrap;
       color: var(--text-2);
       font-variant-numeric: tabular-nums;
     }
