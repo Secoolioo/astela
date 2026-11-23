@@ -227,9 +227,14 @@ export interface BrowserWindowOptions {
   readonly reader?: () => boolean;
   /**
    * Shows a video of a tab's page in picture in picture, or ends picture in picture, for the
-   * command `media.pictureInPicture`.
+   * command `media.pictureInPicture`, and for the button next to the address bar, which tells
+   * whether it showed itself `pressed` when it was clicked.
    */
-  readonly onPictureInPictureCommand?: (window: BrowserWindowController, tabId: TabId) => void;
+  readonly onPictureInPictureCommand?: (
+    window: BrowserWindowController,
+    tabId: TabId,
+    pressed?: boolean,
+  ) => void;
   /** Whether picture in picture is on, which a setting or a policy can turn off. */
   readonly pictureInPicture?: () => boolean;
   readonly gate: IpcGate;
@@ -1672,6 +1677,18 @@ export class BrowserWindowController implements Disposable, TabViewPort {
     } else {
       later.run((commands) => commands.run(this.windowHost(), command));
     }
+  }
+
+  /**
+   * Shows a video of the active tab in picture in picture, or ends picture in picture, as the
+   * button next to the address bar showed when it was clicked, in the turn of the commands.
+   * @param pressed - Whether the button showed itself pressed: it then ends picture in picture.
+   */
+  togglePictureInPicture(pressed: boolean): void {
+    laterCodeOf(this.options).commands.runInTurn(() => {
+      const active = this.tabs.active;
+      if (active !== undefined) this.options.onPictureInPictureCommand?.(this, active.id, pressed);
+    });
   }
 
   /** Runs a command that moves the focus, or changes the state of the window itself. */

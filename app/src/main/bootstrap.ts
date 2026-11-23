@@ -793,9 +793,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     onReaderCommand: (window, tabId) =>
       void loadReader().then((code) => code.toggle(window, tabId)),
     pictureInPicture: () => settings.get(PictureInPictureEnabledSetting),
-    onPictureInPictureCommand: (window, tabId) =>
+    onPictureInPictureCommand: (window, tabId, pressed) =>
       void loadPictureInPicture()
-        .then((controller) => controller.toggle(window, tabId))
+        .then((controller) => controller.toggle(window, tabId, pressed))
         .catch(failedPictureInPicture),
     // The commands of the browser itself: its version, shown in a message, and quitting it.
     onAppCommand: (window, command) => {

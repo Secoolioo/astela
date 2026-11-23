@@ -67,6 +67,55 @@ function shownVideo(target: Page | Frame): Promise<string | null> {
   return target.evaluate(() => document.pictureInPictureElement?.id ?? null);
 }
 
+/**
+ * Holds back the messages that tell the shell its state until they are let go, in their order,
+ * so that the shell shows what the browser learned only a while later, as on a busy computer.
+ * @param browser - The running browser.
+ * @returns The states of picture in picture of the tabs in the last message held back, and a
+ *   function that lets the messages go and ends holding them.
+ */
+async function holdShellState(browser: Browser): Promise<{
+  states: () => Promise<string[] | undefined>;
+  release: () => Promise<void>;
+}> {
+  await browser.main.evaluate(({ webContents }) => {
+    const shell = webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL().startsWith('app://shell'));
+    if (shell === undefined) throw new Error('The shell was not found');
+    const send = shell.send.bind(shell);
+    const held: unknown[][] = [];
+    let holding = true;
+    shell.send = (channel: string, ...args: unknown[]): void => {
+      if (holding && channel === 'shell.stateChanged') held.push(args);
+      else send(channel, ...args);
+    };
+    (globalThis as { heldShellStates?: unknown }).heldShellStates = {
+      held,
+      release: (): void => {
+        holding = false;
+        for (const args of held.splice(0)) {
+          if (!shell.isDestroyed()) send('shell.stateChanged', ...args);
+        }
+      },
+    };
+  });
+  return {
+    states: () =>
+      browser.main.evaluate(() => {
+        const { held } = (globalThis as { heldShellStates?: { held: unknown[][] } })
+          .heldShellStates ?? { held: [] };
+        const last = held.at(-1)?.[0] as
+          { tabs?: readonly { pictureInPicture?: string }[] } | undefined;
+        return last?.tabs?.map((tab) => tab.pictureInPicture ?? '');
+      }),
+    release: () =>
+      browser.main.evaluate(() => {
+        (globalThis as { heldShellStates?: { release: () => void } }).heldShellStates?.release();
+      }),
+  };
+}
+
 /** Waits until a video of a document plays, and has played a while. */
 async function playing(target: Page | Frame, id: string): Promise<void> {
   await expect
@@ -254,15 +303,25 @@ test('does what its button shows when the page ended picture in picture itself',
     await button.click();
     await expect.poll(() => shownVideo(page)).toBe('clip');
     await expect(button).toHaveAttribute('aria-pressed', 'true');
-    // The browser learns that the page ended it only when it looks at the page again.
+    // The shell shows what the browser learns only a while later, as on a busy computer.
+    const shell = await holdShellState(browser);
     await page.evaluate(() => document.exitPictureInPicture());
     expect(await shownVideo(page)).toBe(null);
+    // The media of the page change, as players do, and the browser looks at its videos again:
+    // it learns that picture in picture ended while its button still shows it pressed.
+    await page.evaluate(async () => {
+      const video = document.querySelector<HTMLVideoElement>('#clip');
+      video?.pause();
+      await video?.play();
+    });
+    await expect.poll(() => shell.states()).toEqual(['available']);
     await expect(button).toHaveAttribute('aria-pressed', 'true');
     // The pressed button ends picture in picture: there is none, so it only shows that.
     await button.click();
-    await expect(button).toHaveAttribute('aria-pressed', 'false');
     await new Promise((done) => setTimeout(done, 500));
     expect(await shownVideo(page)).toBe(null);
+    await shell.release();
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
     // The next click shows the video again.
     await button.click();
     await expect.poll(() => shownVideo(page)).toBe('clip');
