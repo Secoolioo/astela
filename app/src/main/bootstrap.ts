@@ -1380,7 +1380,11 @@ function registerShellHandlers(
     ActivateTab,
     ({ tabId }, { sender }) => (windowOf(sender).tabs.activate(tabId), null),
   );
-  router.handle(CloseTab, ({ tabId }, { sender }) => (windowOf(sender).tabs.close(tabId), null));
+  // People close the tab, whose page may ask to stay first.
+  router.handle(
+    CloseTab,
+    ({ tabId }, { sender }) => (windowOf(sender).tabAction(tabId, 'close'), null),
+  );
   router.handle(NavigateTab, async ({ tabId, input }, { sender }) => {
     const url = await target(input);
     if (url !== undefined) windowOf(sender).tabs.navigate(tabId, url);

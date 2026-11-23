@@ -181,20 +181,23 @@ describe('TabActivity', () => {
 
   it('keeps a page that people typed into awake for the browser alone, until it navigates', () => {
     const page = new FakePage();
+    expect(activity.typed(page.contents)).toBe(false);
     activity.typing(page.contents);
     activity.typing(page.contents);
     expect([
       activity.awakeReason(page.contents, 'auto'),
       activity.awakeReason(page.contents, 'manual'),
       activity.busy(page.contents),
+      activity.typed(page.contents),
       changes,
-    ]).toEqual(['input', undefined, true, 1]);
+    ]).toEqual(['input', undefined, true, true, 1]);
     // A page in the same document keeps what was typed; another document starts anew.
     page.emit('did-navigate-in-page');
     expect(activity.busy(page.contents)).toBe(true);
     now = 6000;
     page.emit('did-navigate');
     expect(activity.awakeReason(page.contents, 'auto')).toBeUndefined();
+    expect(activity.typed(page.contents)).toBe(false);
     expect(activity.lastBusyAt(page.contents)).toBe(6000);
     expect(changes).toBe(2);
     // Other reasons come first, for either mode.

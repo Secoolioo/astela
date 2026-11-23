@@ -1183,3 +1183,86 @@ test('leaves a click next to a popover to the overlay instead of moving the wind
     await server.stop();
   }
 });
+
+test('opens a closed tab again with its back history and the text typed into it', async () => {
+  const server = new FixtureServer();
+  await server.start();
+  const browser = await launch();
+  try {
+    // The page asks to stay before its tab closes, which the test answers with Leave.
+    await browser.main.evaluate(({ dialog }) => {
+      dialog.showMessageBoxSync = () => 0;
+    });
+    const { shell } = browser;
+    const tabs = shell.getByRole('tab');
+    await shell.getByRole('button', { name: 'New tab' }).click();
+    await expect(tabs).toHaveCount(2);
+    const address = shell.getByRole('textbox', { name: 'Address and search bar' });
+    const first = `${server.origin}/index.html?a`;
+    await address.fill(first);
+    await address.press('Enter');
+    await waitForPage(browser, (url) => url === first);
+    const url = `${server.origin}/draft.html`;
+    await address.fill(url);
+    await address.press('Enter');
+    const draft = await waitForPage(browser, (current) => current === url);
+    await draft.locator('#text').click();
+    // Native keys, as a person types.
+    await browser.main.evaluate(
+      ({ webContents }, { address: at, keys }) => {
+        const contents = webContents.getAllWebContents().find((view) => view.getURL() === at);
+        for (const key of keys) {
+          contents?.sendInputEvent({ type: 'keyDown', keyCode: key });
+          contents?.sendInputEvent({ type: 'char', keyCode: key });
+          contents?.sendInputEvent({ type: 'keyUp', keyCode: key });
+        }
+      },
+      { address: url, keys: 'my unsaved text'.split('') },
+    );
+    await expect(draft.locator('#text')).toHaveValue('my unsaved text');
+    // Chromium keeps what a page holds about a second after it changed; the tab closes once the
+    // state of its page holds the text.
+    await expect
+      .poll(() =>
+        browser.main.evaluate(
+          ({ webContents }, { at, text }) => {
+            const history = webContents
+              .getAllWebContents()
+              .find((view) => view.getURL() === at)?.navigationHistory;
+            const state = history?.getAllEntries()[history.getActiveIndex()]?.pageState;
+            return (
+              state !== undefined &&
+              Buffer.from(state, 'base64').includes(Buffer.from(text, 'utf16le'))
+            );
+          },
+          { at: url, text: 'my unsaved text' },
+        ),
+      )
+      .toBe(true);
+    await shell
+      .getByRole('tab', { name: 'Draft' })
+      .getByRole('button', { name: 'Close tab' })
+      .click();
+    await expect(tabs).toHaveCount(1);
+    await pressNative(browser, 'T', ['primary', 'shift']);
+    await expect(tabs).toHaveCount(2);
+    const reopened = await waitForPage(browser, (current) => current === url);
+    await expect(reopened.locator('#text')).toHaveValue('my unsaved text');
+    await expect
+      .poll(async () => {
+        const state = await shellState(shell);
+        return state.tabs.find((tab) => tab.id === state.activeTabId)?.canGoBack;
+      })
+      .toBe(true);
+    await shell.getByRole('button', { name: 'Back' }).click();
+    await expect
+      .poll(async () => {
+        const state = await shellState(shell);
+        return state.tabs.find((tab) => tab.id === state.activeTabId)?.url;
+      })
+      .toBe(first);
+  } finally {
+    await browser.close();
+    await server.stop();
+  }
+});

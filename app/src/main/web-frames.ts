@@ -1,5 +1,6 @@
 import {
   ipcMain,
+  type IpcMainEvent,
   type SelectWebauthnAccountDetails,
   type Session,
   type WebContents,
@@ -52,9 +53,11 @@ export interface FrameReports {
  * The frames also report their requests for security keys, and the sessions the accounts of a
  * key to choose from, which go to the questions for security keys, and requests for protected
  * playback that failed.
+ * The frame preload also asks for the answer of `prompt()`, which the frame waits for.
  * @param frames - Loads the answers, or gives the ones that have loaded.
  * @param preload - Path of the frame preload.
  * @param logger - Receives the error when the answers cannot load.
+ * @param prompt - Asks the question of `prompt()` and answers the frame, always.
  * @param reports - Takes what the frames report; without it, an account of a key is never
  *   chosen, as without a listener.
  * @returns A function that adds the frame preload to a web session.
@@ -63,6 +66,7 @@ export function listenToFrames(
   frames: () => Promise<BlockerFrames>,
   preload: string,
   logger: Logger,
+  prompt: (event: IpcMainEvent, message: unknown, value: unknown) => void,
   reports?: FrameReports,
 ): (session: Session) => void {
   ipcMain.on('blocker.frame', (event) => {
@@ -73,6 +77,9 @@ export function listenToFrames(
         event.returnValue = null;
       },
     );
+  });
+  ipcMain.on('page.prompt', (event, message: unknown, value: unknown) => {
+    prompt(event, message, value);
   });
   ipcMain.handle('blocker.elements', (event, payload: unknown) =>
     frames().then(

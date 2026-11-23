@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dialogs</title>
+  </head>
+  <body>
+    <h1>Dialogs</h1>
+    <a id="blank" href="/dialogs.html?alert=From+a+link" target="_blank">Open with a link</a>
+    <button id="open" onclick="window.open('/dialogs.html?alert=From+a+script')">
+      Open with a script
+    </button>
+    <button id="opened" onclick="window.open('/dialogs.html?opened')">
+      Open a page to ask later
+    </button>
+    <script>
+      // What the dialogs of the page gave, in their order, as text.
+      window.results = [];
+      window.ask = (kind, ...args) => {
+        try {
+          results.push(String(window[kind](...args)));
+        } catch (error) {
+          results.push(`threw ${error.message}`);
+        }
+      };
+      // Asks once more with a title that tells that the page asks and, once it may go on, that
+      // it asked, so that a test sees when a page in the background asked.
+      window.later = (kind) => {
+        document.title = 'Asking';
+        ask(kind, 'From the background');
+        document.title = 'Asked';
+      };
+      const query = new URLSearchParams(location.search);
+      // ?alert=text and ?prompt ask once the page has loaded.
+      addEventListener('load', () => {
+        if (query.has('alert')) setTimeout(() => ask('alert', query.get('alert')), 0);
+        if (query.has('prompt')) setTimeout(() => ask('prompt', 'Your name?', 'x'), 0);
+      });
+      // ?embed shows the page of the other origin of the test server in a frame.
+      if (query.has('embed')) {
+        const frame = document.createElement('iframe');
+        frame.src = `${location.origin.replace('127.0.0.1', 'localhost')}/dialogs.html?frame`;
+        document.body.append(frame);
+      }
+    </script>
+  </body>
+</html>

@@ -346,8 +346,9 @@ describe('tabMenuTemplate', () => {
     expect(views.log).toEqual([`reload ${middle}`]);
     choose(item('&Pin'));
     expect(window.tabs.all.find((tab) => tab.id === middle)?.pinned).toBe(true);
+    // People close the tab as with its button: its page may ask to stay first.
     choose(item('&Close'));
-    expect(window.tabs.all.some((tab) => tab.id === middle)).toBe(false);
+    expect(window.tabAction).toHaveBeenCalledWith(middle, 'close');
   });
 });
 

@@ -15,6 +15,7 @@ import {
 } from '../tabs/tab-groups.ts';
 import { TabService, type SplitPair, type Tab, type TabViewPort } from '../tabs/tab-service.ts';
 import { TabStrip } from '../tabs/tab-strip.ts';
+import type { TabHistory } from '../tabs/view-history.ts';
 
 const tab = (id: string, pinned = false): GroupedTab => ({
   id,
@@ -116,9 +117,20 @@ function problems(
 class FakeViews implements TabViewPort {
   readonly log: string[] = [];
   readonly live = new Set<string>();
-  create(id: string, _url: string, lazy?: boolean): void {
+  /** The histories that tabs were made with, by tab. */
+  readonly histories = new Map<string, TabHistory>();
+  create(id: string, url: string, lazy?: boolean, history?: TabHistory): void {
     this.live.add(id);
+    this.urls.set(id, url);
     this.log.push(lazy === true ? `create ${id} lazy` : `create ${id}`);
+    if (history !== undefined) this.histories.set(id, history);
+  }
+  /** The address that each tab was made with. */
+  readonly urls = new Map<string, string>();
+  /** Every page holds what was typed into it. */
+  historyOf(id: string): TabHistory | undefined {
+    const url = this.urls.get(id);
+    return url === undefined ? undefined : typed(url);
   }
   show(id: string, split?: SplitPair): void {
     if (!this.live.has(id)) throw new Error(`show of ${id}, which has no view`);
@@ -133,6 +145,11 @@ class FakeViews implements TabViewPort {
   sleep(): boolean {
     return true;
   }
+}
+
+/** The history of a page that holds what was typed into it. */
+function typed(url: string): TabHistory {
+  return { views: [{ entries: [{ url, title: '', pageState: 'eA==' }], index: 0 }], view: 0 };
 }
 
 /** A window with tabs a to e, the first one active, and what its views were asked. */
@@ -334,6 +351,30 @@ describe('groups of tabs', () => {
       `create ${reopened ?? ''}`,
       `create ${others[0]?.id ?? ''} lazy`,
     ]);
+  });
+
+  it('opens closed tabs and groups again with their histories, until the history is cleared', () => {
+    const { tabs, views, id } = windowWith();
+    editGroups(tabs, (strip) => {
+      const group = strip.createGroup(id('b'), { name: 'Work' })?.id ?? '';
+      strip.addToGroup(id('c'), group);
+    });
+    tabs.close(id('d'));
+    closeGroup(tabs, tabs.get(id('b'))?.group?.id ?? '');
+    tabs.close(id('e'));
+    const e = tabs.reopenClosed() ?? '';
+    expect(views.histories.get(e)).toEqual(typed('https://e.example/'));
+    const b = tabs.reopenClosed() ?? '';
+    const c = tabs.all.find((each) => each.url === 'https://c.example/')?.id ?? '';
+    expect([views.histories.get(b), views.histories.get(c)]).toEqual([
+      typed('https://b.example/'),
+      typed('https://c.example/'),
+    ]);
+    // Clearing the whole history leaves the closed tabs their addresses alone.
+    tabs.edit((strip) => strip.forgetHistories());
+    const d = tabs.reopenClosed() ?? '';
+    expect(tabs.get(d)?.url).toBe('https://d.example/');
+    expect(views.histories.has(d)).toBe(false);
   });
 
   it('opens a closed tab again in its group while the group is there, and else outside groups', () => {

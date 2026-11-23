@@ -1,9 +1,20 @@
 import { clampRatio, splitRatio } from '../../shared/split-view.ts';
 import type { Swatch } from '../../shared/swatches.ts';
 import { defaultWorkspaceId } from '../../shared/workspaces.ts';
+import type { TabHistory } from './view-history.ts';
 
 /** How many closed tabs can be reopened. */
 export const closedTabLimit = 25;
+
+/**
+ * A tab that closed, as a strip keeps it to open it again: its address and its back and forward
+ * history, with what its pages held, such as typed text, within the limits of a session
+ * (`TabService.historyOf`). It stays in memory with its window.
+ */
+export interface KeptTab {
+  readonly url: string;
+  history: TabHistory | undefined;
+}
 
 /** What a tab strip needs to know of a tab. */
 export interface StripTab {
@@ -62,6 +73,8 @@ export interface ReopenPlace {
   readonly title?: string;
   /** The group that the tab joins. */
   readonly group?: TabGroup;
+  /** The back and forward history that the tab had, with what its pages held. */
+  readonly history?: TabHistory | undefined;
 }
 
 /**
@@ -110,8 +123,8 @@ export class TabStrip<T extends StripTab> {
   protected pairs: SplitPair[] = [];
   /** Tabs opened in the background since the active tab became active. */
   protected readonly openedInBackground = new Set<string>();
-  /** The addresses of the tabs that closed, the most recent last. */
-  protected readonly closed: string[] = [];
+  /** The tabs that closed, the most recent last. */
+  protected readonly closed: KeptTab[] = [];
 
   /** @param workspace - The workspace whose tabs the strip holds. */
   constructor(workspace: string = defaultWorkspaceId) {
@@ -339,17 +352,19 @@ export class TabStrip<T extends StripTab> {
   }
 
   /**
-   * Takes a tab out of the strip and keeps its address, so that it can be opened again.
+   * Takes a tab out of the strip and keeps its address and its history, so that it can be opened
+   * again as it was.
    * @param id - The tab.
    * @param keep - Whether the tab can be opened again; not for a tab that moves elsewhere.
+   * @param history - The history of the tab as it closes.
    * @returns The tab, and the one to activate in its place, or `undefined` when the tab is
    *   not in the strip.
    */
-  close(id: string, keep = true): ClosedTab<T> | undefined {
+  close(id: string, keep = true, history?: TabHistory): ClosedTab<T> | undefined {
     const index = this.indexOf(id);
     const [tab] = index === -1 ? [] : this.tabs.splice(index, 1);
     if (tab === undefined) return undefined;
-    if (keep) this.closed.push(tab.url);
+    if (keep) this.closed.push({ url: tab.url, history });
     if (this.closed.length > closedTabLimit) {
       this.closed.shift();
     }
@@ -370,8 +385,13 @@ export class TabStrip<T extends StripTab> {
    * @returns The id of the tab that opened, or `undefined` when no tab closed.
    */
   reopenWith(open: (url: string, place: ReopenPlace) => string): string | undefined {
-    const url = this.closed.pop();
-    return url === undefined ? undefined : open(url, {});
+    const kept = this.closed.pop();
+    return kept === undefined ? undefined : open(kept.url, { history: kept.history });
+  }
+
+  /** Forgets the histories of the tabs that closed, as when the whole history is cleared. */
+  forgetHistories(): void {
+    for (const kept of this.closed) kept.history = undefined;
   }
 
   /**

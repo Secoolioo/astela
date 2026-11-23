@@ -34,7 +34,7 @@ export class TabActivity {
   /** How many media of each page play, as Chromium reports them. */
   private readonly playing = new WeakMap<WebContents, number>();
   /** Pages that people typed into, until they load another document. */
-  private readonly typed = new WeakSet<WebContents>();
+  private readonly typedInto = new WeakSet<WebContents>();
   /**
    * Pages that showed a video in picture in picture when the browser last looked, until they
    * load another document.
@@ -64,7 +64,7 @@ export class TabActivity {
     // A new document has none of the streams, players and typed text of the one before.
     const reset = (): void => {
       const captured = this.capture.delete(contents);
-      const typed = this.typed.delete(contents);
+      const typed = this.typedInto.delete(contents);
       const pictured = this.pictured.delete(contents);
       const played = (this.playing.get(contents) ?? 0) > 0;
       this.playing.delete(contents);
@@ -107,9 +107,19 @@ export class TabActivity {
    */
   typing(contents: WebContents): void {
     this.watch(contents);
-    if (this.typed.has(contents)) return;
-    this.typed.add(contents);
+    if (this.typedInto.has(contents)) return;
+    this.typedInto.add(contents);
     this.changeEmitter.fire();
+  }
+
+  /**
+   * Whether people typed into a page since it loaded its document, so that it may hold changes
+   * that it has not saved: only such a page is asked whether it may close when people close its
+   * tab (ADR 0060).
+   * @param contents - The page.
+   */
+  typed(contents: WebContents): boolean {
+    return this.typedInto.has(contents);
   }
 
   /**
@@ -213,7 +223,7 @@ export class TabActivity {
     if ((this.playing.get(contents) ?? 0) > 0) return 'media';
     if (this.pictured.has(contents)) return 'pictureInPicture';
     if (contents.isDevToolsOpened()) return 'devtools';
-    return mode === 'auto' && this.typed.has(contents) ? 'input' : undefined;
+    return mode === 'auto' && this.typedInto.has(contents) ? 'input' : undefined;
   }
 
   /** Counts again whether a download of a page runs, and tells when that changed. */

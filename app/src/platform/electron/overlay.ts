@@ -1,5 +1,6 @@
 import { WebContentsView, type Input, type WebContents } from 'electron';
 import { AltTap } from '../../domain/windows/alt-tap.ts';
+import { Emitter, type Event } from '../../kernel/events/emitter.ts';
 import { OverlayChanged, type OverlayContent } from '../../shared/ipc/overlay-contracts.ts';
 import type { ShellPopover } from '../../shared/ipc/shell-contracts.ts';
 import { privateWindowArgument } from '../../shared/private-window.ts';
@@ -64,6 +65,18 @@ export interface OverlayOpenOptions {
    * the view meanwhile do nothing, so that Escape is left to the page.
    */
   readonly passive?: boolean;
+  /**
+   * The part of the window that a question covers, such as the page of the tab that asks, which
+   * leaves the shell to people: the question takes the focus as one over the whole window does,
+   * and follows that part as the window lays its views out anew, instead of closing.
+   */
+  readonly sheet?: () => Electron.Rectangle;
+  /**
+   * Whether what opens takes the focus, as everything but a list below the address bar does
+   * unless this is `false`, such as for a question that shows again while people work elsewhere
+   * in the window: it leaves the focus there until they click it.
+   */
+  readonly focus?: boolean;
   /** The button of the shell that the popover belongs to, which shows it as open. */
   readonly popover?: ShellPopover;
   /**
@@ -91,10 +104,13 @@ export const exitFallbackMs = 250;
  * web content, which lies above the shell. The view is made when it is first needed, or a
  * moment before, and is part of the window only while it shows something, because a view
  * takes the clicks and the focus of what lies below it. A click next to the popover, Escape,
- * a shortcut, a change of the window's size, unless what it shows stays, as a notice does, or
- * a change of its visible tab closes it, and so does a crash or a hang of its page; the focus
- * goes back to the page, or to the shell when the keyboard opened the popover there, and the
- * view leaves the window once the popover has left the page.
+ * a shortcut, a change of the window's size, unless what it shows stays, as a notice or a
+ * question over a page does, or a change of its visible tab closes it, and so does a crash or a
+ * hang of its page; the focus goes back to the page, or to the shell when the keyboard opened
+ * the popover there, and the view leaves the window once the popover has left the page. A
+ * question over a page alone stays while the window runs a shortcut, as the address bar takes
+ * the focus, and while its page shows. What takes the focus but opens while its window has
+ * none, such as a site's question, gets it with the window.
  */
 export class WindowOverlay implements OverlayHandle {
   private view: WebContentsView | undefined;
@@ -103,7 +119,10 @@ export class WindowOverlay implements OverlayHandle {
   private onClose: (() => void) | undefined;
   /** Whether what the overlay shows took the focus, which closing it gives back. */
   private tookFocus = false;
-  /** Whether the overlay's page got the focus as it opened, in a window that had it. */
+  /**
+   * Whether the overlay's page got the focus: as it opened, in a window that had it, or with the
+   * window later.
+   */
   private focused = false;
   /** Whether what the overlay shows covers the whole window. */
   private covering = false;
@@ -121,6 +140,12 @@ export class WindowOverlay implements OverlayHandle {
   private gone = false;
   /** Called once the overlay shows nothing, such as for a notice that waits for a question. */
   private idle: (() => void)[] = [];
+  private readonly closeEmitter = new Emitter<void>();
+  /**
+   * Fires when what the overlay shows closes, not when other content takes its place, such as
+   * for a question that waits until a menu over its page has closed.
+   */
+  readonly onDidClose: Event<void> = this.closeEmitter.event;
   private readonly window: BrowserWindowController;
   private readonly options: OverlayOptions;
 
@@ -146,6 +171,11 @@ export class WindowOverlay implements OverlayHandle {
   /** Whether the overlay shows something that covers the whole window, such as a popover. */
   get coversWindow(): boolean {
     return this.shown !== null && this.covering;
+  }
+
+  /** Whether the overlay shows a question over a page, which stays while that page shows. */
+  get overPage(): boolean {
+    return this.shown !== null && this.shownOptions.sheet !== undefined;
   }
 
   /** The popover of a button of the shell that the overlay shows, or `null`. */
@@ -195,18 +225,20 @@ export class WindowOverlay implements OverlayHandle {
     clearTimeout(this.exitTimer);
     this.exitTimer = undefined;
     const { width, height } = base.getContentBounds();
-    view.setBounds(options.bounds ?? { x: 0, y: 0, width, height });
+    const bounds = options.sheet?.() ?? options.bounds;
+    view.setBounds(bounds ?? { x: 0, y: 0, width, height });
     // Adding a view that the window holds already moves it to the top.
     base.contentView.addChildView(view);
     this.attached = true;
     this.shown = content;
     this.shownOptions = options;
-    this.covering = options.bounds === undefined;
-    this.tookFocus = options.bounds === undefined;
+    this.covering = bounds === undefined;
+    // A question over a part of the window takes the focus; a list below the address bar not.
+    this.tookFocus = options.bounds === undefined && options.focus !== false;
     this.altTap.reset();
     this.window.overlay = this;
     // Focusing the view would raise a window in the background, such as for a site's question.
-    this.focused = base.isFocused() && options.bounds === undefined;
+    this.focused = base.isFocused() && this.tookFocus;
     if (this.focused) view.webContents.focus();
     this.options.router.publish(OverlayChanged, view.webContents, content);
   }
@@ -247,6 +279,15 @@ export class WindowOverlay implements OverlayHandle {
   }
 
   /**
+   * Puts a question that covers a part of the window where that part lies now, after the window
+   * laid its views out anew, such as for another size or a split view.
+   */
+  place(): void {
+    const area = this.shown === null ? undefined : this.shownOptions.sheet?.();
+    if (area !== undefined && !this.window.window.isDestroyed()) this.view?.setBounds(area);
+  }
+
+  /**
    * Puts the overlay above every other view of the window again while it shows something,
    * after the window attached a view, such as the page of a tab.
    */
@@ -275,6 +316,7 @@ export class WindowOverlay implements OverlayHandle {
     }
     const covering = this.covering;
     const focusBack = this.shownOptions.focusBack ?? 'content';
+    const overPage = this.overPage;
     this.shown = null;
     this.settle();
     this.shownOptions = {};
@@ -283,7 +325,10 @@ export class WindowOverlay implements OverlayHandle {
     if (waiting.length > 0) setTimeout(() => waiting.forEach((callback) => callback()), 0);
     const view = this.view;
     if (view === undefined || this.window.window.isDestroyed()) return;
-    const hadFocus = this.tookFocus || view.webContents.isFocused();
+    // People may have moved the focus from a question over a page, such as to the address bar,
+    // which keeps it then; anything else had the focus while it was open.
+    const tookFocus = this.tookFocus && (!overPage || !this.window.window.isFocused());
+    const hadFocus = tookFocus || view.webContents.isFocused();
     // A page whose process ended has nothing to clear; it loads empty again with the next
     // popover.
     if (!this.ended(view.webContents)) {
@@ -308,6 +353,7 @@ export class WindowOverlay implements OverlayHandle {
     this.exitTimer = undefined;
     if (how === 'now' || !covering) this.detach();
     else this.exitTimer = setTimeout(() => this.detach(), exitFallbackMs);
+    this.closeEmitter.fire();
   }
 
   /** Takes the view out of the window once the page let a popover that closed leave. */
@@ -402,7 +448,9 @@ export class WindowOverlay implements OverlayHandle {
     if (command === undefined) return;
     event.preventDefault();
     if (keys.onCommand?.(command) === true) return;
-    this.close();
+    // A question over a page stays, as the address bar or the find bar takes the focus; a
+    // command that shows another tab hides it.
+    if (!this.overPage) this.close();
     this.window.execute(command);
   }
 
@@ -451,16 +499,25 @@ export class WindowOverlay implements OverlayHandle {
     contents.on('focus', () => {
       if (this.shown !== null && this.shownOptions.passive === true) this.window.focusContent();
     });
-    // Content that stays, such as a notice, takes its new place.
+    // Content that stays takes its new place: a notice at once (`refit`), and a question over a
+    // part of the window once the window laid its views out anew (`place`); anything else would
+    // lie in the wrong place.
     this.window.window.on('resize', () => {
       if (this.shown !== null && this.shownOptions.place !== undefined) this.refit();
-      else close();
+      else if (this.shownOptions.sheet === undefined) close();
     });
     // An Alt that went down before the window lost the focus, as for Alt+Tab, closes nothing.
     this.window.window.on('blur', () => this.altTap.reset());
+    // What opened while the window had no focus, and was to take it, gets it with the window.
+    this.window.window.on('focus', () => {
+      if (this.shown === null || !this.tookFocus || this.focused || contents.isDestroyed()) return;
+      this.focused = true;
+      contents.focus();
+    });
     this.window.window.once('closed', () => {
       clearTimeout(this.exitTimer);
       this.exitTimer = undefined;
+      this.closeEmitter.dispose();
       registration.dispose();
       if (!contents.isDestroyed()) contents.close();
     });

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Support</title>
+  </head>
+  <body>
+    <h1>Support</h1>
+    <script>
+      // As a page of a tech support scam does: one alert after the other, soon after it has
+      // loaded, or after the milliseconds of ?wait. Each alert waits for its answer; the loop
+      // ends after the last one.
+      const wait = Number(new URLSearchParams(location.search).get('wait') ?? 50);
+      addEventListener('load', () =>
+        setTimeout(() => {
+          for (let n = 1; n <= 50; n += 1) {
+            alert(`Your computer is infected, call 0800 000 000 (${n})`);
+            document.title = `Support ${n}`;
+          }
+          document.title = 'Loop ended';
+        }, wait),
+      );
+    </script>
+  </body>
+</html>

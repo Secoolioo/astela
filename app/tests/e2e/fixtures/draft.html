@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Draft</title>
+  </head>
+  <body>
+    <h1>Draft</h1>
+    <label>Text <textarea id="text"></textarea></label>
+    <a id="away" href="/second.html">Somewhere else</a>
+    <script>
+      // As an editor with changes that it has not saved does, the page asks to stay whenever it
+      // is to unload; Chromium asks people only once they used the page. It counts its loads.
+      // With ?plain, it holds the text without asking.
+      sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
+      if (!location.search.includes('plain')) {
+        window.onbeforeunload = (event) => {
+          event.preventDefault();
+          event.returnValue = '';
+        };
+      }
+    </script>
+  </body>
+</html>

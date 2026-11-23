@@ -2,7 +2,7 @@ import type { Disposable } from '../../shared/disposable.ts';
 import type { PictureInPictureState, ReaderState } from '../../shared/page-tools.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
-import { historyMoves } from './tab-history.ts';
+import { historyMoves, sessionLimits, trimHistory } from './tab-history.ts';
 import { TabStrip, type SplitPair, type TabGroup, type WorkspaceTabs } from './tab-strip.ts';
 import type { TabHistory } from './view-history.ts';
 
@@ -96,6 +96,11 @@ export interface TabViewPort {
   load(id: TabId, url: string): void;
   /** Runs a history or loading action. */
   run(id: TabId, action: 'back' | 'forward' | 'reload' | 'stop'): void;
+  /**
+   * The back and forward history of a tab, with what its pages hold now, such as typed text.
+   * @param fresh - Reads it anew, rather than as it was kept last.
+   */
+  historyOf?(id: TabId, fresh?: boolean): TabHistory | undefined;
   /**
    * Puts a tab that the window does not show to sleep: its view closes and the tab keeps its
    * history, with which it loads again once it is shown.
@@ -415,8 +420,10 @@ export class TabService implements Disposable {
    */
   close(id: TabId): void {
     const strip = this.require(id);
+    // The tab can open again with its history, which goes with its view.
+    const history = this.historyOf(id);
     this.edit(() => {
-      const closed = strip.close(id);
+      const closed = strip.close(id, true, history);
       if (closed?.next !== undefined) strip.activate(closed.next.id);
       return closed === undefined ? [] : [closed.tab];
     });
@@ -496,6 +503,17 @@ export class TabService implements Disposable {
     strip.pin(id, pinned);
     if (pair !== undefined && strip.splitOf(id) === undefined) this.pairChanged(pair);
     else this.changed(keptChange);
+  }
+
+  /**
+   * The back and forward history of a tab with what its pages hold now, as it closes, which the
+   * strip keeps within the limits of a session: at most 128 KiB of page states for each of the
+   * tabs that can open again.
+   * @param id - The tab.
+   */
+  historyOf(id: TabId): TabHistory | undefined {
+    const history = this.views.historyOf?.(id, true);
+    return history === undefined ? undefined : trimHistory(history, sessionLimits);
   }
 
   /** Whether a closed tab can be opened again. */

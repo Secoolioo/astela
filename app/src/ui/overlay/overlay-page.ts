@@ -6,9 +6,11 @@ import type {
   CommandPalette as PaletteContent,
   GroupEditor,
   MenuPopover,
+  PageDialog,
   SiteInformation,
   WorkspaceList as WorkspaceListContent,
 } from '../../shared/ipc/overlay-contracts.ts';
+import { dialogValueLimit } from '../../shared/page-dialogs.ts';
 import type { Translator } from '../i18n/i18n.ts';
 import { popoverStyles } from '../ui-kit/popover-styles.ts';
 import type { PageBridge } from '../ui-kit/settings-client.ts';
@@ -140,6 +142,7 @@ type Content =
   | SecurityKey
   | ProtectedMedia
   | Notice
+  | PageDialog
   | Screen
   | DownloadsList
   | Suggestions
@@ -174,6 +177,7 @@ const isContent = (value: unknown): value is Content =>
     'securityKey',
     'protectedMedia',
     'notice',
+    'dialog',
     'screen',
     'downloads',
     'suggestions',
@@ -418,10 +422,12 @@ export class OverlayPage extends LitElement {
         transform: translateX(-50%);
         padding: var(--space-3);
       }
+      /* A title names a site, whose host may be long and must show whole, up to its end. */
       .dialog h2 {
         margin: 0 0 var(--space-2);
         font-size: var(--font-size-larger);
         font-weight: 600;
+        overflow-wrap: anywhere;
       }
       .dialog p {
         margin: 0 0 var(--space-2);
@@ -441,6 +447,20 @@ export class OverlayPage extends LitElement {
         background: var(--surface-0);
         color: inherit;
         font: inherit;
+      }
+      /* A dialog of a page lies at the top of the page, over which the overlay lies. */
+      .dialog.sheet {
+        top: var(--space-4);
+      }
+      .sheet .message {
+        max-height: 40vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+      .sheet label.stop {
+        flex-direction: row;
+        align-items: center;
+        gap: var(--space-2);
       }
       .buttons {
         display: flex;
@@ -631,8 +651,8 @@ export class OverlayPage extends LitElement {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     // A menu closes its submenu first, and the bookmark's popover closes itself; what they
-    // leave, as when the focus is elsewhere in the page, closes the overlay. An input method
-    // that composes text takes Escape for itself.
+    // leave, as when the focus is elsewhere in the page, closes the overlay. The dialog of a
+    // page gets Cancel. An input method that composes text takes Escape for itself.
     if (
       event.key === 'Escape' &&
       !event.isComposing &&
@@ -640,7 +660,8 @@ export class OverlayPage extends LitElement {
       !event.defaultPrevented
     ) {
       event.preventDefault();
-      this.close();
+      if (this.content.kind === 'dialog') this.answerDialog(this.content, false);
+      else this.close();
     }
   };
 
@@ -670,7 +691,8 @@ export class OverlayPage extends LitElement {
           previous.kind === 'palette' &&
           next.session !== previous.session) ||
         (next.kind === 'group' && previous.kind === 'group' && next.id !== previous.id) ||
-        (next.kind === 'site' && previous.kind === 'site' && next.id !== previous.id))
+        (next.kind === 'site' && previous.kind === 'site' && next.id !== previous.id) ||
+        (next.kind === 'dialog' && previous.kind === 'dialog' && next.id !== previous.id))
     ) {
       this.opened += 1;
       this.shownKey = this.opened;
@@ -693,6 +715,17 @@ export class OverlayPage extends LitElement {
     if (next.kind === 'screen') this.chosen = undefined;
     if (next.kind === 'permission') this.arm(next.id);
     if (next.kind === 'notice') void this.updateComplete.then(() => this.measureNotice(next));
+    // A dialog of a page gives its field or OK the focus, as in other browsers: Enter answers it.
+    if (next.kind === 'dialog' && (previous?.kind !== 'dialog' || previous.id !== next.id)) {
+      void this.updateComplete.then(() => {
+        const target = this.renderRoot.querySelector<HTMLElement>(
+          '.current input[name="value"], .current button.primary',
+        );
+        target?.focus();
+        if (target instanceof HTMLInputElement) target.select();
+      });
+      return;
+    }
     // What opens takes the focus, so the keyboard reaches its first field, switch or choice. A
     // question gets it itself, not on a button, so a key meant for the page decides nothing.
     // The suggestions leave the focus in the address bar, where the typing goes on, and menus
@@ -860,6 +893,7 @@ export class OverlayPage extends LitElement {
     if (content.kind === 'securityKey') return this.renderSecurityKey(content);
     if (content.kind === 'protectedMedia') return this.renderProtectedMedia(content);
     if (content.kind === 'notice') return this.renderNotice(content);
+    if (content.kind === 'dialog') return this.renderDialog(content);
     if (content.kind === 'screen') return this.renderScreens(content);
     if (content.kind === 'downloads') return this.renderDownloads(content);
     // A press in the room around the suggestions, where the page would have got it, closes
@@ -1133,6 +1167,64 @@ export class OverlayPage extends LitElement {
     });
   }
 
+  /**
+   * A dialog of a page, at the top of the page: OK answers it, Cancel and Escape refuse it, and a
+   * click next to it answers nothing. From the second dialog of a site in the page on, it offers to
+   * stop the site's dialogs.
+   */
+  private renderDialog(dialog: PageDialog): TemplateResult {
+    const site = { site: dialog.site };
+    const title =
+      dialog.site === ''
+        ? this.t(dialog.embedded ? 'overlay.dialogEmbeddedPage' : 'overlay.dialogPage')
+        : this.t(dialog.embedded ? 'overlay.dialogEmbeddedSite' : 'overlay.dialogSite', site);
+    return html`<div class="backdrop"></div>
+      <form
+        class="dialog sheet popover"
+        role="alertdialog"
+        aria-labelledby="dialog-title"
+        aria-describedby="dialog-message"
+        data-surface
+        @submit=${(event: SubmitEvent) => {
+          // The page cannot submit forms; the browser process gets the answer instead.
+          event.preventDefault();
+          this.answerDialog(dialog, true);
+        }}
+      >
+        <h2 id="dialog-title">${title}</h2>
+        <p id="dialog-message" class="message">${dialog.message}</p>
+        ${
+          dialog.type === 'prompt'
+            ? html`<input
+                name="value"
+                aria-labelledby="dialog-message"
+                spellcheck="false"
+                maxlength=${dialogValueLimit}
+                .value=${dialog.value}
+              />`
+            : nothing
+        }
+        ${
+          dialog.stop
+            ? html`<label class="stop">
+                <input type="checkbox" name="stop" />
+                <span>${this.t('overlay.dialogStop')}</span>
+              </label>`
+            : nothing
+        }
+        <div class="buttons">
+          ${
+            dialog.type === 'alert'
+              ? nothing
+              : html`<button type="button" @click=${() => this.answerDialog(dialog, false)}>
+                  ${this.t('overlay.cancel')}
+                </button>`
+          }
+          <button type="submit" class="primary">${this.t('overlay.ok')}</button>
+        </div>
+      </form>`;
+  }
+
   /** The screens and windows that a site may see, as pictures with their names. */
   private renderScreens(picker: Screen): TemplateResult {
     const group = (screens: boolean): TemplateResult | typeof nothing => {
@@ -1281,6 +1373,19 @@ export class OverlayPage extends LitElement {
 
   private chooseAccount(id: number, index: number): void {
     void this.bridge?.invoke('overlay.chooseSecurityKeyAccount', { id, index });
+  }
+
+  /** Answers the dialog of a page with what its form holds. */
+  private answerDialog(dialog: PageDialog, ok: boolean): void {
+    const form = this.renderRoot.querySelector<HTMLFormElement>('.current form.sheet');
+    const field = form?.elements.namedItem('value');
+    const stop = form?.elements.namedItem('stop');
+    void this.bridge?.invoke('overlay.answerDialog', {
+      id: dialog.id,
+      ok,
+      value: ok && field instanceof HTMLInputElement ? field.value.slice(0, dialogValueLimit) : '',
+      stop: stop instanceof HTMLInputElement && stop.checked,
+    });
   }
 
   private share(id: string): void {

@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { certificateReasons, siteConnections } from '../connection.ts';
+import { dialogMessageLimit, dialogValueLimit } from '../page-dialogs.ts';
 import { shortcutPattern, windowCommands } from '../shortcuts.ts';
 import { swatches } from '../swatches.ts';
 import { workspaceIcons } from '../workspace-icons.ts';
@@ -97,6 +98,28 @@ const PageNotice = v.strictObject({
 
 /** A notice above a page. */
 export type PageNotice = v.InferOutput<typeof PageNotice>;
+
+/**
+ * A dialog of a page, `alert()`, `confirm()` or `prompt()`, which shows over the page of its
+ * tab: its number, which its answer names, the host of the frame that asks, empty for a page
+ * without one, such as a file, whether that frame is embedded in a page of another origin, the
+ * message as plain text, the text that the field of `prompt()` starts with, and whether the
+ * question offers to stop the dialogs of the site, from its second dialog in the page on. The
+ * overlay lies over the page itself, so the question needs no side of a split view.
+ */
+const PageDialog = v.strictObject({
+  kind: v.literal('dialog'),
+  id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+  type: v.picklist(['alert', 'confirm', 'prompt']),
+  site: v.pipe(v.string(), v.maxLength(300)),
+  embedded: v.boolean(),
+  message: v.pipe(v.string(), v.maxLength(dialogMessageLimit)),
+  value: v.pipe(v.string(), v.maxLength(dialogValueLimit)),
+  stop: v.boolean(),
+});
+
+/** A dialog of a page. */
+export type PageDialog = v.InferOutput<typeof PageDialog>;
 
 /**
  * A site that wants to see a screen or a window, and the screens and windows to choose from:
@@ -469,6 +492,7 @@ export const OverlayContent = v.nullable(
     SecurityKeyPrompt,
     ProtectedMediaPopover,
     PageNotice,
+    PageDialog,
     ScreenPicker,
     DownloadsPanel,
     SuggestionList,
@@ -738,6 +762,22 @@ export const MeasureNotice = defineRequest({
 export const LearnAboutProtectedMedia = defineRequest({
   channel: 'overlay.learnAboutProtectedMedia',
   request: v.strictObject({}),
+  response: v.null(),
+  capability: 'overlay',
+});
+
+/**
+ * Answers the dialog of a page that the overlay shows: OK or Cancel, the text of the field of
+ * `prompt()`, and whether the site may show no more dialogs in the page.
+ */
+export const AnswerDialog = defineRequest({
+  channel: 'overlay.answerDialog',
+  request: v.strictObject({
+    id: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    ok: v.boolean(),
+    value: v.pipe(v.string(), v.maxLength(dialogValueLimit)),
+    stop: v.boolean(),
+  }),
   response: v.null(),
   capability: 'overlay',
 });
