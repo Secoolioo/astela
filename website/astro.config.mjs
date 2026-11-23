@@ -53,6 +53,7 @@ export default defineConfig({
           ? [{ label: 'Changelog', link: '/changelog/' }]
           : []),
         { label: 'User guide', items: [{ autogenerate: { directory: 'docs/user' } }] },
+        { label: 'Admin guide', items: [{ autogenerate: { directory: 'docs/admin' } }] },
         { label: 'Roadmap', link: '/docs/roadmap/' },
         { label: 'Architecture', items: [{ autogenerate: { directory: 'docs/architecture' } }] },
         { label: 'Decision records', items: [{ autogenerate: { directory: 'docs/adr' } }] },

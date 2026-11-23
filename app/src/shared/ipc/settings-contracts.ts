@@ -6,11 +6,25 @@ import { defineEvent, defineRequest } from './contract.ts';
 const SettingKey = v.pipe(v.string(), v.regex(/^[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+$/));
 
 /**
+ * Why the value that the organization set for the policy of a setting does not apply: the
+ * policy and the state of its value. The page words the state itself; the technical reason
+ * stays in the log of the browser.
+ */
+export const PolicyIgnored = v.strictObject({
+  policy: v.pipe(v.string(), v.regex(/^[A-Z][A-Za-z0-9]*$/), v.maxLength(100)),
+  state: v.picklist(['invalid', 'not-allowed-as-recommended', 'sensitive-requires-machine']),
+});
+
+/** Why the value that the organization set for the policy of a setting does not apply. */
+export type PolicyIgnored = v.InferOutput<typeof PolicyIgnored>;
+
+/**
  * A setting as the settings page shows it: its key, its effective value, whether a
  * mandatory policy sets the value, so it cannot be changed, whether the user set a value
  * other than the default, whether the value is the one that a recommended policy suggests,
- * and whether the value differs from the one that the browser started with and takes effect
- * only after a restart.
+ * whether the value differs from the one that the browser started with and takes effect
+ * only after a restart, and why the value that the organization set for it does not apply,
+ * if it does not.
  */
 export const SettingView = v.strictObject({
   key: SettingKey,
@@ -19,6 +33,7 @@ export const SettingView = v.strictObject({
   changed: v.boolean(),
   recommended: v.boolean(),
   restart: v.boolean(),
+  policyIgnored: v.optional(PolicyIgnored),
 });
 
 /** A setting as the settings page shows it. */

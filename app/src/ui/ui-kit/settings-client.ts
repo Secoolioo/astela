@@ -10,6 +10,16 @@ export interface SettingView {
   readonly recommended?: boolean;
   /** Whether the value differs from the one the browser started with, until a restart. */
   readonly restart?: boolean;
+  /** Why the value that the organization set for the setting does not apply, if it does not. */
+  readonly policyIgnored?: PolicyIgnored;
+}
+
+/** The policy of a setting whose value of the organization does not apply, and why not. */
+export interface PolicyIgnored {
+  /** The name of the policy, such as `ShowHomeButton`. */
+  readonly policy: string;
+  /** Why the value does not apply: it is not valid, or its level or scope may not set it. */
+  readonly state: 'invalid' | 'not-allowed-as-recommended' | 'sensitive-requires-machine';
 }
 
 /** An accent preset with its color in each mode. */

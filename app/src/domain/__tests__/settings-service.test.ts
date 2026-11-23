@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RingBufferLogSink, SinkLogger } from '../../kernel/logging/logger.ts';
 import { ManualClock } from '../../kernel/time/clock.ts';
 import type { PolicyProvider, PolicyReadResult } from '../policy/policy.ts';
+import { PolicyLog } from '../policy/policy-log.ts';
 import { PolicyService } from '../policy/policy-service.ts';
 import { SettingDefinitionError, defineSetting } from '../settings/setting.ts';
 import {
@@ -59,7 +60,11 @@ function setup(): {
   const sink = new RingBufferLogSink();
   const logger = new SinkLogger(sink, new ManualClock(), { scope: 'test' });
   const provider = new FakeProvider();
-  const policies = new PolicyService(settingPolicies(definitions), [provider], logger);
+  const policies = new PolicyService(
+    settingPolicies(definitions),
+    [provider],
+    new PolicyLog(logger),
+  );
   const store = new MemoryStore();
   return {
     settings: new SettingsService(definitions, policies, store, logger),
@@ -162,7 +167,11 @@ describe('SettingsService', () => {
       },
     });
     const provider = new FakeProvider();
-    const policies = new PolicyService(settingPolicies([Startup]), [provider], logger);
+    const policies = new PolicyService(
+      settingPolicies([Startup]),
+      [provider],
+      new PolicyLog(logger),
+    );
     const settings = new SettingsService([Startup], policies, new MemoryStore(), logger);
     provider.result = {
       values: [

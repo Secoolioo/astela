@@ -1,6 +1,6 @@
 # Enterprise
 
-> **Status:** partly implemented. Astela reads policies from all three operating systems; the rest of this page is design. See [implementation status](#implementation-status).
+> **Status:** partly implemented. Astela reads policies from all three operating systems, and the [admin guide](../admin/README.md) with its generated [policy reference](../admin/policies.md) describes what administrators can set today; the rest of this page is design. See [implementation status](#implementation-status).
 
 Astela is designed to be manageable: every setting can be set and locked by policy, and the browser will ship with an MSI package, silent installation, update control, a diagnostics page and a safe mode. Organizations will get all of this without telemetry and without an account.
 
@@ -29,7 +29,7 @@ Policy names follow Chrome's names where that makes sense, so that existing know
 
 - **Mandatory over recommended.** A mandatory policy locks a setting; a recommended policy only changes the value users start from.
 - **Machine over user.** On Windows, `HKLM` takes precedence over `HKCU`.
-- **Sensitive policies only from trusted sources.** The update URL (`UpdateURL`), the proxy policies, the default search provider policies, the DNS over HTTPS policies (`DnsOverHttpsMode`, `DnsOverHttpsTemplates`) and, from M4, extension sources apply only from `HKLM` on Windows and only as forced values on macOS. Linux policy files are system-wide by location. If a sensitive policy appears anywhere else, it will not apply, and the diagnostics page will show a warning. This keeps a program running as the user from redirecting updates or traffic by writing to `HKCU`. Chrome and Firefox follow the same principle (as of October 2026).
+- **Sensitive policies only from trusted sources.** The update URL (`UpdateURL`), the proxy policies, the default search provider policies, the DNS over HTTPS policies (`DnsOverHttpsMode`, `DnsOverHttpsTemplates`) and, from M4, extension sources apply only from `HKLM` on Windows and only as forced values on macOS. Linux policy files are system-wide by location. If a sensitive policy appears anywhere else, it does not apply, and the browser writes a warning to its log; the diagnostics page is designed to show it too. This keeps a program running as the user from redirecting updates or traffic by writing to `HKCU`. Chrome and Firefox follow the same principle (as of October 2026).
 
 How policies combine with defaults, user values and workspace overrides is described in the [resolution order](settings-policy-theme.md#resolution-order).
 
@@ -47,7 +47,7 @@ In M5, a native Node-API addon is planned. It will use `RegisterGPNotification` 
 
 ## M1 policy set
 
-M1 is designed to ship about 22 policies:
+M1 is planned to ship about 22 policies. The table is the plan; the policies of the current version are those of the [policy reference](../admin/policies.md). Of the table, `ProxyMode`, `ProxyPacUrl`, `ProxyServer`, `ProxyBypassList`, `AuthServerAllowlist`, `URLBlocklist`, `URLAllowlist`, `NewTabPageLocation`, `SafeModeAvailability` and `ManagedSettings` do not exist yet.
 
 | Group    | Policies                                                                                                                                                                                                             |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,12 +69,12 @@ M1 is designed to ship about 22 policies:
 
 ## Later policy groups
 
-| Milestone       | Policies                                                                                                                                                                                                                                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| M2 Flow         | `HttpsOnlyMode`, `AuthNegotiateDelegateAllowlist`, `ManagedBookmarks`, `SpellcheckDictionaryURL`, cookie policies, `ClearBrowsingDataOnExit`, `PasswordManagerEnabled`, import policies, `CACertificates`, `SSLErrorOverrideAllowed`, capture policies and printing policies. Also a Jamf JSON schema. |
-| M4 Ecosystem    | Extension policies, for example `ExtensionInstallBlocklist`.                                                                                                                                                                                                                                           |
-| M5 Enterprise+  | `RollbackToTargetVersion` and an update maintenance window, as part of an extended set of more than 50 policies.                                                                                                                                                                                       |
-| M6 Sync and 1.0 | Sync policies.                                                                                                                                                                                                                                                                                         |
+| Milestone       | Policies                                                                                                                                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2 Flow         | `AuthNegotiateDelegateAllowlist`, `ManagedBookmarks`, `SpellcheckDictionaryURL`, cookie policies, `ClearBrowsingDataOnExit`, `PasswordManagerEnabled`, import policies, `CACertificates`, capture policies and printing policies. Also a Jamf JSON schema. |
+| M4 Ecosystem    | Extension policies, for example `ExtensionInstallBlocklist`.                                                                                                                                                                                               |
+| M5 Enterprise+  | `RollbackToTargetVersion` and an update maintenance window, as part of an extended set of more than 50 policies.                                                                                                                                           |
+| M6 Sync and 1.0 | Sync policies.                                                                                                                                                                                                                                             |
 
 ## Network: proxy, DNS, certificates and single sign-on
 
@@ -171,13 +171,15 @@ By design, Astela collects no telemetry and uploads no crash reports. Every outg
 
 ## Admin guide
 
-An admin guide (v1) is planned for M1. It will cover:
+The [admin guide](../admin/README.md) (v1) covers:
 
-- **Installation:** MSI, NSIS, macOS (dmg, without a `.pkg` installer), deb and rpm, including silent installation flags.
-- **Policy reference:** generated from the setting and policy definitions, with examples for Group Policy, Intune (ADMX import and OMA-URI), Jamf and Linux.
-- **Updates:** update control and running a mirror.
-- **Network:** proxy, certificates and single sign-on.
-- **Operations:** logs, the diagnostics page, safe mode and the list of outgoing connections.
+- **Installation:** NSIS, MSI, macOS (dmg, without a `.pkg` installer), deb, rpm and AppImage, with the silent installation flags and the switches `ASTELA_NO_REPO` and `ASTELA_REPO_URL` of the deb and rpm packages.
+- **Policies:** where they are stored, which value wins, the sensitive policies and how to check that values apply.
+- **Policy reference:** [generated](../admin/policies.md) from the policy definitions by `tools/policies/reference.ts`, with examples for Linux, `reg add` and macOS property lists, together with the JSON Schema of the Linux policy files ([ADR 0062](../adr/0062-policy-reference-generated-into-the-docs.md)). `pnpm verify` fails when they no longer match the definitions.
+- **Updates:** update control and a mirror of the update feed.
+- **Operations:** logs, the list of outgoing connections and what is not available yet.
+
+Still planned for the guide: examples for Group Policy, Intune (ADMX import and OMA-URI) and Jamf, the network (proxy, certificates and single sign-on), the diagnostics page and safe mode.
 
 ## Acceptance criteria
 
@@ -214,7 +216,7 @@ Also implemented:
 - `ApplicationLocaleValue` (string): the [language](../user/settings.md#languages) of the menus, dialogs and pages of the browser, as mandatory or recommended policy, like the setting `i18n.language`: `system`, or a language code such as `en` or `de`; a code without a translation shows English. Unlike in Chromium, a code with a region, such as `de-DE`, is not valid. A change takes effect when the browser starts again.
 - `DefaultBrowserSettingEnabled` (boolean): `false` as a mandatory policy keeps users from making Astela the default browser. The [default browser setting](../user/default-browser.md) on the settings page and in the setup guide then shows that the organization manages it and has no Make default button, and the browser refuses the change.
 - `ImportEnabled` (boolean): `false` as a mandatory policy turns off the [import from other browsers](../user/import.md). The settings page and the import step of the setup guide then say that the organization turned it off instead of listing the browsers, and the browser refuses an import.
-- `PrivateModeAvailability` (`0` or `1`): `1` as a mandatory policy keeps people from opening [private windows](../user/windows-and-popups.md#private-windows); the shortcut and the item in the menu bar of macOS then do nothing, and the browser menu has no New private window. `0` allows them. Forcing every window to be private, which other browsers do with `2`, is not supported yet; the browser reports `2` as an invalid value.
+- `PrivateModeAvailability` (`0` or `1`): `1` as a mandatory policy keeps people from opening [private windows](../user/windows-and-popups.md#private-windows); the shortcut and the item in the menu bar of macOS then do nothing, and the browser menu has no New private window. `0` allows them. Forcing every window to be private, which other browsers do with `2`, is not supported yet; the browser ignores `2` as an invalid value and writes a `Policy value ignored` record to `logs/main.log`, as for every value that does not apply. The settings page marks only the policies of settings, so it shows nothing for this one.
 - `DeveloperToolsAvailability` (`0`, `1` or `2`): `2` as a mandatory policy keeps the developer tools closed; F12, the Inspect item of the context menu and the View menu of macOS then do nothing, and More tools of the browser menu has no Developer tools. `0` and `1` allow them for web pages, as in Chromium; the browser's own pages never get them. See [page tools](../user/page-tools.md#developer-tools).
 - `SSLErrorOverrideAllowed` (boolean): `false` as a mandatory policy keeps users from continuing to a site whose certificate is not trusted; the [warning](../user/page-problems.md) then offers only the way back, and certificates accepted earlier in the session are refused again.
 - `ContentBlockerEnabled` (boolean): turns the [content blocker](../user/content-blocker.md) on or off, as mandatory or recommended policy.
@@ -229,7 +231,7 @@ Also implemented:
 - `ShowHomeButton` (boolean): shows or hides the home button of the toolbar, like the setting `home.button`.
 - `HomepageLocation` (web address, or empty for the new tab page): the page of the home button and of its shortcut, like the setting `home.page`.
 - `BlockThirdPartyCookies` (boolean): keeps cookies away from requests, responses, frames and workers of other sites than the page's own, as mandatory or recommended policy, like the setting `privacy.blockThirdPartyCookies`. Chromium blocks them from the next start of the browser ([ADR 0044](../adr/0044-third-party-cookies-blocked-by-chromium.md)), with the policies that the last start read; private windows always block them.
-- `HttpsOnlyMode` (`disallowed`, `force_enabled` or `force_balanced_enabled`): as a mandatory policy, `disallowed` turns [HTTPS-First](../user/page-problems.md#sites-without-a-secure-connection) off and the other two keep it on, like the setting `privacy.httpsFirst`. Astela has one mode, which warns before an insecure address; `allowed` leaves the choice to the user, as no policy does, and the browser reports it as an invalid value.
+- `HttpsOnlyMode` (`disallowed`, `force_enabled` or `force_balanced_enabled`): as a mandatory policy, `disallowed` turns [HTTPS-First](../user/page-problems.md#sites-without-a-secure-connection) off and the other two keep it on, like the setting `privacy.httpsFirst`. Astela has one mode, which warns before an insecure address; `allowed` leaves the choice to the user, as no policy does, and the browser ignores it as an invalid value and says so in its log and next to the setting.
 - `HttpAllowlist` (list of host names): hosts that HTTPS-First leaves on their insecure address, such as `intranet.example.com`; `[*.]example.com` also names every host below `example.com`. IP addresses and local names are never upgraded and need no entry.
 - `DnsOverHttpsMode` (`off`, `automatic` or `secure`): how the browser looks up the addresses of sites, like the setting `network.secureDns`: `automatic` uses DNS over HTTPS with the services of `DnsOverHttpsTemplates` or, without them, where the provider of the system offers it, `secure` only with the services of `DnsOverHttpsTemplates`, `off` never. `secure` without a service works like `automatic`. As a sensitive policy, it applies only from machine-wide mandatory sources.
 - `DnsOverHttpsTemplates` (string): the addresses of the DNS over HTTPS services, `https://` URI templates separated by spaces, such as `https://dns.example/dns-query{?dns}`, like the setting `network.secureDnsTemplates`. A sensitive policy too.
@@ -237,4 +239,8 @@ Also implemented:
 
 The MSI package (x64, per machine, with the fixed upgrade code) is built for every pull request and installed and removed silently in CI.
 
-Not implemented yet: the MSI properties, the install-type marker, the M1 policy set beyond the first settings, the diagnostics page, generated templates, safe mode and the admin guide.
+Values that do not apply, because their name is unknown, their value is not valid, they are mandatory only but set as recommended, or they are sensitive but come from a source of the user, are ignored while every other value applies. The browser writes each of them once to `logs/main.log` as a `Policy value ignored` warning with the name, the source, the level, the scope, the state and the reason, and again only when the set of these values or of the sources that could not be read changes; a refresh that finds the same problems, on the focus of a window or every 15 minutes, writes nothing. Each changed set starts with a `Policies read` record with the number of ignored values and unreadable sources, also when none are left, so the warnings after the last such record are the problems that hold now. The settings page shows, next to a setting whose policy value does not apply, which policy is ignored and why, in the language of the browser, such as _Your organization's value for the policy ShowHomeButton is not valid and is ignored._; the reason in English stays in the log. Standalone policies, such as `PrivateModeAvailability` and the update policies, have no setting, so only the log reports them. `--safe-mode` writes a warning that safe mode is not available yet and changes nothing else.
+
+The [admin guide](../admin/README.md) and its [policy reference](../admin/policies.md) are generated in part from the policy definitions, which `allPolicies` in `app/src/main/policy-definitions.ts` lists ([ADR 0062](../adr/0062-policy-reference-generated-into-the-docs.md)).
+
+Not implemented yet: the MSI properties, the install-type marker, the M1 policy set beyond the first settings, the diagnostics page, the ADMX/ADML templates and the configuration profile for macOS, and safe mode.

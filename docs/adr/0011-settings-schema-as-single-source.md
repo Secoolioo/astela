@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. [ADR 0062](0062-policy-reference-generated-into-the-docs.md) writes the policy reference and the JSON Schema of the policy files of Linux into `docs/admin/` and keeps them in the repository, checked by `pnpm verify`, instead of building them only in CI.
 
 ## Date
 

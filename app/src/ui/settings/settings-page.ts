@@ -787,15 +787,45 @@ export class SettingsPage extends LitElement {
     }
   }
 
-  /** The note of a value that the organization sets or suggests, or else nothing. */
-  private managedNote(setting: SettingView | undefined): TemplateResult | typeof nothing {
-    if (setting?.locked === true) {
-      return html`<span class="note">${lockIcon}${this.t('settings.managed')}</span>`;
-    }
-    if (setting?.recommended === true) {
-      return html`<span class="note">${this.t('settings.recommended')}</span>`;
-    }
-    return nothing;
+  /**
+   * Whether the organization sets or suggests the value of one of the settings of a row, or
+   * set it wrongly.
+   */
+  private isManaged(...settings: readonly (SettingView | undefined)[]): boolean {
+    return settings.some(
+      (setting) =>
+        setting?.locked === true ||
+        setting?.recommended === true ||
+        setting?.policyIgnored !== undefined,
+    );
+  }
+
+  /**
+   * The notes of a row whose values the organization sets or suggests, and one note for each
+   * of its settings whose value of the organization does not apply, or else nothing.
+   * @param settings - The settings of the row; a row such as secure DNS shows two.
+   */
+  private managedNote(
+    ...settings: readonly (SettingView | undefined)[]
+  ): TemplateResult | typeof nothing {
+    if (!this.isManaged(...settings)) return nothing;
+    const managed = settings.some((setting) => setting?.locked === true)
+      ? html`<span class="note">${lockIcon}${this.t('settings.managed')}</span>`
+      : settings.some((setting) => setting?.recommended === true)
+        ? html`<span class="note">${this.t('settings.recommended')}</span>`
+        : nothing;
+    const ignored = settings.flatMap((setting) =>
+      setting?.policyIgnored === undefined
+        ? []
+        : [
+            html`<span class="note"
+              >${this.t(policyIgnoredNotes[setting.policyIgnored.state], {
+                policy: setting.policyIgnored.policy,
+              })}</span
+            >`,
+          ],
+    );
+    return html`${managed}${ignored}`;
   }
 
   private readonly onHashChange = (): void => this.reveal(location.hash);
@@ -1465,7 +1495,7 @@ export class SettingsPage extends LitElement {
       <label class="label" for=${key}>
         <span>${this.t(label)}</span>
         ${
-          available && (setting?.locked === true || setting?.recommended === true)
+          available && this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t(shown)}</span>`
         }
@@ -1531,7 +1561,7 @@ export class SettingsPage extends LitElement {
         <span class="label">
           <span id="theme-label">${t('settings.theme')}</span>
           ${
-            setting?.locked === true || setting?.recommended === true
+            this.isManaged(setting)
               ? this.managedNote(setting)
               : html`<span class="note">${t('settings.themeNote')}</span>`
           }
@@ -1732,7 +1762,7 @@ export class SettingsPage extends LitElement {
       <label class="label" for="ui-font">
         <span>${this.t('settings.font')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.fontNote')}</span>`
         }
@@ -1776,7 +1806,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span id="startup-pages">${t('settings.startupPages')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${t('settings.startupPagesNote')}</span>`
         }
@@ -1846,7 +1876,7 @@ export class SettingsPage extends LitElement {
       <label class="label" for="home-page">
         <span>${this.t('settings.homePage')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.homePageNote')}</span>`
         }
@@ -1893,7 +1923,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.webTextSize')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.webTextSizeNote')}</span>`
         }
@@ -1925,7 +1955,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.pageZoom')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.pageZoomNote')}</span>`
         }
@@ -1977,7 +2007,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.tabSleepAfter')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.tabSleepAfterNote')}</span>`
         }
@@ -2027,7 +2057,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.webFonts')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${this.t('settings.webFontsNote')}</span>`
         }
@@ -2064,7 +2094,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.downloadFolder')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note path">
                 ${folder === '' ? this.t('settings.downloadFolderSystem') : folder}
@@ -2110,7 +2140,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span id="toolbar-items">${t('settings.toolbar')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${t('settings.toolbarNote')}</span>`
         }
@@ -2303,7 +2333,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span id="newtab-tiles">${t('settings.newTabTiles')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${t('settings.newTabTilesNote')}</span>`
         }
@@ -2422,8 +2452,8 @@ export class SettingsPage extends LitElement {
         <span class="label">
           <span>${t('settings.secureDns')}</span>
           ${
-            mode?.locked === true || templates?.locked === true
-              ? this.managedNote(mode?.locked === true ? mode : templates)
+            this.isManaged(mode, templates)
+              ? this.managedNote(mode, templates)
               : html`<span class="note">${t('settings.secureDnsNote')}</span>`
           }
         </span>
@@ -2793,7 +2823,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span>${this.t('settings.language')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">
                 ${this.t(setting?.restart === true ? 'settings.restartNote' : 'settings.languageNote')}
@@ -2924,7 +2954,7 @@ export class SettingsPage extends LitElement {
       <span class="label">
         <span id="search-engines">${t('settings.searchEngines')}</span>
         ${
-          setting?.locked === true || setting?.recommended === true
+          this.isManaged(setting)
             ? this.managedNote(setting)
             : html`<span class="note">${t('settings.searchEnginesNote')}</span>`
         }
@@ -3060,6 +3090,13 @@ const lockIcon = svg`<svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
   <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" />
   <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5" />
 </svg>`;
+
+/** The note of a setting whose value of the organization does not apply, by the reason. */
+const policyIgnoredNotes = {
+  invalid: 'settings.policyIgnored.invalid',
+  'not-allowed-as-recommended': 'settings.policyIgnored.recommended',
+  'sensitive-requires-machine': 'settings.policyIgnored.machine',
+} as const satisfies Record<NonNullable<SettingView['policyIgnored']>['state'], MessageKey>;
 
 /** The shortcuts of every command, as the browser tells them. */
 interface ShortcutList {

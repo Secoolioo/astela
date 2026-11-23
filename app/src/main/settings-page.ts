@@ -5,6 +5,7 @@ import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingInspection, SettingsService } from '../domain/settings/settings-service.ts';
+import type { PolicyService, PolicyStatus } from '../domain/policy/policy-service.ts';
 import type { Disposable } from '../shared/disposable.ts';
 import { layoutKeys, layoutPresets } from '../shared/layout-presets.ts';
 import {
@@ -24,6 +25,7 @@ import {
   RestartBrowser,
   SetSetting,
   SettingsChanged,
+  type PolicyIgnored,
   type SettingView,
 } from '../shared/ipc/settings-contracts.ts';
 import type { DataClient } from '../platform/electron/data-service-client.ts';
@@ -50,17 +52,41 @@ function fromSettingsPage(sender: WebContents): boolean {
 }
 
 /**
+ * Why the value that the organization set for a policy does not apply: the state of its
+ * first value in the order of precedence, unless a value of the policy applies before it.
+ * The page words the state in the language of the browser; the reason in English, such as
+ * the check that the value failed, is in the log.
+ * @param statuses - Every policy value of the last read, in the order of precedence.
+ * @param policy - The name of the policy, if the setting has one.
+ */
+export function ignoredPolicyOf(
+  statuses: readonly PolicyStatus[],
+  policy: string | undefined,
+): PolicyIgnored | undefined {
+  const first = statuses.find(({ name, state }) => name === policy && state !== 'overridden');
+  if (first === undefined) return undefined;
+  const { name, state } = first;
+  // A value that applies needs no note, and the policy of a setting is never unknown.
+  return state === 'applied' || state === 'overridden' || state === 'unknown'
+    ? undefined
+    : { policy: name, state };
+}
+
+/**
  * What the settings page shows of a setting. A value of the user counts as changed when it
  * differs from the default, or when the organization recommends a value, which Reset brings
  * back, also when the user's value is the default.
  * @param definition - The setting.
  * @param inspection - Its value and where the value comes from.
  * @param startValues - Values of the settings that need a restart, as JSON, at this start.
+ * @param policyIgnored - Why the organization's value of the setting does not apply, if it
+ *   does not.
  */
 export function settingView(
   definition: SettingDefinition<unknown>,
   inspection: SettingInspection<unknown>,
   startValues: ReadonlyMap<string, string>,
+  policyIgnored?: PolicyIgnored,
 ): SettingView {
   const { value, locked } = inspection;
   return {
@@ -76,6 +102,7 @@ export function settingView(
     restart:
       definition.restartRequired === true &&
       startValues.get(definition.key) !== JSON.stringify(value),
+    ...(policyIgnored === undefined ? {} : { policyIgnored }),
   };
 }
 
@@ -84,6 +111,7 @@ export function settingView(
  * place on the page, and hears about every change, wherever it came from.
  * @param router - IPC router.
  * @param settings - Loaded settings.
+ * @param policies - The policy values of the last read, for the values that do not apply.
  * @param definitions - All settings; those with `ui` metadata appear on the page.
  * @param internal - Session of the browser's own views, whose pages receive changes.
  * @param startValues - The values, as JSON, that the settings which need a restart had when
@@ -98,6 +126,7 @@ export function settingView(
 export function connectSettingsPage(
   router: IpcRouter,
   settings: SettingsService,
+  policies: Pick<PolicyService, 'statuses'>,
   definitions: readonly SettingDefinition<unknown>[],
   internal: Session,
   startValues: ReadonlyMap<string, string>,
@@ -117,7 +146,12 @@ export function connectSettingsPage(
     definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
   );
   const view = (definition: SettingDefinition<unknown>): SettingView =>
-    settingView(definition, settings.inspect(definition), startValues);
+    settingView(
+      definition,
+      settings.inspect(definition),
+      startValues,
+      ignoredPolicyOf(policies.statuses(), definition.policy?.name),
+    );
   router.handle(GetSettings, () => ({
     settings: [...shown.values()].map(view),
     accents: accentPresets.map((id) => {

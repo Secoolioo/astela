@@ -57,8 +57,7 @@ import {
 } from '../domain/session/session.ts';
 import { PolicyService } from '../domain/policy/policy-service.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
-import { SettingsService, settingPolicies } from '../domain/settings/settings-service.ts';
-import { updatePolicies } from '../domain/updates/update-policies.ts';
+import { SettingsService } from '../domain/settings/settings-service.ts';
 import { SetupGuideEnabled, shouldShowSetupGuide } from '../domain/setup/setup-guide.ts';
 import { AppProtocol, registerAppScheme } from '../platform/electron/app-protocol.ts';
 import {
@@ -145,6 +144,7 @@ import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { PrivateModeAvailability } from '../domain/windows/private-windows.ts';
+import { allPolicies } from './policy-definitions.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import type { WebRequests } from './web-requests.ts';
 import type { Downloads } from './downloads.ts';
@@ -204,7 +204,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
   // Windows shows notifications only for the ID that the installers give the app's shortcuts.
   if (process.platform === 'win32') app.setAppUserModelId(brand.appId);
-  const safeMode = app.commandLine.hasSwitch('safe-mode');
   // The self-test is only for package checks; it loads at once, off the start-up path.
   const smokeReport = app.commandLine.getSwitchValue('smoke-test');
   const smokeTest = smokeReport === '' ? undefined : import('./smoke-test.ts');
@@ -235,27 +234,22 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   process.on('unhandledRejection', (reason) => {
     logger.error('A promise of the browser process failed and no code handled it', reason);
   });
-  logger.info('Starting', {
-    version: app.getVersion(),
-    electron: process.versions.electron,
-    safeMode,
-  });
+  logger.info('Starting', { version: app.getVersion(), electron: process.versions.electron });
+  // Safe mode is designed but not built; the switch must not look as if it did something.
+  if (app.commandLine.hasSwitch('safe-mode')) {
+    logger.warn('--safe-mode is not available in this version and has no effect');
+  }
 
   // Until the sources have been read, policies apply as the last start left them, so the
-  // read runs while Electron starts; the first window waits for it.
+  // read runs while Electron starts; the first window waits for it. The log of what a read
+  // could not apply loads meanwhile, and the first window does not wait for it.
+  const policyLog = import('../domain/policy/policy-log.ts').then(
+    ({ PolicyLog }) => new PolicyLog(logger),
+  );
   const policies = new PolicyService(
-    [
-      ...settingPolicies(coreSettings),
-      ...updatePolicies,
-      SetupGuideEnabled,
-      ImportEnabled,
-      SSLErrorOverrideAllowed,
-      DeveloperToolsAvailability,
-      PrivateModeAvailability,
-      DefaultBrowserSettingEnabled,
-    ],
+    allPolicies,
     createPolicyProviders(brand, process.platform),
-    logger,
+    { report: (statuses, errors) => void policyLog.then((log) => log.report(statuses, errors)) },
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
   );
   policies.applyCached();
@@ -898,6 +892,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
         connect({
           router,
           settings,
+          policies,
           definitions: coreSettings,
           internal,
           data,
