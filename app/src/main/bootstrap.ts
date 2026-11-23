@@ -641,9 +641,6 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           newTabUrl,
           workspaces: workspacesNow,
           ...pageSources,
-          absent: coreSettings.flatMap((definition) =>
-            definition.ui === undefined ? [definition.key] : [],
-          ),
         }),
       )
       .catch((error: unknown) => {

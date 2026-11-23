@@ -19,7 +19,7 @@ Related documents:
 
 Every setting is defined exactly once, in the manifest of the module that owns it. Manifests import only pure data files (`*.contrib.ts`) that contain definitions and no handlers, so they stay small enough to be bundled at all times. Value types are Valibot schemas (`v` below), as decided in ADR 0007.
 
-A definition holds the key, the value type, the default, the scope, the optional policy binding, hints for the settings page and whether a change needs a restart:
+A definition holds the key, the value type, the default, the scope, the optional policy binding and whether a change needs a restart:
 
 ```ts
 export const tabStripPosition = defineSetting({
@@ -28,14 +28,13 @@ export const tabStripPosition = defineSetting({
   default: 'top',
   scope: 'global',
   policy: { name: 'TabStripPosition', recommendedAllowed: true },
-  ui: { section: 'tabs', control: 'select', keywords: ['tab bar', 'vertical tabs'] },
   restartRequired: false,
 });
 ```
 
 - `key` is the stable identifier. It appears in the settings file, in deep links and in the generated typed keys.
 - `policy` turns the setting into a policy named `TabStripPosition`. `recommendedAllowed` states whether administrators may also deliver it as a recommended value that users can change.
-- `ui` places the setting on the settings page and adds search keywords.
+- Where the settings page shows a setting, its section, control and order, is in `settingUi` of `app/src/main/setting-ui.ts`, by the key of the setting, apart from the definitions: only the settings page, the command palette and the settings file read it, so it loads with them and not with every start. A setting without a row there has no place on the page, and only the system's dialog sets a setting whose control is `folder`.
 - `restartRequired` marks settings that only take effect after a restart.
 
 Scaffolding commands (`pnpm new:setting`, `pnpm new:policy`, `pnpm new:theme`) will create new definitions together with test and documentation stubs.

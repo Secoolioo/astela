@@ -431,7 +431,8 @@ test('exports the settings to a file and imports them again', async () => {
     await expect(page.getByRole('alert')).toHaveText('This file holds no settings of Astela.');
     await expect(page.getByRole('radio', { name: 'Left' })).toBeChecked();
     // The background image of another profile is not in this one, and the shortcuts of
-    // another system would mean other keys, so both stay out.
+    // another system would mean other keys, so both stay out. A folder of another computer
+    // stays out as well; only the system's dialog sets one.
     const mac = process.platform === 'darwin';
     writeFileSync(
       file,
@@ -442,6 +443,7 @@ test('exports the settings to a file and imports them again', async () => {
           'tabs.position': 'right',
           'newtab.background': { kind: 'image', file: 'background-0123456789abcdef.png' },
           'keys.shortcuts': { 'tab.new': [mac ? 'Ctrl+Shift+K' : 'Shift+Cmd+K'] },
+          'downloads.folder': join(folder, 'elsewhere'),
         },
       }),
     );
@@ -452,6 +454,7 @@ test('exports the settings to a file and imports them again', async () => {
       'Imported settings: 1. Skipped, as your organization manages them or they are not valid here: 2',
     );
     await expect(page.getByRole('radio', { name: 'Right' })).toBeChecked();
+    await expect(page.getByText(folder, { exact: true })).toBeVisible();
     await expect(
       page
         .getByRole('radiogroup', { name: 'Background', exact: true })

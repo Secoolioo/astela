@@ -11,7 +11,6 @@ const bar = defineSetting<boolean>({
   schema: v.boolean(),
   default: false,
   scope: 'global',
-  ui: { section: 'appearance', control: 'toggle', order: 1 },
 });
 
 /** How a setting shows with a value of the user and maybe a recommendation. */

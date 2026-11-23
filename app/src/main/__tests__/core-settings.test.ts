@@ -37,6 +37,7 @@ import { sleepAfterSeconds } from '../../shared/tab-sleep.ts';
 import { layoutKeys, layoutPresetIds, layoutPresets } from '../../shared/layout-presets.ts';
 import { expandFolder } from '../download-folder.ts';
 import { policyInputs } from '../policy-inputs.ts';
+import { settingUi } from '../setting-ui.ts';
 
 /** Whether the setting takes a folder. */
 const valid = (folder: string): boolean =>
@@ -250,8 +251,8 @@ describe('AltOpensMenuSetting', () => {
       Object.defineProperty(process, 'platform', { value: platform });
       try {
         vi.resetModules();
-        const { AltOpensMenuSetting: setting } = await import('../core-settings.ts');
-        expect(setting.ui).toEqual(
+        const { settingUi: rows } = await import('../setting-ui.ts');
+        expect(rows.get('keys.altOpensMenu')).toEqual(
           platform === 'darwin' ? undefined : { section: 'shortcuts', control: 'toggle', order: 2 },
         );
       } finally {
@@ -267,7 +268,11 @@ describe('CommandPaletteSetting', () => {
       key: 'commandPalette.enabled',
       default: true,
       policy: { name: 'CommandPaletteEnabled', recommended: true },
-      ui: { section: 'shortcuts', control: 'toggle', order: 0 },
+    });
+    expect(settingUi.get('commandPalette.enabled')).toMatchObject({
+      section: 'shortcuts',
+      control: 'toggle',
+      order: 0,
     });
     expect(coreSettings).toContain(CommandPaletteSetting);
     expect(settingPolicies(coreSettings).map((policy) => policy.name)).toContain(
@@ -285,7 +290,10 @@ describe('SplitViewSetting', () => {
       default: true,
       scope: 'global',
       policy: { name: 'SplitViewEnabled', recommended: true },
-      ui: { section: 'appearance', control: 'toggle' },
+    });
+    expect(settingUi.get('splitView.enabled')).toMatchObject({
+      section: 'appearance',
+      control: 'toggle',
     });
     expect(coreSettings).toContain(SplitViewSetting);
     expect(settingPolicies(coreSettings)).toContainEqual(
@@ -303,7 +311,10 @@ describe('the settings of the workspaces', () => {
       default: true,
       scope: 'global',
       policy: { name: 'WorkspacesEnabled', recommended: true },
-      ui: { section: 'appearance', control: 'toggle' },
+    });
+    expect(settingUi.get('workspaces.enabled')).toMatchObject({
+      section: 'appearance',
+      control: 'toggle',
     });
     expect(coreSettings).toContain(WorkspacesEnabledSetting);
     expect(settingPolicies(coreSettings)).toContainEqual(
@@ -471,13 +482,21 @@ describe('ReaderEnabledSetting and ReaderFontSetting', () => {
       default: true,
       scope: 'global',
       policy: { name: 'ReaderViewEnabled', recommended: true },
-      ui: { section: 'pageTools', control: 'toggle', order: 1 },
+    });
+    expect(settingUi.get('reader.enabled')).toMatchObject({
+      section: 'pageTools',
+      control: 'toggle',
+      order: 1,
     });
     expect(ReaderFontSetting).toMatchObject({
       key: 'reader.font',
       default: 'browser',
       scope: 'global',
-      ui: { section: 'pageTools', control: 'select', order: 2 },
+    });
+    expect(settingUi.get('reader.font')).toMatchObject({
+      section: 'pageTools',
+      control: 'select',
+      order: 2,
     });
     // No policy sets the font: it is a matter of taste.
     expect(ReaderFontSetting.policy).toBeUndefined();
@@ -521,7 +540,11 @@ describe('PictureInPictureEnabledSetting', () => {
       default: true,
       scope: 'global',
       policy: { name: 'PictureInPictureEnabled', recommended: true },
-      ui: { section: 'pageTools', control: 'toggle', order: 3 },
+    });
+    expect(settingUi.get('pictureInPicture.enabled')).toMatchObject({
+      section: 'pageTools',
+      control: 'toggle',
+      order: 3,
     });
     expect(coreSettings).toContain(PictureInPictureEnabledSetting);
     expect(settingPolicies(coreSettings)).toContainEqual(
@@ -558,13 +581,21 @@ describe('TabSleepSetting and TabSleepAfterSetting', () => {
       key: 'tabs.sleep',
       default: true,
       policy: { name: 'SleepingTabsEnabled', recommended: true },
-      ui: { section: 'performance', control: 'toggle', order: 1 },
+    });
+    expect(settingUi.get('tabs.sleep')).toMatchObject({
+      section: 'performance',
+      control: 'toggle',
+      order: 1,
     });
     expect(TabSleepAfterSetting).toMatchObject({
       key: 'tabs.sleepAfter',
       default: 3600,
       policy: { name: 'SleepingTabsTimeout', recommended: true },
-      ui: { section: 'performance', control: 'select', order: 2 },
+    });
+    expect(settingUi.get('tabs.sleepAfter')).toMatchObject({
+      section: 'performance',
+      control: 'select',
+      order: 2,
     });
     expect(coreSettings).toEqual(expect.arrayContaining([TabSleepSetting, TabSleepAfterSetting]));
     expect(settingPolicies(coreSettings).map((policy) => policy.name)).toEqual(
@@ -617,14 +648,20 @@ describe('ToolbarPlacementSetting and ToolbarAutoHideSetting', () => {
       default: 'own-row',
       scope: 'global',
       policy: { name: 'ToolbarPlacement', recommended: true },
-      ui: { section: 'appearance', control: 'select' },
+    });
+    expect(settingUi.get('toolbar.placement')).toMatchObject({
+      section: 'appearance',
+      control: 'select',
     });
     expect(ToolbarAutoHideSetting).toMatchObject({
       key: 'toolbar.autoHide',
       default: false,
       scope: 'global',
       policy: { name: 'AutoHideToolbar', recommended: true },
-      ui: { section: 'appearance', control: 'toggle' },
+    });
+    expect(settingUi.get('toolbar.autoHide')).toMatchObject({
+      section: 'appearance',
+      control: 'toggle',
     });
     // Neither waits for a restart.
     for (const setting of [ToolbarPlacementSetting, ToolbarAutoHideSetting]) {

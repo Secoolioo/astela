@@ -4,6 +4,7 @@ import { relaunch } from './relaunch.ts';
 import { accentColors, accentPresets } from '../domain/appearance/accent.ts';
 import { restartArguments } from '../domain/navigation/restart.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
+import { settingUi } from './setting-ui.ts';
 import type { SettingInspection, SettingsService } from '../domain/settings/settings-service.ts';
 import type { PolicyService, PolicyStatus } from '../domain/policy/policy-service.ts';
 import { toDisposable, type Disposable } from '../shared/disposable.ts';
@@ -121,7 +122,8 @@ export function settingView(
  * @param settings - Loaded settings.
  * @param policies - The policy values of the last read, for the values that do not apply, and
  *   their changes, which can change the shortcuts that the page shows.
- * @param definitions - All settings; those with `ui` metadata appear on the page.
+ * @param definitions - All settings; those with a row in `settingUi` (`setting-ui.ts`) appear on
+ *   the page.
  * @param internal - Session of the browser's own views, whose pages receive changes.
  * @param startValues - The values, as JSON, that the settings which need a restart had when
  *   the browser started.
@@ -152,7 +154,7 @@ export function connectSettingsPage(
   newTabFolder: string,
 ): Disposable {
   const shown = new Map(
-    definitions.filter((definition) => definition.ui !== undefined).map((d) => [d.key, d]),
+    definitions.filter((definition) => settingUi.has(definition.key)).map((d) => [d.key, d]),
   );
   const view = (definition: SettingDefinition<unknown>): SettingView => {
     const shownView = settingView(
@@ -179,7 +181,7 @@ export function connectSettingsPage(
       return { ok: false, error: 'unknown' } as const;
     }
     // Only the system's dialog sets a folder.
-    if (definition.ui?.control === 'folder') return { ok: false, error: 'invalid' } as const;
+    if (settingUi.get(key)?.control === 'folder') return { ok: false, error: 'invalid' } as const;
     const result = settings.set(definition, value);
     if (result.ok) {
       return { ok: true } as const;

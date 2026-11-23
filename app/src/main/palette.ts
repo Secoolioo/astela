@@ -33,6 +33,8 @@ import type { WindowCommand } from '../shared/shortcuts.ts';
 import type { Workspace } from '../shared/workspaces.ts';
 import { showTab } from '../domain/tabs/show-tab.ts';
 import { overlayBySender, overlayOf, track, windowOfOverlay } from './overlays.ts';
+import { coreSettings } from './core-settings.ts';
+import { settingsWithoutRow } from './setting-ui.ts';
 
 /** What the command palette needs from the browser process. */
 export interface PaletteDependencies {
@@ -47,8 +49,6 @@ export interface PaletteDependencies {
   readonly history: (text: string, limit: number) => Promise<readonly PalettePage[]>;
   /** The bookmarks, which load with the first search for them. */
   readonly bookmarks: () => Promise<readonly PalettePage[]>;
-  /** The keys of the settings that the settings page does not offer on this system. */
-  readonly absent: readonly string[];
   /** The workspaces of the profile while windows have them, or `undefined` while they are off. */
   readonly workspaces: () => readonly Workspace[] | undefined;
 }
@@ -116,7 +116,7 @@ export function openPalette(
     return;
   }
   const state: PaletteState = { session: ++sessions, answers: new Map(), queried: false };
-  overlay.open(contentOf(window, scope, state.session, deps), {
+  overlay.open(contentOf(window, scope, state.session), {
     // What was typed into it stays when a site asks for a permission.
     yieldsToQuestions: false,
     keys: {
@@ -175,7 +175,6 @@ function contentOf(
   window: BrowserWindowController,
   scope: PaletteOpening,
   session: number,
-  deps: PaletteDependencies,
 ): CommandPalette {
   const table = window.shortcuts();
   // The palette is open already, so its own command is no result.
@@ -198,7 +197,7 @@ function contentOf(
     vertical: side === 'left' || side === 'right',
     commands: commands.map((id) => ({ id, shortcuts: shortcutsOf(table, id).slice(0, 4) })),
     recent: recent.filter((command) => commands.includes(command)),
-    absent: deps.absent.slice(0, 100),
+    absent: settingsWithoutRow(coreSettings).slice(0, 100),
   };
 }
 
