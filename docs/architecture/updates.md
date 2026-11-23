@@ -119,17 +119,18 @@ The updater is a state machine: `idle → checking → downloading → staged �
 
 ## Update policies
 
-Organizations will control updates with these policies (see [enterprise](enterprise.md) and [settings, policies and themes](settings-policy-theme.md)):
+Organizations control updates with these policies (see [enterprise](enterprise.md), [settings, policies and themes](settings-policy-theme.md) and the [policy reference](../admin/policies.md)):
 
-| Policy                         | Effect                                                            |
-| ------------------------------ | ----------------------------------------------------------------- |
-| `UpdatePolicy`                 | `0` = off, `1` = automatic, `2` = manual only                     |
-| `TargetChannel`                | Selects the channel.                                              |
-| `TargetVersionPrefix`          | Selects the highest version in the index that matches the prefix. |
-| `UpdateURL`                    | Points the client at a mirror.                                    |
-| `AutoUpdateCheckPeriodMinutes` | Sets the check interval.                                          |
+| Policy                         | Effect                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| `UpdatePolicy`                 | `0` = off, `1` = automatic, `2` = manual only                                        |
+| `TargetChannel`                | Selects the channel.                                                                 |
+| `TargetVersionPrefix`          | Selects the highest version in the index that matches the prefix.                    |
+| `UpdateURL`                    | Points the client at a mirror.                                                       |
+| `AutoUpdateCheckPeriodMinutes` | Minutes between two checks, a whole number from 60 to 43200; 240 without the policy. |
 
-- `UpdateURL` is a sensitive policy. It will be honored only from machine-level policy (`HKLM` on Windows, forced preferences on macOS); otherwise `app://diagnostics` will show a warning.
+- `UpdateURL` is a sensitive policy. It is honored only from machine-level policy (`HKLM` on Windows, forced preferences on macOS); otherwise the browser ignores it and writes a `Policy value ignored` warning to its log, and `app://diagnostics` is designed to show it too.
+- The update service reads these policies once, when it is created after the first window loads, so a change takes effect at the next start; their definitions say so (`restartRequired`), and the [policy reference](../admin/policies.md) marks them as needing a restart. `2` has no way to start a check by hand yet, so it works like `0` for now.
 - From M5, `RollbackToTargetVersion` and an update maintenance window follow.
 
 ### Organization mirror

@@ -9,6 +9,7 @@ import {
   type PolicyReadResult,
   type RawPolicyValue,
 } from '../policy/policy.ts';
+import { PolicyLog } from '../policy/policy-log.ts';
 import { PolicyService, type PolicyCache } from '../policy/policy-service.ts';
 
 const UpdatePolicy = definePolicy({ name: 'UpdatePolicy', schema: v.picklist([0, 1, 2]) });
@@ -45,7 +46,12 @@ function service(cache?: PolicyCache): {
   const sink = new RingBufferLogSink();
   const logger = new SinkLogger(sink, new ManualClock(), { scope: 'test' });
   return {
-    policies: new PolicyService([UpdatePolicy, Homepage, UpdateUrl], [provider], logger, cache),
+    policies: new PolicyService(
+      [UpdatePolicy, Homepage, UpdateUrl],
+      [provider],
+      new PolicyLog(logger),
+      cache,
+    ),
     provider,
     sink,
   };
@@ -114,11 +120,150 @@ describe('PolicyService', () => {
     expect(policies.getMandatory('UpdateURL')).toBeUndefined();
   });
 
+  it('logs each value that does not apply once, with its fields, until the problems change', async () => {
+    const { policies, provider, sink } = service();
+    const ignored = (): unknown[] =>
+      sink.records.filter((r) => r.message === 'Policy value ignored').map((r) => r.fields);
+    provider.result = {
+      values: [
+        value('NoSuchPolicy', true),
+        value('UpdatePolicy', 7),
+        value('UpdatePolicy', 1, 'recommended'),
+        value('UpdateURL', 'https://mirror.example/', 'mandatory', 'user'),
+        value('HomepageLocation', 'https://intranet.example/'),
+      ],
+      errors: [],
+    };
+    await policies.refresh();
+    expect(ignored()).toEqual([
+      {
+        name: 'NoSuchPolicy',
+        source: 'machine:mandatory',
+        level: 'mandatory',
+        scope: 'machine',
+        state: 'unknown',
+        message: 'This browser version does not know this policy',
+      },
+      {
+        name: 'UpdatePolicy',
+        source: 'machine:mandatory',
+        level: 'mandatory',
+        scope: 'machine',
+        state: 'invalid',
+        message: expect.stringContaining('7') as unknown,
+      },
+      {
+        name: 'UpdateURL',
+        source: 'user:mandatory',
+        level: 'mandatory',
+        scope: 'user',
+        state: 'sensitive-requires-machine',
+        message: 'Only machine-wide mandatory policies may set this',
+      },
+      {
+        name: 'UpdatePolicy',
+        source: 'machine:recommended',
+        level: 'recommended',
+        scope: 'machine',
+        state: 'not-allowed-as-recommended',
+        message: 'This policy can only be set as mandatory',
+      },
+    ]);
+    expect(
+      sink.records
+        .filter((r) => r.message === 'Policy value ignored')
+        .map((r) => [r.level, r.scope]),
+    ).toEqual(Array.from({ length: 4 }, () => ['warn', 'test.policy']));
+    // The browser reads the policies again on every focus of a window: nothing new, no records.
+    await policies.refresh();
+    await policies.refresh();
+    expect(ignored()).toHaveLength(4);
+    // A problem that goes away changes the set, which is logged again as it is now.
+    provider.result = { values: [value('UpdatePolicy', 7)], errors: [] };
+    await policies.refresh();
+    expect(ignored()).toHaveLength(5);
+    expect(ignored().at(-1)).toMatchObject({ name: 'UpdatePolicy', state: 'invalid' });
+    // When the last problem goes away, only the record of the read says so.
+    provider.result = { values: [value('UpdatePolicy', 1)], errors: [] };
+    await policies.refresh();
+    await policies.refresh();
+    expect(ignored()).toHaveLength(5);
+  });
+
+  it('starts every changed set of problems with a record of the read, also an empty set', async () => {
+    const { policies, provider, sink } = service();
+    // What a reader of the log sees: the records of the read and the problems after them.
+    const records = (): unknown[] =>
+      sink.records.map((r) =>
+        r.message === 'Policies read'
+          ? [r.level, r.message, r.fields]
+          : [r.level, r.message, r.fields?.['name'] ?? r.fields?.['source']],
+      );
+    provider.result = { values: [value('UpdatePolicy', 1)], errors: [] };
+    await policies.refresh();
+    expect(records()).toEqual([['info', 'Policies read', { ignored: 0, unreadable: 0 }]]);
+    // A read that finds what the last one found writes nothing.
+    await policies.refresh();
+    expect(records()).toHaveLength(1);
+    provider.result = {
+      values: [value('UpdatePolicy', 7)],
+      errors: [{ source: '/etc/p/a.json', message: 'Invalid JSON' }],
+    };
+    await policies.refresh();
+    expect(records().slice(1)).toEqual([
+      ['info', 'Policies read', { ignored: 1, unreadable: 1 }],
+      ['warn', 'Policy source could not be read', '/etc/p/a.json'],
+      ['warn', 'Policy value ignored', 'UpdatePolicy'],
+    ]);
+    // Once the administrator fixed the value and the file, the log says that none are left.
+    provider.result = { values: [value('UpdatePolicy', 1)], errors: [] };
+    await policies.refresh();
+    await policies.refresh();
+    expect(records().slice(4)).toEqual([['info', 'Policies read', { ignored: 0, unreadable: 0 }]]);
+  });
+
+  it('logs a source that cannot be read once until it can be read again', async () => {
+    const { policies, provider, sink } = service();
+    const unreadable = (): number =>
+      sink.records.filter((r) => r.message === 'Policy source could not be read').length;
+    provider.result = {
+      values: [],
+      errors: [{ source: '/etc/p/a.json', message: 'Invalid JSON' }],
+    };
+    await policies.refresh();
+    await policies.refresh();
+    expect(unreadable()).toBe(1);
+    provider.result = { values: [], errors: [] };
+    await policies.refresh();
+    provider.result = {
+      values: [],
+      errors: [{ source: '/etc/p/a.json', message: 'Invalid JSON' }],
+    };
+    await policies.refresh();
+    expect(unreadable()).toBe(2);
+  });
+
+  it('notifies when a value turns invalid although the value that applies stays', async () => {
+    const { policies, provider } = service();
+    const listener = vi.fn();
+    policies.onDidChange(listener);
+    provider.result = {
+      values: [value('HomepageLocation', 'intranet', 'recommended')],
+      errors: [],
+    };
+    expect(await policies.refresh()).toEqual(['HomepageLocation']);
+    expect(policies.getRecommended('HomepageLocation')).toBeUndefined();
+    expect(await policies.refresh()).toEqual([]);
+    provider.result = { values: [], errors: [] };
+    expect(await policies.refresh()).toEqual(['HomepageLocation']);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
   it('accepts registry DWORD 0 and 1 for boolean policies', async () => {
     const Flag = definePolicy({ name: 'DeveloperToolsAvailability', schema: v.boolean() });
     const provider = new FakeProvider();
     const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 't' });
-    const policies = new PolicyService([Flag], [provider], logger);
+    const policies = new PolicyService([Flag], [provider], new PolicyLog(logger));
     provider.result = { values: [value('DeveloperToolsAvailability', 0)], errors: [] };
     await policies.refresh();
     expect(policies.getMandatory('DeveloperToolsAvailability')?.value).toBe(false);
@@ -177,7 +322,11 @@ describe('PolicyService', () => {
       load: () => new Promise((done) => reads.push(done)),
     };
     const logger = new SinkLogger(new RingBufferLogSink(), new ManualClock(), { scope: 'test' });
-    const policies = new PolicyService([UpdatePolicy, Homepage], [sync, slow], logger);
+    const policies = new PolicyService(
+      [UpdatePolicy, Homepage],
+      [sync, slow],
+      new PolicyLog(logger),
+    );
     const first = policies.refresh();
     const second = policies.refresh();
     expect(second).toBe(first);

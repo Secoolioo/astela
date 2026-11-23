@@ -30,7 +30,7 @@ pnpm install   # also installs the git hooks
 pnpm verify    # every check CI runs in the verify job
 ```
 
-`pnpm verify --only <name>[,<name>]` runs a subset: `format`, `markdown`, `typecheck`, `lint`, `design`, `architecture`, `test`, `tools`, `api`, `website`, `links`, `shell`. Run the full command before pushing. The website build needs the Node.js version from `.node-version`. The link check of the website needs lychee on the `PATH` (`tools/ci/install-lychee.sh` installs the pinned release on Linux x64); without it, as without ShellCheck, `pnpm verify` skips the check locally and CI runs it.
+`pnpm verify --only <name>[,<name>]` runs a subset: `format`, `markdown`, `typecheck`, `lint`, `design`, `architecture`, `test`, `tools`, `policies`, `api`, `website`, `links`, `shell`. `policies` fails when `docs/admin/policies.md` or `docs/admin/policies.schema.json` no longer matches the policy definitions; `node tools/policies/reference.ts` writes both again. Run the full command before pushing. The website build needs the Node.js version from `.node-version`. The link check of the website needs lychee on the `PATH` (`tools/ci/install-lychee.sh` installs the pinned release on Linux x64); without it, as without ShellCheck, `pnpm verify` skips the check locally and CI runs it.
 
 `pnpm --dir website run dev` serves the website locally with the documentation from `docs/`.
 

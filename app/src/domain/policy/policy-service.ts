@@ -2,7 +2,6 @@ import * as v from 'valibot';
 import type { Disposable } from '../../shared/disposable.ts';
 import { token, type Token } from '../../kernel/di/token.ts';
 import { Emitter, type Event } from '../../kernel/events/emitter.ts';
-import type { Logger } from '../../kernel/logging/logger.ts';
 import type {
   PolicyDefinition,
   PolicyLevel,
@@ -52,6 +51,19 @@ export interface PolicyCache {
   write(values: readonly RawPolicyValue[]): void;
 }
 
+/**
+ * Receives the outcome of every read of the policies, such as the log of what does not apply
+ * (`policy-log.ts`), which loads apart from the policy service.
+ */
+export interface PolicyReporter {
+  /**
+   * Called after each read, with what the read found.
+   * @param statuses - Every value of the read with its state, in the order of precedence.
+   * @param errors - The sources that could not be read.
+   */
+  report(statuses: readonly PolicyStatus[], errors: readonly PolicyReadError[]): void;
+}
+
 /** Token for the {@link PolicyService}. */
 export const PolicyServiceToken: Token<PolicyService> = token<PolicyService>('PolicyService');
 
@@ -60,15 +72,16 @@ export const PolicyServiceToken: Token<PolicyService> = token<PolicyService>('Po
  * definitions and answers which value applies and whether a setting is locked.
  *
  * Precedence: mandatory before recommended, and within a level machine before user.
- * Sensitive policies are only applied from machine-wide mandatory sources. Invalid values
- * are ignored and reported, never guessed.
+ * Sensitive policies are only applied from machine-wide mandatory sources. Values that do not
+ * apply are ignored, never guessed; {@link PolicyService.statuses} lists them, and the
+ * {@link PolicyReporter} hears of them after every read.
  */
 export class PolicyService implements Disposable {
   private readonly definitions = new Map<string, PolicyDefinition<unknown>>();
   private readonly bySetting = new Map<string, PolicyDefinition<unknown>>();
   private readonly providers: readonly PolicyProvider[];
   private readonly cache: PolicyCache | undefined;
-  private readonly logger: Logger;
+  private readonly reporter: PolicyReporter;
   private readonly changeEmitter = new Emitter<readonly string[]>();
   private mandatory = new Map<string, EffectivePolicy>();
   private recommended = new Map<string, EffectivePolicy>();
@@ -76,19 +89,20 @@ export class PolicyService implements Disposable {
   private errorList: readonly PolicyReadError[] = [];
   private reading: Promise<readonly string[]> | undefined;
 
-  /** Fires with the names of policies whose effective value changed. */
+  /** Fires with the names of policies whose effective value or ignored values changed. */
   readonly onDidChange: Event<readonly string[]> = this.changeEmitter.event;
 
   /**
    * @param definitions - All known policies, including setting policies.
    * @param providers - Sources for the current platform.
-   * @param logger - Receives read problems.
+   * @param reporter - Receives what every read found, for the log of the values that do not
+   *   apply and the sources that could not be read.
    * @param cache - Optional fallback for providers that fail at startup.
    */
   constructor(
     definitions: readonly PolicyDefinition<unknown>[],
     providers: readonly PolicyProvider[],
-    logger: Logger,
+    reporter: PolicyReporter,
     cache?: PolicyCache,
   ) {
     for (const definition of definitions) {
@@ -98,13 +112,13 @@ export class PolicyService implements Disposable {
       }
     }
     this.providers = providers;
-    this.logger = logger.child('policy');
+    this.reporter = reporter;
     this.cache = cache;
   }
 
   /**
    * Reads all providers and applies the result. Calls made while a read is running share it.
-   * @returns The names of policies whose effective value changed.
+   * @returns The names of policies whose effective value or ignored values changed.
    */
   refresh(): Promise<readonly string[]> {
     this.reading ??= Promise.all(this.providers.map((provider) => provider.load()))
@@ -142,11 +156,10 @@ export class PolicyService implements Disposable {
     } else {
       this.cache?.write(values);
     }
-    for (const error of errors) {
-      this.logger.warn('Policy source could not be read', { ...error });
-    }
     this.errorList = errors;
-    return this.apply(raw);
+    const changed = this.apply(raw);
+    this.reporter.report(this.statusList, errors);
+    return changed;
   }
 
   /**
@@ -268,15 +281,18 @@ export class PolicyService implements Disposable {
     return changed;
   }
 
-  /** Serialized effective values per policy name, for change detection. */
+  /**
+   * Serialized values per policy name, for change detection: the values that apply and those
+   * that do not, so that a value that turns invalid is a change even when the default stays.
+   */
   private snapshot(): Map<string, string> {
-    const names = new Set([...this.mandatory.keys(), ...this.recommended.keys()]);
-    return new Map(
-      [...names].map((name) => [
-        name,
-        JSON.stringify([this.mandatory.get(name)?.value, this.recommended.get(name)?.value]),
-      ]),
-    );
+    const snapshot = new Map<string, string>();
+    for (const status of this.statusList) {
+      if (status.state !== 'overridden') {
+        snapshot.set(status.name, (snapshot.get(status.name) ?? '') + JSON.stringify(status));
+      }
+    }
+    return snapshot;
   }
 }
 

@@ -1,8 +1,8 @@
 /**
  * Endings of names that exist only in local networks or for tests, whose sites seldom have a
- * certificate that browsers trust.
+ * certificate that browsers trust. The policy reference lists them.
  */
-const localEndings = [
+export const localEndings: readonly string[] = [
   '.localhost',
   '.local',
   '.internal',

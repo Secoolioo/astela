@@ -2,6 +2,7 @@ import { session, type Session, type WebContents } from 'electron';
 import type { ShortcutOverrides, WindowCommand } from '../shared/shortcuts.ts';
 import type { SettingDefinition } from '../domain/settings/setting.ts';
 import type { SettingsService } from '../domain/settings/settings-service.ts';
+import type { PolicyService } from '../domain/policy/policy-service.ts';
 import type { DataClient } from '../platform/electron/data-service-client.ts';
 import type { WindowManager } from '../platform/electron/browser-window.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
@@ -19,6 +20,8 @@ import { workspacePartition } from '../shared/workspaces.ts';
 export interface PageDependencies {
   readonly router: IpcRouter;
   readonly settings: SettingsService;
+  /** The policies, whose values that do not apply the settings page shows. */
+  readonly policies: PolicyService;
   /** All settings; those with `ui` metadata appear on the settings page. */
   readonly definitions: readonly SettingDefinition<unknown>[];
   /** Session of the browser's own views, whose pages receive changes. */
@@ -65,6 +68,7 @@ export function connectPages(dependencies: PageDependencies): void {
   connectSettingsPage(
     router,
     dependencies.settings,
+    dependencies.policies,
     dependencies.definitions,
     dependencies.internal,
     dependencies.startValues,

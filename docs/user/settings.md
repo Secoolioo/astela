@@ -20,7 +20,7 @@ From 0.1.0-beta.5, **Show changed settings** lists only the settings that differ
 
 ## Settings that your organization manages
 
-A setting that a policy of your organization sets shows a lock and _Managed by your organization_; it cannot be changed, reset or imported. A setting whose value your organization only recommends shows _Recommended by your organization_; you can change it, and Reset brings the recommended value back.
+A setting that a policy of your organization sets shows a lock and _Managed by your organization_; it cannot be changed, reset or imported. A setting whose value your organization only recommends shows _Recommended by your organization_; you can change it, and Reset brings the recommended value back. When your organization set a value that Astela cannot use, the setting says so, such as _Your organization's value for the policy ShowHomeButton is not valid and is ignored._, and works as if the organization had set nothing; tell your administrator, who finds the reason in the log of the browser.
 
 ## Appearance
 

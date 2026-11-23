@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { describe, expect, it, vi } from 'vitest';
 import type { PolicyLevel, PolicyProvider, PolicyReadResult } from '../../domain/policy/policy.ts';
+import { PolicyLog } from '../../domain/policy/policy-log.ts';
 import { PolicyService } from '../../domain/policy/policy-service.ts';
 import { sessionStart } from '../../domain/session/session.ts';
 import { SettingsService, settingPolicies } from '../../domain/settings/settings-service.ts';
@@ -192,7 +193,11 @@ async function restores(
     errors: [],
   };
   const provider: PolicyProvider = { name: 'test', load: () => Promise.resolve(result) };
-  const policies = new PolicyService(settingPolicies(coreSettings), [provider], logger);
+  const policies = new PolicyService(
+    settingPolicies(coreSettings),
+    [provider],
+    new PolicyLog(logger),
+  );
   await policies.refresh();
   const store = {
     load: () =>
@@ -257,7 +262,11 @@ async function settingsWith(
     errors: [],
   };
   const provider: PolicyProvider = { name: 'test', load: () => Promise.resolve(result) };
-  const policies = new PolicyService(settingPolicies(coreSettings), [provider], logger);
+  const policies = new PolicyService(
+    settingPolicies(coreSettings),
+    [provider],
+    new PolicyLog(logger),
+  );
   await policies.refresh();
   const store = {
     load: () => Promise.resolve({ user: { ...user }, workspaces: {} }),

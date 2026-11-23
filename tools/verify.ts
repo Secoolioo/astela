@@ -74,6 +74,11 @@ const checks: readonly Check[] = [
     command: ['node', '--test', 'tools/**/*.test.ts'],
   },
   {
+    name: 'policies',
+    title: 'Policy reference and schema (docs/admin)',
+    command: ['node', 'tools/policies/reference.ts', '--check'],
+  },
+  {
     name: 'api',
     title: 'API documentation comments (TypeDoc)',
     command: ['pnpm', '--dir', 'website', 'run', 'check:api'],
