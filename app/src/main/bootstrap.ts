@@ -144,7 +144,7 @@ import { ImportEnabled } from '../domain/import/import.ts';
 import { SSLErrorOverrideAllowed } from '../domain/certificates/certificates.ts';
 import { DeveloperToolsAvailability } from '../domain/page-tools/page-tools.ts';
 import { PrivateModeAvailability } from '../domain/windows/private-windows.ts';
-import { allPolicies } from './policy-definitions.ts';
+import { startPolicies } from './start-policies.ts';
 import type { DataClient, DataServiceClient } from '../platform/electron/data-service-client.ts';
 import type { WebRequests } from './web-requests.ts';
 import type { Downloads } from './downloads.ts';
@@ -242,18 +242,28 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
 
   // Until the sources have been read, policies apply as the last start left them, so the
   // read runs while Electron starts; the first window waits for it. The log of what a read
-  // could not apply loads meanwhile, and the first window does not wait for it.
+  // could not apply loads meanwhile, and the first window does not wait for it. So do the
+  // policies of the network with the code that applies them, which the read waits for.
   const policyLog = import('../domain/policy/policy-log.ts').then(
     ({ PolicyLog }) => new PolicyLog(logger),
   );
   const policies = new PolicyService(
-    allPolicies,
+    startPolicies,
     createPolicyProviders(brand, process.platform),
     { report: (statuses, errors) => void policyLog.then((log) => log.report(statuses, errors)) },
     new JsonFilePolicyCache(join(userData, 'policy-cache.json')),
   );
   policies.applyCached();
-  const freshPolicies = policies.refresh();
+  const network = import('./network-policies.ts').then(
+    (loaded) => {
+      policies.define(loaded.networkPolicies);
+      return loaded;
+    },
+    (error: unknown) => {
+      logger.error('The network policies did not load', error);
+    },
+  );
+  const freshPolicies = network.then(() => policies.refresh());
   // Whether the shell of the first window has loaded; until then, the policies that were
   // just read for the start are current.
   let shellLoaded = false;
@@ -311,6 +321,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   marks['ready'] = Math.round(performance.now());
   await freshPolicies;
   marks['policies'] = Math.round(performance.now());
+  // The proxy, the sign-in of the system and the blocked addresses of the policies apply
+  // before the first session of web content.
+  const networkRules = (await network)?.networkRules(policies, logger);
   await settingsLoaded;
   // Settings that need a restart keep the value of this start, such as the language of the
   // menus, the dialogs and the browser's own views; the settings page compares with these.
@@ -335,6 +348,9 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   );
   const internal = session.fromPartition(internalPartition);
   protocolHandler.serve(internal);
+  // The browser's own pages load nothing from the network, but what their session fetches, such
+  // as the dictionaries of the spell checker, takes the proxy of the policies too.
+  networkRules?.protect(internal);
   hardenSession(internal);
   // The navigations of the browser's own pages wait for the network service, those to `app://`
   // too, and one whose answer the service never gives, or took with it when it went away, never
@@ -396,11 +412,12 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   // The editor of shortcuts on the settings page waits for key presses with a recorder that
   // loads with the handlers of the browser's own pages, before the settings page.
   let shortcutRecorder: ShortcutRecorder | undefined;
-  // Every request of web content passes the request pipeline: HTTPS-First, the third-party
-  // cookies and the content blocker, whose engine loads with the first web page. Their code,
-  // with the exceptions for certificates and the answers to the frames of web pages, loads
-  // with the first request or frame of a web page; requests and frames that come meanwhile
-  // wait for it. A start that shows only the browser's own pages loads none of it.
+  // Every request of web content passes the request pipeline: the addresses that policies
+  // block, HTTPS-First, the third-party cookies and the content blocker, whose engine loads
+  // with the first web page. Their code, with the exceptions for certificates and the answers
+  // to the frames of web pages, loads with the first request or frame of a web page; requests
+  // and frames that come meanwhile wait for it. A start that shows only the browser's own pages
+  // loads none of it.
   let web: WebRequests | undefined;
   let webLoaded: Promise<WebRequests> | undefined;
   let webFailed = false;
@@ -427,6 +444,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
           webSessions,
           framePreload: layout.framePreload,
           readerPageOf: (contents) => reader?.pageOf(contents),
+          urlPolicy: networkRules,
           logger,
         })),
       (error: unknown) => {
@@ -491,6 +509,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
   const protectWebSession = (s: Session): void => {
     if (s !== internal && !webSessions.has(s)) {
       webSessions.add(s);
+      networkRules?.protect(s);
       protocolHandler.refuse(s);
       serveResources(s, (name) => web?.blocker.resource(name));
       hardenSession(s, permissionsOf(s));
@@ -848,6 +867,7 @@ export async function bootstrap(layout: BundleLayout): Promise<void> {
     certificateException: (contents, url) => web?.certificates.covers(contents, url) === true,
     insecureAddressFor: (contents, failed, stopped) =>
       web?.httpsFirst.insecureAddressFor(contents, failed, stopped),
+    blockedByPolicy: networkRules?.blocks,
     shortcuts: () => shortcuts,
     shortcutRecorder: () => shortcutRecorder,
     altOpensMenu: () => process.platform !== 'darwin' && settings.get(AltOpensMenuSetting),

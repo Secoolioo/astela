@@ -70,9 +70,15 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   // visits too; a jump to an anchor on the same page does not. A private window keeps no
   // history.
   const onVisit = window.isPrivate ? undefined : options.onVisit;
+  // Whether the policies of the organization block an address. The history keeps no visit of
+  // such a page, which only shows until it is loaded again and stopped, as below.
+  const blocked = (address: string): boolean => options.blockedByPolicy?.(address) === true;
+  // The blocked address that the tab loaded again past the service worker of its site, below.
+  let reloadedPast: string | undefined;
   let visited = '';
   const visit = (address: string): void => {
     if (!/^https?:/i.test(address) || withoutHash(address) === withoutHash(visited)) return;
+    if (blocked(address)) return;
     visited = address;
     onVisit?.(address, contents.getTitle(), false);
   };
@@ -98,9 +104,10 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
       options.onPageEvent?.(window, id, contents, 'changed');
     }
   });
-  // The reader view checks the page once its main frame has loaded.
+  // The reader view checks the page once its main frame has loaded, but not a page that a
+  // policy blocks.
   contents.on('did-frame-finish-load', (_event, isMainFrame) => {
-    if (isMainFrame && host.entries.get(id)?.view === view) {
+    if (isMainFrame && host.entries.get(id)?.view === view && !blocked(contents.getURL())) {
       options.onPageEvent?.(window, id, contents, 'loaded');
     }
   });
@@ -113,12 +120,19 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
   contents.on('media-paused', media);
   contents.on('page-title-updated', (_event, title) => {
     const address = contents.getURL();
-    if (/^https?:/i.test(address)) onVisit?.(address, title, true);
+    if (/^https?:/i.test(address) && !blocked(address)) onVisit?.(address, title, true);
+  });
+  // Frames that a policy blocks do not start, as in Chrome, also those that a service worker of
+  // the site would answer without a request that the request pipeline could stop. A frame of a
+  // blocked site stays empty.
+  contents.on('will-frame-navigate', (event) => {
+    if (!event.isMainFrame && blocked(event.url)) event.preventDefault();
   });
   // A page that could not be loaded, or whose renderer is gone, shows the shell's page
   // for it instead of an empty one.
   contents.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
     if (!isMainFrame) return;
+    reloadedPast = undefined;
     // A load that a new navigation stopped is no error, unless HTTPS-First stopped it
     // because its secure address gave no answer in time.
     if (code === -3) {
@@ -131,6 +145,12 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
           proceed: true,
         });
       }
+      return;
+    }
+    // A page that a policy blocks says so, as in Chrome; the request pipeline asks the policies
+    // before the content blocker, which stops pages with the same error.
+    if (code === -20 && blocked(failed)) {
+      setProblem(host, id, blockedPage(failed));
       return;
     }
     const name = /^[A-Z0-9_]{1,64}$/.test(description) ? description : 'ERR_FAILED';
@@ -167,7 +187,24 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
     const code = details.reason.toUpperCase().replaceAll('-', '_');
     setProblem(host, id, { kind: 'crashed', code, url: contents.getURL(), proceed: false });
   });
+  // A page that a policy blocks never gets past the request pipeline, so only a service worker
+  // of the site shows one, from its cache. The tab shows that the site is blocked in its place
+  // at once, and loads the page again past the service worker, which a reload that bypasses the
+  // cache does: the pipeline stops it, and the tab shows the blocked page in the same entry of
+  // its history, as for any other blocked page. Should the page show again all the same, it
+  // stays hidden.
   contents.on('did-navigate', (_event, address) => {
+    if (blocked(address)) {
+      setProblem(host, id, blockedPage(address));
+      if (reloadedPast !== address) {
+        reloadedPast = address;
+        setImmediate(() => {
+          if (!contents.isDestroyed()) contents.reloadIgnoringCache();
+        });
+      }
+      return;
+    }
+    reloadedPast = undefined;
     setProblem(host, id, null);
     // Another document ends a cover over the page, and needs a check of its own; the cover tells
     // the same address loaded again from another one. Its videos are gone, and with them a video
@@ -215,7 +252,10 @@ function watch(host: WindowHost, id: TabId, view: WebContentsView, adopted: bool
     entry.restored = undefined;
     if (restored !== address) host.dropFavicon(id);
   });
-  contents.on('page-favicon-updated', (_event, urls) => void loadFavicon(host, id, view, urls));
+  // A page that a policy blocks gets no icon, which the site would hear of.
+  contents.on('page-favicon-updated', (_event, urls) => {
+    if (!blocked(contents.getURL())) void loadFavicon(host, id, view, urls);
+  });
   contents.on('audio-state-changed', ({ audible }) => {
     if (host.entries.get(id)?.view !== view) return;
     window.tabs.update(id, { audible });
@@ -507,6 +547,11 @@ function uncoverPage(host: WindowHost, id: TabId, end: CoverEnd): void {
 function findAgain(host: WindowHost, id: TabId): void {
   const finding = host.findState();
   if (finding !== null && finding.query !== '') find(host, id, finding.query, true, false);
+}
+
+/** What a tab shows in place of a page that the policies of the organization block. */
+function blockedPage(url: string): TabProblem {
+  return { kind: 'error', code: 'ERR_BLOCKED_BY_ADMINISTRATOR', url, proceed: false };
 }
 
 /** Why a tab of any workspace of the window shows no page, or `null` when it shows one. */

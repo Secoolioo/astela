@@ -31,7 +31,7 @@ import { CertificateExceptions } from '../platform/electron/certificates.ts';
 import { HttpsFirst } from '../platform/electron/https-first.ts';
 import type { IpcRouter } from '../platform/electron/ipc-router.ts';
 import type { OverlayOptions } from '../platform/electron/overlay.ts';
-import { RequestPipeline } from '../platform/electron/request-pipeline.ts';
+import { RequestPipeline, type RequestInterceptor } from '../platform/electron/request-pipeline.ts';
 import { pageActivations } from '../platform/electron/page-activation.ts';
 import { tabWindowOf } from '../platform/electron/popup-windows.ts';
 import type { PermissionHandler } from '../platform/electron/session-security.ts';
@@ -112,6 +112,11 @@ export interface WebRequestOptions {
   readonly webSessions: Iterable<Session>;
   /** Path of the frame preload, which asks the content blocker for the rules of each frame. */
   readonly framePreload: string;
+  /**
+   * The addresses that the policies of the organization block (`network-policies.ts`), which
+   * the pipeline asks before its other steps; without it, nothing is blocked by policy.
+   */
+  readonly urlPolicy?: RequestInterceptor | undefined;
   readonly logger: Logger;
 }
 
@@ -192,13 +197,15 @@ export interface WebRequests {
 }
 
 /**
- * Makes the code for the requests of web pages. HTTPS-First sends pages to the secure
- * address first; the content blocker follows, and its engine loads with the first web page.
+ * Makes the code for the requests of web pages. The addresses that the policies block come
+ * first, as no other step may load them; HTTPS-First sends pages to the secure address next;
+ * the content blocker follows, and its engine loads with the first web page.
  * @param options - Settings, sessions and callbacks.
  */
 export function webRequests(options: WebRequestOptions): WebRequests {
   const { settings } = options;
   const pipeline = new RequestPipeline();
+  if (options.urlPolicy !== undefined) pipeline.add(options.urlPolicy);
   const httpsFirst = new HttpsFirst({
     enabled: () => settings.get(HttpsFirstSetting),
     allowlist: () => settings.get(HttpAllowlistSetting),

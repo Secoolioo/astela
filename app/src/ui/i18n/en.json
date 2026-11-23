@@ -208,6 +208,8 @@
   "problem.certificateRisk": "Continue only if you know why the site has this certificate, such as a device in your own network.",
   "problem.proceed": "Continue to {site}",
   "problem.certificateManaged": "Your organization does not allow continuing to such sites.",
+  "problem.blockedTitle": "This site is blocked",
+  "problem.blocked": "Your organization blocks {site}.",
   "overlay.signInTitle": "Sign in",
   "overlay.signInSite": "{site} asks for a user name and password.",
   "overlay.signInProxy": "The proxy {site} asks for a user name and password.",
